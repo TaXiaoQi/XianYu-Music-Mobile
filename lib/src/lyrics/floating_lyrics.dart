@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
@@ -11,7 +12,7 @@ import '../player/player_provider.dart';
 import 'lyric_model.dart';
 import 'lyrics_repository.dart';
 
-class FloatingLyricsController {
+class FloatingLyricsController with WidgetsBindingObserver {
   FloatingLyricsController(this._container);
 
   final ProviderContainer _container;
@@ -20,16 +21,6 @@ class FloatingLyricsController {
   static const MethodChannel _events =
       MethodChannel('xianyu/floating_lyrics_events');
 
-  static const List<int> quickColors = [
-    0xFFFFFFFF,
-    0xFFBFBFBF,
-    0xFF91CDFF,
-    0xFFA6EBCB,
-    0xFFB388FF,
-    0xFFFFBCD6,
-    0xFFFFE096,
-  ];
-
   ProviderSubscription<AsyncValue<AppSettings>>? _settingsSub;
   ProviderSubscription<PlaybackState>? _playerSub;
 
@@ -37,6 +28,7 @@ class FloatingLyricsController {
   bool _mvActive = false;
 
   bool _enabled = false;
+  bool _pendingEnableViaSettings = false;
   int _lastPushedPosMs = -1;
   bool _lastPushedPlaying = false;
   String? _songKey;
@@ -44,6 +36,7 @@ class FloatingLyricsController {
   int _fetchToken = 0;
 
   void init() {
+    WidgetsBinding.instance.addObserver(this);
     _events.setMethodCallHandler(_onEvent);
     I18n.modeVersion.addListener(_onLanguageChanged);
     _settingsSub = _container.listen(settingsProvider, (prev, next) {
@@ -61,6 +54,7 @@ class FloatingLyricsController {
   }
 
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _events.setMethodCallHandler(null);
     I18n.modeVersion.removeListener(_onLanguageChanged);
     _settingsSub?.close();
@@ -161,6 +155,7 @@ class FloatingLyricsController {
     _channel.invokeMethod('setSettings', {
       'json': jsonEncode({
         'textColor': s.floatingLyricsTextColor,
+        'unplayedColor': s.floatingLyricsUnplayedColor,
         'opacity': s.floatingLyricsOpacity,
         'fontScale': s.floatingLyricsFontScale,
         'secondaryScale': s.floatingLyricsSecondaryScale,
@@ -223,10 +218,6 @@ class FloatingLyricsController {
         _container.read(playerProvider.notifier).previous();
       case 'onNext':
         _container.read(playerProvider.notifier).next();
-      case 'onClose':
-        await _container
-            .read(settingsProvider.notifier)
-            .setFloatingLyricsEnabled(false);
       case 'onLock':
         await _container
             .read(settingsProvider.notifier)
@@ -235,12 +226,6 @@ class FloatingLyricsController {
         await _container
             .read(settingsProvider.notifier)
             .setFloatingLyricsLocked(false);
-      case 'onFontSmaller':
-        await _adjustFontScale(-10);
-      case 'onFontLarger':
-        await _adjustFontScale(10);
-      case 'onColorCycle':
-        await _cycleColor();
       case 'onPositionChanged':
         final x = (call.arguments as Map?)?.cast<String, dynamic>()['x'] as int?;
         final y = (call.arguments as Map?)?.cast<String, dynamic>()['y'] as int?;
@@ -253,24 +238,31 @@ class FloatingLyricsController {
     return null;
   }
 
-  Future<void> _adjustFontScale(int delta) async {
-    final n = _container.read(settingsProvider.notifier);
-    final s = _container.read(settingsProvider).valueOrNull;
-    if (s == null) return;
-    final next = (s.floatingLyricsFontScale + delta).clamp(40, 250);
-    await n.setFloatingLyricsFontScale(next);
-  }
-
-  Future<void> _cycleColor() async {
-    final n = _container.read(settingsProvider.notifier);
-    final s = _container.read(settingsProvider).valueOrNull;
-    if (s == null) return;
-    final idx = quickColors.indexOf(s.floatingLyricsTextColor);
-    final next = quickColors[(idx + 1) % quickColors.length];
-    await n.setFloatingLyricsTextColor(next);
-  }
-
   // ---- 供设置页使用的静态能力 ----
+
+  /// 未授权时的开启流程：跳系统设置授权页但不立即切换开关；回到前台后
+  /// 复检权限——已授权才真正开启，被拦截/未授权则保持关闭
+  Future<void> requestEnableViaSettings() async {
+    _pendingEnableViaSettings = true;
+    await openPermissionSettings();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_pendingEnableViaSettings) {
+      return;
+    }
+    _pendingEnableViaSettings = false;
+    _confirmPendingEnable();
+  }
+
+  Future<void> _confirmPendingEnable() async {
+    final granted = await isPermissionGranted();
+    if (!granted) return;
+    await _container
+        .read(settingsProvider.notifier)
+        .setFloatingLyricsEnabled(true);
+  }
 
   static Future<bool> isPermissionGranted() async {
     try {

@@ -37,10 +37,13 @@ Widget playbarGlassSurface(
         (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
   );
   final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+  final wallpaper = wallpaperGlassActive(ref);
+  // 壁纸模式同步顶栏材质：播放条不上液态，走组件色块+导航面档位模糊
   final liquid =
       (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
           true) &&
-          !lowPerf;
+          !lowPerf &&
+          !wallpaper;
 
   if (liquid) {
     final quality = liquidGlassQualitySetting(ref);
@@ -61,12 +64,20 @@ Widget playbarGlassSurface(
       alwaysLive: true,
       child: child,
     );
-    return liquidGlassShell(context, child: glass, radius: radius);
+    // 液态材质保留悬浮投影：影子画在玻璃层之前（被 shader 白 tint 提亮，
+    // 观感与毛玻璃原有投影一致）；壁纸模式 navFloatShadows 本身返回空
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: navFloatShadows(context, ref),
+      ),
+      child: liquidGlassShell(context, child: glass, radius: radius),
+    );
   }
 
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-  final wallpaper = wallpaperGlassActive(ref);
+  // 壁纸模式同步顶栏材质：不实底，恒走组件色块
+  final solid = !wallpaper && glassShouldUseSolid(ref, lowPerf: lowPerf);
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
       : (wallpaper
@@ -92,17 +103,28 @@ Widget playbarGlassSurface(
     decoration: BoxDecoration(
       color: fill,
       borderRadius: BorderRadius.circular(radius),
-      border: Border.all(color: border),
-      boxShadow: navFloatShadows(context, ref),
+      // 壁纸模式同步顶栏材质：顶栏无描边
+      border: wallpaper ? null : Border.all(color: border),
+      // 投影按材质区分：液态分支保留（见 liquid 分支）；毛玻璃/液态降级
+      // 材质不画——影子带会落进底栏玻璃采样区被玻璃化成灰黑横带（顶栏
+      // 上方无投影所以干净，唯独底栏背锅）；实底（玻璃全关）无 backdrop
+      // 采样，保留投影做与页面内容的层级分离
+      boxShadow: solid ? navFloatShadows(context, ref) : const [],
     ),
     child: child,
   );
   if (solid) return surface;
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-      child: surface,
+  // 静态帧方案：显隐/转场动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  // （同 glass_appbar 顶栏）
+  return RepaintBoundary(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
+        backdropGroupKey: navGlassKey,
+        child: surface,
+      ),
     ),
   );
 }
@@ -417,10 +439,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
+    // 壁纸模式同步顶栏材质：播放条不上液态，走组件色块+导航面档位模糊
+    final wallpaper = wallpaperGlassActive(ref);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf;
+            !lowPerf &&
+            !wallpaper;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
     final cover = _RotatingDisc(
@@ -595,10 +620,16 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                   )
                 : const SizedBox.shrink(),
           ),
-          liquidGlassShell(
-            context,
-            radius: 999,
-            child: LiveLiquidSurface(
+          // 液态材质保留悬浮投影（同主 mini 液态分支）：影子画在玻璃层之前
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: navFloatShadows(context, ref),
+            ),
+            child: liquidGlassShell(
+              context,
+              radius: 999,
+              child: LiveLiquidSurface(
               radius: 29,
               refract: bilipaiRefractOf(quality),
               chroma: bilipaiChromaOf(quality),
@@ -614,6 +645,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               degraded: widget.degraded,
               child: content,
             ),
+            ),
           ),
         ],
       ),
@@ -626,9 +658,10 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       BlurBudget? budget,
       bool forceSolid = false}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final solid =
-        forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式同步顶栏材质：不实底，恒走组件色块
+    final solid =
+        !wallpaper && (forceSolid || glassShouldUseSolid(ref, lowPerf: lowPerf));
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
@@ -639,12 +672,15 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
         : Colors.white.withValues(alpha: 0.40);
-    final fill = themeTint(
-        ref,
-        'mini.bar',
-        (budget == null || solid || wallpaper)
-            ? bg
-            : surfaceFillWithBudget(bg, budget));
+    // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
+    final fill = wallpaper
+        ? bg
+        : themeTint(
+            ref,
+            'mini.bar',
+            (budget == null || solid || wallpaper)
+                ? bg
+                : surfaceFillWithBudget(bg, budget));
     final navFloating =
         (ref.watch(settingsProvider.select(
                 (s) => s.valueOrNull?.floatingNavBar)) ??
@@ -659,17 +695,26 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: border),
-        boxShadow: navFloatShadows(context, ref),
+        // 壁纸模式同步顶栏材质：顶栏无描边
+        border: wallpaper ? null : Border.all(color: border),
+        // 投影按材质区分（同主 mini）：毛玻璃/降级材质不画，防灰黑横带；
+        // 实底（玻璃全关）无 backdrop 采样，保留投影
+        boxShadow: solid ? navFloatShadows(context, ref) : const [],
       ),
       child: content,
     );
     if (solid) return surface;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: surface,
+    // 静态帧方案：显隐/转场动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    // （同 glass_appbar 顶栏）
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
+          backdropGroupKey: navGlassKey,
+          child: surface,
+        ),
       ),
     );
   }

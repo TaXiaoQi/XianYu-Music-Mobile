@@ -76,7 +76,7 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
       showXianYuToast(
         context,
         pkg == null
-            ? tr('主题包格式不正确（需 mobile 版 v2）')
+            ? tr('主题包格式不正确（需 mobile 版 v2/v3）')
             : tr('已导入《{name}》', {'name': pkg.name}),
       );
     } catch (e) {

@@ -86,6 +86,15 @@ enum AppFontSize {
   final bool followsSystem;
 }
 
+/// 整套 UI 缩放档位值（与 uiScaleIndex 对应：小/标准/大/特大）
+const kUiScaleValues = [0.85, 1.0, 1.15, 1.3];
+
+/// 整套 UI 缩放系数：越界档位回退标准
+double uiScaleOf(int index) =>
+    (index >= 0 && index < kUiScaleValues.length)
+        ? kUiScaleValues[index]
+        : 1.0;
+
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'aiff', 'dsf', 'dff', 'ape', 'wv', 'qmc'];
 
 List<String> _mergeScanFormats(List<String>? saved) {
@@ -255,13 +264,17 @@ class AppSettings {
     this.language = AppLanguage.system,
     this.listSize = ListSize.medium,
     this.fontSize = AppFontSize.system,
+    this.uiScaleIndex = 1,
     this.shareLinkValidityMinutes = 120,
     this.sharePlaybackFailureBehavior = 'pause',
     this.playerStyle = PlayerStyle.traditional,
     this.landscapeAutoHideChrome = true,
+    this.landscapeTapToHideChrome = true,
     this.floatingLyricsEnabled = false,
     this.floatingLyricsLocked = false,
     this.floatingLyricsTextColor = 0xFFFFFFFF,
+    // 0 = 跟随主色（未播放部分按主色降低透明度渲染，即历史行为）
+    this.floatingLyricsUnplayedColor = 0,
     this.floatingLyricsOpacity = 100,
     this.floatingLyricsFontScale = 100,
     this.floatingLyricsSecondaryScale = 88,
@@ -422,6 +435,9 @@ class AppSettings {
 
   final AppFontSize fontSize;
 
+  /// 整套 UI 缩放档位索引（0 小 / 1 标准 / 2 大 / 3 特大）
+  final int uiScaleIndex;
+
   final int shareLinkValidityMinutes;
 
   final String sharePlaybackFailureBehavior;
@@ -430,11 +446,16 @@ class AppSettings {
 
   final bool landscapeAutoHideChrome;
 
+  final bool landscapeTapToHideChrome;
+
   final bool floatingLyricsEnabled;
 
   final bool floatingLyricsLocked;
 
   final int floatingLyricsTextColor;
+
+  /// 桌面歌词未播放文字颜色；0 表示跟随主色（按主色降透明度渲染）
+  final int floatingLyricsUnplayedColor;
 
   final int floatingLyricsOpacity;
 
@@ -560,13 +581,16 @@ class AppSettings {
     AppLanguage? language,
     ListSize? listSize,
     AppFontSize? fontSize,
+    int? uiScaleIndex,
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
     bool? landscapeAutoHideChrome,
+    bool? landscapeTapToHideChrome,
     bool? floatingLyricsEnabled,
     bool? floatingLyricsLocked,
     int? floatingLyricsTextColor,
+    int? floatingLyricsUnplayedColor,
     int? floatingLyricsOpacity,
     int? floatingLyricsFontScale,
     int? floatingLyricsSecondaryScale,
@@ -687,17 +711,22 @@ class AppSettings {
       language: language ?? this.language,
       listSize: listSize ?? this.listSize,
       fontSize: fontSize ?? this.fontSize,
+      uiScaleIndex: uiScaleIndex ?? this.uiScaleIndex,
       shareLinkValidityMinutes: shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
       playerStyle: playerStyle ?? this.playerStyle,
       landscapeAutoHideChrome:
           landscapeAutoHideChrome ?? this.landscapeAutoHideChrome,
+      landscapeTapToHideChrome:
+          landscapeTapToHideChrome ?? this.landscapeTapToHideChrome,
       floatingLyricsEnabled:
           floatingLyricsEnabled ?? this.floatingLyricsEnabled,
       floatingLyricsLocked: floatingLyricsLocked ?? this.floatingLyricsLocked,
       floatingLyricsTextColor:
           floatingLyricsTextColor ?? this.floatingLyricsTextColor,
+      floatingLyricsUnplayedColor:
+          floatingLyricsUnplayedColor ?? this.floatingLyricsUnplayedColor,
       floatingLyricsOpacity:
           floatingLyricsOpacity ?? this.floatingLyricsOpacity,
       floatingLyricsFontScale:
@@ -857,6 +886,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       language: _langFromString(prefs.getString('language') ?? 'system'),
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
       fontSize: _fontSizeFromString(prefs.getString('fontSize') ?? 'standard'),
+      uiScaleIndex: prefs.getInt('uiScaleIndex') ?? 1,
       shareLinkValidityMinutes:
           prefs.getInt('shareLinkValidityMinutes') ?? 120,
       sharePlaybackFailureBehavior:
@@ -865,11 +895,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getString('playerStyle') ?? 'traditional'),
       landscapeAutoHideChrome:
           prefs.getBool('landscapeAutoHideChrome') ?? true,
+      landscapeTapToHideChrome:
+          prefs.getBool('landscapeTapToHideChrome') ?? true,
       floatingLyricsEnabled:
           prefs.getBool('floatingLyricsEnabled') ?? false,
       floatingLyricsLocked: prefs.getBool('floatingLyricsLocked') ?? false,
       floatingLyricsTextColor:
           prefs.getInt('floatingLyricsTextColor') ?? 0xFFFFFFFF,
+      floatingLyricsUnplayedColor:
+          prefs.getInt('floatingLyricsUnplayedColor') ?? 0,
       floatingLyricsOpacity: prefs.getInt('floatingLyricsOpacity') ?? 100,
       floatingLyricsFontScale:
           prefs.getInt('floatingLyricsFontScale') ?? 100,
@@ -947,8 +981,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       };
 
   PlayerStyle _playerStyleFromString(String v) => switch (v) {
-        'traditional' => PlayerStyle.traditional,
-        _ => PlayerStyle.advanced,
+        'advanced' => PlayerStyle.advanced,
+        _ => PlayerStyle.traditional,
       };
 
   AppLanguage _langFromString(String v) => switch (v) {
@@ -1078,14 +1112,19 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('language', next.language.name),
       prefs.setString('listSize', next.listSize.name),
       prefs.setString('fontSize', next.fontSize.name),
+      prefs.setInt('uiScaleIndex', next.uiScaleIndex),
       prefs.setInt('shareLinkValidityMinutes', next.shareLinkValidityMinutes),
       prefs.setString(
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
       prefs.setString('playerStyle', next.playerStyle.name),
       prefs.setBool('landscapeAutoHideChrome', next.landscapeAutoHideChrome),
+      prefs.setBool(
+          'landscapeTapToHideChrome', next.landscapeTapToHideChrome),
       prefs.setBool('floatingLyricsEnabled', next.floatingLyricsEnabled),
       prefs.setBool('floatingLyricsLocked', next.floatingLyricsLocked),
       prefs.setInt('floatingLyricsTextColor', next.floatingLyricsTextColor),
+      prefs.setInt(
+          'floatingLyricsUnplayedColor', next.floatingLyricsUnplayedColor),
       prefs.setInt('floatingLyricsOpacity', next.floatingLyricsOpacity),
       prefs.setInt('floatingLyricsFontScale', next.floatingLyricsFontScale),
       prefs.setInt(
@@ -1249,6 +1288,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));
   Future<void> setListSize(ListSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(listSize: v));
   Future<void> setFontSize(AppFontSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(fontSize: v));
+  Future<void> setUiScaleIndex(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(uiScaleIndex: v));
   Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));
@@ -1256,11 +1296,22 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLandscapeAutoHideChrome(bool v) =>
       _save((state.valueOrNull ?? const AppSettings())
           .copyWith(landscapeAutoHideChrome: v));
-  Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
+
+  Future<void> setLandscapeTapToHideChrome(bool v) =>
+      _save((state.valueOrNull ?? const AppSettings())
+          .copyWith(landscapeTapToHideChrome: v));
+  /// 开启桌面歌词时重置固定效果：上次会话的锁定不再沿用，恢复可拖动；
+  /// 关闭时保留锁定与位置不动
+  Future<void> setFloatingLyricsEnabled(bool v) => _save(
+      (state.valueOrNull ?? const AppSettings()).copyWith(
+    floatingLyricsEnabled: v,
+    floatingLyricsLocked: v ? false : null,
+  ));
 
   Future<void> setStatusBarLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(statusBarLyricsEnabled: v));
   Future<void> setFloatingLyricsLocked(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsLocked: v));
   Future<void> setFloatingLyricsTextColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsTextColor: v));
+  Future<void> setFloatingLyricsUnplayedColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsUnplayedColor: v));
   Future<void> setFloatingLyricsOpacity(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsOpacity: v));
   Future<void> setFloatingLyricsFontScale(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsFontScale: v));
   Future<void> setFloatingLyricsSecondaryScale(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsSecondaryScale: v));

@@ -54,9 +54,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       if (!mounted) return;
       final ctx = key.currentContext;
       if (ctx == null) return;
+      // 最小滚动：目标已在视口内不动；在视口下方→顶缘对齐，上方→底缘对齐。
+      // 固定 alignment 0.5 会让每次点击都把选中项滚到列表正中，观感突兀
+      var alignment = 0.5;
+      final tileBox = ctx.findRenderObject() as RenderBox?;
+      final scrollable = Scrollable.maybeOf(ctx);
+      final vpBox = scrollable?.context.findRenderObject() as RenderBox?;
+      if (tileBox?.hasSize == true && vpBox?.hasSize == true) {
+        final tileTop = tileBox!.localToGlobal(Offset.zero).dy;
+        final tileBottom = tileTop + tileBox.size.height;
+        final vpTop = vpBox!.localToGlobal(Offset.zero).dy;
+        final vpBottom = vpTop + vpBox.size.height;
+        if (tileTop >= vpTop && tileBottom <= vpBottom) return;
+        alignment = tileTop < vpTop ? 1.0 : 0.0;
+      }
       Scrollable.ensureVisible(
         ctx,
-        alignment: 0.5,
+        alignment: alignment,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
       );
@@ -346,11 +360,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   }
 
   bool _searchItemVisible(_SearchItem item) {
-    if (!PlatformCaps.supportsFloatingLyrics && item.section == '悬浮歌词') {
+    if (!PlatformCaps.supportsFloatingLyrics && item.section == '桌面歌词') {
       return false;
     }
     if (!PlatformCaps.supportsStatusBarLyrics &&
-        (item.section == '状态栏歌词' || item.section == '车机歌词')) {
+        (item.section == '通知栏歌词' || item.section == '车机歌词')) {
       return false;
     }
     if (!PlatformCaps.supportsCustomDownloadDir && item.label == '下载路径') {
@@ -623,7 +637,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         _CategoryEntry(
           tr('歌词'),
           Icons.lyrics_outlined,
-          tr('歌词显示、悬浮歌词窗'),
+          tr('歌词显示、桌面歌词窗'),
           '/settings/lyrics',
         ),
       ],
@@ -880,7 +894,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(label: '账号', section: '设置分类', path: '/settings/account', categoryName: '账号', isCategory: true, keywords: '账户 登录 服务端'),
   _SearchItem(label: '常规', section: '设置分类', path: '/settings/general', categoryName: '常规', isCategory: true, keywords: '语言 反馈 存储 常亮'),
   _SearchItem(label: '外观', section: '设置分类', path: '/settings/appearance', categoryName: '外观', isCategory: true, keywords: '主题 壁纸 材质 皮肤 皮肤配色'),
-  _SearchItem(label: '歌词', section: '设置分类', path: '/settings/lyrics', categoryName: '歌词', isCategory: true, keywords: '悬浮歌词 卡拉OK 歌词页'),
+  _SearchItem(label: '歌词', section: '设置分类', path: '/settings/lyrics', categoryName: '歌词', isCategory: true, keywords: '桌面歌词 悬浮歌词 卡拉OK 歌词页'),
   _SearchItem(label: '播放', section: '设置分类', path: '/settings/playback', categoryName: '播放', isCategory: true, keywords: '音量 音质 输出 播放设置'),
   _SearchItem(label: '下载', section: '设置分类', path: '/settings/download', categoryName: '下载', isCategory: true, keywords: '路径 音质 歌词'),
   _SearchItem(label: '高级设置', section: '设置分类', path: '/settings/advanced', categoryName: '高级设置', isCategory: true, keywords: '备份 日志 高级'),
@@ -922,21 +936,22 @@ const _settingsSearchItems = <_SearchItem>[
 
   _SearchItem(label: '显示翻译', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '翻译 translation'),
   _SearchItem(label: '逐字动效', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '卡拉OK 逐字 动画'),
-  _SearchItem(label: '悬浮歌词窗', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '悬浮 卡拉OK 逐字 歌词窗'),
-  _SearchItem(label: '文字颜色', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '歌词颜色'),
-  _SearchItem(label: '不透明度', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '透明度 opacity'),
-  _SearchItem(label: '字号', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体大小'),
-  _SearchItem(label: '副行字号', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体'),
-  _SearchItem(label: '使用歌词字体', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体 播放页'),
-  _SearchItem(label: '显示罗马音', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '罗马音 romaji'),
-  _SearchItem(label: '显示背景歌词', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '背景 歌词'),
-  _SearchItem(label: '暂停时隐藏', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '隐藏 暂停'),
-  _SearchItem(label: '横屏时隐藏', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '横屏 隐藏'),
-  _SearchItem(label: '宽度', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '宽'),
-  _SearchItem(label: '水平位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '左右 位置'),
-  _SearchItem(label: '垂直位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '上下 位置'),
-  _SearchItem(label: '锁定位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '锁定 拖动'),
-  _SearchItem(label: '重置位置', section: '悬浮歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '重置 还原'),
+  _SearchItem(label: '桌面歌词窗', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '桌面 悬浮 卡拉OK 逐字 歌词窗'),
+  _SearchItem(label: '文字颜色', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '歌词颜色'),
+  _SearchItem(label: '未播放颜色', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '未播放 歌词颜色'),
+  _SearchItem(label: '不透明度', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '透明度 opacity'),
+  _SearchItem(label: '字号', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体大小'),
+  _SearchItem(label: '副行字号', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体'),
+  _SearchItem(label: '使用歌词字体', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体 播放页'),
+  _SearchItem(label: '显示罗马音', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '罗马音 romaji'),
+  _SearchItem(label: '显示背景歌词', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '背景 歌词'),
+  _SearchItem(label: '暂停时隐藏', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '隐藏 暂停'),
+  _SearchItem(label: '横屏时隐藏', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '横屏 隐藏'),
+  _SearchItem(label: '宽度', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '宽'),
+  _SearchItem(label: '水平位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '左右 位置'),
+  _SearchItem(label: '垂直位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '上下 位置'),
+  _SearchItem(label: '锁定位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '锁定 拖动'),
+  _SearchItem(label: '重置位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '重置 还原'),
   _SearchItem(label: '车机歌词', section: '车机歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '通知栏 锁屏 车机 蓝牙 状态栏'),
 
   _SearchItem(label: '音量', section: '播放', path: '/settings/playback', categoryName: '播放', keywords: 'volume 声音'),

@@ -41,6 +41,24 @@
             "uris": [
               { "type": "general.javascript" }
             ]
+          },
+          {
+            // 音频文件关联：文件管理器「打开」音频 → 弦予音乐（直接播放）。
+            // 声明 general.audio 伞类型 + 系统预置音频子 UTD（mp3/flac/ogg/
+            // aiff/alac），保证文件管理器按具体 UTD 匹配时也能命中；格式清单
+            // 与桌面端文件关联（audioFileAssociations.ts / file_assoc.rs
+            // AUDIO_EXTENSIONS）对齐，opus 系统无预置 UTD，由伞类型兜底。
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              { "type": "general.audio" },
+              { "type": "general.mp3" },
+              { "type": "general.flac" },
+              { "type": "general.ogg" },
+              { "type": "general.aiff" },
+              { "type": "general.alac" }
+            ]
           }
         ]
       }

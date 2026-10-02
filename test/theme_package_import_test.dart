@@ -1,11 +1,15 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xianyu_music_mobile/src/core/settings.dart';
+import 'package:xianyu_music_mobile/src/theme/page_wallpaper.dart';
 import 'package:xianyu_music_mobile/src/theme/theme_icon.dart';
 import 'package:xianyu_music_mobile/src/theme/theme_package.dart';
 import 'package:xianyu_music_mobile/src/theme/theme_store.dart';
@@ -41,6 +45,8 @@ String pkgJson({
     });
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   setUp(() {
     SharedPreferences.setMockInitialValues({});
   });
@@ -60,10 +66,54 @@ void main() {
       expect(pkg.hasSlots, isTrue);
     });
 
-    test('platform 非 mobile / version 非 2 一律不收', () {
+    test('platform 非 mobile / version 非 2|3 一律不收', () {
       expect(ThemePackage.parse(pkgJson(platform: 'desktop')), isNull);
-      expect(ThemePackage.parse(pkgJson(version: 3)), isNull);
+      expect(ThemePackage.parse(pkgJson(version: 4)), isNull);
       expect(ThemePackage.parse(pkgJson(version: '2')), isNull);
+    });
+
+    test('v3 合法：wallpapers 缺省为空、槽位照常生效', () {
+      final pkg = ThemePackage.parse(pkgJson(version: 3))!;
+
+      expect(pkg.wallpapers, isEmpty);
+      expect(pkg.icons['nav.home'], 'https://example.com/a.png');
+      expect(pkg.hasSlots, isTrue);
+    });
+
+    test('v3 wallpapers：ref 缺失剔除，数值参数钳制到契约区间', () {
+      final pkg = ThemePackage.parse(pkgJson(version: 3, payload: const {
+        'wallpapers': {
+          'home': {
+            'ref': '/data/local/wall_home.png',
+            'blur': 30,
+            'opacity': 90,
+            'maskAlpha': 50,
+            'scale': 50,
+            'translateX': -120,
+            'translateY': 200,
+            'landscapeScale': 2000,
+            'landscapeTranslateX': 5,
+            'landscapeTranslateY': -5,
+          },
+          'noRef': {'blur': 10},
+          'emptyRef': {'ref': '  '},
+        },
+      }))!;
+
+      final wp = pkg.wallpapers['home']!;
+      expect(wp.ref, '/data/local/wall_home.png');
+      expect(wp.blur, 30);
+      expect(wp.opacity, 90);
+      expect(wp.maskAlpha, 50);
+      expect(wp.scale, 80, reason: 'scale 下限 80（对齐壁纸中心滑杆）');
+      expect(wp.translateX, -100);
+      expect(wp.translateY, 100);
+      expect(wp.landscapeScale, 240, reason: 'scale 上限 240');
+      expect(wp.landscapeTranslateX, 5);
+      expect(wp.landscapeTranslateY, -5);
+      expect(pkg.wallpapers.containsKey('noRef'), isFalse);
+      expect(pkg.wallpapers.containsKey('emptyRef'), isFalse);
+      expect(pkg.hasSlots, isTrue);
     });
 
     test('非法 JSON 与缺 payload 返回 null 而非抛异常', () {
@@ -505,4 +555,180 @@ void main() {
       expect(set, const Color(0xFF7C4DFF).withValues(alpha: 0.35));
     });
   });
+
+  group('v3 页面壁纸：导入归一化落盘 + 页面解析', () {
+    // 1x1 PNG，用于 data URL 落盘（魔数 89 50 4E 47 → 嗅探为 png）
+    const pngB64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+    late Directory tempDir;
+
+    /// path_provider_windows 走 FFI 不经方法通道，须 mock 平台接口本身
+    PathProviderPlatform? _savedProvider;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      tempDir = await Directory.systemTemp.createTemp('xianyu_theme_wp_test');
+      _savedProvider = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = _DocsDirMock(tempDir.path);
+    });
+
+    tearDown(() async {
+      if (_savedProvider != null) {
+        PathProviderPlatform.instance = _savedProvider!;
+      }
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    Future<ProviderContainer> boot() async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(themeLibraryProvider.notifier).ready;
+      await container.read(settingsProvider.future);
+      return container;
+    }
+
+    test('导入 v3 包：data URL 解码落盘并改写 ref，prefs 不存 base64', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+      final pkg = (await n.importJson(pkgJson(version: 3, payload: {
+        'wallpapers': {
+          'home': {'ref': 'data:image/png;base64,$pngB64'},
+        },
+      })))!;
+
+      final ref = pkg.wallpapers['home']!.ref;
+      expect(ref, isNot(contains('data:')), reason: 'ref 已改写为本地路径');
+      expect(ref, contains('themes'));
+      expect(ref, contains(pkg.id));
+      expect(ref, endsWith('wall_home.png'));
+
+      final file = File(ref);
+      expect(await file.exists(), isTrue);
+      final bytes = await file.readAsBytes();
+      expect(bytes[0], 0x89);
+      expect(bytes[1], 0x50, reason: 'PNG 魔数原样落盘');
+
+      final prefs = await SharedPreferences.getInstance();
+      final stored = prefs.getStringList('xianyu_theme_packs_v1')!;
+      expect(stored, hasLength(1));
+      final decoded = jsonDecode(stored.single) as Map;
+      // jsonDecode 已还原 JSON 转义，直接与实际路径比对
+      final storedRef = ((((decoded['payload'] as Map)['wallpapers'] as Map)
+              ['home'] as Map)['ref'] as String);
+      expect(storedRef, ref, reason: '持久化的是改写后的本地路径');
+      expect(stored.join(), isNot(contains('base64,')),
+          reason: '巨型 base64 不得进 SharedPreferences');
+    });
+
+    test('导入 v3 包：壁纸下载失败抛 ThemeAssetException 且不入列', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+
+      await expectLater(
+        n.importJson(pkgJson(version: 3, payload: {
+          'wallpapers': {
+            'home': {'ref': 'http://127.0.0.1:1/wall.jpg'},
+          },
+        })),
+        throwsA(isA<ThemeAssetException>()),
+      );
+      expect(c.read(themeLibraryProvider).packages, isEmpty);
+    });
+
+    test('删除 v3 包：壁纸资产目录一并清理', () async {
+      final c = await boot();
+      final n = c.read(themeLibraryProvider.notifier);
+      final pkg = (await n.importJson(pkgJson(version: 3, payload: {
+        'wallpapers': {
+          'home': {'ref': 'data:image/png;base64,$pngB64'},
+        },
+      })))!;
+      final ref = pkg.wallpapers['home']!.ref;
+      expect(File(ref).existsSync(), isTrue);
+
+      await n.remove(pkg.id);
+
+      expect(File(ref).existsSync(), isFalse);
+      expect(Directory(p.join(tempDir.path, 'themes', pkg.id)).existsSync(),
+          isFalse,
+          reason: '资产目录随包删除');
+    });
+
+    test('pageIdForLocation：覆盖路由路径映射，未映射回落 null', () {
+      expect(pageIdForLocation('/settings', landscape: false), 'settings');
+      expect(pageIdForLocation('/recognize', landscape: false), 'recognize');
+      expect(pageIdForLocation('/search', landscape: false), 'search');
+      expect(pageIdForLocation('/search/result', landscape: false),
+          'search_result');
+      expect(pageIdForLocation('/player', landscape: false), 'player');
+
+      expect(pageIdForLocation('/settings', landscape: true), 'ls-settings');
+      expect(pageIdForLocation('/player', landscape: true), 'ls-player');
+      expect(pageIdForLocation('/search', landscape: true), isNull,
+          reason: '横屏未定义的页面回落全局壁纸');
+
+      expect(pageIdForLocation('/home', landscape: false), isNull,
+          reason: '壳页页面 id 由作用域显式传入，不走路径映射');
+      expect(pageIdForLocation('/library', landscape: false), isNull);
+      expect(pageIdForLocation(null, landscape: false), isNull);
+      expect(pageIdForLocation('', landscape: false), isNull);
+    });
+
+    test('pageWallpaperToCustomBackground：缺省取默认值，横屏缺省回落竖屏', () {
+      final def = pageWallpaperToCustomBackground(
+          const PageWallpaper(ref: '/a.png'));
+      expect(def.enabled, isTrue);
+      expect(def.mediaType, WallpaperMediaType.image);
+      expect(def.imagePath, '/a.png');
+      expect(def.blur, 20);
+      expect(def.opacity, 100);
+      expect(def.maskAlpha, 40);
+      expect(def.scale, 100);
+      expect(def.translateX, 0);
+      expect(def.translateY, 0);
+      expect(def.landscapeScale, 100);
+      expect(def.landscapeTranslateX, 0);
+      expect(def.landscapeTranslateY, 0);
+
+      final full = pageWallpaperToCustomBackground(const PageWallpaper(
+        ref: '/b.png',
+        blur: 10,
+        opacity: 80,
+        maskAlpha: 0,
+        scale: 150,
+        translateX: -20,
+        translateY: 30,
+        landscapeScale: 200,
+        landscapeTranslateX: -5,
+        landscapeTranslateY: 5,
+      ));
+      expect(full.maskAlpha, 0);
+      expect(full.landscapeScale, 200);
+      expect(full.landscapeTranslateX, -5);
+      expect(full.landscapeTranslateY, 5);
+
+      final partial = pageWallpaperToCustomBackground(const PageWallpaper(
+        ref: '/c.png',
+        scale: 180,
+        translateX: -10,
+        translateY: 20,
+      ));
+      expect(partial.landscapeScale, 180);
+      expect(partial.landscapeTranslateX, -10);
+      expect(partial.landscapeTranslateY, 20);
+    });
+  });
+}
+
+/// 文档目录指向临时目录：壁纸资产落盘测试的 path_provider 替身
+class _DocsDirMock extends PathProviderPlatform {
+  _DocsDirMock(this.docsPath);
+
+  final String docsPath;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => docsPath;
 }

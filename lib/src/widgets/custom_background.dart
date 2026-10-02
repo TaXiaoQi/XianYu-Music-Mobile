@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../core/app_colors.dart';
 import '../core/settings.dart';
+import '../theme/page_wallpaper.dart';
 import 'glass_settings.dart';
 
 /// 视频壁纸帧平均色（含遮罩/模糊后的实际观感）：
@@ -385,7 +386,7 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         final useTy = isLandscape ? cb.landscapeTranslateY : cb.translateY;
         final dx = useTx / 100 * w;
         final dy = useTy / 100 * h;
-        final sEff = (useScale / 100).clamp(1.0, 10.0).toDouble();
+        final sEff = (useScale / 100).clamp(0.8, 10.0).toDouble();
         final imgBox = wallpaperCoverBox(
           w,
           h,
@@ -516,11 +517,51 @@ class _SettingsBound extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cb = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.customBackground),
-    );
-    if (cb?.active != true) return const SizedBox.shrink();
+    // 根层无页面作用域（pageId = null）：解析结果即全局用户壁纸
+    final cb = ref.watch(pageWallpaperProvider);
+    if (cb == null) return const SizedBox.shrink();
     return CustomBackgroundLayer(background: cb);
+  }
+}
+
+/// 页面壁纸作用域：注入 pageIdProvider（页面内脚手架底色/组件色块等按页
+/// 解析），并在主题包定义了该页壁纸时于 child 之下垫壁纸层（盖过根层
+/// 全局壁纸）。壳页分支/横屏面板/播放页等非覆盖路由场景使用。
+class PageWallpaperScope extends ConsumerWidget {
+  const PageWallpaperScope({
+    super.key,
+    required this.pageId,
+    required this.child,
+  });
+
+  /// 页面 id；null 表示本页不参与按页壁纸（无注入、无垫层，全局语义）。
+  final String? pageId;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wp = pageId == null
+        ? null
+        : ref.watch(themeLibraryProvider
+            .select((s) => s.active?.wallpapers[pageId!]));
+    Widget inner = child;
+    if (wp != null) {
+      inner = Stack(
+        fit: StackFit.expand,
+        children: [
+          CustomBackgroundLayer(
+            background: pageWallpaperToCustomBackground(wp),
+          ),
+          Positioned.fill(child: child),
+        ],
+      );
+    }
+    if (pageId == null) return inner;
+    return ProviderScope(
+      overrides: [pageIdProvider.overrideWithValue(pageId)],
+      child: inner,
+    );
   }
 }
 
@@ -536,15 +577,58 @@ class AppPageBackground extends ConsumerWidget {
 }
 
 class RoutePageBackdrop extends ConsumerWidget {
-  const RoutePageBackdrop({super.key, this.completion, required this.child});
+  const RoutePageBackdrop({
+    super.key,
+    this.completion,
+    this.location,
+    required this.child,
+  });
 
   final Animation<double>? completion;
+
+  /// 覆盖路由的 matchedLocation：用于解析主题包的每页壁纸；
+  /// 未传（未映射页面/命令式路由）时整体回落全局壁纸语义。
+  final String? location;
 
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final pageId = pageIdForLocation(
+      location,
+      landscape: MediaQuery.orientationOf(context) == Orientation.landscape,
+    );
+    final pageWp = pageId == null
+        ? null
+        : ref.watch(
+            themeLibraryProvider.select((s) => s.active?.wallpapers[pageId]));
+    Widget core = _buildCore(context, ref, pageWp);
+    if (pageId == null) return core;
+    // 页面内容（脚手架底色/组件色块等）按本页 id 解析壁纸状态
+    return ProviderScope(
+      overrides: [pageIdProvider.overrideWithValue(pageId)],
+      child: core,
+    );
+  }
+
+  Widget _buildCore(
+      BuildContext context, WidgetRef ref, PageWallpaper? pageWp) {
     final plain = ColoredBox(color: appSurfaceBg(context), child: child);
+    if (pageWp != null) {
+      // 主题包页面壁纸（静图）：整页垫层，转场随页面一起进出
+      return ColoredBox(
+        color: Colors.transparent,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CustomBackgroundLayer(
+              background: pageWallpaperToCustomBackground(pageWp),
+            ),
+            Positioned.fill(child: child),
+          ],
+        ),
+      );
+    }
     if (!ref.watch(wallpaperActiveProvider)) return plain;
     final cb = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.customBackground),
@@ -569,8 +653,11 @@ class RoutePageBackdrop extends ConsumerWidget {
         child: child,
       );
     }
+    // 垫透明而非 appSurfaceBg：转场中页面整树半透明渐入/渐出，
+    // 不透明 244 底会透出来盖住全局壁纸——壁纸色块组件（30% 白）
+    // 读作满填充纯色块；透全局壁纸则转场前后观感一致
     return ColoredBox(
-      color: appSurfaceBg(context),
+      color: Colors.transparent,
       child: Stack(
         fit: StackFit.expand,
         children: [

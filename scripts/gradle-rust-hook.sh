@@ -100,6 +100,10 @@ if [ "$needCodegen" -eq 1 ]; then
     log "[rust-hook] Codegen failed"
     exit 1
   fi
+  # codegen 产出与现有绑定内容相同时不重写文件 → mtime 不更新 →
+  # 下次仍判定 needCodegen → debug 构建死循环退出码 3。强制刷新
+  # mtime 保证与 rust 源的新旧比较必然收敛（与 ps1 版一致）。
+  [ -f "$BINDINGS" ] && touch "$BINDINGS"
 fi
 
 if [ "$needSo" -eq 1 ]; then

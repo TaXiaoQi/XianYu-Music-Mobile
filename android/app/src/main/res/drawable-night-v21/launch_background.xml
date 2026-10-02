@@ -1,10 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 启动 splash：随系统昼夜绘底（splash_background 白天白/夜间深）+ 居中品牌 logo -->
+<!-- 启动 splash（夜间 · API 21-30）：深底 + 居中「桌面图标」样式
+     （白圆角底 + ic_launcher_foreground 前景 logo）。旧方案裸反白 logo
+     与 API 31+ 系统闪屏按桌面图标渲染的观感不一致，这里统一。
+     前景无昼夜变体（恒深色 logo），与桌面图标昼夜一致的表现天然相同；
+     layer-list item 尺寸需 API 23+，项目 minSdk=24，无兼容问题。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/splash_background" />
-    <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@drawable/splash_logo" />
+    <item
+        android:width="152dp"
+        android:height="152dp"
+        android:gravity="center">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/ic_launcher_background" />
+            <corners android:radius="34dp" />
+        </shape>
     </item>
+    <!-- 前景画布大于容器：108dp 网格画布 logo 仅占中心约 61%，
+         190dp 画布让 logo 视觉占比约 76%，观感接近桌面图标的撑满度。 -->
+    <item
+        android:width="190dp"
+        android:height="190dp"
+        android:gravity="center"
+        android:drawable="@drawable/ic_launcher_foreground" />
 </layer-list>

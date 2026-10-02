@@ -293,8 +293,11 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/home',
-              builder: (context, state) =>
-                  const _ShellTabEntry(child: HomePage()),
+              builder: (context, state) => const _ShellTabEntry(
+                portraitPageId: 'home',
+                landscapePageId: 'ls-home',
+                child: HomePage(),
+              ),
             ),
           ],
         ),
@@ -302,8 +305,11 @@ final appRouter = GoRouter(
           routes: [
             GoRoute(
               path: '/mine',
-              builder: (context, state) =>
-                  const _ShellTabEntry(child: MinePage()),
+              builder: (context, state) => const _ShellTabEntry(
+                portraitPageId: 'mine',
+                landscapePageId: 'ls-mine',
+                child: MinePage(),
+              ),
             ),
           ],
         ),
@@ -315,6 +321,7 @@ final appRouter = GoRouter(
         context,
         (_) => const SettingsPage(),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(
@@ -333,6 +340,7 @@ final appRouter = GoRouter(
           initialQuery: state.uri.queryParameters['q'],
         ),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(
@@ -341,6 +349,7 @@ final appRouter = GoRouter(
         context,
         (_) => const SearchResultPage(),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(
@@ -384,6 +393,7 @@ final appRouter = GoRouter(
         context,
         (_) => const RecognizePage(),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(
@@ -672,6 +682,7 @@ Page<void> _coverBackPage(
   BuildContext context,
   WidgetBuilder builder, {
   LocalKey? key,
+  String? location,
 }) {
   final predictiveBack =
       ProviderScope.containerOf(context, listen: false)
@@ -683,6 +694,7 @@ Page<void> _coverBackPage(
     key: key,
     builder: builder,
     predictiveBack: predictiveBack,
+    location: location,
   );
 }
 
@@ -698,14 +710,25 @@ class _ShellPage extends Page<void> {
 }
 
 class _ShellTabEntry extends ConsumerWidget {
-  const _ShellTabEntry({required this.child});
+  const _ShellTabEntry({
+    required this.child,
+    required this.portraitPageId,
+    required this.landscapePageId,
+  });
 
   final Widget child;
 
+  /// 主题包每页壁纸的页面 id（竖屏 home/mine，横屏 ls-home/ls-mine）
+  final String portraitPageId;
+  final String landscapePageId;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(isLandscapeProvider)) return child;
-    return AppPageBackground(child: child);
+    final landscape = ref.watch(isLandscapeProvider);
+    return PageWallpaperScope(
+      pageId: landscape ? landscapePageId : portraitPageId,
+      child: landscape ? child : AppPageBackground(child: child),
+    );
   }
 }
 
@@ -849,7 +872,15 @@ class _SmoothFadeForwards extends StatelessWidget {
             child: child,
           ),
         ),
-        child: child,
+        // 被覆盖侧（壳层/旧界面）同样冻结为静态快照：此前只有主动画侧
+        // （推入/弹出的页面）有 RouteStaticSnapshot，壳层的淡出/淡入
+        // 全程 live 渲染——整壳 saveLayer + 壳内玻璃 BackdropFilter
+        // 逐帧重采样，是转场卡顿主源。快照包在 Fade/Slide 之内，
+        // 冻结图随转场一起淡出平移；state 稳定（不随方向重建）。
+        child: RouteStaticSnapshot(
+          animation: ReverseAnimation(secondaryAnimation),
+          child: child!,
+        ),
       ),
     );
   }
@@ -885,11 +916,13 @@ Page<void> _coverPage(
   BuildContext context,
   WidgetBuilder builder, {
   LocalKey? key,
+  String? location,
 }) {
   return _CoverPage(
     key: key,
     builder: builder,
     predictiveBack: _enablePredictiveBack(context),
+    location: location,
   );
 }
 
@@ -910,10 +943,14 @@ class _CoverPage extends Page<void> {
     super.key,
     required this.builder,
     required this.predictiveBack,
+    this.location,
   });
 
   final WidgetBuilder builder;
   final bool predictiveBack;
+
+  /// matchedLocation：主题包每页壁纸按此解析页面 id
+  final String? location;
 
   @override
   Route<void> createRoute(BuildContext context) {
@@ -921,6 +958,7 @@ class _CoverPage extends Page<void> {
       settings: this,
       builder: builder,
       predictiveBack: predictiveBack,
+      location: location,
     );
   }
 }
@@ -948,10 +986,14 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
     required super.settings,
     required this.builder,
     required this.predictiveBack,
+    this.location,
   });
 
   final WidgetBuilder builder;
   final bool predictiveBack;
+
+  /// matchedLocation：主题包每页壁纸按此解析页面 id
+  final String? location;
 
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
@@ -1037,7 +1079,11 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         return SlideTransition(
           position: Tween<Offset>(begin: begin, end: Offset.zero)
               .animate(curved),
-          child: RoutePageBackdrop(completion: animation, child: page),
+          child: RoutePageBackdrop(
+            completion: animation,
+            location: location,
+            child: page,
+          ),
         );
       },
     );
@@ -1128,7 +1174,13 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    return builder(context);
+    // 播放页不走 go_router（无 matchedLocation），按当前方向映射页面 id
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    return PageWallpaperScope(
+      pageId: landscape ? 'ls-player' : 'player',
+      child: builder(context),
+    );
   }
 
   @override
@@ -1180,10 +1232,14 @@ class _CoverBackPage extends Page<void> {
     super.key,
     required this.builder,
     required this.predictiveBack,
+    this.location,
   });
 
   final WidgetBuilder builder;
   final bool predictiveBack;
+
+  /// matchedLocation：主题包每页壁纸按此解析页面 id
+  final String? location;
 
   @override
   Route<void> createRoute(BuildContext context) {
@@ -1191,6 +1247,7 @@ class _CoverBackPage extends Page<void> {
       settings: this,
       builder: builder,
       predictiveBack: predictiveBack,
+      location: location,
     );
   }
 }
@@ -1200,10 +1257,14 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     required super.settings,
     required this.builder,
     required this.predictiveBack,
+    this.location,
   });
 
   final WidgetBuilder builder;
   final bool predictiveBack;
+
+  /// matchedLocation：主题包每页壁纸按此解析页面 id
+  final String? location;
 
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
@@ -1292,7 +1353,11 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         final transition = SlideTransition(
           position: Tween<Offset>(begin: begin, end: Offset.zero)
               .animate(curved),
-          child: RoutePageBackdrop(completion: animation, child: page),
+          child: RoutePageBackdrop(
+            completion: animation,
+            location: location,
+            child: page,
+          ),
         );
         if (phase != PredictiveBackPhase.idle) {
           return Stack(

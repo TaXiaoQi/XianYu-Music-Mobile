@@ -29,13 +29,13 @@ class SceneDelegate: FlutterSceneDelegate {
   ) {
     super.scene(scene, willConnectTo: session, options: connectionOptions)
     // 冷启动带 URL 打开：UIScene 生命周期下 URL 在 connectionOptions 里。
-    // 自有 xianyu:// 深链进分享链解析；「用其他 App 打开」的 .js 插件脚本
-    // 物化后并入同一派发链；其余 scheme（如 QQ 回调 tencent{appid}://）
-    // 由 super 转发给插件生命周期代理，不进分享链解析。
+    // 自有 xianyu:// 深链进分享链解析；「用其他 App 打开」的受支持文件
+    // （.js 插件脚本 / 音频）物化后并入同一派发链；其余 scheme（如 QQ 回调
+    // tencent{appid}://）由 super 转发给插件生命周期代理，不进分享链解析。
     if let url = connectionOptions.urlContexts.first?.url {
       if url.scheme == "xianyu" {
         SceneDelegate.pendingURL = url.absoluteString
-      } else if let link = Self.deepLinkForOpenedPluginFile(url) {
+      } else if let link = Self.deepLinkForOpenedFile(url) {
         SceneDelegate.pendingURL = link
       }
     }
@@ -52,13 +52,13 @@ class SceneDelegate: FlutterSceneDelegate {
   // FlutterSceneDelegate 已实现）会把全部 URL 扇出给插件生命周期代理
   // （FlutterPluginSceneLifeCycleDelegate），tencent_kit 据此接收 QQ 分享回调
   // （tencent{appid}:// scheme 与 /qq_conn/ Universal Link）。
-  // 自有通道只接 xianyu:// 深链与「用其他 App 打开」的 .js 插件脚本，
-  // 避免 QQ 回调误入分享深链解析。
+  // 自有通道只接 xianyu:// 深链与「用其他 App 打开」的受支持文件
+  // （.js 插件脚本 / 音频），避免 QQ 回调误入分享深链解析。
   override func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
     super.scene(scene, openURLContexts: URLContexts)
     guard let url = URLContexts.first?.url else { return }
     ensureChannel()
-    if let link = Self.deepLinkForOpenedPluginFile(url) {
+    if let link = Self.deepLinkForOpenedFile(url) {
       dispatchDeepLink(link)
       return
     }
@@ -75,14 +75,16 @@ class SceneDelegate: FlutterSceneDelegate {
     }
   }
 
-  /// 系统把 .js 插件脚本交给本应用打开（文件 App「分享/用其他 App 打开」，经
-  /// Info.plist CFBundleDocumentTypes 声明 com.netscape.javascript-source）：
-  /// 物化到沙盒 tmp（沙盒外文件被移动/删除后副本仍可用），封装成与 Android 端
-  /// MainActivity 同构的 xianyu://open?target=plugin 深链，复用 Dart 导入管线。
-  /// 非 .js 文件返回 nil，交回原有 scheme 分流。
-  static func deepLinkForOpenedPluginFile(_ url: URL) -> String? {
-    guard url.isFileURL,
-          url.lastPathComponent.lowercased().hasSuffix(".js") else { return nil }
+  /// 系统把受支持文件交给本应用打开（文件 App「分享/用其他 App 打开」，经
+  /// Info.plist CFBundleDocumentTypes 声明）：物化到沙盒 tmp（沙盒外文件被
+  /// 移动/删除后副本仍可用），按类型封装成与 Android 端 MainActivity 同构的
+  /// xianyu://open 深链，复用 Dart 派发管线：
+  /// - .js 插件脚本 → target=plugin（导入插件）；
+  /// - 音频文件 → target=file（直接播放）。
+  /// 非受支持文件返回 nil，交回原有 scheme 分流。
+  static func deepLinkForOpenedFile(_ url: URL) -> String? {
+    let ext = url.pathExtension.lowercased()
+    guard ext == "js" || Self.audioExtensions.contains(ext) else { return nil }
     let name = url.lastPathComponent
     let dest = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
     try? FileManager.default.removeItem(at: dest)
@@ -96,8 +98,16 @@ class SceneDelegate: FlutterSceneDelegate {
     func enc(_ s: String) -> String {
       s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s
     }
-    return "xianyu://open?target=plugin&name=\(enc(name))&file=\(enc(dest.path))"
+    let target = ext == "js" ? "plugin" : "file"
+    return "xianyu://open?target=\(target)&name=\(enc(name))&file=\(enc(dest.path))"
   }
+
+  /// 音频扩展名集合：与桌面端文件关联清单（audioFileAssociations.ts /
+  /// file_assoc.rs AUDIO_EXTENSIONS）对齐，另含 Android 端 intent-filter
+  /// 已注册的 opus。iOS 侧声明见 Info.plist CFBundleDocumentTypes。
+  private static let audioExtensions: Set<String> = [
+    "aac", "aif", "aiff", "flac", "m4a", "m4b", "mp3", "mp4", "oga", "ogg", "opus", "wav",
+  ]
 
   /// Universal Link（QQ 分享回调 /qq_conn/ 路径）：转发插件生命周期代理。
   /// 冷启动经 UL 拉起时 connectionOptions.userActivities 由 super 自行处理。

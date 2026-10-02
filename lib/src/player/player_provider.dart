@@ -19,6 +19,7 @@ import '../core/app_logger.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
+import '../download/download_provider.dart';
 import '../effects/sound_effect_provider.dart';
 import '../favorites/favorites_provider.dart';
 import '../home/home_providers.dart';
@@ -86,7 +87,11 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     if (url != null && url.isNotEmpty) {
       final cached = artCache[url];
       if (cached != null && File(cached).existsSync()) return Uri.file(cached);
-      return Uri.tryParse(url);
+      final art = _artFileCache[url];
+      if (art != null && File(art).existsSync()) return Uri.file(art);
+      // 需代理的 CDN 不交 http URL：避免直连低清图与高清物化结果竞态。
+      if (!CoverProxy.needsProxy(url)) return Uri.tryParse(url);
+      return null;
     }
     final local = item.coverPath;
     if (local != null &&
@@ -112,7 +117,10 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
         if (File(cached).existsSync()) return Uri.file(cached);
         _artFileCache.remove(url);
       }
-      return Uri.tryParse(url);
+      // 需代理的 CDN 不交 http URL：系统直连下载既无 Referer 易 403，
+      // 又可能与随后落盘的高清封面竞态（低清结果后到会覆盖通知）。
+      if (!CoverProxy.needsProxy(url)) return Uri.tryParse(url);
+      return null;
     }
     final local = item.coverPath;
     if (local != null &&
@@ -137,6 +145,35 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     );
   }
 
+  /// 把常见 CDN 的缩略图 URL 升级为高清候选；认不出的规则返回 null
+  /// （视为已是原图）。只做可安全升级的替换，失败由调用方回退原 URL。
+  String? _hdCoverUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    final host = uri.host;
+    // 网易云：?param=200y200 → 1024y1024（官方图片服务参数，超原图上限自动适配）
+    if (host.endsWith('126.net') || host.endsWith('163.com')) {
+      final param = uri.queryParameters['param'];
+      if (param != null && RegExp(r'^\d+y\d+$').hasMatch(param)) {
+        return uri
+            .replace(queryParameters: <String, String>{
+              ...uri.queryParameters,
+              'param': '1024y1024',
+            })
+            .toString();
+      }
+      return null;
+    }
+    // 酷我 / 咪咕：路径中的尺寸段（/300x300/、/W300h300/）删掉即为原图
+    if (host.endsWith('kuwo.cn') || host.endsWith('migu.cn')) {
+      final cleaned = url
+          .replaceFirst(RegExp(r'/\d+x\d+/'), '/')
+          .replaceFirst(RegExp(r'/[Ww]\d+[Hh]\d+/'), '/');
+      return cleaned == url ? null : cleaned;
+    }
+    return null;
+  }
+
   Future<void> _materializeOnlineArt(QueueItem item) async {
     if (!Platform.isAndroid) return;
     final url = item.coverUrl;
@@ -148,7 +185,10 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     }
     if (!_artMaterializing.add(url)) return;
     try {
-      final bytes = await CoverProxy.fetch(url);
+      // 优先拉高清候选，失败再回退原 URL；落盘 key 仍用原 URL 的哈希。
+      final hd = _hdCoverUrl(url);
+      var bytes = hd == null ? null : await CoverProxy.fetch(hd);
+      bytes ??= await CoverProxy.fetch(url);
       if (bytes == null || bytes.isEmpty) return;
       final dir = await getTemporaryDirectory();
       final key = md5.convert(utf8.encode(url)).toString();
@@ -295,6 +335,22 @@ class QueueItem {
       path.startsWith('lx://') ||
       path.startsWith('plugin://') ||
       onlineInfoJson != null;
+
+  /// 本地优先：播链歌已下载到本地时，把播放源换成对应本地文件。
+  /// 清空在线信息使 isOnline 判定走本地播放管线（不再在线解析），
+  /// 保留标题/歌手/专辑/封面等展示元数据；队列里的播链原样保留，
+  /// 本地文件被清理后重新播放会回退在线。
+  QueueItem withLocalFile(String filePath) => QueueItem(
+        path: filePath,
+        title: title,
+        artist: artist,
+        album: album,
+        durationMs: durationMs,
+        coverUrl: coverUrl,
+        coverPath: coverPath,
+        fromDailyRecommend: fromDailyRecommend,
+        lyricUrl: lyricUrl,
+      );
 
   QueueItem copyWith({String? coverPath}) => QueueItem(
         path: path,
@@ -536,6 +592,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   DateTime? _lastAutoSwitchAt;
   String? _lastAutoSwitchPath;
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
+  final Set<String> _onlineReSearchDone = {};
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
   double? _replayAnchorSecs;
@@ -564,6 +621,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   bool _currentPlayCountRecorded = false;
   final Map<String, String> _notifCoverCache = {};
   final Map<String, Future<String>> _notifCoverPending = {};
+  // 本地歌通知封面高清化：path → 内嵌原图缓存文件（Rust get_song_cover 产物）。
+  final Map<String, String> _hdCoverCache = {};
+  final Set<String> _hdCoverPending = {};
   final Set<String> _preloadedCovers = {};
   bool _notifPermissionAsked = false;
 
@@ -765,6 +825,19 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _ref.listen(favoritesProvider, (_, _) {
       _syncToSystemMediaSession();
     });
+    // 下载完成联运：正在播的在线歌被下载完成 → 无缝换本地源（保进度续播）。
+    // 只在 history 新增 songPath 命中当前曲目时触发，重播/删除不触发。
+    _ref.listen(
+      downloadProvider
+          .select((s) => s.history.map((h) => h.songPath).toSet()),
+      (prev, next) {
+        if (prev == null || next.length <= prev.length) return;
+        final cur = state.current;
+        if (cur == null || !cur.isOnline) return;
+        if (!next.contains(cur.path) || prev.contains(cur.path)) return;
+        unawaited(_switchCurrentToLocalAfterDownload());
+      },
+    );
     _ref.listen(volumeProvider, (_, v) {
       try {
         _player.setVolume(_effectiveVolume());
@@ -1266,16 +1339,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (cur != null) {
       var item = cur;
       if (!cur.isOnline && cur.coverUrl?.isNotEmpty != true) {
-        final cp = cur.coverPath;
-        final coverPathLive = cp != null &&
-            cp.isNotEmpty &&
-            !cp.startsWith('http') &&
-            File(cp).existsSync();
-        if (!coverPathLive) {
-          final cached = _notifCoverCache[cur.path];
-          if (cached != null && cached.isNotEmpty) {
-            item = cur.copyWith(coverPath: cached);
+        final hd = _hdCoverCache[cur.path];
+        if (hd != null && hd.isNotEmpty && File(hd).existsSync()) {
+          // 内嵌原图（高清）：锁屏/通知放大展示不糊。
+          item = cur.copyWith(coverPath: hd);
+        } else {
+          final cp = cur.coverPath;
+          final coverPathLive = cp != null &&
+              cp.isNotEmpty &&
+              !cp.startsWith('http') &&
+              File(cp).existsSync();
+          if (!coverPathLive) {
+            final cached = _notifCoverCache[cur.path];
+            if (cached != null && cached.isNotEmpty) {
+              item = cur.copyWith(coverPath: cached);
+            }
           }
+          // 缩略图先行占位，同时异步提取内嵌原图，完成后重推。
+          unawaited(_materializeLocalHdCover(cur));
         }
       }
       audioHandler?.syncMediaItem(item, state.duration);
@@ -1312,6 +1393,32 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       await fut;
     } finally {
       _notifCoverPending.remove(item.path);
+    }
+  }
+
+  /// 提取本地歌内嵌原图（getSongCover，带 Rust 侧缓存/负缓存/信号量），
+  /// 完成后若仍是当前曲目则重推媒体会话，通知/锁屏展示高清封面。
+  Future<void> _materializeLocalHdCover(QueueItem item) async {
+    if (_hdCoverPending.contains(item.path)) return;
+    if (_hdCoverCache.containsKey(item.path)) return;
+    _hdCoverPending.add(item.path);
+    try {
+      final dbPath = await _ref.read(dbPathProvider.future);
+      final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+      final p = await getSongCover(
+        dbPath: dbPath,
+        cacheRoot: cacheRoot,
+        path: item.path,
+      );
+      if (p.isEmpty) return;
+      _hdCoverCache[item.path] = p;
+      if (state.current?.path == item.path) {
+        _syncToSystemMediaSession();
+      }
+    } catch (_) {
+      // 提取失败保持缩略图占位，下次播放重新尝试。
+    } finally {
+      _hdCoverPending.remove(item.path);
     }
   }
 
@@ -1640,6 +1747,29 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
+  /// 正在播的在线歌刚下载完成：保进度换本地源。
+  /// 走 _playAt 重分派（会命中本地优先总闸）；暂停中切源后维持暂停。
+  Future<void> _switchCurrentToLocalAfterDownload() async {
+    final cur = state.current;
+    if (cur == null || !cur.isOnline) return;
+    final local = await _ref
+        .read(downloadProvider.notifier)
+        .localFileFor(cur.path);
+    if (local == null) return;
+    final pos = state.position;
+    final playing = state.isPlaying;
+    final idx = state.queueIndex;
+    AppLog.info('play',
+        '[download-switch] ${cur.title} 下载完成，切本地源 $local @${pos.toStringAsFixed(1)}s');
+    if (idx < 0 || idx >= state.queue.length) return;
+    await _playAt(idx, startAtSecs: pos, continueStatsSession: true);
+    if (!playing && state.isPlaying) {
+      try {
+        await _pauseForInterruption();
+      } catch (_) {}
+    }
+  }
+
   Future<void> _playAt(
     int index, {
     double startAtSecs = 0,
@@ -1663,7 +1793,25 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
     _restoredOnlinePending = null;
     _restoredLocalPending = null;
-    final item = state.queue[index];
+    var item = state.queue[index];
+    // 本地优先总闸（对齐桌面端下载联运）：在线歌已下载且本地文件仍在
+    // → 直接换本地源，不再走在线解析；未下载的歌零磁盘 IO。
+    // 队列里的播链不动，本地文件被清理后自然回退在线。
+    // 精确播链键未命中时再走跨源模糊匹配（同一首歌其他源的本地文件）。
+    if (item.isOnline) {
+      final dl = _ref.read(downloadProvider.notifier);
+      var local = await dl.localFileFor(item.path);
+      local ??= await dl.localFileFuzzyFor(
+        title: item.title,
+        artist: item.artist,
+        durationMs: item.durationMs,
+        excludeSongPath: item.path,
+      );
+      if (local != null && local != item.path) {
+        AppLog.info('play', '[local-first] ${item.title} -> $local');
+        item = item.withLocalFile(local);
+      }
+    }
     if (item.isOnline &&
         _skipDepth < state.queue.length &&
         _isOnlineSourceFailed(item)) {
@@ -1840,6 +1988,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         state = state.copyWith(error: msg);
         _syncToSystemMediaSession();
         rethrow;
+      }
+      if (item.isOnline &&
+          !_shareLinkPlayback &&
+          _skipDepth < state.queue.length) {
+        final recovered = await _reSearchOnlineSource(item);
+        if (recovered) {
+          _shareLinkPlayback = false;
+          return;
+        }
       }
       if (item.isOnline && _skipDepth < state.queue.length) {
         final allowSwitch = !_shareLinkPlayback
@@ -2556,6 +2713,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return result;
   }
 
+  static String _normSongText(String input) {
+    var s = input.toLowerCase();
+    s = s.replaceAll(RegExp(r'[（(【\[][^）)】\]]*[）)】\]]'), '');
+    s = s.replaceAll(RegExp(r"[\s'’`·・~～!！?？.。,，、]"), '');
+    return s.trim();
+  }
+
+  static String _firstArtistOf(String artist) {
+    final parts = artist.split(RegExp(r'[/、,&]'));
+    return parts.isEmpty ? '' : parts.first.trim();
+  }
+
+  static int _intervalStrToMs(String interval) {
+    final m = RegExp(r'^(\d+):(\d+)$').firstMatch(interval.trim());
+    if (m == null) return 0;
+    return (int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!)) * 1000;
+  }
+
   static List<String> _lowerQualityChain(
     String current,
     List<String> candidates,
@@ -3213,6 +3388,186 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         '320k';
     final fb = s?.onlineQualityFallbackBehavior ?? 'lower';
     return _tryLxResolve(infoJson, _qualityCandidates(preferred, fb));
+  }
+
+  /// 在线歌曲起播失败后（日推/歌单导入/收藏等快照类歌曲均适用），
+  /// 不依赖入库时的插件快照换源，而是用「歌名+歌手」实时重搜当前
+  /// 可用插件，用新结果解析播放。
+  Future<bool> _reSearchOnlineSource(QueueItem item) async {
+    final songKey = '${item.title}|${item.artist}';
+    if (_onlineReSearchDone.contains(songKey)) return false;
+    if (item.title.trim().isEmpty) return false;
+    if (state.current?.path != item.path) return false;
+    _onlineReSearchDone.add(songKey);
+    if (_onlineReSearchDone.length > 64) {
+      _onlineReSearchDone.remove(_onlineReSearchDone.first);
+    }
+
+    var failedPluginId = '';
+    final failedJson = item.onlineSongJson;
+    if (failedJson != null && failedJson.isNotEmpty) {
+      try {
+        failedPluginId =
+            ((jsonDecode(failedJson) as Map<String, dynamic>)['pluginId']
+                    as String?) ??
+                '';
+      } catch (_) {}
+    }
+
+    AppLog.info('autoswitch', '重搜换源: ${item.title}');
+    try {
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final sources = (await engine.store.loadSources())
+          .where((s) => s.id != failedPluginId)
+          .toList();
+      final playable = <PluginSource>[];
+      for (final s in sources) {
+        if (await engine.canPlayMusic(s)) playable.add(s);
+      }
+      if (playable.isEmpty) return false;
+
+      final keyword = item.artist.trim().isEmpty
+          ? item.title.trim()
+          : '${item.title.trim()} ${item.artist.trim()}';
+      final normTitle = _normSongText(item.title);
+      final normArtist = _normSongText(_firstArtistOf(item.artist));
+
+      Future<List<PluginSearchResult>> searchOne(PluginSource plugin) async {
+        try {
+          if (plugin.format.isMfCompatible) {
+            return await PluginCatalogService(engine, [plugin])
+                .searchMusic(plugin, keyword, limit: 10)
+                .timeout(const Duration(seconds: 8));
+          }
+          for (final key
+              in (plugin.sources.isEmpty ? const ['default'] : plugin.sources)) {
+            try {
+              final r = await engine
+                  .searchInPlugin(plugin, key, keyword, limit: 10)
+                  .timeout(const Duration(seconds: 8));
+              if (r.isNotEmpty) return r;
+            } catch (_) {}
+          }
+        } catch (_) {}
+        return const [];
+      }
+
+      final searchResults = await Future.wait(
+          [for (final p in playable) searchOne(p)]);
+
+      final candidates = <(PluginSource, PluginSearchResult)>[];
+      for (var i = 0; i < playable.length; i++) {
+        for (final r in searchResults[i]) {
+          if (_normSongText(r.name) != normTitle) continue;
+          final ra = _normSongText(_firstArtistOf(r.singer));
+          if (ra.isEmpty ||
+              normArtist.isEmpty ||
+              !(ra.contains(normArtist) || normArtist.contains(ra))) {
+            continue;
+          }
+          candidates.add((playable[i], r));
+          break;
+        }
+        if (candidates.length >= 4) break;
+      }
+
+      final settings = _ref.read(settingsProvider).valueOrNull;
+      final preferred = _sessionQualityOverride ??
+          settings?.onlineDefaultQuality ??
+          item.onlineQuality ??
+          '320k';
+      final fb = settings?.onlineQualityFallbackBehavior ?? 'lower';
+      final qualityChain = _qualityCandidates(preferred, fb);
+
+      for (final (plugin, r) in candidates) {
+        final song = r.toJson();
+        final isMf = plugin.format.isMfCompatible;
+        final cover = resolveSongCoverUrl(song) ?? r.img;
+        final newItem = isMf
+            ? QueueItem(
+                path: 'plugin://${plugin.id}/${r.songmid}',
+                title: r.name,
+                artist: r.singer,
+                album: r.albumName,
+                durationMs: _intervalStrToMs(r.interval),
+                coverUrl: cover,
+                onlineSongJson: jsonEncode({
+                  'pluginId': plugin.id,
+                  'format': plugin.format.value,
+                  'musicInfo': song,
+                }),
+                onlineQuality: preferred,
+              )
+            : QueueItem(
+                path: 'lx://${r.source}/${r.songmid}',
+                title: r.name,
+                artist: r.singer,
+                album: r.albumName,
+                durationMs: _intervalStrToMs(r.interval),
+                coverUrl: cover,
+                onlineSongJson: jsonEncode({
+                  'pluginId': plugin.id,
+                  'format': plugin.format.value,
+                  'source': r.source,
+                  'musicInfo': song,
+                }),
+                onlineQuality: preferred,
+                source: r.source,
+                onlineInfoJson: jsonEncode(song),
+              );
+
+        ResolvedMediaUrl? url;
+        try {
+          if (isMf) {
+            url = await engine
+                .getMusicFreeUrl(plugin, song,
+                    preferred: preferred, fallback: fb)
+                .timeout(const Duration(seconds: 10));
+          } else {
+            url = await _tryLxResolve(jsonEncode(song), qualityChain);
+          }
+        } catch (_) {}
+        if (url == null || !_isPlayableUrl(url.url)) continue;
+        if (state.current?.path != item.path) return false;
+
+        final idx = state.queueIndex;
+        final queue = [...state.queue];
+        if (idx >= 0 && idx < queue.length) queue[idx] = newItem;
+        state = state.copyWith(
+          queue: queue,
+          current: newItem,
+          isPlaying: false,
+          resolving: true,
+          position: 0,
+          duration: newItem.durationMs / 1000.0,
+          error: null,
+        );
+        _syncToSystemMediaSession();
+        try {
+          state = state.copyWith(resolving: false);
+          await _startOnlineUrl(url.url,
+              headers: url.headers, item: newItem, ekey: url.ekey, cek: url.cek);
+        } catch (_) {
+          continue;
+        }
+        _skipDepth = 0;
+        state = state.copyWith(resolving: false, error: null);
+        _currentPlayCountRecorded = false;
+        _accumulatedTime = 0;
+        _recordRecentPlay(newItem);
+        _recordHistory(newItem);
+        _reportBehavior(newItem, 'play', 0);
+        _trackStartTime = DateTime.now();
+        _syncToSystemMediaSession();
+        AppLog.info('autoswitch', '重搜换源命中: ${plugin.name}');
+        _showPlaybackToast(
+            tr('已切换到 {source} 音源', {'source': plugin.name}));
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {

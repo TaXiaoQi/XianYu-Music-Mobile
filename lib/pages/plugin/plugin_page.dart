@@ -42,6 +42,10 @@ class _PluginPageState extends ConsumerState<PluginPage>
   bool _togglingAll = false;
   bool _savingAutoUpdate = false;
 
+  // 在线链接安装的取消状态与进度小黑条句柄（弹窗返回/取消键触发终止）
+  bool _urlInstallCancelled = false;
+  XianYuProgressToastHandle? _urlInstallProgress;
+
   final _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -443,7 +447,11 @@ class _PluginPageState extends ConsumerState<PluginPage>
   Future<void> _showUrlInstallSheet() async {
     await showSheetDialog<void>(
       context,
-      (ctx) => _UrlInstallSheet(onInstallUrl: (url) => _installUrl(url)),
+      (ctx) => _UrlInstallSheet(
+        onInstallUrl: (url) => _installUrl(url),
+        // 安装中返回/取消 = 终止导入：立即收起进度小黑条并中止后续步骤
+        onCancel: _cancelUrlInstall,
+      ),
     );
   }
 
@@ -511,7 +519,9 @@ class _PluginPageState extends ConsumerState<PluginPage>
   /// 返回 null 表示成功（关弹窗）；返回错误文案以便弹窗保留输入状态重试
   Future<String?> _installUrl(String url) async {
     if (url.trim().isEmpty) return tr('链接不能为空');
+    _urlInstallCancelled = false;
     final progress = showXianYuProgressToast(context, tr('正在导入插件...'));
+    _urlInstallProgress = progress;
     setState(() => _installing = true);
     try {
       final result = await ref
@@ -519,6 +529,7 @@ class _PluginPageState extends ConsumerState<PluginPage>
           .installFromUrl(
             url,
             onProgress: (msg, p) => progress.update(msg, progress: p),
+            cancelled: () => _urlInstallCancelled,
           );
       if (!mounted) return null;
       if (result.success) {
@@ -532,6 +543,9 @@ class _PluginPageState extends ConsumerState<PluginPage>
       final msg = tr('所有插件安装失败{detail}', {'detail': detail});
       progress.fail(msg);
       return msg;
+    } on PluginInstallCancelled {
+      // 用户已取消：弹窗与小黑条均已收起，静默终止，不再弹失败提示
+      return null;
     } catch (e) {
       if (!mounted) return null;
       final msg = e is PluginEngineException ? e.message : e.toString();
@@ -541,6 +555,12 @@ class _PluginPageState extends ConsumerState<PluginPage>
     } finally {
       if (mounted) setState(() => _installing = false);
     }
+  }
+
+  void _cancelUrlInstall() {
+    _urlInstallCancelled = true;
+    // 立即收起进度小黑条：取消后台安装的收尾由 cancelled 检查点兜底
+    _urlInstallProgress?.close();
   }
 
   Future<void> _install(String script, String name) async {
@@ -1547,8 +1567,14 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
 }
 
 class _UrlInstallSheet extends StatefulWidget {
-  const _UrlInstallSheet({required this.onInstallUrl});
+  const _UrlInstallSheet({
+    required this.onInstallUrl,
+    this.onCancel,
+  });
   final Future<String?> Function(String url) onInstallUrl;
+
+  /// 安装进行中用户返回/点取消时触发：终止后台导入并收起进度小黑条
+  final VoidCallback? onCancel;
 
   @override
   State<_UrlInstallSheet> createState() => _UrlInstallSheetState();
@@ -1568,6 +1594,9 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   Future<void> _installFromUrl() async {
     final url = _urlCtrl.text.trim();
     if (url.isEmpty || _loading) return;
+    // 点击安装先主动失焦：输入框 autofocus 拿走的焦点若残留到弹窗
+    // 关闭转场之后，键盘会被再次拉起；统一在发起安装时收起键盘
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _loading = true;
       _error = null;
@@ -1577,7 +1606,7 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
     if (error == null) {
       Navigator.pop(context);
     } else {
-      // 失败：保留已输入链接与键盘状态，错误原因显示在弹窗内便于重试
+      // 失败：保留已输入链接便于重试（键盘已随失焦收起，错误原因显示在弹窗内）
       setState(() {
         _loading = false;
         _error = error;
@@ -1588,7 +1617,13 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
+    return PopScope(
+      // 安装中允许返回，但返回语义 = 取消导入（终止后台安装并收起小黑条），
+      // 避免出现“弹窗已关、导入仍在跑、小黑条永不消失且无法取消”的死状态
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop && _loading) widget.onCancel?.call();
+      },
+      child: SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         child: Column(
@@ -1626,7 +1661,10 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    if (_loading) widget.onCancel?.call();
+                    Navigator.pop(context);
+                  },
                   child:   Text(tr('取消')),
                 ),
                 const SizedBox(width: 8),
@@ -1645,6 +1683,7 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

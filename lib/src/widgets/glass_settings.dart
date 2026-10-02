@@ -15,6 +15,33 @@ bool wallpaperGlassActive(WidgetRef ref) =>
     ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.customBackground.active ?? false));
 
+/// 材质是否实际在渲染：毛玻璃或液态玻璃任一开启且未开性能优先。
+/// 离屏缓存（路由快照/chrome 缓存帧/液态预烘焙）与渲显分离（0.01 保底
+/// 绘制等玻璃管线配套技术）只在该状态下启用；实底与纯壁纸色块直接
+/// 渲染，无 backdrop 采样，无需任何保底
+bool glassMaterialActive(WidgetRef ref) {
+  if (ref.watch(settingsProvider.select(
+      (s) => performancePriority(s.valueOrNull ?? const AppSettings())))) {
+    return false;
+  }
+  return ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.frostedGlass ?? false)) ||
+      ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.liquidGlass ?? false));
+}
+
+/// 材质隐藏期间的最低透明度保底档：液态 shader 整层停绘后重显首帧
+/// backdrop 采样未就绪会闪黑，需 0.01 保温；毛玻璃是普通 blur 无此
+/// 问题，归零停绘——淡入首绘发生在极低 alpha（不可见），避免
+/// Opacity saveLayer 内首帧重采样闪白（pop 方向闪白的修复）
+double glassHiddenOpacityFloor(WidgetRef ref) {
+  if (!glassMaterialActive(ref)) return 0.0;
+  return ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.liquidGlass ?? false))
+      ? 0.01
+      : 0.0;
+}
+
 Color wallpaperBlockFill(BuildContext context, WidgetRef ref) {
   final cb =
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.customBackground));
@@ -54,6 +81,16 @@ double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
 
 /// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
 const double kNavSurfaceBlurSigma = 16.0;
+
+/// 共享 backdrop 回读组：同 key 的 BackdropFilter 由引擎合并为单次
+/// 模糊+回读（要求成员 sigma 相同且屏幕区域互不重叠）。毛玻璃下顶栏/
+/// 底栏/播放条逐帧各做一次全宽 backdrop 回读是转场逐帧掉帧主源，
+/// 合并后每帧 N 次回读降为 1 次
+final BackdropKey navGlassKey = BackdropKey();
+
+/// 卡片级毛玻璃共享组（frostedCardSurface 非壁纸档恒 8*档位，
+/// 列表卡片互不重叠）
+final BackdropKey cardGlassKey = BackdropKey();
 
 /// 导航面（悬浮导航/mini 播放条/appbar 等）随档位缩放的模糊强度
 double navSurfaceBlurSigma(WidgetRef ref) =>
@@ -111,11 +148,18 @@ Widget frostedCardSurface({
       : 8.0 * frostedBlurScale(ref);
   if (solid) return surface;
   if (sigma <= 0) return surface;
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: cheapBackdropBlur(sigma),
-      child: surface,
+  // 滚动档不降载：live backdrop 上矩阵降采样链在 Impeller 渲染异常
+  // （滚动中模糊失效读作变透明），且毛玻璃 sigma 小、模糊开销∝σ²，
+  // 恒用与静置一致的普通 blur 保证观感稳定
+  // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  return RepaintBoundary(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        backdropGroupKey: cardGlassKey,
+        child: surface,
+      ),
     ),
   );
 }
@@ -328,11 +372,14 @@ Widget pseudoLiquidSurface({
   );
   if (solid) return surface;
   if (sigma <= 0) return surface;
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: cheapBackdropBlur(sigma),
-      child: surface,
+  // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  return RepaintBoundary(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: surface,
+      ),
     ),
   );
 }

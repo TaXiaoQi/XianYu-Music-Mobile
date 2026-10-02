@@ -164,34 +164,6 @@ class PluginCatalogService {
 
   // ==================== 歌单 ====================
 
-  Future<List<PluginSearchResult>> getMusicSheetInfo(
-      PluginSource source, Map<String, dynamic> item,
-      {int page = 1}) async {
-    final imported = _importedTracksOf(item);
-    if (imported != null) {
-      if (page != 1) return const [];
-      return _maybeFillQqDurations(
-          source,
-          imported
-              .map((e) => mfItemToSearchResult(e, source))
-              .where((r) => r.name.isNotEmpty)
-              .toList());
-    }
-    final methods = await _availableMethods(source);
-    if (methods.contains('getMusicSheetInfo')) {
-      final list =
-          await _tryCallList(source, 'getMusicSheetInfo', [item, page]);
-      if (list.isNotEmpty) return _maybeFillQqDurations(source, list);
-    }
-    if (page == 1 && methods.contains('search')) {
-      final title = _stripHtml(item['title'] ?? item['name'] ?? '');
-      if (title.isNotEmpty) {
-        return _tryCallList(source, 'search', [title, 1, 'music']);
-      }
-    }
-    return const [];
-  }
-
   Future<({List<PluginSearchResult> songs, bool? isEnd})> getMusicSheetInfoWithEnd(
       PluginSource source, Map<String, dynamic> item,
       {int page = 1}) async {
@@ -608,33 +580,48 @@ class PluginCatalogService {
     return albums.where((a) => a.name.isNotEmpty).toList();
   }
 
-  Future<List<PluginSearchResult>> getAlbumSongs(
-      PluginSource source, Map<String, dynamic> item, {int page = 1}) async {
+  /// 专辑曲目。不截断数量（小说类专辑可达数千条），isEnd 取插件返回值，
+  /// 插件未返回时为 null，由调用方按页大小兜底。
+  Future<({List<PluginSearchResult> songs, bool? isEnd})> getAlbumSongs(
+      PluginSource source, Map<String, dynamic> item,
+      {int page = 1}) async {
     final methods = await _availableMethods(source);
     if (!methods.contains('getAlbumInfo')) {
       if (methods.contains('search')) {
         final title = _stripHtml(item['title'] ?? item['name'] ?? item['album'] ?? '');
         if (title.isNotEmpty) {
-          return _tryCallList(source, 'search', [title, 1, 'music']);
+          final songs = await _tryCallList(source, 'search', [title, 1, 'music']);
+          return (songs: songs, isEnd: true);
         }
       }
-      return const [];
+      return (songs: const <PluginSearchResult>[], isEnd: true);
     }
     final req = Map<String, dynamic>.from(item);
     final albumMid = req['albumMID'] ?? req['albummid'] ?? req['albumMid'];
     if (albumMid != null && req['albumMID'] == null) {
       req['albumMID'] = albumMid;
     }
-    final list = await _tryCallList(source, 'getAlbumInfo', [req, page]);
-    if (list.isNotEmpty) return _maybeFillQqDurations(source, list);
-    if (isQqMusicPluginSource(source, _platformOf(source))) {
-      final mid = (albumMid ?? '').toString();
-      if (mid.isNotEmpty) {
-        return _maybeFillQqDurations(
-            source, await qqHostAlbumSongsFallback(source, mid, page: page));
+    final raw = await _tryCallRaw(source, 'getAlbumInfo', [req, page]);
+    var songs = const <PluginSearchResult>[];
+    bool? isEnd;
+    if (raw != null) {
+      final rawList = extractMfResultList(raw);
+      if (rawList.isNotEmpty) {
+        songs = rawList
+            .map((e) => mfItemToSearchResult(e, source))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+        isEnd = extractMfIsEnd(raw);
       }
     }
-    return const [];
+    if (songs.isEmpty && isQqMusicPluginSource(source, _platformOf(source))) {
+      final mid = (albumMid ?? '').toString();
+      if (mid.isNotEmpty) {
+        songs = await qqHostAlbumSongsFallback(source, mid, page: page);
+        isEnd = songs.length < 30;
+      }
+    }
+    return (songs: await _maybeFillQqDurations(source, songs), isEnd: isEnd);
   }
 
   // ==================== 单曲搜索（MusicFree） ====================

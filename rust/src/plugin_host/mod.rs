@@ -62,6 +62,9 @@ pub struct EngineLoadResult {
     pub error: Option<String>,
     pub metadata: Option<serde_json::Value>,
     pub logs: Vec<EngineLog>,
+    /// LX 插件自报更新（updateAlert）待处理载荷，非空时随结果送达前端。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lx_update_alerts: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -71,6 +74,9 @@ pub struct EngineCallResult {
     pub error: Option<String>,
     pub data: Option<serde_json::Value>,
     pub logs: Vec<EngineLog>,
+    /// LX 插件自报更新（updateAlert）待处理载荷，非空时随结果送达前端。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lx_update_alerts: Option<Vec<serde_json::Value>>,
 }
 
 pub struct PluginInstance {
@@ -96,6 +102,8 @@ pub struct PluginEngine {
     http: Arc<HttpBridge>,
     store: Arc<PluginStore>,
     instances: AsyncMutex<HashMap<String, Arc<PluginInstance>>>,
+    /// LX 插件自报更新待处理队列（桥写入，load/call 结果取走送达前端）。
+    pending_lx_alerts: Arc<StdMutex<Vec<serde_json::Value>>>,
 }
 
 fn now_ms() -> i64 {
@@ -129,6 +137,7 @@ fn load_err(error: String) -> EngineLoadResult {
         error: Some(error),
         metadata: None,
         logs: Vec::new(),
+        lx_update_alerts: None,
     }
 }
 
@@ -138,6 +147,7 @@ fn call_err(error: String, logs: Vec<EngineLog>) -> EngineCallResult {
         error: Some(error),
         data: None,
         logs,
+        lx_update_alerts: None,
     }
 }
 
@@ -204,8 +214,31 @@ fn register_bridges<'js>(
     store: &Arc<PluginStore>,
     logs: &Arc<StdMutex<Vec<EngineLog>>>,
     current_call: &Arc<AtomicU64>,
+    plugin_id: &str,
+    pending_lx_alerts: &Arc<StdMutex<Vec<serde_json::Value>>>,
 ) -> rquickjs::Result<()> {
     let globals = ctx.globals();
+
+    // ---- __xyNativeUpdateAlert(json) 同步（LX 插件自报更新，入待处理队列）----
+    {
+        let plugin_id = plugin_id.to_string();
+        let pending = pending_lx_alerts.clone();
+        let f = Function::new(ctx.clone(), move |json: String| {
+            if let Ok(mut payload) = serde_json::from_str::<serde_json::Value>(&json) {
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert(
+                        "pluginId".to_string(),
+                        serde_json::Value::String(plugin_id.clone()),
+                    );
+                    let mut guard = pending.lock().unwrap();
+                    if guard.len() < 16 {
+                        guard.push(payload);
+                    }
+                }
+            }
+        })?;
+        globals.set("__xyNativeUpdateAlert", f)?;
+    }
 
     // ---- __xyNativeLog(level, message) 同步 ----
     {
@@ -527,11 +560,22 @@ impl PluginEngine {
             http,
             store,
             instances: AsyncMutex::new(HashMap::new()),
+            pending_lx_alerts: Arc::new(StdMutex::new(Vec::new())),
         }
     }
 
     pub fn store(&self) -> &Arc<PluginStore> {
         &self.store
+    }
+
+    /// 取走并清空待送达的 LX 自报更新载荷（无则返回 None）。
+    fn drain_pending_lx_alerts(&self) -> Option<Vec<serde_json::Value>> {
+        let mut guard = self.pending_lx_alerts.lock().unwrap();
+        if guard.is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut *guard))
+        }
     }
 
     async fn destroy(&self, plugin_id: &str) {
@@ -569,12 +613,14 @@ impl PluginEngine {
         ctx: &AsyncContext,
         logs: &Arc<StdMutex<Vec<EngineLog>>>,
         current_call: &Arc<AtomicU64>,
+        plugin_id: &str,
+        pending_lx_alerts: &Arc<StdMutex<Vec<serde_json::Value>>>,
     ) -> Result<(), String> {
         let http = self.http.clone();
         let store = self.store.clone();
         ctx.async_with(async |ctx| {
             let inner: rquickjs::Result<()> = (|| {
-                register_bridges(&ctx, &http, &store, logs, current_call)?;
+                register_bridges(&ctx, &http, &store, logs, current_call, plugin_id, pending_lx_alerts)?;
                 ctx.eval::<(), _>(HOST_SHIM_JS)?;
                 ctx.eval::<(), _>(PACKAGES_BUNDLE_JS)?;
                 let globals = ctx.globals();
@@ -610,7 +656,9 @@ impl PluginEngine {
         let script_owned = script.to_string();
         let user_vars_owned = user_vars_json.to_string();
 
-        let setup_result = self.setup_context(&ctx, &logs, &current_call).await;
+        let setup_result = self
+            .setup_context(&ctx, &logs, &current_call, plugin_id, &self.pending_lx_alerts)
+            .await;
         let load_json: Result<String, String> = match setup_result {
             Err(e) => Err(e),
             Ok(()) => {
@@ -651,6 +699,7 @@ impl PluginEngine {
                     error: Some(format!("插件加载结果解析失败: {}", e)),
                     metadata: None,
                     logs: take_logs(&logs, 0),
+                    lx_update_alerts: None,
                 }
             }
         };
@@ -678,6 +727,7 @@ impl PluginEngine {
                 error: None,
                 metadata: Some(metadata),
                 logs: take_logs(&logs, 0),
+                lx_update_alerts: None,
             }
         } else {
             let error = parsed
@@ -690,6 +740,7 @@ impl PluginEngine {
                 error: Some(error),
                 metadata: None,
                 logs: take_logs(&logs, 0),
+                lx_update_alerts: None,
             }
         }
     }
@@ -718,7 +769,9 @@ impl PluginEngine {
         let script_owned = script.to_string();
         let script_info_owned = script_info_json.to_string();
 
-        let setup_result = self.setup_context(&ctx, &logs, &current_call).await;
+        let setup_result = self
+            .setup_context(&ctx, &logs, &current_call, plugin_id, &self.pending_lx_alerts)
+            .await;
         let load_json: Result<String, String> = match setup_result {
             Err(e) => Err(e),
             Ok(()) => {
@@ -777,12 +830,15 @@ impl PluginEngine {
                     error: Some(format!("LX 插件初始化结果解析失败: {}", e)),
                     metadata: None,
                     logs: take_logs(&logs, 0),
+                    lx_update_alerts: None,
                 }
             }
         };
 
         if parsed.get("ok").and_then(|x| x.as_bool()).unwrap_or(false) {
             let metadata = parsed.get("initInfo").cloned().unwrap_or(serde_json::Value::Null);
+            // runtime 即将 move 进实例，先克隆句柄用于 settle 驱动
+            let rt_handle = runtime.clone();
             let instance = Arc::new(PluginInstance {
                 id: plugin_id.to_string(),
                 kind: PluginKind::Lx,
@@ -799,11 +855,17 @@ impl PluginEngine {
                 .lock()
                 .await
                 .insert(plugin_id.to_string(), instance);
+            // 给 checkUpdate 的异步响应一个短暂落地窗口：LX 插件常在 init 时
+            // 自调 checkUpdate()，其 HTTP 响应在 send(inited) 之后到达。
+            // idle() 在无挂起任务时立即返回，通常不产生额外等待。
+            let _ = tokio::time::timeout(Duration::from_millis(1500), rt_handle.idle()).await;
+            let alerts = self.drain_pending_lx_alerts();
             EngineLoadResult {
                 ok: true,
                 error: None,
                 metadata: Some(metadata),
                 logs: take_logs(&logs, 0),
+                lx_update_alerts: alerts,
             }
         } else {
             let error = parsed
@@ -816,6 +878,7 @@ impl PluginEngine {
                 error: Some(error),
                 metadata: None,
                 logs: take_logs(&logs, 0),
+                lx_update_alerts: None,
             }
         }
     }
@@ -911,6 +974,8 @@ impl PluginEngine {
                             error: None,
                             data: v.get("data").cloned(),
                             logs,
+                            // 兜底通道：load settle 窗口外迟到的自报更新随本次调用送达
+                            lx_update_alerts: self.drain_pending_lx_alerts(),
                         }
                     }
                     Ok(v) => {

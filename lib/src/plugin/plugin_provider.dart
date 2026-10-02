@@ -30,17 +30,31 @@ const _bilibiliCookieKeys = {
   'sid',
 };
 
+/// 用户取消在线导入（弹窗返回键/取消键）：在网络步骤之间抛出，
+/// 静默终止安装流程；安装弹窗已随取消关闭，调用方不再弹错误提示
+class PluginInstallCancelled implements Exception {
+  const PluginInstallCancelled();
+
+  @override
+  String toString() => 'PluginInstallCancelled';
+}
+
 Future<String?> fetchPluginScriptWithRetry(
   String url, {
   Duration connectionTimeout = const Duration(seconds: 15),
   Duration responseTimeout = const Duration(seconds: 20),
+  // 响应体下载超时：connectionTimeout/responseTimeout 只覆盖到响应头，
+  // body 中途断流时 join() 会永久挂起（导入小黑条卡死的根因），必须有界
+  Duration bodyTimeout = const Duration(seconds: 60),
   String userAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   int attempts = 3,
+  bool Function()? cancelled,
 }) async {
   Object? lastErr;
   for (var i = 1; i <= attempts; i++) {
+    if (cancelled?.call() ?? false) return null;
     final client = HttpClient()..connectionTimeout = connectionTimeout;
     try {
       final req = await client.getUrl(Uri.parse(url));
@@ -77,7 +91,7 @@ Future<String?> fetchPluginScriptWithRetry(
             final retryResp = await retryReq.close().timeout(responseTimeout);
             if (retryResp.statusCode >= 200 && retryResp.statusCode < 300) {
               AppLog.info('plugin', 'fetch script 403 后改用 LX UA 重试成功 $url');
-              return await retryResp.transform(utf8.decoder).join();
+              return await retryResp.transform(utf8.decoder).join().timeout(bodyTimeout);
             }
             AppLog.warn('plugin',
                 'fetch script 403 后改用 LX UA 重试仍失败 ${retryResp.statusCode} $url');
@@ -87,13 +101,15 @@ Future<String?> fetchPluginScriptWithRetry(
         }
         return null;
       }
-      return await resp.transform(utf8.decoder).join();
+      return await resp.transform(utf8.decoder).join().timeout(bodyTimeout);
     } catch (e) {
       lastErr = e;
     } finally {
       client.close();
     }
     if (i < attempts) {
+      // 重试间隔中响应取消，避免取消后仍空转完整重试链
+      if (cancelled?.call() ?? false) return null;
       await Future.delayed(const Duration(milliseconds: 800));
     }
   }
@@ -154,17 +170,26 @@ class PluginInstallResult {
   bool get success => names.isNotEmpty;
 }
 
+/// 零宽/方向控制/BOM/软连字符等不可见字符：BakaMusic 等插件为规避审查，
+/// 会在 name/platform 字段里塞这类混淆串。Dart 的 trim() 不去除它们，
+/// 导致「trim 非空但渲染不可见」的插件名（插件页标题空白、又不触发未知插件兜底）
+final RegExp _invisibleChars = RegExp(
+    '[\u200b-\u200f\u202a-\u202e\u2060\u2066-\u2069\ufeff\u00ad\u3164]');
+
+/// 去除不可见字符后的文本：用于展示与「是否为空」判定
+String stripInvisibleChars(String s) => s.replaceAll(_invisibleChars, '');
+
 String? _firstNonEmptyText(Iterable<Object?> values) {
   for (final v in values) {
     if (v == null) continue;
-    final s = v.toString().trim();
+    final s = stripInvisibleChars(v.toString()).trim();
     if (s.isNotEmpty) return s;
   }
   return null;
 }
 
 String pluginDisplayName(PluginSource source) {
-  final s = source.name.trim();
+  final s = stripInvisibleChars(source.name).trim();
   return s.isNotEmpty ? s : tr('未知插件');
 }
 
@@ -250,9 +275,13 @@ class PluginManager extends StateNotifier<PluginListState> {
     final mDesc = isLx
         ? (info['description'] ?? '')
         : (metadata['description']?.toString() ?? '');
+    // name 落库前去不可见字符：nameOverride（订阅 JSON 的 name 字段）同样可能
+    // 被零宽混淆，纯混淆串会连带 fallback 链失效（存进去渲染为空白）
+    final rawName = (nameOverride ?? fallbackName).toString();
+    final cleanName = stripInvisibleChars(rawName).trim();
     final source = PluginSource(
       id: id,
-      name: (nameOverride ?? fallbackName).toString(),
+      name: cleanName.isNotEmpty ? cleanName : tr('未知插件'),
       format: isLx
           ? PluginFormat.lx
           : (isAnime ? PluginFormat.anime : PluginFormat.musicfree),
@@ -277,22 +306,31 @@ class PluginManager extends StateNotifier<PluginListState> {
   Future<PluginInstallResult> installFromUrl(
     String url, {
     void Function(String message, double? progress)? onProgress,
+    bool Function()? cancelled,
   }) async {
+    void checkCancelled() {
+      if (cancelled?.call() ?? false) throw const PluginInstallCancelled();
+    }
+
+    checkCancelled();
     onProgress?.call(tr('正在获取插件脚本...'), null);
-    final script = await _fetchScript(url);
+    final script = await _fetchScript(url, cancelled: cancelled);
+    checkCancelled();
     if (script == null || script.isEmpty) {
       throw PluginEngineException(tr('无法获取插件脚本，请检查 URL 与网络'));
     }
 
     final batch = _parsePluginList(script);
     if (batch != null && batch.isNotEmpty) {
-      final result = await _installBatch(batch, onProgress: onProgress);
+      final result = await _installBatch(batch,
+          onProgress: onProgress, cancelled: cancelled);
       if (result.success) {
         await _recordSubscription(url);
       }
       return result;
     }
 
+    checkCancelled();
     final source = await installFromScript(script,
         fileName: url, sourceUrl: url);
     await _recordSubscription(url, name: source.name);
@@ -339,11 +377,15 @@ class PluginManager extends StateNotifier<PluginListState> {
   Future<PluginInstallResult> _installBatch(
     List<Map<String, dynamic>> items, {
     void Function(String message, double? progress)? onProgress,
+    bool Function()? cancelled,
   }) async {
     final names = <String>[];
     final errors = <String>[];
     final total = items.length;
     for (var i = 0; i < items.length; i++) {
+      // 批量导入逐项响应取消（PluginInstallCancelled 向上穿透，
+      // 由 installFromUrl 的调用方静默处理）
+      if (cancelled?.call() ?? false) throw const PluginInstallCancelled();
       final item = items[i];
       final url = item['url'].toString();
       final label = (item['name'] ?? url).toString();
@@ -352,7 +394,10 @@ class PluginManager extends StateNotifier<PluginListState> {
         i / total,
       );
       try {
-        final script = await _fetchScript(url);
+        final script = await _fetchScript(url, cancelled: cancelled);
+        if (cancelled?.call() ?? false) {
+          throw const PluginInstallCancelled();
+        }
         if (script == null || script.isEmpty) {
           errors.add(tr('{label}: 获取脚本失败', {'label': label}));
           continue;
@@ -365,6 +410,9 @@ class PluginManager extends StateNotifier<PluginListState> {
           sourceUrl: url,
         );
         names.add(source.name);
+      } on PluginInstallCancelled {
+        // 取消不能被吞成单项失败：向上穿透交给调用方静默处理
+        rethrow;
       } on PluginEngineException catch (e) {
         errors.add('$label: ${e.message}');
       } catch (_) {
@@ -378,8 +426,9 @@ class PluginManager extends StateNotifier<PluginListState> {
     );
   }
 
-  Future<String?> _fetchScript(String url) =>
-      fetchPluginScriptWithRetry(url);
+  Future<String?> _fetchScript(String url,
+          {bool Function()? cancelled}) =>
+      fetchPluginScriptWithRetry(url, cancelled: cancelled);
 
   Future<void> toggleEnabled(String id) async {
     final engine = await _getEngine();

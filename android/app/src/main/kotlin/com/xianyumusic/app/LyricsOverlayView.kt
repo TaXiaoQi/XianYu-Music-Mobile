@@ -47,6 +47,7 @@ class LyricsOverlayView(context: Context) : View(context) {
     private var playing = false
 
     private var textColor = Color.WHITE
+    private var unplayedColor = 0
     private var opacity = 1f
     private var fontScale = 1f
     private var secondaryScale = 0.88f
@@ -85,6 +86,7 @@ class LyricsOverlayView(context: Context) : View(context) {
 
     fun applyPreferences(
         color: Int,
+        unplayedColor: Int,
         alpha: Float,
         scale: Float,
         secondaryScale: Float,
@@ -93,6 +95,8 @@ class LyricsOverlayView(context: Context) : View(context) {
         showBackground: Boolean,
     ) {
         textColor = color
+        // 0 = 跟随主色：绘制时回退到主色降透明度（历史行为）
+        this.unplayedColor = unplayedColor
         opacity = alpha
         fontScale = scale
         this.secondaryScale = secondaryScale
@@ -162,7 +166,7 @@ class LyricsOverlayView(context: Context) : View(context) {
         secondaryPaint.textSize = secondarySize
         var baseline = (height - totalHeight) / 2f - basePaint.fontMetrics.top
 
-        basePaint.color = withAlpha(textColor, opacity * 0.38f)
+        basePaint.color = withAlpha(if (unplayedColor != 0) unplayedColor else textColor, opacity * 0.38f)
         highlightPaint.color = withAlpha(textColor, opacity)
         // 超宽不省略，改走跑马灯；暂停时冻结滚动时间避免跳变。
         val now = if (playing) SystemClock.elapsedRealtime() else anchorRealtimeMs

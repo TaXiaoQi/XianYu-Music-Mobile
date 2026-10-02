@@ -46,6 +46,8 @@ import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/auto_hide_chrome.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/custom_background.dart' show CustomBackgroundLayer;
+import '../../src/theme/page_wallpaper.dart' show themedPageWallpaperProvider;
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/modern_dialog.dart';
 import '../../src/widgets/predictive_cover_return.dart';
@@ -403,6 +405,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   bool _chromeVisible = true;
   Timer? _chromeHideTimer;
 
+  /// 本次按下的瞬间 chrome 是否可见：区分"点击唤起"与"点击收起"——
+  /// down 阶段 _wakeChrome 先把 chrome 唤起，若收起判断只看当前状态，
+  /// 同一次点击的 up 阶段会立刻把它再藏回去（唤起失效）
+  bool _chromeVisibleAtPointerDown = true;
+
   void _wakeChrome() {
     _chromeHideTimer?.cancel();
     _chromeHideTimer = null;
@@ -418,6 +425,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       if (!mounted || !ref.read(isLandscapeProvider)) return;
       if (_chromeVisible) setState(() => _chromeVisible = false);
     });
+  }
+
+  /// 横屏点击收起顶栏/底栏：点击内容区空白处（非 chrome 控件）立即收起。
+  /// 呼出由外层 Listener onPointerDown 兜底；按下瞬间已隐藏的点击
+  /// 属于"唤起"，不能再走收起分支
+  void _onContentAreaTap() {
+    final s = ref.read(settingsProvider).valueOrNull;
+    if (!(s?.landscapeTapToHideChrome ?? true)) return;
+    if (!ref.read(isLandscapeProvider)) return;
+    if (!_chromeVisibleAtPointerDown) return;
+    _chromeHideTimer?.cancel();
+    _chromeHideTimer = null;
+    setState(() => _chromeVisible = false);
   }
 
   @override
@@ -456,7 +476,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final showRomaji = settings?.showLyricsRomaji ?? false;
     final offsetMs = settings?.lyricOffsetMs ?? 0;
     final hasRomaji = _lyricsViewHasRomaji;
-    final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
+    final playerStyle = settings?.playerStyle ?? PlayerStyle.traditional;
 
     final hideMvVideo = _hideMvVideo && playerStyle == PlayerStyle.traditional;
 
@@ -533,7 +553,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           _DragDismissSheet(
         child: Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) => _wakeChrome(),
+          onPointerDown: (_) {
+            _chromeVisibleAtPointerDown = _chromeVisible;
+            _wakeChrome();
+          },
           child: playerStyle == PlayerStyle.traditional
               ? _TraditionalPlayerLayout(
                   notifier: notifier,
@@ -562,6 +585,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           }
                         }
                       : null,
+                  onContentAreaTap: _onContentAreaTap,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -809,9 +833,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
         ),
       ],
-      flexible: mvReady
-          ? const SizedBox.shrink()
-          : Padding(
+      flexible: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _onContentAreaTap,
+        child: mvReady
+            ? const SizedBox.shrink()
+            : Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -893,6 +920,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ],
         ),
+      ),
       ),
       bottom: [
         RepaintBoundary(
@@ -993,6 +1021,7 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
     this.mvSupported = false,
     this.onToggleMv,
     this.onHideMvChanged,
+    this.onContentAreaTap,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
@@ -1013,6 +1042,9 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   final VoidCallback? onToggleMv;
 
   final ValueChanged<bool>? onHideMvChanged;
+
+  /// 横屏点击收起顶栏/底栏：内容区空白处点击回调（null=关闭）
+  final VoidCallback? onContentAreaTap;
 
   @override
   ConsumerState<_TraditionalPlayerLayout> createState() =>
@@ -1314,9 +1346,12 @@ class _TraditionalPlayerLayoutState
           child: _buildTopBar(context, landscape: true),
         ),
       ],
-      flexible: mvReady
-          ? const SizedBox.shrink()
-          : Row(
+      flexible: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: widget.onContentAreaTap,
+        child: mvReady
+            ? const SizedBox.shrink()
+            : Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
@@ -1334,10 +1369,10 @@ class _TraditionalPlayerLayoutState
                   key: _lyricsKey,
                   current: current,
                   visible: true,
-                  onTap: () {},
-                  onRomajiAvailable: (has) {
-                    if (_lyricsViewHasRomaji != has) {
-                      setState(() => _lyricsViewHasRomaji = has);
+                  onTap: widget.onContentAreaTap ?? () {},
+                  onRomajiAvailable: (hasRomaji) {
+                    if (_lyricsViewHasRomaji != hasRomaji) {
+                      setState(() => _lyricsViewHasRomaji = hasRomaji);
                     }
                   },
                 ),
@@ -1346,6 +1381,7 @@ class _TraditionalPlayerLayoutState
             ),
           ),
         ],
+      ),
       ),
       bottom: [
         AutoHideChrome(
@@ -3046,14 +3082,21 @@ class _DragDismissSheetState extends State<_DragDismissSheet>
   }
 }
 
-class _BlurredCoverBackground extends StatelessWidget {
+class _BlurredCoverBackground extends ConsumerWidget {
   const _BlurredCoverBackground({required this.current});
 
   final QueueItem? current;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 主题包定义了播放页壁纸：整层替换封面模糊背景（静图，含遮罩/缩放参数）
+    final themed = ref.watch(themedPageWallpaperProvider);
+    if (themed != null) {
+      return RepaintBoundary(
+        child: CustomBackgroundLayer(background: themed),
+      );
+    }
     final item = current;
     if (item == null) {
       return const _AmbientBackground();
@@ -3420,19 +3463,22 @@ class _GlassControlCard extends ConsumerWidget {
             budget: budget,
             type: BlurSurfaceType.drawerOrSheet,
           );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(26),
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(sigma),
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaceFillWithBudget(glassColor, budget),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
+    // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: BackdropFilter(
+          filter: cheapBackdropBlur(sigma),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surfaceFillWithBudget(glassColor, budget),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
+              ),
             ),
+            child: content,
           ),
-          child: content,
         ),
       ),
     );
@@ -5209,7 +5255,7 @@ Future<void> _toggleFloatingLyrics(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('悬浮歌词需要悬浮窗权限')),
+        title:   Text(tr('桌面歌词需要悬浮窗权限')),
         content:   Text(
             tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
         actions: [
@@ -5225,8 +5271,11 @@ Future<void> _toggleFloatingLyrics(
       ),
     );
     if (go == true) {
-      await FloatingLyricsController.openPermissionSettings();
-      await n.setFloatingLyricsEnabled(true);
+      // 不立即切换开关：跳系统设置，回前台后由控制器复检权限，
+      // 授权成功才开启；被拦截则保持关闭
+      await ref
+          .read(floatingLyricsControllerProvider)
+          .requestEnableViaSettings();
     }
     return;
   }
@@ -6961,11 +7010,13 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
         ? Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.75);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: AnimatedContainer(
+    // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
           width: panelWidth,
@@ -7059,6 +7110,7 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                     : const SizedBox(width: 40, height: 0),
               ),
             ],
+          ),
           ),
         ),
       ),

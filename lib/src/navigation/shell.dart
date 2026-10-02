@@ -31,7 +31,9 @@ import '../widgets/mini_player_bar.dart' show LiveLiquidSurface;
 import '../widgets/page_search_bar.dart';
 import '../widgets/bilipai_glass.dart';
 import '../widgets/chrome_glass_frame.dart';
+import '../widgets/custom_background.dart' show PageWallpaperScope;
 import '../../pages/library/library_page.dart';
+import '../../pages/library/library_folder_page.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/playlist/playlists_page.dart';
@@ -87,7 +89,7 @@ final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 final landscapeContentPathProvider = StateProvider<String?>((ref) => null);
 
 final musicLibraryPageKeys =
-    List<GlobalKey>.generate(4, (_) => GlobalKey());
+    List<GlobalKey>.generate(5, (_) => GlobalKey());
 
 final landscapePaneOpenProvider = Provider<bool>((ref) {
   return ref.watch(landscapeAccountOpenProvider) ||
@@ -123,6 +125,11 @@ final navBarInsetProvider = Provider<double>((ref) {
 });
 
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
+
+/// 当前是否处于根路径（'/'、'/home'、'/mine'）：底栏 hidden = 计数 >0 ||
+/// 非 root 路径，设置等未混 HidesShellChrome 的二级页面靠后者隐藏；
+/// 顶层 NavDropletOverlay 据此对齐底栏显隐
+final navOnRootPathProvider = StateProvider<bool>((ref) => true);
 
 /// mini 播放条页面黑名单计数：混入 HideMiniBar 的页面（设置、搜索等）
 /// 持有期间 >0，全局播放条在该页面落定后隐藏、离开后恢复
@@ -398,7 +405,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     WidgetsBinding.instance.addObserver(this);
     _router = GoRouter.of(context);
     _isRootPath =
-        _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
+        _isRootPathOf(_routerTopPath(_router.routerDelegate.currentConfiguration));
+    ref.read(navOnRootPathProvider.notifier).state = _isRootPath;
     _router.routerDelegate.addListener(_onRouteChanged);
     if (defaultTargetPlatform == TargetPlatform.android) {
       _rotationSub = const EventChannel('xianyu/rotation/events')
@@ -420,10 +428,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   void _onRouteChanged() {
     if (!mounted) return;
-    final rootNow =
-        _isRootPathOf(_router.routerDelegate.currentConfiguration.uri.path);
+    // 不能用 currentConfiguration.uri.path：push 二级页（ImperativeRouteMatch）
+    // 后 uri.path 仍停留在 shell 分支的路径（/home 或 /mine），不会变成
+    // /settings——根因是它只反映 shell 分支 location。取 matches.last 的
+    // 实际位置（_routerTopPath），与底栏/横屏逻辑的判定保持同源
+    final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
+    final rootNow = _isRootPathOf(top);
     if (rootNow != _isRootPath) {
       setState(() => _isRootPath = rootNow);
+      ref.read(navOnRootPathProvider.notifier).state = rootNow;
     }
     if (rootNow) {
       final notifier = ref.read(navBarHiddenProvider.notifier);
@@ -523,6 +536,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               '/favorites',
               '/recent',
               '/playlists',
+              '/library/folders',
             ];
             context.push(libRoutes[lib.clamp(0, libRoutes.length - 1)]);
           } else if (searchOpen) {
@@ -540,7 +554,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         return;
       }
       final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
-      const libRoutes = ['/library', '/favorites', '/recent', '/playlists'];
+      const libRoutes = [
+        '/library',
+        '/favorites',
+        '/recent',
+        '/playlists',
+        '/library/folders',
+      ];
       if (path == '/search' || path == '/search/result') {
         _rotateBackPath = path;
         ref.read(landscapeSearchOpenProvider.notifier).state = true;
@@ -770,6 +790,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               const _MusicLibraryPane(index: 1),
               const _MusicLibraryPane(index: 2),
               const _MusicLibraryPane(index: 3),
+              const _MusicLibraryPane(index: 4),
             ],
           ],
         ),
@@ -1039,9 +1060,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  // 最低 0.01 不归零：opacity=0 会整树停绘，再次显示首帧
-                  // backdrop 采样未就绪闪黑；隐去期间保持绘制即无黑闪
-                  opacity: hidden ? 0.01 : 1.0,
+                  // 液态 shader 最低 0.01 保温（整树停绘后重显首帧采样
+                  // 黑闪）；毛玻璃普通 blur 归零停绘，淡入首绘发生在极低
+                  // alpha（不可见），防 saveLayer 内首帧重采样闪白
+                  opacity: hidden ? glassHiddenOpacityFloor(ref) : 1.0,
                   child: AnimatedScale(
                     duration: const Duration(milliseconds: 240),
                     curve: Curves.easeOutCubic,
@@ -1067,64 +1089,75 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                // 0.01 保底持续绘制，防止显示首帧 backdrop 采样黑闪
+                // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘，
+                // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
                 opacity: (floatingSearchBar &&
                         (widget.index == 0 || widget.index == 1) &&
                         !hidden)
                     ? 1.0
-                    : 0.01,
-                child: IgnorePointer(
-                  ignoring: !(floatingSearchBar &&
-                      (widget.index == 0 || widget.index == 1) &&
-                      !hidden),
-                  child: FloatingTopBar(
-                    chromeFrame: true,
-                    title: widget.index == 1
-                        ? Text(
-                            tr('个人中心'),
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
-                          )
-                        : Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: tr('弦予')),
-                                TextSpan(
-                                  text: tr('音乐'),
-                                  style: const TextStyle(
-                                    color: Color(0xFFEC4141),
-                                    fontWeight: FontWeight.w800,
+                    : glassHiddenOpacityFloor(ref),
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  // 与悬浮底栏同款缩小退让（0.92），退场不再只是淡出
+                  scale: (floatingSearchBar &&
+                          (widget.index == 0 || widget.index == 1) &&
+                          !hidden)
+                      ? 1.0
+                      : 0.92,
+                  child: IgnorePointer(
+                    ignoring: !(floatingSearchBar &&
+                        (widget.index == 0 || widget.index == 1) &&
+                        !hidden),
+                    child: FloatingTopBar(
+                      chromeFrame: true,
+                      title: widget.index == 1
+                          ? Text(
+                              tr('个人中心'),
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            )
+                          : Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(text: tr('弦予')),
+                                  TextSpan(
+                                    text: tr('音乐'),
+                                    style: const TextStyle(
+                                      color: Color(0xFFEC4141),
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
                             ),
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
+                      onSearchTap: () => context.push('/search'),
+                      onRecognize: () => context.push('/recognize'),
+                      actions: [
+                        if (widget.index == 0)
+                          BiliPaiIconButton(
+                            iconChild: themeSlotWidget(ref, 'entry.wallpaper',
+                                fallback: const SkinIcon()),
+                            tooltip: tr('皮肤'),
+                            onTap: () => context.push('/wallpaper'),
+                          )
+                        else
+                          BiliPaiIconButton(
+                            iconChild: themeSlotWidget(ref, 'mine.settings',
+                                fallback: const Icon(Icons.settings_outlined)),
+                            tooltip: tr('设置'),
+                            onTap: () => context.push('/settings'),
                           ),
-                    onSearchTap: () => context.push('/search'),
-                    onRecognize: () => context.push('/recognize'),
-                    actions: [
-                      if (widget.index == 0)
-                        BiliPaiIconButton(
-                          iconChild: themeSlotWidget(ref, 'entry.wallpaper',
-                              fallback: const SkinIcon()),
-                          tooltip: tr('皮肤'),
-                          onTap: () => context.push('/wallpaper'),
-                        )
-                      else
-                        BiliPaiIconButton(
-                          iconChild: themeSlotWidget(ref, 'mine.settings',
-                              fallback: const Icon(Icons.settings_outlined)),
-                          tooltip: tr('设置'),
-                          onTap: () => context.push('/settings'),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1138,10 +1171,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                // 0.01 保底持续绘制，防止显示首帧 backdrop 采样黑闪
+                // 顶栏恒为毛玻璃 BackdropFilter（无 shader 层）：归零停绘，
+                // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
                 opacity: (widget.index == 0 || widget.index == 1) && !hidden
                     ? 1.0
-                    : 0.01,
+                    : 0.0,
                 child: IgnorePointer(ignoring: hidden, child: topBar),
               ),
             ),
@@ -1216,29 +1250,41 @@ class _FixedNavBar extends ConsumerWidget {
       ),
     );
 
-    final solid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式同步顶栏材质：不实底，恒走组件色块+导航面档位模糊
+    final solid = !wallpaper && glassShouldUseSolid(ref, lowPerf: lowPerf);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    // 实底兜底与顶栏/scaffold 同色全不透明，避免停靠栏透出页面内容
     final fill = solid
-        ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
+        ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (wallpaper
             ? wallpaperGlassFill(context, ref)
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
-    final glassFill = themeTint(
-        ref,
-        'nav.bar',
-        (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget));
+    // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
+    final glassFill = wallpaper
+        ? fill
+        : themeTint(
+            ref,
+            'nav.bar',
+            (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget));
     final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;
     }
     final barSigma = navSurfaceBlurSigma(ref);
-    return ClipRect(
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(barSigma),
-        child: barBox,
+    // 滚动不降载：矩阵降采样链在 live backdrop 上渲染异常（滚动中模糊
+    // 失效读作变透明），恒用与静置一致的普通 blur；与顶栏/播放条共享
+    // 一次 backdrop 回读（同 sigma、区域不重叠）
+    // 静态帧：显隐/转场动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: barSigma, sigmaY: barSigma),
+          backdropGroupKey: navGlassKey,
+          child: barBox,
+        ),
       ),
     );
   }
@@ -1363,9 +1409,16 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final index = widget.index;
     final onSelect = widget.onSelect;
     // 底栏隐藏（播放页/黑名单页等）时清顶层水滴快照：顶层 overlay 不随
-    // 底栏 opacity 淡出，不清会留残影
+    // 底栏 opacity 淡出，不清会留残影。离开 root 路径（设置等页不增
+    // navBarHidden 计数，靠 !onRoot 隐藏）同样清——底栏隐藏期间不再
+    // rebuild，build 内的兜底清理不会执行，必须在事件点直接清
     ref.listen(navBarHiddenProvider, (_, hidden) {
       if (hidden > 0 && navDropletSnapshot.value != null) {
+        navDropletSnapshot.value = null;
+      }
+    });
+    ref.listen(navOnRootPathProvider, (_, onRoot) {
+      if (!onRoot && navDropletSnapshot.value != null) {
         navDropletSnapshot.value = null;
       }
     });
@@ -1382,7 +1435,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
                 true) &&
             !lowPerf;
-    final liquid = liquidGlassOn && ImageFilter.isShaderFilterSupported;
+    // 壁纸模式同步顶栏材质：栏面不上液态，走组件色块+导航面档位模糊；
+    // lens 水滴是交互折射效果，与栏面材质无关，保留
+    final wallpaper = wallpaperGlassActive(ref);
+    final liquid = liquidGlassOn &&
+        !wallpaper &&
+        ImageFilter.isShaderFilterSupported;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -1449,11 +1507,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final effBudget = budget ?? ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar))!;
-    // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
-    // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见
-    final solid = (forceSolid || prefSolid) && !degradedLiquid;
-    final keepFilterAlive = forceSolid && !prefSolid;
     final wallpaper = wallpaperGlassActive(ref);
+    // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
+    // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见。
+    // 壁纸模式同步顶栏材质：不实底，恒走组件色块
+    final solid = !wallpaper && (forceSolid || prefSolid) && !degradedLiquid;
+    final keepFilterAlive = forceSolid && !prefSolid;
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
@@ -1461,11 +1520,16 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             : (isDark
                 ? Colors.white.withValues(alpha: 0.10)
                 : Colors.white.withValues(alpha: 0.52)));
-    final fill = themeTint(
-        ref,
-        'nav.bar',
-        (budget == null || solid || wallpaper) ? bg : surfaceFillWithBudget(bg, budget));
-    final sigma = degradedLiquid
+    // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
+    final fill = wallpaper
+        ? bg
+        : themeTint(
+            ref,
+            'nav.bar',
+            (budget == null || solid || wallpaper)
+                ? bg
+                : surfaceFillWithBudget(bg, budget));
+    final sigma = degradedLiquid && !wallpaper
         ? surfaceBlurSigma(
             // 液态降级胶囊用液态档 blur(磨砂观感,而非导航面弱模糊)
             base: bilipaiBackdropBlurOf(liquidGlassQualitySetting(ref)),
@@ -1473,6 +1537,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             type: BlurSurfaceType.bottomBar,
             crispAtRest: true,
           )
+        // 壁纸模式同步顶栏材质：导航面档位模糊
         : navSurfaceBlurSigma(ref);
     final border = isDark
         ? Colors.white.withValues(alpha: 0.12)
@@ -1488,11 +1553,19 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       child: tabs,
     );
     if (solid && !keepFilterAlive) return capsule;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(sigma),
-        child: capsule,
+    // 静态帧方案：显隐/转场动画帧父级递归重绘会让 BackdropFilter 在
+    // Opacity saveLayer 内重建采样层闪黑；RepaintBoundary 复用旧玻璃
+    // layer 不重采样，raster 期实时模糊不受影响（同 glass_appbar 顶栏）
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          // 液态降档胶囊用液态档 sigma，不并入导航面共享回读组
+          backdropGroupKey:
+              degradedLiquid && !wallpaper ? null : navGlassKey,
+          child: capsule,
+        ),
       ),
     );
   }
@@ -1631,7 +1704,8 @@ class _LandscapeRail extends ConsumerWidget {
                   icon: library[j].$2,
                   title: library[j].$1,
                   collapsed: collapsed,
-                  selected: libSel == j,
+                  // 文件夹管理(4)归属「本地音乐」：右侧容器打开时保持其高亮
+                  selected: libSel == j || (j == 0 && libSel == 4),
                   onTap: () {
                     closeLandscapeSearch(ref);
                     ref.read(landscapeLibraryProvider.notifier).state = j;
@@ -1746,18 +1820,32 @@ class _MusicLibraryPane extends StatelessWidget {
 
   final int index;
 
+  /// 横屏音乐库面板的页面 id；文件夹面板不映射，回落全局壁纸。
+  static const _panePageIds = <String?>[
+    'ls-local',
+    'ls-fav',
+    'ls-recent',
+    'ls-sheets',
+    null,
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: KeyedSubtree(
-        key: musicLibraryPageKeys[index],
-        child: switch (index) {
-          0 => const LibraryPage(),
-          1 => const FavoritesPage(),
-          2 => const RecentPage(),
-          _ => const PlaylistsPage(),
-        },
+    return PageWallpaperScope(
+      pageId: _panePageIds[index],
+      child: ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: KeyedSubtree(
+          key: musicLibraryPageKeys[index],
+          child: switch (index) {
+            0 => const LibraryPage(),
+            1 => const FavoritesPage(),
+            2 => const RecentPage(),
+            3 => const PlaylistsPage(),
+            // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
+            _ => const LibraryFolderPage(embedded: true),
+          },
+        ),
       ),
     );
   }
@@ -1868,6 +1956,7 @@ class NavDropletSnapshot {
     required this.refract,
     required this.band,
     required this.chroma,
+    required this.depth,
     required this.press,
     required this.isDark,
   });
@@ -1884,6 +1973,9 @@ class NavDropletSnapshot {
   final double refract;
   final double band;
   final double chroma;
+
+  /// 凸透镜深度（∝mf，长按渐强；驱动 shader 全表面放大+边带径向）
+  final double depth;
   final double press;
   final bool isDark;
 }
@@ -1894,14 +1986,14 @@ final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot =
 /// 顶层水滴 overlay 宿主：挂在 app.dart builder Stack 中 mini 播放条之上。
 /// 底栏指示水滴独立于底栏树渲染——长按放大可鼓出栏缘、覆盖并折射上方
 /// 内容（对齐 B 站参考效果），不再被顶层播放条盖住上缘。
-class NavDropletOverlay extends StatefulWidget {
+class NavDropletOverlay extends ConsumerStatefulWidget {
   const NavDropletOverlay({super.key});
 
   @override
-  State<NavDropletOverlay> createState() => _NavDropletOverlayState();
+  ConsumerState<NavDropletOverlay> createState() => _NavDropletOverlayState();
 }
 
-class _NavDropletOverlayState extends State<NavDropletOverlay> {
+class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
   @override
   void initState() {
     super.initState();
@@ -1921,53 +2013,68 @@ class _NavDropletOverlayState extends State<NavDropletOverlay> {
   @override
   Widget build(BuildContext context) {
     final s = navDropletSnapshot.value;
+    // 底栏 hidden = navBarHidden 计数 >0 || 非 root 路径（设置等页面走
+    // 后者且会 postFrame 重写快照，仅靠清快照拦不住残影），overlay 显隐
+    // 条件必须与 _ShellScaffold 的 hidden 完全一致
+    final chromeHidden = ref.watch(navBarHiddenProvider) > 0 ||
+        !ref.watch(navOnRootPathProvider);
     return Positioned.fill(
       child: IgnorePointer(
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            if (s != null)
-              Positioned.fromRect(
-                rect: s.rect,
-                child: Transform(
-                  alignment: Alignment.center,
-                  transform: Matrix4.identity()..setEntry(0, 1, s.shear),
-                  child: s.liquid
-                      ? ClipOval(
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              LiveLiquidSurface(
-                                radius: s.radius,
-                                refract: s.refract,
-                                chroma: s.chroma,
-                                blurSigma: 0,
-                                backgroundColor: Colors.transparent,
-                                specular: 0.12,
-                                edgeAmount: s.band,
-                                saturation: 1.4,
-                                depthEffect: 1.2,
-                                child: const SizedBox.expand(),
-                              ),
-                              CustomPaint(
-                                painter: _DropletEdgePainter(s.press, s.isDark),
-                              ),
-                            ],
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘防淡入闪白
+          opacity: chromeHidden ? glassHiddenOpacityFloor(ref) : 1.0,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // chromeHidden 时不渲染快照：快照是逐帧写入的「活性数据」，
+              // 底栏隐藏后不再更新，残留旧几何会被全亮画成灰圆残影
+              //（Impeller 下 0.01 兜底绘制也会以异常 alpha 泄漏）
+              if (!chromeHidden && s != null)
+                Positioned.fromRect(
+                  rect: s.rect,
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..setEntry(0, 1, s.shear),
+                    child: s.liquid
+                        ? ClipOval(
+                            clipBehavior: Clip.antiAlias,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                LiveLiquidSurface(
+                                  radius: s.radius,
+                                  refract: s.refract,
+                                  chroma: s.chroma,
+                                  blurSigma: 0,
+                                  backgroundColor: Colors.transparent,
+                                  specular: 0.12,
+                                  edgeAmount: s.band,
+                                  saturation: 1.4,
+                                  depthEffect: s.depth,
+                                  child: const SizedBox.expand(),
+                                ),
+                                CustomPaint(
+                                  painter:
+                                      _DropletEdgePainter(s.press, s.isDark),
+                                ),
+                              ],
+                            ),
+                          )
+                        : DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: s.isDark
+                                  ? Colors.white.withValues(alpha: 0.10)
+                                  : Colors.black.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(
+                                  s.rect.shortestSide / 2),
+                            ),
                           ),
-                        )
-                      : DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: s.isDark
-                                ? Colors.white.withValues(alpha: 0.10)
-                                : Colors.black.withValues(alpha: 0.10),
-                            borderRadius:
-                                BorderRadius.circular(s.rect.shortestSide / 2),
-                          ),
-                        ),
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -2057,6 +2164,33 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   /// 底栏玻璃胶囊定位键：顶层水滴快照在帧末用它实测栏的屏幕位置
   final GlobalKey _barKey = GlobalKey();
 
+  /// 本页被覆盖路由的转场动画。壳层视差平移（_SmoothFadeForwards 的
+  /// -25% 平移）由它驱动：转场每帧 tick 重建底栏 → _syncSnapshot 帧末
+  /// 量到实时几何 → 顶层水滴全程跟随，不会把转场中间几何烙进快照。
+  /// 没有它，pop 首帧 rebuild 时几何尚未变化（与冻结值相同）→ 追帧链
+  /// 不续 → 转场全程盲区，快照停在错误位置，直到下一次交互才飞回。
+  Animation<double>? _coverAnim;
+
+  void _onCoverAnimStatus(AnimationStatus status) {
+    // 转场落定/退场后强制同步一次：视差已停但栏显隐 scale 动画可能
+    // 未结束，补一帧让快照收敛到真实静息几何（防终点残偏）
+    if (status == AnimationStatus.completed ||
+        status == AnimationStatus.dismissed) {
+      if (mounted) setState(() {});
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final anim = ModalRoute.of(context)?.secondaryAnimation;
+    if (!identical(anim, _coverAnim)) {
+      _coverAnim?.removeStatusListener(_onCoverAnimStatus);
+      _coverAnim = anim;
+      anim?.addStatusListener(_onCoverAnimStatus);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2081,6 +2215,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   @override
   void dispose() {
+    // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影
+    navDropletSnapshot.value = null;
+    _coverAnim?.removeStatusListener(_onCoverAnimStatus);
     _moveC?.dispose();
     _springTickerC?.dispose();
     _pressC?.dispose();
@@ -2091,7 +2228,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   Widget build(BuildContext context) {
     final items = bottomNavItems;
     return AnimatedBuilder(
-      animation: Listenable.merge([_move, _press]),
+      // _coverAnim（被覆盖路由转场）参与驱动：转场期间每帧重建并实测
+      // 栏几何，快照水滴跟随壳层视差全程移动，不再冻结在转场中间值
+      animation: Listenable.merge([_move, _press, _coverAnim]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
         final overlayDroplet = widget.lens && widget.glassBuilder != null;
@@ -2137,8 +2276,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
         final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
         Widget indicator;
         if (widget.lens && dropletOn) {
-          final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
-          final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
+          final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
+          final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
           final isDark = Theme.of(context).brightness == Brightness.dark;
           final press = pressG.clamp(0.0, 1.0);
           indicator = ClipOval(
@@ -2254,24 +2393,21 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
           // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
-            if (b == null || !b.attached || !b.hasSize) return;
-            final origin = b.localToGlobal(Offset.zero);
-            navDropletSnapshot.value = NavDropletSnapshot(
-              rect: Rect.fromLTWH(origin.dx + cx - w / 2,
-                  origin.dy + maxH / 2 - h / 2, w, h),
-              shear: _dragVel.sign * _sxPos * 0.12,
-              liquid: dropletOn,
-              radius: d * sy / 2,
-              refract: d * 14.0 / 56.0 * mf * widget.lensBoost,
-              band: d * 10.0 / 56.0 * mf * widget.edgeBoost,
-              chroma: widget.dropletChroma,
-              press: pressG.clamp(0.0, 1.0),
-              isDark: isDark,
-            );
-          });
+          _syncSnapshot(
+            cx: cx,
+            w: w,
+            h: h,
+            maxH: maxH,
+            liquid: dropletOn,
+            radius: d * sy / 2,
+            refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
+            band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
+            chroma: widget.dropletChroma,
+            shear: _dragVel.sign * _sxPos * 0.12,
+            depth: 1.2 * mf,
+            press: pressG.clamp(0.0, 1.0),
+            isDark: isDark,
+          );
           return widget.glassBuilder!(
               SizedBox(key: _barKey, height: maxH, child: gestures));
         }
@@ -2293,6 +2429,82 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     } else if (!_dragging) {
       _press.reverse();
     }
+  }
+
+  /// 顶层水滴快照同步：帧末实测底栏几何写快照；rect 未稳定时逐帧重写
+  /// 直至收敛。仅靠 build 触发的单次写入会把显隐动画起步帧的几何烙进
+  /// 快照（AnimatedScale 0.92→1.0 的 paint 变换参与 localToGlobal）——
+  /// 静息态不再 rebuild，动画结束后顶层水滴停在错位处，直到下一次交互
+  /// 逐帧跳回（二级页返回时指示器「乱飞」的根因）
+  void _syncSnapshot({
+    required double cx,
+    required double w,
+    required double h,
+    required double maxH,
+    required bool liquid,
+    required double radius,
+    required double refract,
+    required double band,
+    required double chroma,
+    required double shear,
+    required double depth,
+    required double press,
+    required bool isDark,
+  }) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
+      if (b == null || !b.attached || !b.hasSize) return;
+      // 逻辑中心点过同一 paint 变换（显隐动画 scale 参与矩阵），
+      // 避免未缩放逻辑 cx 与缩放后 origin 混算产生错位
+      final topLeft = b.localToGlobal(Offset(cx - w / 2, maxH / 2 - h / 2));
+      final rect = topLeft & Size(w, h);
+      final prev = navDropletSnapshot.value;
+      final rectStable = prev != null && prev.rect == rect;
+      // 交互中 press/refract 等随 rebuild 逐帧渐变，有变必须写快照；
+      // rect 稳定（且无 rebuild 驱动）后循环自然终止，静息零开销
+      final changed = prev == null ||
+          prev.rect != rect ||
+          prev.liquid != liquid ||
+          prev.press != press ||
+          prev.radius != radius ||
+          prev.refract != refract ||
+          prev.band != band ||
+          prev.depth != depth ||
+          prev.shear != shear;
+      if (changed) {
+        navDropletSnapshot.value = NavDropletSnapshot(
+          rect: rect,
+          shear: shear,
+          liquid: liquid,
+          radius: radius,
+          refract: refract,
+          band: band,
+          chroma: chroma,
+          depth: depth,
+          press: press,
+          isDark: isDark,
+        );
+      }
+      if (!rectStable) {
+        // 几何仍在过渡（显隐动画/布局变化）：下一帧继续同步
+        _syncSnapshot(
+          cx: cx,
+          w: w,
+          h: h,
+          maxH: maxH,
+          liquid: liquid,
+          radius: radius,
+          refract: refract,
+          band: band,
+          chroma: chroma,
+          shear: shear,
+          depth: depth,
+          press: press,
+          isDark: isDark,
+        );
+      }
+    });
   }
 
   void _onPointerDown(PointerDownEvent e, double tabW, int count) {
@@ -2829,11 +3041,15 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           );
           panelWidget = panelSigma <= 0
               ? panelBox
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: cheapBackdropBlur(panelSigma),
-                    child: panelBox,
+              // 静态帧：动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+              : RepaintBoundary(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                          sigmaX: panelSigma, sigmaY: panelSigma),
+                      child: panelBox,
+                    ),
                   ),
                 );
         }

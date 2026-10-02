@@ -139,6 +139,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     globalIsTransitioning.addListener(_onTransitionChanged);
     globalIsDragging.addListener(_onGlobalState);
     globalScrollTick.addListener(_onOwnerScrollTick);
+    if (widget.useChromeFrame) {
+      chromeGlassFrame.addListener(_onChromeFrameChanged);
+    }
     _routeTransition = globalIsTransitioning.value;
   }
 
@@ -217,14 +220,53 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (!mounted) return;
     // 转场中保图：IME 弹起等视口变化会在转场中产生滚动信号，此时炸图
     // 会让玻璃从烘焙图突变为兜底 blur+tint（跳变）；转场落定后由 resume 接管
-    if (_frozen != null && !_routeTransition) {
-      final old = _frozen!;
-      _frozen = null;
-      _frozenIsChromeFrame = false;
-      SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+    if (!_routeTransition) {
+      if (_frozen != null && !_frozenIsChromeFrame) {
+        final old = _frozen!;
+        _frozen = null;
+        _frozenIsChromeFrame = false;
+        SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+      } else if (widget.useChromeFrame) {
+        // 滚动中改画 chrome 缓存帧裁剪（无 backdrop 采样）：帧由抓帧侧
+        // 50ms 节流低频刷新，透底滞后与液态波动离散化在模糊下无感——
+        // 玻璃效果全程在线，滚动中采样成本归零。fadeBlend 拉满=纯帧显示
+        final frame = chromeGlassFrame.value;
+        if (frame != null && _fade.value < 0.999) {
+          final old = _frozen;
+          _frozen = frame.image.clone();
+          _frozenIsChromeFrame = true;
+          _fade.stop();
+          _fade.value = 1;
+          _onFadeTicked();
+          if (old != null) {
+            SchedulerBinding.instance
+                .addPostFrameCallback((_) => old.dispose());
+          }
+        }
+      }
     }
     // frozen == null 时也要重建：滚动信号切换兜底/实时渲染模式
     setState(() {});
+  }
+
+  // 滚动中帧模式跟随：抓帧侧低频刷新 chrome 帧后换新图重绘。
+  // 只在滚动帧模式稳态（fadeBlend=1）跟随：交叉淡回中换帧会把叠加
+  // 内容从旧帧突变为新帧——转场结束 adopt 淡回（420ms）与转场 false
+  // 沿安排的 350ms 抓帧几乎必然重叠，帧里透底内容新旧页面不同，
+  // 跳变即「切页闪」；fade=0 时帧不显示，换帧无意义
+  void _onChromeFrameChanged() {
+    if (!mounted || !widget.useChromeFrame) return;
+    if (_frozen == null || !_frozenIsChromeFrame) return;
+    if (globalIsTransitioning.value) return;
+    if (_fade.value < 0.999) return;
+    final frame = chromeGlassFrame.value;
+    if (frame == null) return;
+    final old = _frozen;
+    _frozen = frame.image.clone();
+    setState(() {});
+    if (old != null) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
+    }
   }
 
   void _onFadeTicked() {
@@ -268,6 +310,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     globalIsTransitioning.removeListener(_onTransitionChanged);
     globalIsDragging.removeListener(_onGlobalState);
     globalScrollTick.removeListener(_onOwnerScrollTick);
+    chromeGlassFrame.removeListener(_onChromeFrameChanged);
     _idleDebounce?.cancel();
     _captureRetry?.cancel();
     _adoptGuard?.cancel();
@@ -290,6 +333,11 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (idle) {
       _ripple.stop();
       if (!_hasCaptured) _scheduleCapture();
+      // 滚动/拖拽结束：帧模式交叉淡回实时渲染，液态观感无缝续展。
+      // frozen 保留（fadeBlend=0 时不显示），下次滚动直接复用
+      if (_frozenIsChromeFrame && _fade.value > 0.001) {
+        _fade.reverse();
+      }
     } else {
       _idleDebounce?.cancel();
       // 转场中不重启波动，落定时由 _onTransitionChanged 恢复相位
@@ -305,7 +353,15 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   }
 
   Future<void> _capture() async {
-    if (_capturing || !mounted || _frozen != null || _hasCaptured) return;
+    // chrome 缓存帧挂着不挡烘焙：帧模式玻璃画帧（烘焙产物本就不上屏，
+    // 仅作为 backdrop 已验证就绪标志+启用液态 shader 的前提），挡门会
+    // 让滚动后新实例的首烘永远推迟
+    if (_capturing ||
+        !mounted ||
+        (_frozen != null && !_frozenIsChromeFrame) ||
+        _hasCaptured) {
+      return;
+    }
     if (DateTime.now().isBefore(_captureCooldownUntil)) {
       // 冷却结束后自动重试首烘（独立 Timer，不受滚动信号 cancel 影响）；
       // 否则首烘被冷却吞掉后要等下一次滚动/轮播事件才有机会
@@ -325,7 +381,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     }
     if (ro.debugNeedsPaint) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _frozen == null) _capture();
+        if (mounted && (_frozen == null || _frozenIsChromeFrame)) _capture();
       });
       return;
     }
@@ -349,7 +405,11 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       _boot.value = 0;
       setState(() {
         _hasCaptured = true;
-        _fade.value = 0;
+        // 滚动中 chrome 帧模式（fadeBlend=1）保持画帧，不拽回实时渲染；
+        // 其余情况归零回实时渲染（首烘后 blur+tint 兜底让位实时路径）
+        if (!_frozenIsChromeFrame || _fade.value < 0.001) {
+          _fade.value = 0;
+        }
         _onFadeTicked();
       });
       _boot.forward();
@@ -681,6 +741,10 @@ class RenderLiquidBacking extends RenderBox {
   set useChromeFrame(bool value) {
     if (_useChromeFrame == value) return;
     _useChromeFrame = value;
+    // 登记状态随开关同步：缓存帧面进出登记表与 attach/detach 口径一致
+    if (attached) {
+      value ? registerChromeFace(this) : unregisterChromeFace(this);
+    }
     markNeedsPaint();
   }
 
@@ -742,7 +806,13 @@ class RenderLiquidBacking extends RenderBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    registerChromeFace(this);
+    // 仅缓存帧面登记：登记表供转场裁剪（_paintChromeFrame）查表与抓帧
+    // 遍历登记原点，不画缓存帧的实例（播放条 alwaysLive 满血、播放页
+    // 液态等）登记无意义，白耗每次抓帧的 localToGlobal——从离屏缓存
+    // 体系摘出
+    if (_useChromeFrame) {
+      registerChromeFace(this);
+    }
     globalScrollOffset.addListener(_onScrollChanged);
     globalScrollTick.addListener(_onScrollTick);
     globalIsTransitioning.addListener(_onTransitionBlurSync);
@@ -751,7 +821,9 @@ class RenderLiquidBacking extends RenderBox {
 
   @override
   void detach() {
-    unregisterChromeFace(this);
+    if (_useChromeFrame) {
+      unregisterChromeFace(this);
+    }
     globalScrollOffset.removeListener(_onScrollChanged);
     globalScrollTick.removeListener(_onScrollTick);
     globalIsTransitioning.removeListener(_onTransitionBlurSync);
@@ -783,7 +855,9 @@ class RenderLiquidBacking extends RenderBox {
     // 转场中保帧（同上）：滚动信号来自 IME 弹起等视口变化，
     // 炸图/重绘都会破坏静态帧
     if (globalIsTransitioning.value) return;
-    if (_frozen != null) {
+    // chrome 缓存帧保留：滚动中玻璃改画帧裁剪（帧由抓帧侧低频刷新），
+    // 只有普通烘焙图才需要炸图切实时渲染
+    if (_frozen != null && !_frozenIsChromeFrame) {
       _frozen = null;
       _fadeBlend = 0;
     }

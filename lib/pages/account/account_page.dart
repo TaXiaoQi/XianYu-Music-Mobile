@@ -31,7 +31,7 @@ class AccountPage extends ConsumerStatefulWidget {
 }
 
 class _AccountPageState extends ConsumerState<AccountPage>
-    with SingleTickerProviderStateMixin, HidesShellChrome {
+    with SingleTickerProviderStateMixin, HidesShellChrome, HideMiniBar {
   late final TabController _tab;
   final _nicknameCtrl = TextEditingController();
   final _idCtrl = TextEditingController();

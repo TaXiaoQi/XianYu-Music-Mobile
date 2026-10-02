@@ -38,6 +38,13 @@ class SongListScrollFabs extends ConsumerWidget {
     final enableScrollToTop = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.enableScrollToTopButton ?? true));
     final wallpaper = wallpaperGlassActive(ref);
+    // 渲显分离只为液态 shader 面服务（兜底磨砂窗口防黑底）：非液态的
+    // 实时 blur 面无需等采样就绪，直接上屏
+    final needsReveal = (ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.liquidGlass)) ??
+        true) &&
+        !ref.watch(settingsProvider.select(
+            (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
     final currentIndex = current == null || current.path.isEmpty
         ? -1
         : paths.indexWhere((p) => p == current.path);
@@ -84,6 +91,7 @@ class SongListScrollFabs extends ConsumerWidget {
             children: [
               _Slot(
                 visible: showTop,
+                needsReveal: needsReveal,
                 childBuilder: (degraded) => _ScrollFab(
                   visible: showTop,
                   degraded: degraded,
@@ -96,6 +104,7 @@ class SongListScrollFabs extends ConsumerWidget {
               const SizedBox(width: 10),
               _Slot(
                 visible: showLocate,
+                needsReveal: needsReveal,
                 childBuilder: (degraded) => _ScrollFab(
                   visible: showLocate,
                   degraded: degraded,
@@ -114,9 +123,18 @@ class SongListScrollFabs extends ConsumerWidget {
 }
 
 class _Slot extends StatefulWidget {
-  const _Slot({required this.visible, required this.childBuilder});
+  const _Slot({
+    required this.visible,
+    required this.needsReveal,
+    required this.childBuilder,
+  });
 
   final bool visible;
+
+  /// 是否需要渲显分离（液态 shader 面为 true）：出现时先保持不可见
+  /// （0.01 保底绘制）让玻璃管线把 backdrop 采样跑就绪，数帧后再淡入。
+  /// 非液态面无采样就绪问题，直接上屏
+  final bool needsReveal;
 
   /// 回调携带 degraded（淡入淡出窗口内为 true）：窗口中 opacity<1
   /// 产生 saveLayer，液态 shader 在其内采样图层自身内容会黑底，
@@ -177,6 +195,11 @@ class _SlotState extends State<_Slot> {
   }
 
   void _scheduleReveal() {
+    // 非液态面无需等玻璃管线就绪：立即上屏（initState 调用时不可 setState）
+    if (!widget.needsReveal) {
+      _shown = true;
+      return;
+    }
     if (_shown) return;
     // 6 帧（~100ms）：0.01 低透明度下引擎可能裁剪 backdrop readback，
     // 采样真正就绪偏晚；帧数不足切回玻璃会残留一两帧黑底
@@ -200,13 +223,15 @@ class _SlotState extends State<_Slot> {
   Widget build(BuildContext context) {
     final visible = widget.visible && _shown;
     // degraded = 兜底窗口：0.01 保底期（ !_shown）、淡入过渡、淡出全程
-    final degraded = !visible || _fading;
+    //（仅液态面；非液态无 shader 黑底问题，恒 false）
+    final degraded = widget.needsReveal && (!visible || _fading);
     return IgnorePointer(
       ignoring: !visible,
       child: AnimatedOpacity(
-        // 最低压到 0.01 而非归零：opacity=0 会让整树停止绘制，玻璃管线
-        // 与 backdrop 采样也随之停摆，渲染就绪无从谈起
-        opacity: visible ? 1 : 0.01,
+        // 液态面最低压到 0.01 而非归零：opacity=0 会让整树停止绘制，
+        // 玻璃管线与 backdrop 采样也随之停摆，渲染就绪无从谈起；
+        // 非液态面隐去直接归零停绘
+        opacity: visible ? 1 : (widget.needsReveal ? 0.01 : 0.0),
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         child: AnimatedScale(
@@ -318,38 +343,41 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
         surface = liquidGlassShell(context, child: surface, radius: 20);
       }
     } else {
-      surface = ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
-            sigmaY: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
-          ),
-          child: button(
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.wallpaper
-                    ? wallpaperGlassFill(context, ref)
-                    : (isDark
-                        ? const Color(0x99000000)
-                        : const Color(0xE6FFFFFF)),
-                border: Border.all(
-                  color: scheme.outlineVariant.withValues(alpha: 0.35),
+      // 静态帧：出现/淡出动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+      surface = RepaintBoundary(
+        child: ClipOval(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(
+              sigmaX: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
+              sigmaY: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
+            ),
+            child: button(
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.wallpaper
+                      ? wallpaperGlassFill(context, ref)
+                      : (isDark
+                          ? const Color(0x99000000)
+                          : const Color(0xE6FFFFFF)),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.35),
+                  ),
+                  boxShadow: widget.wallpaper
+                      ? const []
+                      : [
+                          BoxShadow(
+                            color: Colors.black
+                                .withValues(alpha: isDark ? 0.30 : 0.10),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                 ),
-                boxShadow: widget.wallpaper
-                    ? const []
-                    : [
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.30 : 0.10),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
+                child: iconWidget,
               ),
-              child: iconWidget,
             ),
           ),
         ),

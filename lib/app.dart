@@ -16,8 +16,10 @@ import 'src/i18n/i18n.dart';
 import 'src/navigation/mini_player_overlay.dart';
 import 'src/navigation/routes.dart';
 import 'src/navigation/shell.dart' show NavDropletOverlay;
+import 'src/plugin/lx_update_alerts.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
+import 'src/widgets/glass_settings.dart';
 import 'src/widgets/privacy_policy.dart';
 import 'src/widgets/custom_background.dart';
 import 'src/widgets/chrome_glass_frame.dart';
@@ -58,6 +60,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
   ThemeData? _darkTheme;
   bool _loggedHomeFirstFrame = false;
 
+  /// 上次键盘高度（物理像素）：IME 收起键不经过框架、焦点残留在输入框，
+  /// 据 inset 归零主动失焦——全局清除键入状态，避免残留焦点把键盘再拉起
+  double? _lastKeyboardInset;
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +82,19 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     if ((settings?.language ?? AppLanguage.system) == AppLanguage.system) {
       setState(() {});
     }
+  }
+
+  @override
+  void didChangeMetrics() {
+    final view = WidgetsBinding.instance.platformDispatcher.implicitView;
+    if (view == null) return;
+    final inset = view.viewInsets.bottom;
+    if (_lastKeyboardInset != null &&
+        _lastKeyboardInset! > 0 &&
+        inset == 0) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
+    _lastKeyboardInset = inset;
   }
 
   Future<void> _runStartupAfterConsent(WidgetRef ref) async {
@@ -293,6 +312,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final language = settings?.language ?? AppLanguage.system;
     final locale = _localeFor(language);
     I18n.setMode(_i18nModeFor(language));
+    // stretch 效果的 shader filter 层会让 Impeller 下的 backdrop 采样失效
+    // （见 _NoStretchScrollBehavior 注释），玻璃材质开启时整体禁用
+    final glassActive = glassMaterialActive(ref);
     final l10nDelegates = [
       AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
@@ -330,6 +352,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             darkTheme: darkTheme,
             themeMode: themeMode,
             locale: locale,
+            scrollBehavior: glassActive
+                ? const _NoStretchScrollBehavior()
+                : null,
             localizationsDelegates: l10nDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: appRouter,
@@ -342,8 +367,39 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               final textScaler = fontSize.followsSystem
                   ? MediaQuery.textScalerOf(context)
                   : TextScaler.linear(fontSize.scale);
+              final baseMq = MediaQuery.of(context);
+              // 整套 UI 缩放（外观-样式大小）：标准档直通；其余档把路由
+              // 子树按「逻辑画布 = 视口 / 缩放」布局，再用 FittedBox 等比
+              // 铺回视口——矢量绘制不糊、命中测试随变换自动映射；页内
+              // MediaQuery 同步改写口径，避免 mq.size 仍按整屏算导致溢出；
+              // 壁纸与迷你条/水滴等系统 chrome 不参与缩放
+              final uiScale = uiScaleOf(settings?.uiScaleIndex ?? 1);
+              Widget routeChild = MediaQuery(
+                data: baseMq.copyWith(textScaler: textScaler),
+                child: child!,
+              );
+              if (uiScale != 1.0) {
+                routeChild = FittedBox(
+                  fit: BoxFit.fill,
+                  child: SizedBox(
+                    width: baseMq.size.width / uiScale,
+                    height: baseMq.size.height / uiScale,
+                    child: MediaQuery(
+                      data: baseMq.copyWith(
+                        textScaler: textScaler,
+                        size: baseMq.size / uiScale,
+                        padding: baseMq.padding / uiScale,
+                        viewPadding: baseMq.viewPadding / uiScale,
+                        viewInsets: baseMq.viewInsets / uiScale,
+                        devicePixelRatio: baseMq.devicePixelRatio * uiScale,
+                      ),
+                      child: child,
+                    ),
+                  ),
+                );
+              }
               return MediaQuery(
-                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                data: baseMq.copyWith(textScaler: textScaler),
                 child: NotificationListener<NavigationNotification>(
                   onNotification: (_) {
                     // app 完全接管返回（frameworkHandlesBack 恒 true）：
@@ -374,7 +430,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                             color: appSurfaceBg(context),
                             child: const CustomBackgroundLayer(),
                           ),
-                          ScrollOffsetCapture(child: child!),
+                          ScrollOffsetCapture(child: routeChild),
                         ],
                       ),
                     ),
@@ -395,6 +451,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                         OverlayEntry(builder: (_) => const SizedBox.shrink()),
                       ],
                     ),
+                    // LX 插件自报更新（updateAlert）提示弹窗宿主
+                    const LxUpdateAlertHost(),
                   ],
                 ),
                 ),
@@ -436,6 +494,27 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     }
     return I18nMode.zhCn;
   }
+}
+
+/// 玻璃材质开启时禁用 Android 12 的 stretch overscroll 效果。
+///
+/// 框架的 StretchingOverscrollIndicator 在 overscroll 时用
+/// ImageFilter.shader（stretch_effect.frag）包裹整个列表内容，而 Impeller 上
+/// BackdropFilter 的 backdrop 采样在该 shader filter 层之下会失效——表现为
+/// 列表滑到最底部（fling 撞边界触发 stretch）时页内玻璃卡片瞬间只剩 tint
+/// 变透明，反向滚动触发 ScrollUpdateNotification→scrollEnd(0) 才恢复。
+/// 顶栏/底栏/mini 播放条在列表子树之外不受影响。材质关闭（纯色块）时
+/// 无 backdrop 采样，保留原生 stretch 不受影响。
+class _NoStretchScrollBehavior extends MaterialScrollBehavior {
+  const _NoStretchScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
 }
 
 class _InitErrorScreen extends StatelessWidget {

@@ -204,7 +204,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         if (PlatformCaps.showsLibraryAddEntry) ...[
           IconButton(
             tooltip: tr('文件夹'),
-            onPressed: () => context.push('/library/folders'),
+            // 横屏音乐库容器内：切换右侧容器到文件夹管理页；竖屏走路由
+            onPressed: ref.watch(landscapeLibraryProvider) != null
+                ? () => ref
+                    .read(landscapeLibraryProvider.notifier)
+                    .state = 4
+                : () => context.push('/library/folders'),
             icon: const Icon(Icons.add, size: 22),
           ),
           const SizedBox(width: 2),

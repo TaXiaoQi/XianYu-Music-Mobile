@@ -44,10 +44,12 @@ uniform vec2 uGlassSize;
 uniform float uEdgeAmount;
 // 槽 17：饱和度增益（BiliPai 中档 1.5）。
 uniform float uSaturation;
-// 槽 18：径向深度效应（BiliPai/Halcyon 水滴 depthEffect=true）：把径向
-// 方向掺进 SDF 梯度，让中心内容也参与「鼓起」折射——水滴压到内容上
-// 立刻有放大镜观感（无此项时，向内采样存在 ~A/2 的跳过区，内容要没入
-// 近半半径才出现在边带里）。
+// 槽 18：径向深度效应（水滴专用，玻璃壳恒为 0）：两个作用——
+// ① 把径向方向掺进边带 SDF 梯度，让中心内容也参与「鼓起」折射——
+//    水滴压到内容上立刻有放大镜观感（无此项时，向内采样存在 ~A/2 的
+//    跳过区，内容要没入近半半径才出现在边带里）；
+// ② >0 时启用全表面凸透镜放大：采样坐标往圆心收，水滴内部整个背景
+//    被放大（B 站水滴「折射整个背景」的放大镜观感来源）。
 uniform float uDepthEffect;
 // 槽 19：uTime —— 持续涟漪时间（秒）。给采样点加低频正弦微位移，让玻璃
 // 自身始终带轻微液态流动（静止/拖拽/滚动皆可见），不是单纯停在模糊上。
@@ -83,6 +85,16 @@ void main() {
   // BiliPai「只有贴边一圈在弯」观感的来源；不能换成 edge² 二次衰减
   //（中带位移偏大，会「还没靠近就开始折射」）。
   vec2 uv = p;
+
+  // —— 全表面凸透镜放大（先做，边带折射在最终屏幕空间全强度作用）——
+  // depthEffect>0 的水滴：采样坐标往圆心收，内部整个背景被放大（B 站
+  // 水滴「折射整个背景」的观感来源）；玻璃壳 depthEffect=0 不受影响。
+  // mix 系数上限 0.35 防过度畸变（1.2×0.25=0.3，约放大 1.43 倍）。
+  if (uDepthEffect > 0.0 && sd < 0.0) {
+    vec2 centerUV = uGlassOrigin + uGlassSize * 0.5;
+    uv = mix(uv, centerUV, min(uDepthEffect * 0.25, 0.35));
+  }
+
   if (sd < 0.0 && uEdgeAmount > 0.0 && uRefract > 0.0) {
     float depth = -sd;
     if (depth < uEdgeAmount) {
