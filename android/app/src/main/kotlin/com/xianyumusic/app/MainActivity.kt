@@ -222,7 +222,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /**
-     * 鸿蒙 4（Android 12 兼容层，API ≤ 31）及以前的透明状态栏兜底。
+     * 鸿蒙 4（Android 12 兼容层，API ≤ 31）及以前的 edge-to-edge 布局兜底。
      *
      * 实测（NOH-AN00 / API 29）：Flutter 引擎的 edge-to-edge 迁移
      * （targetSdk 35+ 强制启用）会在首帧前后把窗口改写为——
@@ -231,9 +231,13 @@ class MainActivity : AudioServiceActivity() {
      *  2. systemUiVisibility 整体重置（丢掉 LAYOUT_STABLE | LAYOUT_FULLSCREEN，
      *     内容退回状态栏下方布局）。
      *
-     * 这里在窗口层重申：仅状态栏维度的满铺布局 flag + 全透明状态栏色，
-     * 并清掉官方 API 附带的 LAYOUT_HIDE_NAVIGATION（避免三键导航下内容被
-     * 不透明导航条遮挡）。真机 Android 12+ 引擎本就透明，无影响。
+     * 这里在窗口层重申：全维度满铺布局 flag + 状态栏/导航栏全透明。
+     * 导航栏维度旧版被刻意排除（LAYOUT_HIDE_NAVIGATION 被清掉，内容退到
+     * 三键上方），因当时导航栏保持不透明黑、铺进去会被遮挡；现配套把
+     * navigationBarColor 涂透明（ROM 的对比度强制 scrim 一并关闭），
+     * 三键区域透出页面内容/壁纸，与状态栏观感统一。导航栏按键亮度按
+     * 系统深色模式切换（浅色模式黑按键/深色模式白按键），与状态栏由
+     * Theme.Light/Black 决定图标色的策略一致。
      */
     private fun applyLegacyEdgeToEdgeLayout() {
         if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) return
@@ -243,10 +247,28 @@ class MainActivity : AudioServiceActivity() {
         @Suppress("DEPRECATION")
         val decor = window.decorView
         @Suppress("DEPRECATION")
-        decor.systemUiVisibility = (decor.systemUiVisibility and
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION.inv()) or
-            (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+        decor.systemUiVisibility = decor.systemUiVisibility or
+            (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
         window.setStatusBarColor(Color.TRANSPARENT)
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // 部分 ROM（含华为兼容层）对透明导航栏强制叠加对比度 scrim，
+            // 表现为透明声明无效、三键区域回填纯黑
+            window.isNavigationBarContrastEnforced = false
+        }
+        val darkMode = (resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        @Suppress("DEPRECATION")
+        decor.systemUiVisibility = if (darkMode) {
+            decor.systemUiVisibility and
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        } else {
+            decor.systemUiVisibility or
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        }
     }
 
     /**
@@ -265,6 +287,10 @@ class MainActivity : AudioServiceActivity() {
     override fun onFlutterUiDisplayed() {
         super.onFlutterUiDisplayed()
         applyLegacyEdgeToEdgeLayout()
+        // 引擎在首帧后仍会多次改写系统栏属性（实测 NOH-AN00：首帧后的
+        // 重申会被引擎随后的涂色覆盖，三键区域回黑，直到下一次窗口聚焦
+        // 才恢复）。延迟再重申一次，跨过引擎的最后一笔涂色。
+        window.decorView.postDelayed({ applyLegacyEdgeToEdgeLayout() }, 600)
     }
 
     /** singleTask 复用已启动 Activity 时的深链回调（外部 VIEW intent 命中现存实例）。 */
