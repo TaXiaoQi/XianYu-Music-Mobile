@@ -15,12 +15,11 @@
             <corners android:radius="34dp" />
         </shape>
     </item>
-    <!-- 前景与容器同尺寸：ic_launcher_foreground 是 108dp 网格画布，
-         logo 内容仅占中心约 61%，画布铺满容器后 logo 视觉占比才与
-         桌面图标/系统闪屏一致（收小画布会让 logo 显得只剩三分之一）。 -->
+    <!-- 前景画布大于容器：108dp 网格画布 logo 仅占中心约 61%，
+         190dp 画布让 logo 视觉占比约 76%，观感接近桌面图标的撑满度。 -->
     <item
-        android:width="152dp"
-        android:height="152dp"
+        android:width="190dp"
+        android:height="190dp"
         android:gravity="center"
         android:drawable="@drawable/ic_launcher_foreground" />
 </layer-list>
