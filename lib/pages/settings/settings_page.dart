@@ -54,9 +54,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       if (!mounted) return;
       final ctx = key.currentContext;
       if (ctx == null) return;
+      // 最小滚动：目标已在视口内不动；在视口下方→顶缘对齐，上方→底缘对齐。
+      // 固定 alignment 0.5 会让每次点击都把选中项滚到列表正中，观感突兀
+      var alignment = 0.5;
+      final tileBox = ctx.findRenderObject() as RenderBox?;
+      final scrollable = Scrollable.maybeOf(ctx);
+      final vpBox = scrollable?.context.findRenderObject() as RenderBox?;
+      if (tileBox?.hasSize == true && vpBox?.hasSize == true) {
+        final tileTop = tileBox!.localToGlobal(Offset.zero).dy;
+        final tileBottom = tileTop + tileBox.size.height;
+        final vpTop = vpBox!.localToGlobal(Offset.zero).dy;
+        final vpBottom = vpTop + vpBox.size.height;
+        if (tileTop >= vpTop && tileBottom <= vpBottom) return;
+        alignment = tileTop < vpTop ? 1.0 : 0.0;
+      }
       Scrollable.ensureVisible(
         ctx,
-        alignment: 0.5,
+        alignment: alignment,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
       );
