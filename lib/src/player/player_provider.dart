@@ -534,7 +534,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   DateTime? _lastAutoSwitchAt;
   String? _lastAutoSwitchPath;
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
-  final Set<String> _dailyReSearchDone = {};
+  final Set<String> _onlineReSearchDone = {};
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
   double? _replayAnchorSecs;
@@ -1841,10 +1841,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         rethrow;
       }
       if (item.isOnline &&
-          item.fromDailyRecommend &&
           !_shareLinkPlayback &&
           _skipDepth < state.queue.length) {
-        final recovered = await _reSearchDailySource(item);
+        final recovered = await _reSearchOnlineSource(item);
         if (recovered) {
           _shareLinkPlayback = false;
           return;
@@ -3233,16 +3232,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return _tryLxResolve(infoJson, _qualityCandidates(preferred, fb));
   }
 
-  /// 日推歌曲起播失败后，不依赖生成时的插件快照换源，
-  /// 而是用「歌名+歌手」实时重搜当前可用插件，用新结果解析播放。
-  Future<bool> _reSearchDailySource(QueueItem item) async {
+  /// 在线歌曲起播失败后（日推/歌单导入/收藏等快照类歌曲均适用），
+  /// 不依赖入库时的插件快照换源，而是用「歌名+歌手」实时重搜当前
+  /// 可用插件，用新结果解析播放。
+  Future<bool> _reSearchOnlineSource(QueueItem item) async {
     final songKey = '${item.title}|${item.artist}';
-    if (_dailyReSearchDone.contains(songKey)) return false;
+    if (_onlineReSearchDone.contains(songKey)) return false;
     if (item.title.trim().isEmpty) return false;
     if (state.current?.path != item.path) return false;
-    _dailyReSearchDone.add(songKey);
-    if (_dailyReSearchDone.length > 64) {
-      _dailyReSearchDone.remove(_dailyReSearchDone.first);
+    _onlineReSearchDone.add(songKey);
+    if (_onlineReSearchDone.length > 64) {
+      _onlineReSearchDone.remove(_onlineReSearchDone.first);
     }
 
     var failedPluginId = '';
@@ -3256,7 +3256,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } catch (_) {}
     }
 
-    AppLog.info('autoswitch', '日推重搜换源: ${item.title}');
+    AppLog.info('autoswitch', '重搜换源: ${item.title}');
     try {
       final engine = await _ref.read(pluginEngineProvider.future);
       final sources = (await engine.store.loadSources())
@@ -3339,7 +3339,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                   'musicInfo': song,
                 }),
                 onlineQuality: preferred,
-                fromDailyRecommend: true,
               )
             : QueueItem(
                 path: 'lx://${r.source}/${r.songmid}',
@@ -3357,7 +3356,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 onlineQuality: preferred,
                 source: r.source,
                 onlineInfoJson: jsonEncode(song),
-                fromDailyRecommend: true,
               );
 
         ResolvedMediaUrl? url;
@@ -3403,7 +3401,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _reportBehavior(newItem, 'play', 0);
         _trackStartTime = DateTime.now();
         _syncToSystemMediaSession();
-        AppLog.info('autoswitch', '日推重搜换源命中: ${plugin.name}');
+        AppLog.info('autoswitch', '重搜换源命中: ${plugin.name}');
         _showPlaybackToast(
             tr('已切换到 {source} 音源', {'source': plugin.name}));
         return true;

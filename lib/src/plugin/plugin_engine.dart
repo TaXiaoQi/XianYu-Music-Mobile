@@ -767,27 +767,33 @@ class PluginEngine {
         .where((p) => p.enabled && p.format == PluginFormat.lx)
         .toList();
     if (lxPlugins.isEmpty) return null;
-    final plugin = lxPlugins.firstWhere(
-      (p) => p.sources.contains(source),
-      orElse: () => lxPlugins.first,
-    );
-    final result = await getMusicUrl(plugin, source, songInfo, quality);
-    final url = result?['url'] as String?;
-    if (result == null || url == null || url.isEmpty) return null;
-    if (_lxUrlCache.length >= 500) {
-      final now = DateTime.now();
-      _lxUrlCache.removeWhere((_, e) => e.expiresAt.isBefore(now));
-      while (_lxUrlCache.length >= 500) {
-        _lxUrlCache.remove(_lxUrlCache.keys.first);
+    // 声明支持该音源的插件优先，逐个尝试直到命中，
+    // 避免单个插件的第三方接口故障导致整体解析失败
+    final preferred =
+        lxPlugins.where((p) => p.sources.contains(source)).toList();
+    final fallback =
+        lxPlugins.where((p) => !p.sources.contains(source)).toList();
+    final candidates = [...preferred, if (preferred.isEmpty) ...fallback];
+    for (final plugin in candidates) {
+      final result = await getMusicUrl(plugin, source, songInfo, quality);
+      final url = result?['url'] as String?;
+      if (result == null || url == null || url.isEmpty) continue;
+      if (_lxUrlCache.length >= 500) {
+        final now = DateTime.now();
+        _lxUrlCache.removeWhere((_, e) => e.expiresAt.isBefore(now));
+        while (_lxUrlCache.length >= 500) {
+          _lxUrlCache.remove(_lxUrlCache.keys.first);
+        }
       }
+      _lxUrlCache[cacheKey] = (
+        url: url,
+        type: (result['type'] as String?) ?? quality,
+        headers: result['headers'] as Map<String, String>?,
+        expiresAt: DateTime.now().add(_lxUrlCacheTtl),
+      );
+      return result;
     }
-    _lxUrlCache[cacheKey] = (
-      url: url,
-      type: (result['type'] as String?) ?? quality,
-      headers: result['headers'] as Map<String, String>?,
-      expiresAt: DateTime.now().add(_lxUrlCacheTtl),
-    );
-    return result;
+    return null;
   }
 
   Future<Map<String, dynamic>?> getLyric(
