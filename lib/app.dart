@@ -367,8 +367,39 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               final textScaler = fontSize.followsSystem
                   ? MediaQuery.textScalerOf(context)
                   : TextScaler.linear(fontSize.scale);
+              final baseMq = MediaQuery.of(context);
+              // 整套 UI 缩放（外观-样式大小）：标准档直通；其余档把路由
+              // 子树按「逻辑画布 = 视口 / 缩放」布局，再用 FittedBox 等比
+              // 铺回视口——矢量绘制不糊、命中测试随变换自动映射；页内
+              // MediaQuery 同步改写口径，避免 mq.size 仍按整屏算导致溢出；
+              // 壁纸与迷你条/水滴等系统 chrome 不参与缩放
+              final uiScale = uiScaleOf(settings?.uiScaleIndex ?? 1);
+              Widget routeChild = MediaQuery(
+                data: baseMq.copyWith(textScaler: textScaler),
+                child: child!,
+              );
+              if (uiScale != 1.0) {
+                routeChild = FittedBox(
+                  fit: BoxFit.fill,
+                  child: SizedBox(
+                    width: baseMq.size.width / uiScale,
+                    height: baseMq.size.height / uiScale,
+                    child: MediaQuery(
+                      data: baseMq.copyWith(
+                        textScaler: textScaler,
+                        size: baseMq.size / uiScale,
+                        padding: baseMq.padding / uiScale,
+                        viewPadding: baseMq.viewPadding / uiScale,
+                        viewInsets: baseMq.viewInsets / uiScale,
+                        devicePixelRatio: baseMq.devicePixelRatio * uiScale,
+                      ),
+                      child: child,
+                    ),
+                  ),
+                );
+              }
               return MediaQuery(
-                data: MediaQuery.of(context).copyWith(textScaler: textScaler),
+                data: baseMq.copyWith(textScaler: textScaler),
                 child: NotificationListener<NavigationNotification>(
                   onNotification: (_) {
                     // app 完全接管返回（frameworkHandlesBack 恒 true）：
@@ -399,7 +430,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                             color: appSurfaceBg(context),
                             child: const CustomBackgroundLayer(),
                           ),
-                          ScrollOffsetCapture(child: child!),
+                          ScrollOffsetCapture(child: routeChild),
                         ],
                       ),
                     ),

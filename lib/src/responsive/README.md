@@ -51,6 +51,7 @@ landscape.dart ── LandscapeGate（portrait / landscape 两子树切换）+ u
 | 播放·高级版 `player_page.dart` | 默认封面页 | 封面 + 歌词 + 控制条独立横向布局 | `LandscapeGate` 内 `_buildLandscapeAdvancedBody` |
 | 播放·传统版 `player_page.dart` | 封面/歌词上下翻页 | **左封面｜右歌词并排** + 进度条 + 三区控制行 | `LandscapeGate` 内 `_buildTraditionalLandscape` |
 | 首页 `home_page.dart` | 封面轮播 + 发现 + 听过最多 | **独立横屏 UI**：去掉封面卡片、直接以「发现」起步；顶部继承壳层全局顶栏（搜索 + 扫码 + 皮肤 + 设置）；「弦予音乐」标题移入左侧侧栏 | `build` 顶部 `useLandscape(ref)` 分流 `_buildPortrait` / `_buildLandscape`；顶栏由 `landscape_top_bar.dart` 全局提供 |
+| 文件夹 `library_folder_page.dart` | 单列滚动：扫描入口 + 过滤/目录管理卡 + 文件夹树 | **双栏**：左列扫描入口与目录管理卡，右列已扫描文件夹树（下拉刷新在右列） | 页顶 `LandscapeGate(portrait:..., landscape:...)` 分流 `_buildPortrait` / `_buildLandscape` |
 
 ## 新增页面要接横屏？三步
 

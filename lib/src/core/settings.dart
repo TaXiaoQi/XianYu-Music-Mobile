@@ -86,6 +86,15 @@ enum AppFontSize {
   final bool followsSystem;
 }
 
+/// 整套 UI 缩放档位值（与 uiScaleIndex 对应：小/标准/大/特大）
+const kUiScaleValues = [0.85, 1.0, 1.15, 1.3];
+
+/// 整套 UI 缩放系数：越界档位回退标准
+double uiScaleOf(int index) =>
+    (index >= 0 && index < kUiScaleValues.length)
+        ? kUiScaleValues[index]
+        : 1.0;
+
 const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'aiff', 'dsf', 'dff', 'ape', 'wv', 'qmc'];
 
 List<String> _mergeScanFormats(List<String>? saved) {
@@ -255,6 +264,7 @@ class AppSettings {
     this.language = AppLanguage.system,
     this.listSize = ListSize.medium,
     this.fontSize = AppFontSize.system,
+    this.uiScaleIndex = 1,
     this.shareLinkValidityMinutes = 120,
     this.sharePlaybackFailureBehavior = 'pause',
     this.playerStyle = PlayerStyle.traditional,
@@ -423,6 +433,9 @@ class AppSettings {
 
   final AppFontSize fontSize;
 
+  /// 整套 UI 缩放档位索引（0 小 / 1 标准 / 2 大 / 3 特大）
+  final int uiScaleIndex;
+
   final int shareLinkValidityMinutes;
 
   final String sharePlaybackFailureBehavior;
@@ -563,6 +576,7 @@ class AppSettings {
     AppLanguage? language,
     ListSize? listSize,
     AppFontSize? fontSize,
+    int? uiScaleIndex,
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
@@ -691,6 +705,7 @@ class AppSettings {
       language: language ?? this.language,
       listSize: listSize ?? this.listSize,
       fontSize: fontSize ?? this.fontSize,
+      uiScaleIndex: uiScaleIndex ?? this.uiScaleIndex,
       shareLinkValidityMinutes: shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
@@ -863,6 +878,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       language: _langFromString(prefs.getString('language') ?? 'system'),
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
       fontSize: _fontSizeFromString(prefs.getString('fontSize') ?? 'standard'),
+      uiScaleIndex: prefs.getInt('uiScaleIndex') ?? 1,
       shareLinkValidityMinutes:
           prefs.getInt('shareLinkValidityMinutes') ?? 120,
       sharePlaybackFailureBehavior:
@@ -1086,6 +1102,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setString('language', next.language.name),
       prefs.setString('listSize', next.listSize.name),
       prefs.setString('fontSize', next.fontSize.name),
+      prefs.setInt('uiScaleIndex', next.uiScaleIndex),
       prefs.setInt('shareLinkValidityMinutes', next.shareLinkValidityMinutes),
       prefs.setString(
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
@@ -1259,6 +1276,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLanguage(AppLanguage v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(language: v));
   Future<void> setListSize(ListSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(listSize: v));
   Future<void> setFontSize(AppFontSize v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(fontSize: v));
+  Future<void> setUiScaleIndex(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(uiScaleIndex: v));
   Future<void> setShareLinkValidityMinutes(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(playerStyle: v));

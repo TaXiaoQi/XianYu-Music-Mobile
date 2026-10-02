@@ -757,6 +757,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             trailing: Text(_fontSizeLabel(s?.fontSize ?? AppFontSize.system)),
             onTap: () => _pickFontSize(context, ref, s),
           ),
+          _tile(
+            context,
+            icon: Icons.photo_size_select_large_outlined,
+            title: tr('样式大小'),
+            subtitle: tr('整套界面统一缩放，适配不同屏幕'),
+            trailing: Text(_uiScaleLabel(s?.uiScaleIndex ?? 1)),
+            onTap: () => _pickUiScale(context, ref, s),
+          ),
         ],
       ),
       _sectionHeader(context, tr('材质')),
@@ -2346,6 +2354,51 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
     if (choice != null) {
       await ref.read(settingsProvider.notifier).setFontSize(choice);
+    }
+  }
+
+  String _uiScaleLabel(int index) => switch (index) {
+        0 => tr('小'),
+        2 => tr('大'),
+        3 => tr('特大'),
+        _ => tr('标准'),
+      };
+
+  Future<void> _pickUiScale(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.uiScaleIndex ?? 1;
+    final choice = await showModernChoiceSheet<int>(
+      context: context,
+      title: tr('样式大小'),
+      options: [
+        ModernChoiceOption(
+          label: tr('小'),
+          subtitle: tr('整体缩小 15%，同屏内容更多'),
+          value: 0,
+        ),
+        ModernChoiceOption(
+          label: tr('标准'),
+          subtitle: tr('应用设定的默认大小'),
+          value: 1,
+        ),
+        ModernChoiceOption(
+          label: tr('大'),
+          subtitle: tr('整体放大 15%，更易点按'),
+          value: 2,
+        ),
+        ModernChoiceOption(
+          label: tr('特大'),
+          subtitle: tr('整体放大 30%，清晰醒目'),
+          value: 3,
+        ),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref.read(settingsProvider.notifier).setUiScaleIndex(choice);
     }
   }
 
