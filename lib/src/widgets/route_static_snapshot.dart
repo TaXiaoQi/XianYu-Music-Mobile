@@ -49,6 +49,19 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   void _onStatus(AnimationStatus status) {
     if (status == AnimationStatus.forward || status == AnimationStatus.reverse) {
       _settleHold = false;
+      // 上次转场残留的 _image 必须立即失效：status 翻转瞬间 moving=true，
+      // showImg 会先于新抓帧（postFrame + toImage 异步）用旧图顶上——
+      // 旧图是上次转场抓的页面画面，切过 tab 后是另一个 tab 的内容，
+      // 表现为转场首帧闪一帧旧页面。清空后窗口内显示 live 层（恒 1.0
+      // 完整渲染），新快照就绪后无缝接管
+      final stale = _image;
+      if (stale != null) {
+        _image = null;
+        _size = null;
+        setState(() {});
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => stale.dispose());
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         // 无条件抓：首帧阻塞时 postFrame 会推迟到动画结束后才执行，
         // 若再叠加 _moving 条件快照将永远抓不到图（转场全程无保护）
