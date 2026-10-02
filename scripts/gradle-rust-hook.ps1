@@ -116,6 +116,12 @@ if ($needCodegen) {
             Get-Content $hookLog -Tail 20 | Write-Host
             throw "[rust-hook] Codegen failed (exit=$($p.ExitCode))"
         }
+        # codegen 产出与现有绑定内容相同时不重写文件 → mtime 不更新 →
+        # 下次仍判定 needCodegen → debug 构建死循环退出码 3。强制刷新
+        # mtime 保证与 rust 源的新旧比较必然收敛。
+        if (Test-Path $bindings) {
+            (Get-Item $bindings).LastWriteTime = Get-Date
+        }
     } finally { Pop-Location }
 }
 
