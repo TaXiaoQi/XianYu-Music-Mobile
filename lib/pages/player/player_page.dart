@@ -3454,19 +3454,22 @@ class _GlassControlCard extends ConsumerWidget {
             budget: budget,
             type: BlurSurfaceType.drawerOrSheet,
           );
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(26),
-      child: BackdropFilter(
-        filter: cheapBackdropBlur(sigma),
-        child: Container(
-          decoration: BoxDecoration(
-            color: surfaceFillWithBudget(glassColor, budget),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
+    // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: BackdropFilter(
+          filter: cheapBackdropBlur(sigma),
+          child: Container(
+            decoration: BoxDecoration(
+              color: surfaceFillWithBudget(glassColor, budget),
+              borderRadius: BorderRadius.circular(26),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
+              ),
             ),
+            child: content,
           ),
-          child: content,
         ),
       ),
     );
@@ -6998,11 +7001,13 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
         ? Colors.white.withValues(alpha: 0.08)
         : Colors.white.withValues(alpha: 0.75);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: AnimatedContainer(
+    // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
           width: panelWidth,
@@ -7096,6 +7101,7 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                     : const SizedBox(width: 40, height: 0),
               ),
             ],
+          ),
           ),
         ),
       ),

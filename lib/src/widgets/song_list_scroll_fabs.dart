@@ -343,38 +343,41 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
         surface = liquidGlassShell(context, child: surface, radius: 20);
       }
     } else {
-      surface = ClipOval(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
-            sigmaY: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
-          ),
-          child: button(
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: widget.wallpaper
-                    ? wallpaperGlassFill(context, ref)
-                    : (isDark
-                        ? const Color(0x99000000)
-                        : const Color(0xE6FFFFFF)),
-                border: Border.all(
-                  color: scheme.outlineVariant.withValues(alpha: 0.35),
+      // 静态帧：出现/淡出动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+      surface = RepaintBoundary(
+        child: ClipOval(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(
+              sigmaX: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
+              sigmaY: widget.wallpaper ? navSurfaceBlurSigma(ref) : 10,
+            ),
+            child: button(
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: widget.wallpaper
+                      ? wallpaperGlassFill(context, ref)
+                      : (isDark
+                          ? const Color(0x99000000)
+                          : const Color(0xE6FFFFFF)),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.35),
+                  ),
+                  boxShadow: widget.wallpaper
+                      ? const []
+                      : [
+                          BoxShadow(
+                            color: Colors.black
+                                .withValues(alpha: isDark ? 0.30 : 0.10),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                 ),
-                boxShadow: widget.wallpaper
-                    ? const []
-                    : [
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.30 : 0.10),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
+                child: iconWidget,
               ),
-              child: iconWidget,
             ),
           ),
         ),

@@ -1260,11 +1260,14 @@ class _FixedNavBar extends ConsumerWidget {
     // 滚动不降载：矩阵降采样链在 live backdrop 上渲染异常（滚动中模糊
     // 失效读作变透明），恒用与静置一致的普通 blur；与顶栏/播放条共享
     // 一次 backdrop 回读（同 sigma、区域不重叠）
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: barSigma, sigmaY: barSigma),
-        backdropGroupKey: navGlassKey,
-        child: barBox,
+    // 静态帧：显隐/转场动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: barSigma, sigmaY: barSigma),
+          backdropGroupKey: navGlassKey,
+          child: barBox,
+        ),
       ),
     );
   }
@@ -3009,12 +3012,15 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           );
           panelWidget = panelSigma <= 0
               ? panelBox
-              : ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(
-                        sigmaX: panelSigma, sigmaY: panelSigma),
-                    child: panelBox,
+              // 静态帧：动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+              : RepaintBoundary(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(
+                          sigmaX: panelSigma, sigmaY: panelSigma),
+                      child: panelBox,
+                    ),
                   ),
                 );
         }

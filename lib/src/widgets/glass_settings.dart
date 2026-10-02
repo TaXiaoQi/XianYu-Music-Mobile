@@ -139,12 +139,15 @@ Widget frostedCardSurface({
   // 滚动档不降载：live backdrop 上矩阵降采样链在 Impeller 渲染异常
   // （滚动中模糊失效读作变透明），且毛玻璃 sigma 小、模糊开销∝σ²，
   // 恒用与静置一致的普通 blur 保证观感稳定
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-      backdropGroupKey: cardGlassKey,
-      child: surface,
+  // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  return RepaintBoundary(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        backdropGroupKey: cardGlassKey,
+        child: surface,
+      ),
     ),
   );
 }
@@ -357,11 +360,14 @@ Widget pseudoLiquidSurface({
   );
   if (solid) return surface;
   if (sigma <= 0) return surface;
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-      child: surface,
+  // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  return RepaintBoundary(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: surface,
+      ),
     ),
   );
 }
