@@ -903,6 +903,14 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.landscapeAutoHideChrome ?? true,
             onChanged: (v) => n.setLandscapeAutoHideChrome(v),
           ),
+          _switchTile(
+            context,
+            icon: Icons.touch_app_outlined,
+            title: tr('横屏点击收起顶栏/底栏'),
+            subtitle: tr('横屏播放页顶栏/底栏显示时，点击画面空白处立即收起'),
+            value: s?.landscapeTapToHideChrome ?? true,
+            onChanged: (v) => n.setLandscapeTapToHideChrome(v),
+          ),
           if ((s?.playerStyle ?? PlayerStyle.advanced) == PlayerStyle.advanced)
             _switchTile(
               context,

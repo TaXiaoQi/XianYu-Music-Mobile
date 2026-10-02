@@ -403,6 +403,11 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
   bool _chromeVisible = true;
   Timer? _chromeHideTimer;
 
+  /// 本次按下的瞬间 chrome 是否可见：区分"点击唤起"与"点击收起"——
+  /// down 阶段 _wakeChrome 先把 chrome 唤起，若收起判断只看当前状态，
+  /// 同一次点击的 up 阶段会立刻把它再藏回去（唤起失效）
+  bool _chromeVisibleAtPointerDown = true;
+
   void _wakeChrome() {
     _chromeHideTimer?.cancel();
     _chromeHideTimer = null;
@@ -418,6 +423,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       if (!mounted || !ref.read(isLandscapeProvider)) return;
       if (_chromeVisible) setState(() => _chromeVisible = false);
     });
+  }
+
+  /// 横屏点击收起顶栏/底栏：点击内容区空白处（非 chrome 控件）立即收起。
+  /// 呼出由外层 Listener onPointerDown 兜底；按下瞬间已隐藏的点击
+  /// 属于"唤起"，不能再走收起分支
+  void _onContentAreaTap() {
+    final s = ref.read(settingsProvider).valueOrNull;
+    if (!(s?.landscapeTapToHideChrome ?? true)) return;
+    if (!ref.read(isLandscapeProvider)) return;
+    if (!_chromeVisibleAtPointerDown) return;
+    _chromeHideTimer?.cancel();
+    _chromeHideTimer = null;
+    setState(() => _chromeVisible = false);
   }
 
   @override
@@ -533,7 +551,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           _DragDismissSheet(
         child: Listener(
           behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) => _wakeChrome(),
+          onPointerDown: (_) {
+            _chromeVisibleAtPointerDown = _chromeVisible;
+            _wakeChrome();
+          },
           child: playerStyle == PlayerStyle.traditional
               ? _TraditionalPlayerLayout(
                   notifier: notifier,
@@ -562,6 +583,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                           }
                         }
                       : null,
+                  onContentAreaTap: _onContentAreaTap,
                 )
               : _buildAdvancedBody(
                   notifier: notifier,
@@ -809,9 +831,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
           ),
         ),
       ],
-      flexible: mvReady
-          ? const SizedBox.shrink()
-          : Padding(
+      flexible: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _onContentAreaTap,
+        child: mvReady
+            ? const SizedBox.shrink()
+            : Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -893,6 +918,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
           ],
         ),
+      ),
       ),
       bottom: [
         RepaintBoundary(
@@ -993,6 +1019,7 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
     this.mvSupported = false,
     this.onToggleMv,
     this.onHideMvChanged,
+    this.onContentAreaTap,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
@@ -1013,6 +1040,9 @@ class _TraditionalPlayerLayout extends ConsumerStatefulWidget {
   final VoidCallback? onToggleMv;
 
   final ValueChanged<bool>? onHideMvChanged;
+
+  /// 横屏点击收起顶栏/底栏：内容区空白处点击回调（null=关闭）
+  final VoidCallback? onContentAreaTap;
 
   @override
   ConsumerState<_TraditionalPlayerLayout> createState() =>
@@ -1314,9 +1344,12 @@ class _TraditionalPlayerLayoutState
           child: _buildTopBar(context, landscape: true),
         ),
       ],
-      flexible: mvReady
-          ? const SizedBox.shrink()
-          : Row(
+      flexible: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: widget.onContentAreaTap,
+        child: mvReady
+            ? const SizedBox.shrink()
+            : Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
@@ -1334,10 +1367,10 @@ class _TraditionalPlayerLayoutState
                   key: _lyricsKey,
                   current: current,
                   visible: true,
-                  onTap: () {},
-                  onRomajiAvailable: (has) {
-                    if (_lyricsViewHasRomaji != has) {
-                      setState(() => _lyricsViewHasRomaji = has);
+                  onTap: widget.onContentAreaTap ?? () {},
+                  onRomajiAvailable: (hasRomaji) {
+                    if (_lyricsViewHasRomaji != hasRomaji) {
+                      setState(() => _lyricsViewHasRomaji = hasRomaji);
                     }
                   },
                 ),
@@ -1346,6 +1379,7 @@ class _TraditionalPlayerLayoutState
             ),
           ),
         ],
+      ),
       ),
       bottom: [
         AutoHideChrome(

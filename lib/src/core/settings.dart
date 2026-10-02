@@ -259,6 +259,7 @@ class AppSettings {
     this.sharePlaybackFailureBehavior = 'pause',
     this.playerStyle = PlayerStyle.traditional,
     this.landscapeAutoHideChrome = true,
+    this.landscapeTapToHideChrome = true,
     this.floatingLyricsEnabled = false,
     this.floatingLyricsLocked = false,
     this.floatingLyricsTextColor = 0xFFFFFFFF,
@@ -430,6 +431,8 @@ class AppSettings {
 
   final bool landscapeAutoHideChrome;
 
+  final bool landscapeTapToHideChrome;
+
   final bool floatingLyricsEnabled;
 
   final bool floatingLyricsLocked;
@@ -564,6 +567,7 @@ class AppSettings {
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
     bool? landscapeAutoHideChrome,
+    bool? landscapeTapToHideChrome,
     bool? floatingLyricsEnabled,
     bool? floatingLyricsLocked,
     int? floatingLyricsTextColor,
@@ -693,6 +697,8 @@ class AppSettings {
       playerStyle: playerStyle ?? this.playerStyle,
       landscapeAutoHideChrome:
           landscapeAutoHideChrome ?? this.landscapeAutoHideChrome,
+      landscapeTapToHideChrome:
+          landscapeTapToHideChrome ?? this.landscapeTapToHideChrome,
       floatingLyricsEnabled:
           floatingLyricsEnabled ?? this.floatingLyricsEnabled,
       floatingLyricsLocked: floatingLyricsLocked ?? this.floatingLyricsLocked,
@@ -865,6 +871,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getString('playerStyle') ?? 'traditional'),
       landscapeAutoHideChrome:
           prefs.getBool('landscapeAutoHideChrome') ?? true,
+      landscapeTapToHideChrome:
+          prefs.getBool('landscapeTapToHideChrome') ?? true,
       floatingLyricsEnabled:
           prefs.getBool('floatingLyricsEnabled') ?? false,
       floatingLyricsLocked: prefs.getBool('floatingLyricsLocked') ?? false,
@@ -1083,6 +1091,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           'sharePlaybackFailureBehavior', next.sharePlaybackFailureBehavior),
       prefs.setString('playerStyle', next.playerStyle.name),
       prefs.setBool('landscapeAutoHideChrome', next.landscapeAutoHideChrome),
+      prefs.setBool(
+          'landscapeTapToHideChrome', next.landscapeTapToHideChrome),
       prefs.setBool('floatingLyricsEnabled', next.floatingLyricsEnabled),
       prefs.setBool('floatingLyricsLocked', next.floatingLyricsLocked),
       prefs.setInt('floatingLyricsTextColor', next.floatingLyricsTextColor),
@@ -1256,6 +1266,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLandscapeAutoHideChrome(bool v) =>
       _save((state.valueOrNull ?? const AppSettings())
           .copyWith(landscapeAutoHideChrome: v));
+
+  Future<void> setLandscapeTapToHideChrome(bool v) =>
+      _save((state.valueOrNull ?? const AppSettings())
+          .copyWith(landscapeTapToHideChrome: v));
   Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
 
   Future<void> setStatusBarLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(statusBarLyricsEnabled: v));
