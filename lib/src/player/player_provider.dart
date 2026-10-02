@@ -534,6 +534,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   DateTime? _lastAutoSwitchAt;
   String? _lastAutoSwitchPath;
   final Map<String, Map<String, dynamic>> _crossFormatHealCache = {};
+  final Set<String> _dailyReSearchDone = {};
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
   double? _replayAnchorSecs;
@@ -1839,6 +1840,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _syncToSystemMediaSession();
         rethrow;
       }
+      if (item.isOnline &&
+          item.fromDailyRecommend &&
+          !_shareLinkPlayback &&
+          _skipDepth < state.queue.length) {
+        final recovered = await _reSearchDailySource(item);
+        if (recovered) {
+          _shareLinkPlayback = false;
+          return;
+        }
+      }
       if (item.isOnline && _skipDepth < state.queue.length) {
         final allowSwitch = !_shareLinkPlayback
             ? true
@@ -2554,6 +2565,24 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return result;
   }
 
+  static String _normSongText(String input) {
+    var s = input.toLowerCase();
+    s = s.replaceAll(RegExp(r'[（(【\[][^）)】\]]*[）)】\]]'), '');
+    s = s.replaceAll(RegExp(r"[\s'’`·・~～!！?？.。,，、]"), '');
+    return s.trim();
+  }
+
+  static String _firstArtistOf(String artist) {
+    final parts = artist.split(RegExp(r'[/、,&]'));
+    return parts.isEmpty ? '' : parts.first.trim();
+  }
+
+  static int _intervalStrToMs(String interval) {
+    final m = RegExp(r'^(\d+):(\d+)$').firstMatch(interval.trim());
+    if (m == null) return 0;
+    return (int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!)) * 1000;
+  }
+
   static List<String> _lowerQualityChain(
     String current,
     List<String> candidates,
@@ -3202,6 +3231,187 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         '320k';
     final fb = s?.onlineQualityFallbackBehavior ?? 'lower';
     return _tryLxResolve(infoJson, _qualityCandidates(preferred, fb));
+  }
+
+  /// 日推歌曲起播失败后，不依赖生成时的插件快照换源，
+  /// 而是用「歌名+歌手」实时重搜当前可用插件，用新结果解析播放。
+  Future<bool> _reSearchDailySource(QueueItem item) async {
+    final songKey = '${item.title}|${item.artist}';
+    if (_dailyReSearchDone.contains(songKey)) return false;
+    if (item.title.trim().isEmpty) return false;
+    if (state.current?.path != item.path) return false;
+    _dailyReSearchDone.add(songKey);
+    if (_dailyReSearchDone.length > 64) {
+      _dailyReSearchDone.remove(_dailyReSearchDone.first);
+    }
+
+    var failedPluginId = '';
+    final failedJson = item.onlineSongJson;
+    if (failedJson != null && failedJson.isNotEmpty) {
+      try {
+        failedPluginId =
+            ((jsonDecode(failedJson) as Map<String, dynamic>)['pluginId']
+                    as String?) ??
+                '';
+      } catch (_) {}
+    }
+
+    AppLog.info('autoswitch', '日推重搜换源: ${item.title}');
+    try {
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final sources = (await engine.store.loadSources())
+          .where((s) => s.id != failedPluginId)
+          .toList();
+      final playable = <PluginSource>[];
+      for (final s in sources) {
+        if (await engine.canPlayMusic(s)) playable.add(s);
+      }
+      if (playable.isEmpty) return false;
+
+      final keyword = item.artist.trim().isEmpty
+          ? item.title.trim()
+          : '${item.title.trim()} ${item.artist.trim()}';
+      final normTitle = _normSongText(item.title);
+      final normArtist = _normSongText(_firstArtistOf(item.artist));
+
+      Future<List<PluginSearchResult>> searchOne(PluginSource plugin) async {
+        try {
+          if (plugin.format.isMfCompatible) {
+            return await PluginCatalogService(engine, [plugin])
+                .searchMusic(plugin, keyword, limit: 10)
+                .timeout(const Duration(seconds: 8));
+          }
+          for (final key
+              in (plugin.sources.isEmpty ? const ['default'] : plugin.sources)) {
+            try {
+              final r = await engine
+                  .searchInPlugin(plugin, key, keyword, limit: 10)
+                  .timeout(const Duration(seconds: 8));
+              if (r.isNotEmpty) return r;
+            } catch (_) {}
+          }
+        } catch (_) {}
+        return const [];
+      }
+
+      final searchResults = await Future.wait(
+          [for (final p in playable) searchOne(p)]);
+
+      final candidates = <(PluginSource, PluginSearchResult)>[];
+      for (var i = 0; i < playable.length; i++) {
+        for (final r in searchResults[i]) {
+          if (_normSongText(r.name) != normTitle) continue;
+          final ra = _normSongText(_firstArtistOf(r.singer));
+          if (ra.isEmpty ||
+              normArtist.isEmpty ||
+              !(ra.contains(normArtist) || normArtist.contains(ra))) {
+            continue;
+          }
+          candidates.add((playable[i], r));
+          break;
+        }
+        if (candidates.length >= 4) break;
+      }
+
+      final settings = _ref.read(settingsProvider).valueOrNull;
+      final preferred = _sessionQualityOverride ??
+          settings?.onlineDefaultQuality ??
+          item.onlineQuality ??
+          '320k';
+      final fb = settings?.onlineQualityFallbackBehavior ?? 'lower';
+      final qualityChain = _qualityCandidates(preferred, fb);
+
+      for (final (plugin, r) in candidates) {
+        final song = r.toJson();
+        final isMf = plugin.format.isMfCompatible;
+        final cover = resolveSongCoverUrl(song) ?? r.img;
+        final newItem = isMf
+            ? QueueItem(
+                path: 'plugin://${plugin.id}/${r.songmid}',
+                title: r.name,
+                artist: r.singer,
+                album: r.albumName,
+                durationMs: _intervalStrToMs(r.interval),
+                coverUrl: cover,
+                onlineSongJson: jsonEncode({
+                  'pluginId': plugin.id,
+                  'format': plugin.format.value,
+                  'musicInfo': song,
+                }),
+                onlineQuality: preferred,
+                fromDailyRecommend: true,
+              )
+            : QueueItem(
+                path: 'lx://${r.source}/${r.songmid}',
+                title: r.name,
+                artist: r.singer,
+                album: r.albumName,
+                durationMs: _intervalStrToMs(r.interval),
+                coverUrl: cover,
+                onlineSongJson: jsonEncode({
+                  'pluginId': plugin.id,
+                  'format': plugin.format.value,
+                  'source': r.source,
+                  'musicInfo': song,
+                }),
+                onlineQuality: preferred,
+                source: r.source,
+                onlineInfoJson: jsonEncode(song),
+                fromDailyRecommend: true,
+              );
+
+        ResolvedMediaUrl? url;
+        try {
+          if (isMf) {
+            url = await engine
+                .getMusicFreeUrl(plugin, song,
+                    preferred: preferred, fallback: fb)
+                .timeout(const Duration(seconds: 10));
+          } else {
+            url = await _tryLxResolve(jsonEncode(song), qualityChain);
+          }
+        } catch (_) {}
+        if (url == null || !_isPlayableUrl(url.url)) continue;
+        if (state.current?.path != item.path) return false;
+
+        final idx = state.queueIndex;
+        final queue = [...state.queue];
+        if (idx >= 0 && idx < queue.length) queue[idx] = newItem;
+        state = state.copyWith(
+          queue: queue,
+          current: newItem,
+          isPlaying: false,
+          resolving: true,
+          position: 0,
+          duration: newItem.durationMs / 1000.0,
+          error: null,
+        );
+        _syncToSystemMediaSession();
+        try {
+          state = state.copyWith(resolving: false);
+          await _startOnlineUrl(url.url,
+              headers: url.headers, item: newItem, ekey: url.ekey, cek: url.cek);
+        } catch (_) {
+          continue;
+        }
+        _skipDepth = 0;
+        state = state.copyWith(resolving: false, error: null);
+        _currentPlayCountRecorded = false;
+        _accumulatedTime = 0;
+        _recordRecentPlay(newItem);
+        _recordHistory(newItem);
+        _reportBehavior(newItem, 'play', 0);
+        _trackStartTime = DateTime.now();
+        _syncToSystemMediaSession();
+        AppLog.info('autoswitch', '日推重搜换源命中: ${plugin.name}');
+        _showPlaybackToast(
+            tr('已切换到 {source} 音源', {'source': plugin.name}));
+        return true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> _autoSwitchSource(QueueItem item, {bool force = false}) async {

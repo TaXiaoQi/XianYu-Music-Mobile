@@ -106,6 +106,8 @@ Widget playbarGlassSurface(
     borderRadius: BorderRadius.circular(radius),
     child: BackdropFilter(
       filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
+      backdropGroupKey: navGlassKey,
       child: surface,
     ),
   );
@@ -681,6 +683,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       borderRadius: BorderRadius.circular(999),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
+        backdropGroupKey: navGlassKey,
         child: surface,
       ),
     );

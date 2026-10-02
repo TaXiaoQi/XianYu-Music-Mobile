@@ -1257,9 +1257,13 @@ class _FixedNavBar extends ConsumerWidget {
       return barBox;
     }
     final barSigma = navSurfaceBlurSigma(ref);
+    // 滚动不降载：矩阵降采样链在 live backdrop 上渲染异常（滚动中模糊
+    // 失效读作变透明），恒用与静置一致的普通 blur；与顶栏/播放条共享
+    // 一次 backdrop 回读（同 sigma、区域不重叠）
     return ClipRect(
-      child: ScrollAwareBackdropBlur(
-        sigma: barSigma,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: barSigma, sigmaY: barSigma),
+        backdropGroupKey: navGlassKey,
         child: barBox,
       ),
     );
@@ -1531,8 +1535,11 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     if (solid && !keepFilterAlive) return capsule;
     return ClipRRect(
       borderRadius: BorderRadius.circular(999),
-      child: ScrollAwareBackdropBlur(
-        sigma: sigma,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 液态降档胶囊用液态档 sigma，不并入导航面共享回读组
+        backdropGroupKey:
+            degradedLiquid && !wallpaper ? null : navGlassKey,
         child: capsule,
       ),
     );
@@ -2999,8 +3006,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               ? panelBox
               : ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: ScrollAwareBackdropBlur(
-                    sigma: panelSigma,
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(
+                        sigmaX: panelSigma, sigmaY: panelSigma),
                     child: panelBox,
                   ),
                 );

@@ -569,8 +569,11 @@ class RoutePageBackdrop extends ConsumerWidget {
         child: child,
       );
     }
+    // 垫透明而非 appSurfaceBg：转场中页面整树半透明渐入/渐出，
+    // 不透明 244 底会透出来盖住全局壁纸——壁纸色块组件（30% 白）
+    // 读作满填充纯色块；透全局壁纸则转场前后观感一致
     return ColoredBox(
-      color: appSurfaceBg(context),
+      color: Colors.transparent,
       child: Stack(
         fit: StackFit.expand,
         children: [

@@ -70,6 +70,16 @@ double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
 /// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
 const double kNavSurfaceBlurSigma = 16.0;
 
+/// 共享 backdrop 回读组：同 key 的 BackdropFilter 由引擎合并为单次
+/// 模糊+回读（要求成员 sigma 相同且屏幕区域互不重叠）。毛玻璃下顶栏/
+/// 底栏/播放条逐帧各做一次全宽 backdrop 回读是转场逐帧掉帧主源，
+/// 合并后每帧 N 次回读降为 1 次
+final BackdropKey navGlassKey = BackdropKey();
+
+/// 卡片级毛玻璃共享组（frostedCardSurface 非壁纸档恒 8*档位，
+/// 列表卡片互不重叠）
+final BackdropKey cardGlassKey = BackdropKey();
+
 /// 导航面（悬浮导航/mini 播放条/appbar 等）随档位缩放的模糊强度
 double navSurfaceBlurSigma(WidgetRef ref) =>
     kNavSurfaceBlurSigma * frostedBlurScaleOf(frostedGlassLevelSetting(ref));
@@ -126,10 +136,14 @@ Widget frostedCardSurface({
       : 8.0 * frostedBlurScale(ref);
   if (solid) return surface;
   if (sigma <= 0) return surface;
+  // 滚动档不降载：live backdrop 上矩阵降采样链在 Impeller 渲染异常
+  // （滚动中模糊失效读作变透明），且毛玻璃 sigma 小、模糊开销∝σ²，
+  // 恒用与静置一致的普通 blur 保证观感稳定
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
-    child: ScrollAwareBackdropBlur(
-      sigma: sigma,
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      backdropGroupKey: cardGlassKey,
       child: surface,
     ),
   );
@@ -287,79 +301,6 @@ ImageFilter _composeCheapBlur(double sigma, int downscale) {
   );
 }
 
-/// 滚动/拖拽中的毛玻璃降载档：仅 blur 输入降采样倍率，sigma 恒定。
-/// 降采样在缩小图上做模糊（sigma/d，等效模糊半径不变），磨砂强度与
-/// 静置档一致，仅高分屏上极轻微粗化——观感全程在线，滚动中 backdrop
-/// 模糊总开销≈静置档的 1/256。此前滚动档还把 sigma×0.6，模糊变弱让
-/// 背景穿透变清晰（读作「滚动变透明」），已移除：其额外收益（σ²×0.36）
-/// 相对降采样可忽略，观感代价不成比例
-const int kScrollBlurDownscale = 4;
-
-/// 滚动感知毛玻璃：滚动/拖拽中 blur 输入降采样（sigma 恒定，磨砂强度
-/// 与静置一致）。降采样在缩小图上做模糊（sigma/d，等效模糊半径不变，
-/// 仅输入分辨率下降），模糊本身抹细节，高分屏上轻微粗化几乎无感——
-/// 毛玻璃观感全程在线，换来滚动中 backdrop 采样成本大降（输入像素
-/// ÷16 叠加 sigma²÷16）。滚动信号翻转各触发一次重绘（两次 setState
-/// 量级），不随帧变化；BackdropFilter 采样的是实时 backdrop，层不重绘
-/// 也不影响 filter 生效，故无需感知滚动中逐帧变化
-class ScrollAwareBackdropBlur extends StatefulWidget {
-  const ScrollAwareBackdropBlur({
-    super.key,
-    required this.sigma,
-    required this.child,
-  });
-
-  final double sigma;
-
-  final Widget child;
-
-  @override
-  State<ScrollAwareBackdropBlur> createState() =>
-      _ScrollAwareBackdropBlurState();
-}
-
-class _ScrollAwareBackdropBlurState extends State<ScrollAwareBackdropBlur> {
-  void _onMotionChanged() {
-    // 转场中不重绘：滚动信号翻转（tab 切换会触发 ScrollMetricsNotification，
-    // 其 200ms 防抖窗口内切页即命中）会在转场窗口打断静态帧重采样闪变；
-    // 转场结束的 false 沿统一补一次刷新恢复正确档位
-    if (globalIsTransitioning.value) return;
-    if (mounted) setState(() {});
-  }
-
-  void _onTransitionChanged() {
-    if (!globalIsTransitioning.value && mounted) setState(() {});
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    globalIsScrolling.addListener(_onMotionChanged);
-    globalIsDragging.addListener(_onMotionChanged);
-    globalIsTransitioning.addListener(_onTransitionChanged);
-  }
-
-  @override
-  void dispose() {
-    globalIsScrolling.removeListener(_onMotionChanged);
-    globalIsDragging.removeListener(_onMotionChanged);
-    globalIsTransitioning.removeListener(_onTransitionChanged);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final rolling = globalIsScrolling.value || globalIsDragging.value;
-    return BackdropFilter(
-      filter: cheapBackdropBlur(
-        widget.sigma,
-        downscale: rolling ? kScrollBlurDownscale : null,
-      ),
-      child: widget.child,
-    );
-  }
-}
-
 Widget pseudoLiquidSurface({
   required BuildContext context,
   required WidgetRef ref,
@@ -418,8 +359,8 @@ Widget pseudoLiquidSurface({
   if (sigma <= 0) return surface;
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
-    child: ScrollAwareBackdropBlur(
-      sigma: sigma,
+    child: BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
       child: surface,
     ),
   );

@@ -15,6 +15,10 @@
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/player_widget_recognize"
     android:previewImage="@drawable/widget_preview_recognize"
-    android:previewLayout="@layout/player_widget_preview_recognize"
     android:resizeMode="none"
     android:widgetCategory="home_screen" />
+<!-- 不设 previewLayout：MagicOS 长按浮层渲染 previewLayout 后把实时
+     RemoteViews 动作叠上去，静态预览布局缺 songText/bgCover 等 id，
+     动作应用失败会退回丢圆角收尾的降级渲染（活数据+方角，2026-10
+     实测）。无 previewLayout 时浮层直接用实时渲染，配合位图自圆
+     （a76d277）各路径恒圆角；选择器预览由 previewImage 位图兜住。 -->

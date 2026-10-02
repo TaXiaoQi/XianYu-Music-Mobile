@@ -100,6 +100,8 @@ class GlassTopBar extends ConsumerWidget {
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 与底栏/播放条共享一次 backdrop 回读（同 sigma、区域不重叠）
+        backdropGroupKey: navGlassKey,
         child: inner,
       ),
     );

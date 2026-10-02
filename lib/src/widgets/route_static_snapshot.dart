@@ -155,7 +155,14 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
           // img==null（showImg=false）时，无抓废
           IgnorePointer(
             ignoring: showImg,
-            child: widget.child,
+            // 冻结窗口内静默 live 层：快照已完全遮挡页面，把子树 ticker
+            // 静音停掉持续动画（shimmer/加载态/轮播等重绘源），返回/推入
+            // 转场中当前页面不再产生任何更新，恒为最后一帧；恢复时 ticker
+            // 原地续跑，配合 settle-hold 无缝接管
+            child: TickerMode(
+              enabled: !showImg,
+              child: widget.child,
+            ),
           ),
           if (img != null && size != null && moving)
             Positioned.fill(
