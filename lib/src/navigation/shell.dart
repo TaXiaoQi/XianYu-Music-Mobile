@@ -62,13 +62,15 @@ final isLandscapeProvider = StateProvider<bool>((ref) => false);
 
 final landscapeLibraryProvider = StateProvider<int?>((ref) => null);
 
-final landscapeLibrarySearchActiveProvider =
-    StateProvider<bool>((ref) => false);
+final landscapeLibrarySearchActiveProvider = StateProvider<bool>(
+  (ref) => false,
+);
 
 final landscapeLibraryQueryProvider = StateProvider<String>((ref) => '');
 
-final landscapeLibrarySearchCtrlProvider =
-    Provider<TextEditingController>((ref) {
+final landscapeLibrarySearchCtrlProvider = Provider<TextEditingController>((
+  ref,
+) {
   final ctrl = TextEditingController();
   ref.onDispose(ctrl.dispose);
   return ctrl;
@@ -88,8 +90,7 @@ final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 
 final landscapeContentPathProvider = StateProvider<String?>((ref) => null);
 
-final musicLibraryPageKeys =
-    List<GlobalKey>.generate(5, (_) => GlobalKey());
+final musicLibraryPageKeys = List<GlobalKey>.generate(5, (_) => GlobalKey());
 
 final landscapePaneOpenProvider = Provider<bool>((ref) {
   return ref.watch(landscapeAccountOpenProvider) ||
@@ -147,8 +148,7 @@ class EmbeddedShellScope extends InheritedWidget {
   bool updateShouldNotify(EmbeddedShellScope oldWidget) => false;
 }
 
-mixin HidesShellChrome<T extends ConsumerStatefulWidget>
-    on ConsumerState<T> {
+mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   ProviderContainer? _container;
 
   bool _counted = false;
@@ -307,7 +307,8 @@ class _AppShellState extends ConsumerState<AppShell> {
       chromeGlassFrame.value = null;
       if (stale != null) {
         WidgetsBinding.instance.addPostFrameCallback(
-            (_) => stale.image.dispose());
+          (_) => stale.image.dispose(),
+        );
       }
       schedule(const Duration(milliseconds: 300));
     }
@@ -340,8 +341,10 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   void _handleBack() {
     final router = GoRouter.of(context);
-    AppLogger.instance.log('back',
-        'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}');
+    AppLogger.instance.log(
+      'back',
+      'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}',
+    );
 
     if (router.canPop()) {
       AppLogger.instance.log('back', '手动 pop 二级页面');
@@ -360,8 +363,11 @@ class _AppShellState extends ConsumerState<AppShell> {
         now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
       _lastBackTime = now;
       AppLogger.instance.log('back', '提示再按一次退出');
-      showXianYuToast(context, tr('再按一次退出应用'),
-        duration: const Duration(seconds: 2));
+      showXianYuToast(
+        context,
+        tr('再按一次退出应用'),
+        duration: const Duration(seconds: 2),
+      );
       return;
     }
 
@@ -371,10 +377,7 @@ class _AppShellState extends ConsumerState<AppShell> {
 }
 
 class _ShellScaffold extends ConsumerStatefulWidget {
-  const _ShellScaffold({
-    required this.navigationShell,
-    required this.index,
-  });
+  const _ShellScaffold({required this.navigationShell, required this.index});
 
   final StatefulNavigationShell navigationShell;
   final int index;
@@ -395,23 +398,90 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   StreamSubscription<dynamic>? _rotationSub;
 
+  /// 悬浮 chrome（底栏/悬浮顶栏）完全隐藏后整树卸载。Impeller 下
+  /// Opacity(0.01) 常绘子树的 alpha 泄漏——内容以约 10% 亮度透出，二级页上
+  /// 残留底栏与选中圆形（与 mini 播放条幽灵 bar 同源，那里已用整树卸载修掉）
+  bool _chromeGone = false;
+
+  /// 重挂载恢复帧：隐式动画（AnimatedOpacity/AnimatedScale）首建不播动画，
+  /// 挂回首帧若目标值已是 1.0/1.0 会硬切，需先以隐藏目标渲染一帧
+  bool _chromeRecovering = false;
+
+  /// 恢复窗口：停绘后挂回的首帧 backdrop 采样未就绪，降级磨砂防黑闪
+  bool _chromeFading = false;
+
+  bool? _lastChromeHidden;
+  Timer? _chromeGoneTimer;
+  Timer? _chromeFadeTimer;
+
   static const _rootPaths = {'/', '/home', '/mine'};
 
   static bool _isRootPathOf(String path) => _rootPaths.contains(path);
+
+  /// hidden 变化时调度悬浮 chrome 的整树卸载/挂回：淡出动画（240ms）结束后
+  /// 停绘，恢复时先挂回并按隐藏目标渲染一帧再翻回真实目标，保住淡入/缩放
+  /// 隐式动画。与 mini 播放条 _syncBarGone 同构。
+  void _syncChromeHidden() {
+    if (!mounted) return;
+    _syncChromeGone(
+      ref.read(navBarHiddenProvider) > 0 || !ref.read(navOnRootPathProvider),
+    );
+  }
+
+  void _syncChromeGone(bool hidden) {
+    if (_lastChromeHidden == hidden) return;
+    _lastChromeHidden = hidden;
+    if (hidden) {
+      _chromeGoneTimer?.cancel();
+      _chromeGoneTimer = Timer(const Duration(milliseconds: 320), () {
+        if (mounted) setState(() => _chromeGone = true);
+      });
+      // 缓存帧里含旧底栏与圆形：隐藏后它不再刷新，留着会被其它
+      // useChromeFrame 玻璃面裁出残影——立即失效（宁缺勿错）
+      final stale = chromeGlassFrame.value;
+      if (stale != null) {
+        chromeGlassFrame.value = null;
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => stale.image.dispose(),
+        );
+      }
+    } else {
+      _chromeGoneTimer?.cancel();
+      if (_chromeGone) {
+        _chromeGone = false;
+        _chromeRecovering = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _chromeRecovering = false);
+        });
+        _chromeFadeTimer?.cancel();
+        _chromeFading = true;
+        _chromeFadeTimer = Timer(const Duration(milliseconds: 280), () {
+          if (mounted) setState(() => _chromeFading = false);
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _router = GoRouter.of(context);
-    _isRootPath =
-        _isRootPathOf(_routerTopPath(_router.routerDelegate.currentConfiguration));
+    _isRootPath = _isRootPathOf(
+      _routerTopPath(_router.routerDelegate.currentConfiguration),
+    );
     ref.read(navOnRootPathProvider.notifier).state = _isRootPath;
     _router.routerDelegate.addListener(_onRouteChanged);
+    // 悬浮 chrome 显隐驱动整树卸载/挂回：hidden = 计数 >0 || 非 root 路径，
+    // 两路都要监听（二级页靠后者隐藏，计数不增）
+    ref.listenManual(navBarHiddenProvider, (_, _) => _syncChromeHidden());
+    ref.listenManual(navOnRootPathProvider, (_, _) => _syncChromeHidden());
+    // 冷启动直接落在二级页时上面两个监听都不会触发，先同步一次
+    _syncChromeGone(ref.read(navBarHiddenProvider) > 0 || !_isRootPath);
     if (defaultTargetPlatform == TargetPlatform.android) {
-      _rotationSub = const EventChannel('xianyu/rotation/events')
-          .receiveBroadcastStream()
-          .listen(_onRotationEvent, onError: (_) {});
+      _rotationSub = const EventChannel(
+        'xianyu/rotation/events',
+      ).receiveBroadcastStream().listen(_onRotationEvent, onError: (_) {});
     }
   }
 
@@ -450,6 +520,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _router.routerDelegate.removeListener(_onRouteChanged);
     _libPaneMountTimer?.cancel();
     _rotationSub?.cancel();
+    _chromeGoneTimer?.cancel();
+    _chromeFadeTimer?.cancel();
     super.dispose();
   }
 
@@ -503,132 +575,136 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _lastPhysicalLandscape = landscape;
     if (!flipped) return;
     if (!landscape) {
-        final lib = ref.read(landscapeLibraryProvider);
-        final playlist = ref.read(landscapePlaylistOpenProvider);
-        final searchOpen = ref.read(landscapeSearchOpenProvider);
-        final searchResults = ref.read(landscapeSearchResultsProvider);
-        final download = ref.read(landscapeDownloadOpenProvider);
-        final account = ref.read(landscapeAccountOpenProvider);
-        final content = ref.read(landscapeContentPathProvider);
-        void closeAll() {
-          ref.read(landscapeLibraryProvider.notifier).state = null;
-          ref.read(landscapeSearchOpenProvider.notifier).state = false;
-          ref.read(landscapeSearchResultsProvider.notifier).state = false;
-          ref.read(landscapeDownloadOpenProvider.notifier).state = false;
-          ref.read(landscapeAccountOpenProvider.notifier).state = false;
-          ref.read(landscapePlaylistOpenProvider.notifier).state = null;
-          ref.read(landscapeContentPathProvider.notifier).state = null;
-        }
+      final lib = ref.read(landscapeLibraryProvider);
+      final playlist = ref.read(landscapePlaylistOpenProvider);
+      final searchOpen = ref.read(landscapeSearchOpenProvider);
+      final searchResults = ref.read(landscapeSearchResultsProvider);
+      final download = ref.read(landscapeDownloadOpenProvider);
+      final account = ref.read(landscapeAccountOpenProvider);
+      final content = ref.read(landscapeContentPathProvider);
+      void closeAll() {
+        ref.read(landscapeLibraryProvider.notifier).state = null;
+        ref.read(landscapeSearchOpenProvider.notifier).state = false;
+        ref.read(landscapeSearchResultsProvider.notifier).state = false;
+        ref.read(landscapeDownloadOpenProvider.notifier).state = false;
+        ref.read(landscapeAccountOpenProvider.notifier).state = false;
+        ref.read(landscapePlaylistOpenProvider.notifier).state = null;
+        ref.read(landscapeContentPathProvider.notifier).state = null;
+      }
 
-        final back = _rotateBackPath;
-        _rotateBackPath = null;
-        closeAll();
-        final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
-        final onShell = _isRootPathOf(top);
-        final onSettings = top == '/settings';
-        if (onSettings && kLandscapeSettingPaths.contains(back)) {
-          final category = ref.read(landscapeSettingsCategoryProvider);
-          context.push(category ?? back!);
-        } else if (onShell) {
-          if (lib != null) {
-            const libRoutes = [
-              '/library',
-              '/favorites',
-              '/recent',
-              '/playlists',
-              '/library/folders',
-            ];
-            context.push(libRoutes[lib.clamp(0, libRoutes.length - 1)]);
-          } else if (searchOpen) {
-            context.push(searchResults ? '/search/result' : '/search');
-          } else if (content != null) {
-            context.push(content);
-          } else if (playlist != null) {
-            context.push('/playlist/$playlist');
-          } else if (download) {
-            context.push('/download');
-          } else if (account) {
-            context.push('/account');
-          }
-        }
-        return;
-      }
-      final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
-      const libRoutes = [
-        '/library',
-        '/favorites',
-        '/recent',
-        '/playlists',
-        '/library/folders',
-      ];
-      if (path == '/search' || path == '/search/result') {
-        _rotateBackPath = path;
-        ref.read(landscapeSearchOpenProvider.notifier).state = true;
-        ref.read(landscapeSearchResultsProvider.notifier).state =
-            path == '/search/result';
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (kLandscapeSettingPaths.contains(path)) {
-        _rotateBackPath = path;
-        ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
-        final hasSettingsBelow = _router
-            .routerDelegate.currentConfiguration.matches
-            .any((m) => m is RouteMatch && m.matchedLocation == '/settings');
-        if (hasSettingsBelow) {
-          context.pop();
-        } else {
-          context.go('/settings');
-        }
-      } else if (libRoutes.contains(path)) {
-        _rotateBackPath = path;
-        _deferLibPaneMount();
-        ref.read(landscapeLibraryProvider.notifier).state =
-            libRoutes.indexOf(path);
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path == '/home/daily' ||
-          path == '/home/toplists' ||
-          path == '/leaderboard') {
-        _rotateBackPath = path;
-        ref.read(landscapeContentPathProvider.notifier).state = path;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path == '/download') {
-        _rotateBackPath = path;
-        ref.read(landscapeDownloadOpenProvider.notifier).state = true;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path == '/account') {
-        _rotateBackPath = path;
-        ref.read(landscapeAccountOpenProvider.notifier).state = true;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path.startsWith('/playlist/')) {
-        _rotateBackPath = path;
-        ref.read(landscapePlaylistOpenProvider.notifier).state =
-            path.split('/').last;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (!_noRotateRedirectPaths.contains(path) && path != '/settings') {
-        _rotateBackPath = path;
-        while (context.canPop()) {
-          context.pop();
+      final back = _rotateBackPath;
+      _rotateBackPath = null;
+      closeAll();
+      final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
+      final onShell = _isRootPathOf(top);
+      final onSettings = top == '/settings';
+      if (onSettings && kLandscapeSettingPaths.contains(back)) {
+        final category = ref.read(landscapeSettingsCategoryProvider);
+        context.push(category ?? back!);
+      } else if (onShell) {
+        if (lib != null) {
+          const libRoutes = [
+            '/library',
+            '/favorites',
+            '/recent',
+            '/playlists',
+            '/library/folders',
+          ];
+          context.push(libRoutes[lib.clamp(0, libRoutes.length - 1)]);
+        } else if (searchOpen) {
+          context.push(searchResults ? '/search/result' : '/search');
+        } else if (content != null) {
+          context.push(content);
+        } else if (playlist != null) {
+          context.push('/playlist/$playlist');
+        } else if (download) {
+          context.push('/download');
+        } else if (account) {
+          context.push('/account');
         }
       }
+      return;
+    }
+    final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
+    const libRoutes = [
+      '/library',
+      '/favorites',
+      '/recent',
+      '/playlists',
+      '/library/folders',
+    ];
+    if (path == '/search' || path == '/search/result') {
+      _rotateBackPath = path;
+      ref.read(landscapeSearchOpenProvider.notifier).state = true;
+      ref.read(landscapeSearchResultsProvider.notifier).state =
+          path == '/search/result';
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (kLandscapeSettingPaths.contains(path)) {
+      _rotateBackPath = path;
+      ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
+      final hasSettingsBelow = _router
+          .routerDelegate
+          .currentConfiguration
+          .matches
+          .any((m) => m is RouteMatch && m.matchedLocation == '/settings');
+      if (hasSettingsBelow) {
+        context.pop();
+      } else {
+        context.go('/settings');
+      }
+    } else if (libRoutes.contains(path)) {
+      _rotateBackPath = path;
+      _deferLibPaneMount();
+      ref.read(landscapeLibraryProvider.notifier).state = libRoutes.indexOf(
+        path,
+      );
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/home/daily' ||
+        path == '/home/toplists' ||
+        path == '/leaderboard') {
+      _rotateBackPath = path;
+      ref.read(landscapeContentPathProvider.notifier).state = path;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/download') {
+      _rotateBackPath = path;
+      ref.read(landscapeDownloadOpenProvider.notifier).state = true;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/account') {
+      _rotateBackPath = path;
+      ref.read(landscapeAccountOpenProvider.notifier).state = true;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path.startsWith('/playlist/')) {
+      _rotateBackPath = path;
+      ref.read(landscapePlaylistOpenProvider.notifier).state = path
+          .split('/')
+          .last;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (!_noRotateRedirectPaths.contains(path) && path != '/settings') {
+      _rotateBackPath = path;
+      while (context.canPop()) {
+        context.pop();
+      }
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final screen = MediaQuery.maybeOf(context);
-    final landscape = screen == null ||
-        screen.size.width >= screen.size.height * 1.05;
+    final landscape =
+        screen == null || screen.size.width >= screen.size.height * 1.05;
 
     if (_lastImmersive != landscape) {
       _lastImmersive = landscape;
@@ -639,8 +715,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   Future<void> _applyLandscapeImmersive(bool landscape) async {
     try {
       if (landscape) {
-        await SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.immersiveSticky);
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       } else {
         await SystemChrome.setEnabledSystemUIMode(
           SystemUiMode.manual,
@@ -650,8 +725,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
         );
       }
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   bool _lastImmersive = false;
@@ -664,9 +738,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   }) {
     return useCameraArea
         ? MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              padding: padding.copyWith(left: 0, right: 0),
-            ),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(padding: padding.copyWith(left: 0, right: 0)),
             child: child,
           )
         : child;
@@ -700,8 +774,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     });
 
     final floating =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
-            true;
+        ref.watch(
+          settingsProvider.select((s) => s.valueOrNull?.floatingNavBar),
+        ) ??
+        true;
 
     final libSel = ref.watch(landscapeLibraryProvider);
 
@@ -761,26 +837,34 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     const libPaneActive = false;
 
-    final floatingSearchBar =
-        ref.watch(settingsProvider.select(
-            (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floatingSearchBar = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
 
-    final useCameraArea = landscape &&
+    final useCameraArea =
+        landscape &&
         ref.watch(
-            settingsProvider.select(
-                (s) => s.valueOrNull?.landscapeCameraArea ?? true));
+          settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeCameraArea ?? true,
+          ),
+        );
 
-    final landscapeFadeEnabled = landscape &&
-        ref.watch(settingsProvider.select(
-            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true));
+    final landscapeFadeEnabled =
+        landscape &&
+        ref.watch(
+          settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true,
+          ),
+        );
 
     final libPaneMountable = landscape && _libPaneMountable;
     final Widget landscapeHome = Offstage(
       offstage: anyPaneOpen,
       child: EmbeddedShellScope(
         child: LandscapeTabSwitcher(
-          currentIndex:
-              libPaneMountable ? (libSel == null ? 0 : 1 + libSel) : 0,
+          currentIndex: libPaneMountable
+              ? (libSel == null ? 0 : 1 + libSel)
+              : 0,
           enabled: landscapeFadeEnabled,
           suppress: anyPaneOpen,
           children: [
@@ -802,20 +886,27 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     // chrome 缓存帧抓取门控：竖屏悬浮 chrome（底栏/悬浮顶栏）可见且为
     // 液态材质时才允许抓帧，保证缓存帧里的 chrome 区域是有效液态输出
-    chromeGlassFrameActive.value = !landscape &&
+    chromeGlassFrameActive.value =
+        !landscape &&
         !hidden &&
-        (ref.watch(settingsProvider.select(
-                (s) => s.valueOrNull?.liquidGlass)) ??
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.liquidGlass),
+            ) ??
             true) &&
-        !ref.watch(settingsProvider.select(
-            (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
+        !ref.watch(
+          settingsProvider.select(
+            (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+          ),
+        );
 
     void select(int i) {
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       if (searchOpenRaw) closeLandscapeSearch(ref);
       ref.read(landscapeContentPathProvider.notifier).state = null;
       widget.navigationShell.goBranch(
-          i, initialLocation: i == widget.navigationShell.currentIndex);
+        i,
+        initialLocation: i == widget.navigationShell.currentIndex,
+      );
     }
 
     // 转场中沿用上次构建的顶栏实例（identical → Element 跳过子树 rebuild）：
@@ -851,16 +942,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         actions: [
           if (widget.index == 0) ...[
             IconButton(
-              icon: themeSlotWidget(ref, 'entry.wallpaper',
-                  fallback: const SkinIcon()),
+              icon: themeSlotWidget(
+                ref,
+                'entry.wallpaper',
+                fallback: const SkinIcon(),
+              ),
               tooltip: tr('皮肤'),
               onPressed: () => context.push('/wallpaper'),
             ),
             const SizedBox(width: 16),
           ] else ...[
             IconButton(
-              icon: themeSlotIcon(ref, 'mine.settings',
-                  fallback: Icons.settings_outlined),
+              icon: themeSlotIcon(
+                ref,
+                'mine.settings',
+                fallback: Icons.settings_outlined,
+              ),
               tooltip: tr('设置'),
               onPressed: () => context.push('/settings'),
             ),
@@ -875,25 +972,29 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     }
 
     Widget buildRailDivider() => Positioned(
-          left: _railWidth - 14,
-          top: 0,
-          bottom: 0,
-          width: 28,
-          child: _ShellRailDivider(
-            onDragUpdate: (dx) {
-              final screenW = MediaQuery.sizeOf(context).width;
-              final leftSafe = padding.left;
-              setState(() {
-                _railWidth = (_railWidth + dx)
-                    .clamp(leftSafe + kLandscapeRailIconWidth, screenW * 0.5);
-              });
-            },
-          ),
-        );
+      left: _railWidth - 14,
+      top: 0,
+      bottom: 0,
+      width: 28,
+      child: _ShellRailDivider(
+        onDragUpdate: (dx) {
+          final screenW = MediaQuery.sizeOf(context).width;
+          final leftSafe = padding.left;
+          setState(() {
+            _railWidth = (_railWidth + dx).clamp(
+              leftSafe + kLandscapeRailIconWidth,
+              screenW * 0.5,
+            );
+          });
+        },
+      ),
+    );
 
-    final isSide = landscape ||
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) ==
+    final isSide =
+        landscape ||
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.navBarPosition),
+            ) ==
             NavBarPosition.side);
 
     final expanded = ref.watch(sideBarExpandedProvider);
@@ -903,126 +1004,119 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       body: Stack(
         children: [
           Positioned.fill(
-            child: ColoredBox(
-              color: Theme.of(context).scaffoldBackgroundColor,
-            ),
+            child: ColoredBox(color: Theme.of(context).scaffoldBackgroundColor),
           ),
           ValueListenableBuilder<double>(
             valueListenable: orientationContentFade,
             builder: (context, fade, child) =>
                 Opacity(opacity: fade, child: child),
             child: Padding(
-            padding: EdgeInsets.only(
-              left: landscape ? _railWidth : 0,
-              right: (landscape && !useCameraArea) ? padding.right : 0,
-            ),
-            child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: landscape
-                            ? (floatingSearchBar
-                                ? Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: _landscapeFadePanel(
-                                          useCameraArea: useCameraArea,
-                                          padding: padding,
-                                          context: context,
-                                          child: landscapeHome,
-                                        ),
+              padding: EdgeInsets.only(
+                left: landscape ? _railWidth : 0,
+                right: (landscape && !useCameraArea) ? padding.right : 0,
+              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: landscape
+                        ? (floatingSearchBar
+                              ? Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: _landscapeFadePanel(
+                                        useCameraArea: useCameraArea,
+                                        padding: padding,
+                                        context: context,
+                                        child: landscapeHome,
                                       ),
-                                      Positioned(
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        child: IgnorePointer(
-                                          ignoring:
-                                              anyPaneOpen || libPaneActive,
-                                          child: Opacity(
-                                            opacity: anyPaneOpen ||
-                                                    libPaneActive
-                                                ? 0
-                                                : 1,
-                                            child: LandscapeGlobalTopBar(
-                                              currentIndex: widget.index,
-                                              floating: true,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Column(
-                                    children: [
-                                      IgnorePointer(
-                                        ignoring:
-                                            anyPaneOpen || libPaneActive,
+                                    ),
+                                    Positioned(
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: IgnorePointer(
+                                        ignoring: anyPaneOpen || libPaneActive,
                                         child: Opacity(
-                                          opacity:
-                                              anyPaneOpen || libPaneActive
-                                                  ? 0
-                                                  : 1,
+                                          opacity: anyPaneOpen || libPaneActive
+                                              ? 0
+                                              : 1,
                                           child: LandscapeGlobalTopBar(
                                             currentIndex: widget.index,
-                                            floating: false,
+                                            floating: true,
                                           ),
                                         ),
                                       ),
-                                      Expanded(
-                                        child: _landscapeFadePanel(
-                                          useCameraArea: useCameraArea,
-                                          padding: padding,
-                                          context: context,
-                                          child: landscapeHome,
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  children: [
+                                    IgnorePointer(
+                                      ignoring: anyPaneOpen || libPaneActive,
+                                      child: Opacity(
+                                        opacity: anyPaneOpen || libPaneActive
+                                            ? 0
+                                            : 1,
+                                        child: LandscapeGlobalTopBar(
+                                          currentIndex: widget.index,
+                                          floating: false,
                                         ),
                                       ),
-                                    ],
-                                  ))
-                            : _landscapeFadePanel(
-                                useCameraArea: useCameraArea,
-                                padding: padding,
-                                context: context,
-                                child: landscapeHome,
-                              ),
-                      ),
-                      if (landscape)
-                        Positioned.fill(
-                          child: useCameraArea
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding:
-                                        padding.copyWith(left: 0, right: 0),
-                                  ),
-                                  child: _landscapeSlide(
-                                    enabled: landscapeFadeEnabled,
-                                    open: anyPaneOpen,
-                                    trigger: landPaneTrigger,
-                                    child: landPane,
-                                  ),
-                                )
-                              : _landscapeSlide(
-                                  enabled: landscapeFadeEnabled,
-                                  open: anyPaneOpen,
-                                  trigger: landPaneTrigger,
-                                  child: landPane,
-                                ),
-                        ),
-                      if (landscape &&
-                          anyPaneOpen &&
-                          !accountOpen &&
-                          contentPath == null)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: LandscapeGlobalTopBar(
-                            currentIndex: widget.index,
-                            floating: floatingSearchBar,
+                                    ),
+                                    Expanded(
+                                      child: _landscapeFadePanel(
+                                        useCameraArea: useCameraArea,
+                                        padding: padding,
+                                        context: context,
+                                        child: landscapeHome,
+                                      ),
+                                    ),
+                                  ],
+                                ))
+                        : _landscapeFadePanel(
+                            useCameraArea: useCameraArea,
+                            padding: padding,
+                            context: context,
+                            child: landscapeHome,
                           ),
-                        ),
-                    ],
                   ),
-                ),
+                  if (landscape)
+                    Positioned.fill(
+                      child: useCameraArea
+                          ? MediaQuery(
+                              data: MediaQuery.of(context).copyWith(
+                                padding: padding.copyWith(left: 0, right: 0),
+                              ),
+                              child: _landscapeSlide(
+                                enabled: landscapeFadeEnabled,
+                                open: anyPaneOpen,
+                                trigger: landPaneTrigger,
+                                child: landPane,
+                              ),
+                            )
+                          : _landscapeSlide(
+                              enabled: landscapeFadeEnabled,
+                              open: anyPaneOpen,
+                              trigger: landPaneTrigger,
+                              child: landPane,
+                            ),
+                    ),
+                  if (landscape &&
+                      anyPaneOpen &&
+                      !accountOpen &&
+                      contentPath == null)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LandscapeGlobalTopBar(
+                        currentIndex: widget.index,
+                        floating: floatingSearchBar,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
 
           if (landscape)
@@ -1054,32 +1148,41 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
           if (!isSide && floating)
             Positioned(
-                left: 12,
-                right: 12,
-                bottom: 18 + safeBottom,
-                child: AnimatedOpacity(
+              left: 12,
+              right: 12,
+              bottom: 18 + safeBottom,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                // 液态 shader 最低 0.01 保温（整树停绘后重显首帧采样
+                // 黑闪）；毛玻璃普通 blur 归零停绘，淡入首绘发生在极低
+                // alpha（不可见），防 saveLayer 内首帧重采样闪白
+                opacity: (hidden || _chromeRecovering)
+                    ? glassHiddenOpacityFloor(ref)
+                    : 1.0,
+                child: AnimatedScale(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  // 液态 shader 最低 0.01 保温（整树停绘后重显首帧采样
-                  // 黑闪）；毛玻璃普通 blur 归零停绘，淡入首绘发生在极低
-                  // alpha（不可见），防 saveLayer 内首帧重采样闪白
-                  opacity: hidden ? glassHiddenOpacityFloor(ref) : 1.0,
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 240),
-                    curve: Curves.easeOutCubic,
-                    scale: hidden ? 0.92 : 1.0,
-                    child: IgnorePointer(
-                      ignoring: hidden,
-                      child: _JellySwitch(
-                        key: _jellyKey,
-                        mode: true,
-                        child:
-                            _LiquidNavBar(index: widget.index, onSelect: select),
-                      ),
-                    ),
+                  scale: (hidden || _chromeRecovering) ? 0.92 : 1.0,
+                  child: IgnorePointer(
+                    ignoring: hidden || _chromeRecovering,
+                    // 淡出结束后整树卸载：Impeller 下 0.01 常绘子树的
+                    // alpha 泄漏会让底栏与选中圆形残留在二级页上
+                    child: _chromeGone
+                        ? const SizedBox.shrink()
+                        : _JellySwitch(
+                            key: _jellyKey,
+                            mode: true,
+                            child: _LiquidNavBar(
+                              index: widget.index,
+                              onSelect: select,
+                              degraded: _chromeFading || _chromeRecovering,
+                            ),
+                          ),
                   ),
                 ),
               ),
+            ),
 
           if (!landscape)
             Positioned(
@@ -1091,79 +1194,95 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 curve: Curves.easeOutCubic,
                 // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘，
                 // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
-                opacity: (floatingSearchBar &&
+                opacity:
+                    (floatingSearchBar &&
                         (widget.index == 0 || widget.index == 1) &&
-                        !hidden)
+                        !hidden &&
+                        !_chromeRecovering)
                     ? 1.0
                     : glassHiddenOpacityFloor(ref),
                 child: AnimatedScale(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
                   // 与悬浮底栏同款缩小退让（0.92），退场不再只是淡出
-                  scale: (floatingSearchBar &&
+                  scale:
+                      (floatingSearchBar &&
                           (widget.index == 0 || widget.index == 1) &&
-                          !hidden)
+                          !hidden &&
+                          !_chromeRecovering)
                       ? 1.0
                       : 0.92,
                   child: IgnorePointer(
-                    ignoring: !(floatingSearchBar &&
-                        (widget.index == 0 || widget.index == 1) &&
-                        !hidden),
-                    child: FloatingTopBar(
-                      chromeFrame: true,
-                      title: widget.index == 1
-                          ? Text(
-                              tr('个人中心'),
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            )
-                          : Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(text: tr('弦予')),
-                                  TextSpan(
-                                    text: tr('音乐'),
+                    ignoring:
+                        !(floatingSearchBar &&
+                            (widget.index == 0 || widget.index == 1) &&
+                            !hidden &&
+                            !_chromeRecovering),
+                    child: _chromeGone
+                        ? const SizedBox.shrink()
+                        : FloatingTopBar(
+                            chromeFrame: true,
+                            title: widget.index == 1
+                                ? Text(
+                                    tr('个人中心'),
                                     style: const TextStyle(
-                                      color: Color(0xFFEC4141),
+                                      fontSize: 17,
                                       fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  )
+                                : Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(text: tr('弦予')),
+                                        TextSpan(
+                                          text: tr('音乐'),
+                                          style: const TextStyle(
+                                            color: Color(0xFFEC4141),
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
                                     ),
                                   ),
-                                ],
-                              ),
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                      onSearchTap: () => context.push('/search'),
-                      onRecognize: () => context.push('/recognize'),
-                      actions: [
-                        if (widget.index == 0)
-                          BiliPaiIconButton(
-                            iconChild: themeSlotWidget(ref, 'entry.wallpaper',
-                                fallback: const SkinIcon()),
-                            tooltip: tr('皮肤'),
-                            onTap: () => context.push('/wallpaper'),
-                          )
-                        else
-                          BiliPaiIconButton(
-                            iconChild: themeSlotWidget(ref, 'mine.settings',
-                                fallback: const Icon(Icons.settings_outlined)),
-                            tooltip: tr('设置'),
-                            onTap: () => context.push('/settings'),
+                            onSearchTap: () => context.push('/search'),
+                            onRecognize: () => context.push('/recognize'),
+                            actions: [
+                              if (widget.index == 0)
+                                BiliPaiIconButton(
+                                  iconChild: themeSlotWidget(
+                                    ref,
+                                    'entry.wallpaper',
+                                    fallback: const SkinIcon(),
+                                  ),
+                                  tooltip: tr('皮肤'),
+                                  onTap: () => context.push('/wallpaper'),
+                                )
+                              else
+                                BiliPaiIconButton(
+                                  iconChild: themeSlotWidget(
+                                    ref,
+                                    'mine.settings',
+                                    fallback: const Icon(
+                                      Icons.settings_outlined,
+                                    ),
+                                  ),
+                                  tooltip: tr('设置'),
+                                  onTap: () => context.push('/settings'),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
                   ),
                 ),
               ),
             ),
 
-    if (!landscape && !floatingSearchBar)
+          if (!landscape && !floatingSearchBar)
             Positioned(
               top: 0,
               left: 0,
@@ -1187,11 +1306,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               key: _jellyKey,
               mode: false,
               child: _FixedChrome(
-                  index: widget.index, hidden: hidden, onSelect: select),
+                index: widget.index,
+                hidden: hidden,
+                onSelect: select,
+              ),
             )
           : null,
       extendBody: !isSide && !floating,
-        );
+    );
   }
 }
 
@@ -1230,7 +1352,8 @@ class _FixedNavBar extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final lowPerf = ref.watch(
       settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+        (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+      ),
     );
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
@@ -1258,17 +1381,18 @@ class _FixedNavBar extends ConsumerWidget {
     final fill = solid
         ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
         : (wallpaper
-            ? wallpaperGlassFill(context, ref)
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.52)));
+              ? wallpaperGlassFill(context, ref)
+              : (isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.white.withValues(alpha: 0.52)));
     // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
     final glassFill = wallpaper
         ? fill
         : themeTint(
             ref,
             'nav.bar',
-            (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget));
+            (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget),
+          );
     final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;
@@ -1306,11 +1430,7 @@ class _HideShellChromeState extends ConsumerState<HideShellChrome>
 }
 
 class _JellySwitch extends StatefulWidget {
-  const _JellySwitch({
-    super.key,
-    required this.mode,
-    required this.child,
-  });
+  const _JellySwitch({super.key, required this.mode, required this.child});
 
   final Object mode;
   final Widget child;
@@ -1337,24 +1457,27 @@ class _JellySwitchState extends State<_JellySwitch>
     );
     _scale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.82)
-            .chain(CurveTween(curve: Curves.easeOutCubic)),
+        tween: Tween(
+          begin: 1.0,
+          end: 0.82,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 32,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 0.82, end: 1.0)
-            .chain(CurveTween(curve: Curves.elasticOut)),
+        tween: Tween(
+          begin: 0.82,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.elasticOut)),
         weight: 68,
       ),
     ]).animate(_ctrl);
     _fade = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.55), weight: 32),
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.55),
-        weight: 32,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 0.55, end: 1.0)
-            .chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween(
+          begin: 0.55,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 68,
       ),
     ]).animate(_ctrl);
@@ -1394,10 +1517,17 @@ class _JellySwitchState extends State<_JellySwitch>
 }
 
 class _LiquidNavBar extends ConsumerStatefulWidget {
-  const _LiquidNavBar({required this.index, required this.onSelect});
+  const _LiquidNavBar({
+    required this.index,
+    required this.onSelect,
+    this.degraded = false,
+  });
 
   final int index;
   final ValueChanged<int> onSelect;
+
+  /// 停绘后挂回/恢复窗口：backdrop 尚未就绪，走磨砂兜底防首帧 shader 采样黑闪
+  final bool degraded;
 
   @override
   ConsumerState<_LiquidNavBar> createState() => _LiquidNavBarState();
@@ -1424,7 +1554,8 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     });
     final lowPerf = ref.watch(
       settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+        (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+      ),
     );
     // 液态开关与引擎能力分开算:用户开了液态但引擎不支持 shader 时,
     // BiliPaiGlass 自身会降级(blur+淡底),裸分支观感接近透明(用户读作透底),
@@ -1432,14 +1563,18 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     // → 引擎支持才走裸分支;降级场景走 _frostedGlass(degradedLiquid:
     //    磨砂级胶囊底+标准 blur,禁实底兜底),折射水滴原样保留。
     final liquidGlassOn =
-        (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
-                true) &&
-            !lowPerf;
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.liquidGlass),
+            ) ??
+            true) &&
+        !lowPerf;
     // 壁纸模式同步顶栏材质：栏面不上液态，走组件色块+导航面档位模糊；
     // lens 水滴是交互折射效果，与栏面材质无关，保留
     final wallpaper = wallpaperGlassActive(ref);
-    final liquid = liquidGlassOn &&
+    final liquid =
+        liquidGlassOn &&
         !wallpaper &&
+        !widget.degraded &&
         ImageFilter.isShaderFilterSupported;
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
@@ -1466,10 +1601,14 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     if (liquid) {
       return tabs;
     }
-    return _frostedGlass(context, ref, tabs,
-        lowPerf: lowPerf,
-        budget: budget,
-        degradedLiquid: liquidGlassOn);
+    return _frostedGlass(
+      context,
+      ref,
+      tabs,
+      lowPerf: lowPerf,
+      budget: budget,
+      degradedLiquid: liquidGlassOn,
+    );
   }
 
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
@@ -1499,14 +1638,19 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     return liquidGlassShell(context, child: glass, radius: 30);
   }
 
-  Widget _frostedGlass(BuildContext context, WidgetRef ref, Widget tabs,
-      {bool lowPerf = false,
-      BlurBudget? budget,
-      bool forceSolid = false,
-      bool degradedLiquid = false}) {
+  Widget _frostedGlass(
+    BuildContext context,
+    WidgetRef ref,
+    Widget tabs, {
+    bool lowPerf = false,
+    BlurBudget? budget,
+    bool forceSolid = false,
+    bool degradedLiquid = false,
+  }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
-    final effBudget = budget ?? ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar))!;
+    final effBudget =
+        budget ?? ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar))!;
     final wallpaper = wallpaperGlassActive(ref);
     // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
     // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见。
@@ -1516,10 +1660,10 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final bg = solid
         ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
         : (wallpaper
-            ? wallpaperGlassFill(context, ref)
-            : (isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.52)));
+              ? wallpaperGlassFill(context, ref)
+              : (isDark
+                    ? Colors.white.withValues(alpha: 0.10)
+                    : Colors.white.withValues(alpha: 0.52)));
     // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
     final fill = wallpaper
         ? bg
@@ -1528,7 +1672,8 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             'nav.bar',
             (budget == null || solid || wallpaper)
                 ? bg
-                : surfaceFillWithBudget(bg, budget));
+                : surfaceFillWithBudget(bg, budget),
+          );
     final sigma = degradedLiquid && !wallpaper
         ? surfaceBlurSigma(
             // 液态降级胶囊用液态档 blur(磨砂观感,而非导航面弱模糊)
@@ -1562,8 +1707,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
           // 液态降档胶囊用液态档 sigma，不并入导航面共享回读组
-          backdropGroupKey:
-              degradedLiquid && !wallpaper ? null : navGlassKey,
+          backdropGroupKey: degradedLiquid && !wallpaper ? null : navGlassKey,
           child: capsule,
         ),
       ),
@@ -1625,58 +1769,58 @@ class _LandscapeRail extends ConsumerWidget {
     final libSel = ref.watch(landscapeLibraryProvider);
 
     Widget label(String t) => Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 0, 4),
-          child: Text(
-            t,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
-              letterSpacing: 0.5,
-            ),
-          ),
-        );
+      padding: const EdgeInsets.fromLTRB(14, 10, 0, 4),
+      child: Text(
+        t,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
 
     final content = Column(
       children: [
         SizedBox(height: floating ? 14 : 20),
         if (!collapsed)
           Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
-              themeSlotWidget(
-                ref,
-                'landscape.logo',
-                size: 22,
-                fallback: const SizedBox.shrink(),
-              ),
-              Text.rich(
-                TextSpan(
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurface,
-                  ),
-                  children: [
-                    TextSpan(text: tr('弦予')),
-                    TextSpan(
-                      text: tr('音乐'),
-                      style: const TextStyle(
-                        color: Color(0xFFEC4141),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
+                themeSlotWidget(
+                  ref,
+                  'landscape.logo',
+                  size: 22,
+                  fallback: const SizedBox.shrink(),
                 ),
-              ),
-            ],
+                Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
+                    ),
+                    children: [
+                      TextSpan(text: tr('弦予')),
+                      TextSpan(
+                        text: tr('音乐'),
+                        style: const TextStyle(
+                          color: Color(0xFFEC4141),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         Expanded(
           child: ListView(
             padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
@@ -1768,10 +1912,7 @@ class _LandscapeRail extends ConsumerWidget {
         ? scheme.primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: collapsed ? 0 : 8,
-        vertical: 2,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 8, vertical: 2),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
@@ -1788,11 +1929,17 @@ class _LandscapeRail extends ConsumerWidget {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment:
-                collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+            mainAxisAlignment: collapsed
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
-              themeSlotIcon(ref, themeSlot,
-                  fallback: icon, size: 20, color: color),
+              themeSlotIcon(
+                ref,
+                themeSlot,
+                fallback: icon,
+                size: 20,
+                color: color,
+              ),
               if (!collapsed) ...[
                 const SizedBox(width: 9),
                 Text(
@@ -1801,8 +1948,7 @@ class _LandscapeRail extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        selected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     color: color,
                   ),
                 ),
@@ -1889,8 +2035,9 @@ class _SearchPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final floatingBar = ref.watch(settingsProvider
-        .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floatingBar = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     if (!showResults) {
       if (floatingBar) {
         return ColoredBox(
@@ -1905,8 +2052,7 @@ class _SearchPane extends ConsumerWidget {
         color: appScaffoldBackground(context, ref),
         child: Padding(
           padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-          child:
-              SearchIdleView(onSearch: (q) => submitLandscapeSearch(ref, q)),
+          child: SearchIdleView(onSearch: (q) => submitLandscapeSearch(ref, q)),
         ),
       );
     }
@@ -1980,8 +2126,9 @@ class NavDropletSnapshot {
   final bool isDark;
 }
 
-final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot =
-    ValueNotifier(null);
+final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot = ValueNotifier(
+  null,
+);
 
 /// 顶层水滴 overlay 宿主：挂在 app.dart builder Stack 中 mini 播放条之上。
 /// 底栏指示水滴独立于底栏树渲染——长按放大可鼓出栏缘、覆盖并折射上方
@@ -2016,7 +2163,8 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
     // 底栏 hidden = navBarHidden 计数 >0 || 非 root 路径（设置等页面走
     // 后者且会 postFrame 重写快照，仅靠清快照拦不住残影），overlay 显隐
     // 条件必须与 _ShellScaffold 的 hidden 完全一致
-    final chromeHidden = ref.watch(navBarHiddenProvider) > 0 ||
+    final chromeHidden =
+        ref.watch(navBarHiddenProvider) > 0 ||
         !ref.watch(navOnRootPathProvider);
     return Positioned.fill(
       child: IgnorePointer(
@@ -2056,8 +2204,10 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                   child: const SizedBox.expand(),
                                 ),
                                 CustomPaint(
-                                  painter:
-                                      _DropletEdgePainter(s.press, s.isDark),
+                                  painter: _DropletEdgePainter(
+                                    s.press,
+                                    s.isDark,
+                                  ),
                                 ),
                               ],
                             ),
@@ -2068,7 +2218,8 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                   ? Colors.white.withValues(alpha: 0.10)
                                   : Colors.black.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(
-                                  s.rect.shortestSide / 2),
+                                s.rect.shortestSide / 2,
+                              ),
                             ),
                           ),
                   ),
@@ -2144,9 +2295,12 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _sySpd += ((tY - _syPos) * sStiff - _sySpd * sDamp) * dt;
     _syPos += _sySpd * dt;
 
-    final settled = !_dragging &&
-        _sxSpd.abs() < 0.001 && _sxPos.abs() < 0.002 &&
-        _sySpd.abs() < 0.001 && _syPos.abs() < 0.002;
+    final settled =
+        !_dragging &&
+        _sxSpd.abs() < 0.001 &&
+        _sxPos.abs() < 0.002 &&
+        _sySpd.abs() < 0.001 &&
+        _syPos.abs() < 0.002;
     if (settled) {
       _sxPos = _sxSpd = _syPos = _sySpd = 0;
       _springTicker.stop();
@@ -2203,8 +2357,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     if (widget.index != oldWidget.index && !_dragging) {
       _move.animateWith(
         SpringSimulation(
-          const SpringDescription(
-              mass: 1, stiffness: 420, damping: 25.4),
+          const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
           _move.value,
           widget.index.toDouble(),
           0,
@@ -2233,191 +2386,186 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       animation: Listenable.merge([_move, _press, _coverAnim]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
-        final overlayDroplet = widget.lens && widget.glassBuilder != null;
-        final maxW = constraints.maxWidth;
-        final maxH = overlayDroplet
-            ? 70.0
-            : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
-        final tabW = (maxW - 20) / items.length;
-        final dropH = (maxH * 0.8).clamp(54.0, 60.0);
-        final pos = _dragging ? _dragPos : _move.value;
+          final overlayDroplet = widget.lens && widget.glassBuilder != null;
+          final maxW = constraints.maxWidth;
+          final maxH = overlayDroplet
+              ? 70.0
+              : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
+          final tabW = (maxW - 20) / items.length;
+          final dropH = (maxH * 0.8).clamp(54.0, 60.0);
+          final pos = _dragging ? _dragPos : _move.value;
 
-        final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
-        final dragMf = _dragging
-            ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
-            : (velPx > 45
-                ? ((velPx - 45) / 1400).clamp(0.0, 1.0)
-                : 0.0);
-        final pressG = Curves.easeOut.transform(_press.value);
-        final mf = math.max(pressG, dragMf);
+          final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
+          final dragMf = _dragging
+              ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
+              : (velPx > 45 ? ((velPx - 45) / 1400).clamp(0.0, 1.0) : 0.0);
+          final pressG = Curves.easeOut.transform(_press.value);
+          final mf = math.max(pressG, dragMf);
 
-        if (_dragging && !_springTicker.isActive) _ensureTicker();
+          if (_dragging && !_springTicker.isActive) _ensureTicker();
 
-        double k = 1 + dragMf * 0.22 + pressG * 0.55;
-        if (!overlayDroplet) {
-          // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
-          // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
-          // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
-          k = math.min(k, maxH / dropH);
-        }
-        final stretchX = _dragging ? _sxPos : 0.0;
-        final stretchY = _dragging ? _syPos : 0.0;
-        // 红色胶囊（非液态）样式：滑动选择时长度收一点，松手回到原长。
-        // 用 _press 驱动，收和放都是 150ms 平滑过渡，不会在松手瞬间硬跳；
-        // 横向也不再跟着 k 变长，否则快速拖动时反而比静止时更长。
-        final squeeze = widget.lens ? 1.0 : 1 - pressG * 0.15;
-        final sx = widget.lens
-            ? k * (1 + stretchX)
-            : (1 + stretchX) * squeeze;
-        final sy = k * (1 + stretchY);
+          double k = 1 + dragMf * 0.22 + pressG * 0.55;
+          if (!overlayDroplet) {
+            // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
+            // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
+            // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
+            k = math.min(k, maxH / dropH);
+          }
+          final stretchX = _dragging ? _sxPos : 0.0;
+          final stretchY = _dragging ? _syPos : 0.0;
+          // 红色胶囊（非液态）样式：滑动选择时长度收一点，松手回到原长。
+          // 用 _press 驱动，收和放都是 150ms 平滑过渡，不会在松手瞬间硬跳；
+          // 横向也不再跟着 k 变长，否则快速拖动时反而比静止时更长。
+          final squeeze = widget.lens ? 1.0 : 1 - pressG * 0.15;
+          final sx = widget.lens
+              ? k * (1 + stretchX)
+              : (1 + stretchX) * squeeze;
+          final sy = k * (1 + stretchY);
 
-        final d = dropH;
-        final bool scaledIndicator = overlayDroplet;
-        final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
-        Widget indicator;
-        if (widget.lens && dropletOn) {
-          final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
-          final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          final press = pressG.clamp(0.0, 1.0);
-          indicator = ClipOval(
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                LiveLiquidSurface(
-                  radius: scaledIndicator ? d * sy / 2 : d / 2,
-                  refract: amount,
-                  chroma: widget.dropletChroma,
-                  blurSigma: 0,
-                  backgroundColor: Colors.transparent,
-                  specular: 0.12,
-                  edgeAmount: band,
-                  saturation: 1.4,
-                  depthEffect: 1.2,
-                  child: const SizedBox.expand(),
-                ),
-                CustomPaint(
-                  painter: _DropletEdgePainter(press, isDark),
-                ),
-              ],
-            ),
-          );
-        } else {
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          indicator = DecoratedBox(
-            decoration: BoxDecoration(
-              color: widget.lens
-                  ? (isDark
-                      ? Colors.white.withValues(alpha: 0.10)
-                      : Colors.black.withValues(alpha: 0.10))
-                  : Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(d / 2),
-            ),
-            child: const SizedBox.expand(),
-          );
-        }
-
-        final indicatorW = widget.lens ? d : (tabW - 8);
-
-        final tabRow = Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < items.length; i++)
-                  Expanded(
-                    child: _NavTab(
-                      item: items[i],
-                      selected: i == widget.index,
-                      iconScale: widget.lens
-                          ? 1 +
-                              0.2 *
-                                  (1 - (i - pos).abs()).clamp(0.0, 1.0)
-                          : 1.0,
-                      onTap: () => widget.onSelect(i),
-                      suppressSplash: widget.lens,
-                    ),
+          final d = dropH;
+          final bool scaledIndicator = overlayDroplet;
+          final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
+          Widget indicator;
+          if (widget.lens && dropletOn) {
+            final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
+            final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final press = pressG.clamp(0.0, 1.0);
+            indicator = ClipOval(
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LiveLiquidSurface(
+                    radius: scaledIndicator ? d * sy / 2 : d / 2,
+                    refract: amount,
+                    chroma: widget.dropletChroma,
+                    blurSigma: 0,
+                    backgroundColor: Colors.transparent,
+                    specular: 0.12,
+                    edgeAmount: band,
+                    saturation: 1.4,
+                    depthEffect: 1.2,
+                    child: const SizedBox.expand(),
                   ),
-              ],
-            ),
-          ),
-        );
+                  CustomPaint(painter: _DropletEdgePainter(press, isDark)),
+                ],
+              ),
+            );
+          } else {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            indicator = DecoratedBox(
+              decoration: BoxDecoration(
+                color: widget.lens
+                    ? (isDark
+                          ? Colors.white.withValues(alpha: 0.10)
+                          : Colors.black.withValues(alpha: 0.10))
+                    : Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(d / 2),
+              ),
+              child: const SizedBox.expand(),
+            );
+          }
 
-        final gestures = Listener(
-          onPointerDown:
-              widget.lens ? (e) => _onPointerDown(e, tabW, items.length) : null,
-          onPointerUp: widget.lens ? (_) => _setPressed(false) : null,
-          onPointerCancel:
-              widget.lens ? (_) => _onPressCancel() : null,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: (d) => _onDragStart(d, tabW, items.length),
-            onHorizontalDragUpdate: (d) => _onDragUpdate(d, tabW, items.length),
-            onHorizontalDragEnd: (d) => _onDragEnd(d, tabW, items.length - 1),
-            onHorizontalDragCancel: () => _onDragCancel(items.length - 1),
-            child: Stack(
-              children: [
-                tabRow,
-                if (!overlayDroplet)
-                  Positioned(
-                    left: 10 + pos * tabW + (tabW - indicatorW) / 2,
-                    top: (maxH - dropH) / 2,
-                    bottom: (maxH - dropH) / 2,
-                    width: indicatorW,
-                    child: IgnorePointer(
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.diagonal3Values(sx, sy, 1)
-                          ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
-                        child: indicator,
+          final indicatorW = widget.lens ? d : (tabW - 8);
+
+          final tabRow = Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Expanded(
+                      child: _NavTab(
+                        item: items[i],
+                        selected: i == widget.index,
+                        iconScale: widget.lens
+                            ? 1 + 0.2 * (1 - (i - pos).abs()).clamp(0.0, 1.0)
+                            : 1.0,
+                        onTap: () => widget.onSelect(i),
+                        suppressSplash: widget.lens,
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-
-        if (overlayDroplet) {
-          final w = indicatorW * sx;
-          final h = dropH * sy;
-          final cx = 10 + pos * tabW + tabW / 2;
-          // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
-          // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
-          // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
-          // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
-          // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          _syncSnapshot(
-            cx: cx,
-            w: w,
-            h: h,
-            maxH: maxH,
-            liquid: dropletOn,
-            radius: d * sy / 2,
-            refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
-            band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
-            chroma: widget.dropletChroma,
-            shear: _dragVel.sign * _sxPos * 0.12,
-            depth: 1.2 * mf,
-            press: pressG.clamp(0.0, 1.0),
-            isDark: isDark,
           );
-          return widget.glassBuilder!(
-              SizedBox(key: _barKey, height: maxH, child: gestures));
-        }
-        if (navDropletSnapshot.value != null) {
-          // 降级为树内水滴（玻璃引擎不可用）时清掉顶层快照，避免残影
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) navDropletSnapshot.value = null;
-          });
-        }
-        return gestures;
+
+          final gestures = Listener(
+            onPointerDown: widget.lens
+                ? (e) => _onPointerDown(e, tabW, items.length)
+                : null,
+            onPointerUp: widget.lens ? (_) => _setPressed(false) : null,
+            onPointerCancel: widget.lens ? (_) => _onPressCancel() : null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragStart: (d) => _onDragStart(d, tabW, items.length),
+              onHorizontalDragUpdate: (d) =>
+                  _onDragUpdate(d, tabW, items.length),
+              onHorizontalDragEnd: (d) => _onDragEnd(d, tabW, items.length - 1),
+              onHorizontalDragCancel: () => _onDragCancel(items.length - 1),
+              child: Stack(
+                children: [
+                  tabRow,
+                  if (!overlayDroplet)
+                    Positioned(
+                      left: 10 + pos * tabW + (tabW - indicatorW) / 2,
+                      top: (maxH - dropH) / 2,
+                      bottom: (maxH - dropH) / 2,
+                      width: indicatorW,
+                      child: IgnorePointer(
+                        child: Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.diagonal3Values(sx, sy, 1)
+                            ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
+                          child: indicator,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+
+          if (overlayDroplet) {
+            final w = indicatorW * sx;
+            final h = dropH * sy;
+            final cx = 10 + pos * tabW + tabW / 2;
+            // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
+            // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
+            // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
+            // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
+            // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            _syncSnapshot(
+              cx: cx,
+              w: w,
+              h: h,
+              maxH: maxH,
+              liquid: dropletOn,
+              radius: d * sy / 2,
+              refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
+              band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
+              chroma: widget.dropletChroma,
+              shear: _dragVel.sign * _sxPos * 0.12,
+              depth: 1.2 * mf,
+              press: pressG.clamp(0.0, 1.0),
+              isDark: isDark,
+            );
+            return widget.glassBuilder!(
+              SizedBox(key: _barKey, height: maxH, child: gestures),
+            );
+          }
+          if (navDropletSnapshot.value != null) {
+            // 降级为树内水滴（玻璃引擎不可用）时清掉顶层快照，避免残影
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) navDropletSnapshot.value = null;
+            });
+          }
+          return gestures;
         },
       ),
     );
@@ -2463,7 +2611,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       final rectStable = prev != null && prev.rect == rect;
       // 交互中 press/refract 等随 rebuild 逐帧渐变，有变必须写快照；
       // rect 稳定（且无 rebuild 驱动）后循环自然终止，静息零开销
-      final changed = prev == null ||
+      final changed =
+          prev == null ||
           prev.rect != rect ||
           prev.liquid != liquid ||
           prev.press != press ||
@@ -2522,8 +2671,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _dragging = true;
     _dragVel = 0;
     _lastDragTime = d.sourceTimeStamp;
-    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
-        .clamp(0.0, count - 1.0);
+    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5).clamp(0.0, count - 1.0);
     _move.stop();
     _move.value = _dragPos;
     _press.forward(from: 0);
@@ -2533,8 +2681,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   void _onDragUpdate(DragUpdateDetails d, double tabW, int count) {
     final prev = _dragPos;
-    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
-        .clamp(0.0, count - 1.0);
+    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5).clamp(0.0, count - 1.0);
     _move.stop();
     _move.value = _dragPos;
     final ts = d.sourceTimeStamp;
@@ -2551,7 +2698,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     final vTab = d.velocity.pixelsPerSecond.dx / tabW;
     final projected = (_dragPos + vTab * 0.12).clamp(0.0, maxIndex.toDouble());
     _commitDragTarget(
-        projected.roundToDouble().clamp(0.0, maxIndex.toDouble()));
+      projected.roundToDouble().clamp(0.0, maxIndex.toDouble()),
+    );
   }
 
   void _onDragCancel(int maxIndex) {
@@ -2563,8 +2711,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _press.reverse();
     _move.animateWith(
       SpringSimulation(
-        const SpringDescription(
-            mass: 1, stiffness: 420, damping: 25.4),
+        const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
         _move.value,
         target,
         _dragVel,
@@ -2610,8 +2757,13 @@ class _NavTab extends ConsumerWidget {
         children: [
           Transform.scale(
             scale: iconScale,
-            child: themeSlotIcon(ref, item.themeSlot,
-                fallback: item.icon, size: 22, color: color),
+            child: themeSlotIcon(
+              ref,
+              item.themeSlot,
+              fallback: item.icon,
+              size: 22,
+              color: color,
+            ),
           ),
           const SizedBox(height: 3),
           Text(
@@ -2763,8 +2915,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     _dragDistance += details.delta.distance;
     final floatingSearchBar =
         ref.read(settingsProvider).valueOrNull?.floatingSearchBar ?? false;
-    final topBarBottom =
-        floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
+    final topBarBottom = floatingSearchBar
+        ? (padding.top + 60.0)
+        : (padding.top + 122.0);
     final currentTop = _top ?? (topBarBottom + 24.0);
     final currentLeft = _left ?? 12.0;
 
@@ -2779,14 +2932,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final nextLeft = currentLeft + details.delta.dx;
 
     setState(() {
-      _top = nextTop.clamp(
-        minTop,
-        maxTop > minTop ? maxTop : minTop,
-      );
-      _left = nextLeft.clamp(
-        minLeft,
-        maxLeft > minLeft ? maxLeft : minLeft,
-      );
+      _top = nextTop.clamp(minTop, maxTop > minTop ? maxTop : minTop);
+      _left = nextLeft.clamp(minLeft, maxLeft > minLeft ? maxLeft : minLeft);
     });
   }
 
@@ -2816,43 +2963,51 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final screenSize = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
 
-    final floatingSearchBar = ref.watch(settingsProvider
-            .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
-    final topBarBottom =
-        floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
+    final floatingSearchBar = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
+    final topBarBottom = floatingSearchBar
+        ? (padding.top + 60.0)
+        : (padding.top + 122.0);
     final safeMinTop = topBarBottom + 12.0;
-    final currentTop =
-        (_top ?? (topBarBottom + 24.0)).clamp(safeMinTop, double.infinity);
+    final currentTop = (_top ?? (topBarBottom + 24.0)).clamp(
+      safeMinTop,
+      double.infinity,
+    );
     final left = _left ?? 12.0;
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final preferredDir = ref.watch(settingsProvider
-            .select((s) => s.valueOrNull?.sideBarExpandDirection)) ??
+    final preferredDir =
+        ref.watch(
+          settingsProvider.select((s) => s.valueOrNull?.sideBarExpandDirection),
+        ) ??
         SideBarExpandDirection.down;
     final lowPerf = ref.watch(
       settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+        (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+      ),
     );
     final liquid =
         (ref.watch(
-                settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+              settingsProvider.select((s) => s.valueOrNull?.liquidGlass),
+            ) ??
             true) &&
-            !lowPerf;
+        !lowPerf;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 
     const double approxExpandedH = 330.0;
 
     final bool canFitDown =
-        (currentTop + approxExpandedH) <= (screenSize.height - padding.bottom - 8.0);
+        (currentTop + approxExpandedH) <=
+        (screenSize.height - padding.bottom - 8.0);
     final bool canFitUp =
         (currentTop + 52.0 - approxExpandedH) >= (topBarBottom + 12.0);
 
     SideBarExpandDirection effectiveDir = preferredDir;
     if (preferredDir == SideBarExpandDirection.down) {
-      if (!canFitDown &&
-          (canFitUp || (currentTop > (screenSize.height / 2)))) {
+      if (!canFitDown && (canFitUp || (currentTop > (screenSize.height / 2)))) {
         effectiveDir = SideBarExpandDirection.up;
       }
     } else {
@@ -2985,9 +3140,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           panelWidget = Container(
             width: panelWidth,
             decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xF02A2A2E)
-                  : const Color(0xF5FFFFFF),
+              color: isDark ? const Color(0xF02A2A2E) : const Color(0xF5FFFFFF),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isDark
@@ -3008,8 +3161,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           final panelBg = wallpaperGlassActive(ref)
               ? wallpaperGlassFill(context, ref)
               : (isDark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.white.withValues(alpha: 0.35));
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.white.withValues(alpha: 0.35));
           final panelFill = surfaceFillWithBudget(panelBg, budget);
           final panelSigma = wallpaperGlassActive(ref)
               ? wallpaperGlassSigma(context)
@@ -3030,8 +3183,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black
-                      .withValues(alpha: isDark ? 0.3 : 0.1),
+                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
@@ -3047,7 +3199,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                     borderRadius: BorderRadius.circular(24),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(
-                          sigmaX: panelSigma, sigmaY: panelSigma),
+                        sigmaX: panelSigma,
+                        sigmaY: panelSigma,
+                      ),
                       child: panelBox,
                     ),
                   ),
@@ -3062,8 +3216,12 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: isDark
-                        ? Colors.black.withValues(alpha: 0.45 * collapsedHintAlpha)
-                        : Colors.white.withValues(alpha: 0.70 * collapsedHintAlpha),
+                        ? Colors.black.withValues(
+                            alpha: 0.45 * collapsedHintAlpha,
+                          )
+                        : Colors.white.withValues(
+                            alpha: 0.70 * collapsedHintAlpha,
+                          ),
                     borderRadius: BorderRadius.circular(24),
                   ),
                 ),
@@ -3120,15 +3278,21 @@ class _SideNavTab extends ConsumerWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color:
-                selected ? primary.withValues(alpha: 0.14) : Colors.transparent,
+            color: selected
+                ? primary.withValues(alpha: 0.14)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              themeSlotIcon(ref, item.themeSlot,
-                  fallback: item.icon, size: 22, color: color),
+              themeSlotIcon(
+                ref,
+                item.themeSlot,
+                fallback: item.icon,
+                size: 22,
+                color: color,
+              ),
               const SizedBox(height: 4),
               Text(
                 navTitle(context, item),
@@ -3179,4 +3343,3 @@ class _DropletEdgePainter extends CustomPainter {
   bool shouldRepaint(_DropletEdgePainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }
-
