@@ -1533,14 +1533,19 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       child: tabs,
     );
     if (solid && !keepFilterAlive) return capsule;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        // 液态降档胶囊用液态档 sigma，不并入导航面共享回读组
-        backdropGroupKey:
-            degradedLiquid && !wallpaper ? null : navGlassKey,
-        child: capsule,
+    // 静态帧方案：显隐/转场动画帧父级递归重绘会让 BackdropFilter 在
+    // Opacity saveLayer 内重建采样层闪黑；RepaintBoundary 复用旧玻璃
+    // layer 不重采样，raster 期实时模糊不受影响（同 glass_appbar 顶栏）
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          // 液态降档胶囊用液态档 sigma，不并入导航面共享回读组
+          backdropGroupKey:
+              degradedLiquid && !wallpaper ? null : navGlassKey,
+          child: capsule,
+        ),
       ),
     );
   }

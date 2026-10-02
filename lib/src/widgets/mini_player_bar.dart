@@ -102,13 +102,17 @@ Widget playbarGlassSurface(
     child: child,
   );
   if (solid) return surface;
-  return ClipRRect(
-    borderRadius: BorderRadius.circular(radius),
-    child: BackdropFilter(
-      filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-      // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
-      backdropGroupKey: navGlassKey,
-      child: surface,
+  // 静态帧方案：显隐/转场动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  // （同 glass_appbar 顶栏）
+  return RepaintBoundary(
+    child: ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
+        backdropGroupKey: navGlassKey,
+        child: surface,
+      ),
     ),
   );
 }
@@ -679,13 +683,17 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       child: content,
     );
     if (solid) return surface;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(999),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
-        backdropGroupKey: navGlassKey,
-        child: surface,
+    // 静态帧方案：显隐/转场动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+    // （同 glass_appbar 顶栏）
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
+          backdropGroupKey: navGlassKey,
+          child: surface,
+        ),
       ),
     );
   }

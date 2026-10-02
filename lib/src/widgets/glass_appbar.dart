@@ -96,13 +96,18 @@ class GlassTopBar extends ConsumerWidget {
       child: bar,
     );
     if (solid || flatBackdrop) return inner;
-
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        // 与底栏/播放条共享一次 backdrop 回读（同 sigma、区域不重叠）
-        backdropGroupKey: navGlassKey,
-        child: inner,
+    // 静态帧方案：显隐动画（AnimatedOpacity alpha<1）每帧递归重绘子树，
+    // BackdropFilter 重 paint 即在 Opacity saveLayer 内重建采样层 → 黑帧；
+    // RepaintBoundary 让动画帧复用旧玻璃 layer 不重采样（见
+    // debug-liquid-glass-page-flash.md 第十轮），raster 期实时模糊不受影响
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          // 与底栏/播放条共享一次 backdrop 回读（同 sigma、区域不重叠）
+          backdropGroupKey: navGlassKey,
+          child: inner,
+        ),
       ),
     );
   }
