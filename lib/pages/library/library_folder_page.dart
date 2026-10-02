@@ -19,6 +19,7 @@ import '../../src/navigation/routes.dart' show coverPageRoute;
 import '../../src/navigation/shell.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/floating_search_bar.dart' show FloatingGlassSurface;
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -28,7 +29,11 @@ import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
 
 class LibraryFolderPage extends ConsumerStatefulWidget {
-  const LibraryFolderPage({super.key});
+  const LibraryFolderPage({super.key, this.embedded = false});
+
+  /// 横屏音乐库容器内嵌（右侧容器）模式：不显示自带顶栏/返回键，
+  /// 顶部偏移跟随壳层全局顶栏（与 LibraryPage 的 pane 头部同口径）。
+  final bool embedded;
 
   @override
   ConsumerState<LibraryFolderPage> createState() => _LibraryFolderPageState();
@@ -374,6 +379,20 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
 
+    if (widget.embedded) {
+      // 嵌入横屏音乐库右侧容器：横竖屏都渲染 pane 布局（pane 仅在横屏挂载，
+      // 竖屏旋转时壳层会关闭 pane 并走路由回退）
+      return _buildLandscape(
+        context,
+        embedded: true,
+        root: root,
+        lost: lost,
+        foldersAsync: foldersAsync,
+        minDuration: minDuration,
+        tiles: tiles,
+      );
+    }
+
     return LandscapeGate(
       portrait: _buildPortrait(
         context,
@@ -520,9 +539,12 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
     );
   }
 
-  /// 横屏双栏：左列扫描入口与目录管理卡，右列已扫描文件夹树
+  /// 横屏双栏：左列扫描入口与目录管理卡，右列已扫描文件夹树。
+  /// [embedded] 为 true 时嵌入音乐库右侧容器（pane）：无自带顶栏/返回键，
+  /// 顶部偏移对齐 LibraryPage 的 pane 头部口径（悬浮搜索栏时 statusBar+66）。
   Widget _buildLandscape(
     BuildContext context, {
+    bool embedded = false,
     required List<FolderNodeData> root,
     required List<String> lost,
     required AsyncValue<List<ScanFolder>> foldersAsync,
@@ -532,6 +554,34 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
     final scheme = Theme.of(context).colorScheme;
     final bottomPad = _listBottomPad(context);
 
+    final double topPad;
+    final Widget topBar;
+    if (embedded) {
+      final floating = ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.floatingSearchBar ?? false));
+      final statusBar = MediaQuery.paddingOf(context).top;
+      final paneTop = floating ? statusBar + 66 : 0.0;
+      final headerTop = paneTop + (floating ? 10 : 4);
+      topPad = headerTop + _kPaneHeaderHeight + 8;
+      topBar = Positioned(
+        top: headerTop,
+        left: floating ? 12 : 0,
+        right: floating ? 12 : 0,
+        child: _paneHeader(context, floating: floating),
+      );
+    } else {
+      topPad = GlassTopBar.height(context);
+      topBar = Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: GlassTopBar(
+          leading: const BackButton(),
+          title: Text(tr('文件夹')),
+        ),
+      );
+    }
+
     return HideShellChrome(
       child: Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
@@ -540,7 +590,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
           child: Stack(
             children: [
               Padding(
-                padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+                padding: EdgeInsets.only(top: topPad),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -652,19 +702,43 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
                   ],
                 ),
               ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: GlassTopBar(
-                  leading: const BackButton(),
-                  title: Text(tr('文件夹')),
-                ),
-              ),
+              topBar,
             ],
           ),
         ),
       ),
+    );
+  }
+
+  static const double _kPaneHeaderHeight = 48.0;
+
+  /// 嵌入 pane 的头部：仅标题条（无返回键，导航由左侧栏承担），
+  /// 样式对齐 LibraryPage 的 pane 头部（悬浮玻璃/描边两种材质）
+  Widget _paneHeader(BuildContext context, {required bool floating}) {
+    final scheme = Theme.of(context).colorScheme;
+    final content = SizedBox(
+      height: _kPaneHeaderHeight,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            tr('文件夹'),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ),
+    );
+    if (floating) {
+      return FloatingGlassSurface(child: content);
+    }
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
+        ),
+      ),
+      child: content,
     );
   }
 }

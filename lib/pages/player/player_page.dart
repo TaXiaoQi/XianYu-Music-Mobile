@@ -46,6 +46,8 @@ import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/auto_hide_chrome.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/custom_background.dart' show CustomBackgroundLayer;
+import '../../src/theme/page_wallpaper.dart' show themedPageWallpaperProvider;
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/modern_dialog.dart';
 import '../../src/widgets/predictive_cover_return.dart';
@@ -3080,14 +3082,21 @@ class _DragDismissSheetState extends State<_DragDismissSheet>
   }
 }
 
-class _BlurredCoverBackground extends StatelessWidget {
+class _BlurredCoverBackground extends ConsumerWidget {
   const _BlurredCoverBackground({required this.current});
 
   final QueueItem? current;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // 主题包定义了播放页壁纸：整层替换封面模糊背景（静图，含遮罩/缩放参数）
+    final themed = ref.watch(themedPageWallpaperProvider);
+    if (themed != null) {
+      return RepaintBoundary(
+        child: CustomBackgroundLayer(background: themed),
+      );
+    }
     final item = current;
     if (item == null) {
       return const _AmbientBackground();
@@ -5246,7 +5255,7 @@ Future<void> _toggleFloatingLyrics(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('悬浮歌词需要悬浮窗权限')),
+        title:   Text(tr('桌面歌词需要悬浮窗权限')),
         content:   Text(
             tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
         actions: [

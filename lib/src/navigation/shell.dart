@@ -31,7 +31,9 @@ import '../widgets/mini_player_bar.dart' show LiveLiquidSurface;
 import '../widgets/page_search_bar.dart';
 import '../widgets/bilipai_glass.dart';
 import '../widgets/chrome_glass_frame.dart';
+import '../widgets/custom_background.dart' show PageWallpaperScope;
 import '../../pages/library/library_page.dart';
+import '../../pages/library/library_folder_page.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/playlist/playlists_page.dart';
@@ -87,7 +89,7 @@ final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 final landscapeContentPathProvider = StateProvider<String?>((ref) => null);
 
 final musicLibraryPageKeys =
-    List<GlobalKey>.generate(4, (_) => GlobalKey());
+    List<GlobalKey>.generate(5, (_) => GlobalKey());
 
 final landscapePaneOpenProvider = Provider<bool>((ref) {
   return ref.watch(landscapeAccountOpenProvider) ||
@@ -534,6 +536,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               '/favorites',
               '/recent',
               '/playlists',
+              '/library/folders',
             ];
             context.push(libRoutes[lib.clamp(0, libRoutes.length - 1)]);
           } else if (searchOpen) {
@@ -551,7 +554,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         return;
       }
       final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
-      const libRoutes = ['/library', '/favorites', '/recent', '/playlists'];
+      const libRoutes = [
+        '/library',
+        '/favorites',
+        '/recent',
+        '/playlists',
+        '/library/folders',
+      ];
       if (path == '/search' || path == '/search/result') {
         _rotateBackPath = path;
         ref.read(landscapeSearchOpenProvider.notifier).state = true;
@@ -781,6 +790,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               const _MusicLibraryPane(index: 1),
               const _MusicLibraryPane(index: 2),
               const _MusicLibraryPane(index: 3),
+              const _MusicLibraryPane(index: 4),
             ],
           ],
         ),
@@ -1694,7 +1704,8 @@ class _LandscapeRail extends ConsumerWidget {
                   icon: library[j].$2,
                   title: library[j].$1,
                   collapsed: collapsed,
-                  selected: libSel == j,
+                  // 文件夹管理(4)归属「本地音乐」：右侧容器打开时保持其高亮
+                  selected: libSel == j || (j == 0 && libSel == 4),
                   onTap: () {
                     closeLandscapeSearch(ref);
                     ref.read(landscapeLibraryProvider.notifier).state = j;
@@ -1809,18 +1820,32 @@ class _MusicLibraryPane extends StatelessWidget {
 
   final int index;
 
+  /// 横屏音乐库面板的页面 id；文件夹面板不映射，回落全局壁纸。
+  static const _panePageIds = <String?>[
+    'ls-local',
+    'ls-fav',
+    'ls-recent',
+    'ls-sheets',
+    null,
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: KeyedSubtree(
-        key: musicLibraryPageKeys[index],
-        child: switch (index) {
-          0 => const LibraryPage(),
-          1 => const FavoritesPage(),
-          2 => const RecentPage(),
-          _ => const PlaylistsPage(),
-        },
+    return PageWallpaperScope(
+      pageId: _panePageIds[index],
+      child: ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: KeyedSubtree(
+          key: musicLibraryPageKeys[index],
+          child: switch (index) {
+            0 => const LibraryPage(),
+            1 => const FavoritesPage(),
+            2 => const RecentPage(),
+            3 => const PlaylistsPage(),
+            // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
+            _ => const LibraryFolderPage(embedded: true),
+          },
+        ),
       ),
     );
   }

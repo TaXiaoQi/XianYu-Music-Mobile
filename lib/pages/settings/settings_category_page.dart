@@ -981,13 +981,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
         ],
       ),
       if (PlatformCaps.supportsFloatingLyrics) ...[
-      _sectionHeader(context, tr('悬浮歌词')),
+      _sectionHeader(context, tr('桌面歌词')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
-            title: tr('悬浮歌词窗'),
+            title: tr('桌面歌词窗'),
             subtitle: mvOn
                 ? tr('此功能不支持在MV期间使用')
                 : tr('在其他应用上层显示卡拉OK逐字歌词'),
@@ -999,7 +999,27 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             context,
             icon: Icons.palette_outlined,
             title: tr('文字颜色'),
-            trailing: _floatingLyricsColorPicker(context, s, n),
+            trailing: _ColorDot(
+              color: Color(s?.floatingLyricsTextColor ?? 0xFFFFFFFF),
+            ),
+            onTap: (s?.floatingLyricsEnabled ?? false)
+                ? () => _pickFloatingLyricsColor(context, ref, s)
+                : null,
+          ),
+          _tile(
+            context,
+            icon: Icons.contrast,
+            title: tr('未播放颜色'),
+            trailing: _ColorDot(
+              // 0 = 跟随主色：以主色按淡度预览
+              color: (s?.floatingLyricsUnplayedColor ?? 0) == 0
+                  ? Color(s?.floatingLyricsTextColor ?? 0xFFFFFFFF)
+                      .withValues(alpha: 0.38)
+                  : Color(s!.floatingLyricsUnplayedColor),
+            ),
+            onTap: (s?.floatingLyricsEnabled ?? false)
+                ? () => _pickFloatingLyricsUnplayedColor(context, ref, s)
+                : null,
           ),
           _tile(
             context,
@@ -1115,13 +1135,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       ),
       ],
       if (PlatformCaps.supportsStatusBarLyrics) ...[
-      _sectionHeader(context, tr('状态栏歌词')),
+      _sectionHeader(context, tr('通知栏歌词')),
       _CardGroup(
         children: [
           _switchTile(
             context,
             icon: Icons.notifications_active_outlined,
-            title: tr('状态栏歌词'),
+            title: tr('通知栏歌词'),
             subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
             value: s?.statusBarLyricsEnabled ?? false,
             onChanged: (v) => n.setStatusBarLyricsEnabled(v),
@@ -1750,7 +1770,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     );
   }
 
-  // ---- 悬浮歌词 ----
+  // ---- 桌面歌词 ----
 
   Future<void> _toggleFloatingLyrics(
     BuildContext context,
@@ -1766,7 +1786,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           context: context,
           barrierDismissible: false,
           builder: (ctx) => AlertDialog(
-            title:   Text(tr('悬浮歌词需要悬浮窗权限')),
+            title:   Text(tr('桌面歌词需要悬浮窗权限')),
             content:   Text(tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
             actions: [
               TextButton(
@@ -1795,60 +1815,6 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     }
   }
 
-  Widget _floatingLyricsColorPicker(
-    BuildContext context,
-    AppSettings? s,
-    SettingsNotifier n,
-  ) {
-    final enabled = s?.floatingLyricsEnabled ?? false;
-    final current = s?.floatingLyricsTextColor ?? 0xFFFFFFFF;
-    final scheme = Theme.of(context).colorScheme;
-    final isCustom = !FloatingLyricsController.quickColors.contains(current);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final c in FloatingLyricsController.quickColors)
-          GestureDetector(
-            onTap: enabled ? () => n.setFloatingLyricsTextColor(c) : null,
-            child: Container(
-              width: 22,
-              height: 22,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                color: Color(c),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: current == c
-                      ? scheme.primary
-                      : scheme.outlineVariant,
-                  width: current == c ? 2.5 : 1,
-                ),
-              ),
-            ),
-          ),
-        GestureDetector(
-          onTap: enabled ? () => _pickFloatingLyricsColor(context, ref, s) : null,
-          child: Container(
-            width: 22,
-            height: 22,
-            margin: const EdgeInsets.symmetric(horizontal: 2),
-            decoration: BoxDecoration(
-              color: isCustom ? Color(current) : Colors.transparent,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isCustom ? scheme.primary : scheme.outlineVariant,
-                width: isCustom ? 2.5 : 1,
-              ),
-            ),
-            child: isCustom
-                ? null
-                : Icon(Icons.add, size: 14, color: scheme.outline),
-          ),
-        ),
-      ],
-    );
-  }
-
   Future<void> _pickFloatingLyricsColor(
     BuildContext context,
     WidgetRef ref,
@@ -1867,6 +1833,31 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
       await ref
           .read(settingsProvider.notifier)
           .setFloatingLyricsTextColor(choice);
+    }
+  }
+
+  Future<void> _pickFloatingLyricsUnplayedColor(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final mainColor = s?.floatingLyricsTextColor ?? 0xFFFFFFFF;
+    // current 保留 0 以点亮「跟随主色」自动档；取色器以主色为起点
+    final cur = s?.floatingLyricsUnplayedColor ?? 0;
+    final choice = await showSheetDialog<int>(
+      context,
+      (ctx) => _AccentColorSheet(
+        current: cur,
+        title: tr('未播放文字颜色'),
+        presets: _AccentColorSheet.lyricPresets,
+        autoLabel: tr('跟随主色'),
+        autoColor: Color(mainColor).withValues(alpha: 0.38),
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setFloatingLyricsUnplayedColor(choice);
     }
   }
 
@@ -3220,10 +3211,18 @@ class _AccentColorSheet extends StatefulWidget {
     required this.current,
     this.title = '主题色',
     this.presets,
+    this.autoLabel,
+    this.autoColor,
   });
   final int current;
   final String title;
   final Map<int, String>? presets;
+
+  /// 非空时在预设首位插入「自动」档（取值 0，如未播放色跟随主色）
+  final String? autoLabel;
+
+  /// 自动档色块的预览色
+  final Color? autoColor;
 
   static Map<int, String> get _defaultPresets => <int, String>{
     0xFFEC4141: tr('经典红'),
@@ -3255,10 +3254,15 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
   final _hexCtrl = TextEditingController();
   bool _hexError = false;
 
+  /// 自动档无真实色值，取色器以预览色作为初始 HSV
+  Color get _initialColor => widget.current == 0 && widget.autoColor != null
+      ? widget.autoColor!
+      : Color(widget.current);
+
   @override
   void initState() {
     super.initState();
-    _hsv = HSVColor.fromColor(Color(widget.current));
+    _hsv = HSVColor.fromColor(_initialColor);
     _syncHex();
   }
 
@@ -3318,7 +3322,10 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
               crossAxisSpacing: 10,
               childAspectRatio: 1.5,
               children: [
-                for (final entry in (widget.presets ?? _AccentColorSheet._defaultPresets).entries)
+                for (final entry in [
+                  if (widget.autoLabel != null) MapEntry(0, widget.autoLabel!),
+                  ...(widget.presets ?? _AccentColorSheet._defaultPresets).entries,
+                ])
                   InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () => Navigator.pop(context, entry.key),
@@ -3345,7 +3352,9 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
                               width: 26,
                               height: 26,
                               decoration: BoxDecoration(
-                                color: Color(entry.key),
+                                color: entry.key == 0
+                                    ? (widget.autoColor ?? Colors.transparent)
+                                    : Color(entry.key),
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(

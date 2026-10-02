@@ -273,6 +273,8 @@ class AppSettings {
     this.floatingLyricsEnabled = false,
     this.floatingLyricsLocked = false,
     this.floatingLyricsTextColor = 0xFFFFFFFF,
+    // 0 = 跟随主色（未播放部分按主色降低透明度渲染，即历史行为）
+    this.floatingLyricsUnplayedColor = 0,
     this.floatingLyricsOpacity = 100,
     this.floatingLyricsFontScale = 100,
     this.floatingLyricsSecondaryScale = 88,
@@ -452,6 +454,9 @@ class AppSettings {
 
   final int floatingLyricsTextColor;
 
+  /// 桌面歌词未播放文字颜色；0 表示跟随主色（按主色降透明度渲染）
+  final int floatingLyricsUnplayedColor;
+
   final int floatingLyricsOpacity;
 
   final int floatingLyricsFontScale;
@@ -585,6 +590,7 @@ class AppSettings {
     bool? floatingLyricsEnabled,
     bool? floatingLyricsLocked,
     int? floatingLyricsTextColor,
+    int? floatingLyricsUnplayedColor,
     int? floatingLyricsOpacity,
     int? floatingLyricsFontScale,
     int? floatingLyricsSecondaryScale,
@@ -719,6 +725,8 @@ class AppSettings {
       floatingLyricsLocked: floatingLyricsLocked ?? this.floatingLyricsLocked,
       floatingLyricsTextColor:
           floatingLyricsTextColor ?? this.floatingLyricsTextColor,
+      floatingLyricsUnplayedColor:
+          floatingLyricsUnplayedColor ?? this.floatingLyricsUnplayedColor,
       floatingLyricsOpacity:
           floatingLyricsOpacity ?? this.floatingLyricsOpacity,
       floatingLyricsFontScale:
@@ -894,6 +902,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsLocked: prefs.getBool('floatingLyricsLocked') ?? false,
       floatingLyricsTextColor:
           prefs.getInt('floatingLyricsTextColor') ?? 0xFFFFFFFF,
+      floatingLyricsUnplayedColor:
+          prefs.getInt('floatingLyricsUnplayedColor') ?? 0,
       floatingLyricsOpacity: prefs.getInt('floatingLyricsOpacity') ?? 100,
       floatingLyricsFontScale:
           prefs.getInt('floatingLyricsFontScale') ?? 100,
@@ -1113,6 +1123,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       prefs.setBool('floatingLyricsEnabled', next.floatingLyricsEnabled),
       prefs.setBool('floatingLyricsLocked', next.floatingLyricsLocked),
       prefs.setInt('floatingLyricsTextColor', next.floatingLyricsTextColor),
+      prefs.setInt(
+          'floatingLyricsUnplayedColor', next.floatingLyricsUnplayedColor),
       prefs.setInt('floatingLyricsOpacity', next.floatingLyricsOpacity),
       prefs.setInt('floatingLyricsFontScale', next.floatingLyricsFontScale),
       prefs.setInt(
@@ -1299,6 +1311,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setStatusBarLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(statusBarLyricsEnabled: v));
   Future<void> setFloatingLyricsLocked(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsLocked: v));
   Future<void> setFloatingLyricsTextColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsTextColor: v));
+  Future<void> setFloatingLyricsUnplayedColor(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsUnplayedColor: v));
   Future<void> setFloatingLyricsOpacity(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsOpacity: v));
   Future<void> setFloatingLyricsFontScale(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsFontScale: v));
   Future<void> setFloatingLyricsSecondaryScale(int v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsSecondaryScale: v));

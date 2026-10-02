@@ -64,7 +64,15 @@ Widget playbarGlassSurface(
       alwaysLive: true,
       child: child,
     );
-    return liquidGlassShell(context, child: glass, radius: radius);
+    // 液态材质保留悬浮投影：影子画在玻璃层之前（被 shader 白 tint 提亮，
+    // 观感与毛玻璃原有投影一致）；壁纸模式 navFloatShadows 本身返回空
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: navFloatShadows(context, ref),
+      ),
+      child: liquidGlassShell(context, child: glass, radius: radius),
+    );
   }
 
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -97,7 +105,11 @@ Widget playbarGlassSurface(
       borderRadius: BorderRadius.circular(radius),
       // 壁纸模式同步顶栏材质：顶栏无描边
       border: wallpaper ? null : Border.all(color: border),
-      boxShadow: navFloatShadows(context, ref),
+      // 投影按材质区分：液态分支保留（见 liquid 分支）；毛玻璃/液态降级
+      // 材质不画——影子带会落进底栏玻璃采样区被玻璃化成灰黑横带（顶栏
+      // 上方无投影所以干净，唯独底栏背锅）；实底（玻璃全关）无 backdrop
+      // 采样，保留投影做与页面内容的层级分离
+      boxShadow: solid ? navFloatShadows(context, ref) : const [],
     ),
     child: child,
   );
@@ -608,10 +620,16 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                   )
                 : const SizedBox.shrink(),
           ),
-          liquidGlassShell(
-            context,
-            radius: 999,
-            child: LiveLiquidSurface(
+          // 液态材质保留悬浮投影（同主 mini 液态分支）：影子画在玻璃层之前
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: navFloatShadows(context, ref),
+            ),
+            child: liquidGlassShell(
+              context,
+              radius: 999,
+              child: LiveLiquidSurface(
               radius: 29,
               refract: bilipaiRefractOf(quality),
               chroma: bilipaiChromaOf(quality),
@@ -626,6 +644,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               saturation: bilipaiSaturationOf(quality),
               degraded: widget.degraded,
               child: content,
+            ),
             ),
           ),
         ],
@@ -678,7 +697,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         borderRadius: BorderRadius.circular(999),
         // 壁纸模式同步顶栏材质：顶栏无描边
         border: wallpaper ? null : Border.all(color: border),
-        boxShadow: navFloatShadows(context, ref),
+        // 投影按材质区分（同主 mini）：毛玻璃/降级材质不画，防灰黑横带；
+        // 实底（玻璃全关）无 backdrop 采样，保留投影
+        boxShadow: solid ? navFloatShadows(context, ref) : const [],
       ),
       child: content,
     );

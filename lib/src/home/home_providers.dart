@@ -246,6 +246,26 @@ final FutureProvider<ListenStatsData> listenStatsProvider =
         }
         ref.invalidate(listenStatsProvider);
       } catch (_) {
+        // 上报失败（超时/网络抖动）时快照会停留在旧值，个人中心退化为纯本地口径，
+        // 与排行榜（服务端真值）脱节。空 delta 上报 = 服务端纯快照拉取
+        // （report_listen_stats 对全 0 delta 直接回执快照），把快照追平。
+        try {
+          await Future<void>.delayed(const Duration(seconds: 2));
+          final resp = await ref
+              .read(accountApiProvider)
+              .reportListenStatsDelta(deltaTotal: 0, deltaDaily: 0);
+          if (resp.isEmpty || resp['resetAt'] != null) return;
+          final snap = ListenServerSnapshot(
+            total: (resp['total'] as num?)?.toInt() ?? 0,
+            daily: (resp['daily'] as num?)?.toInt() ?? 0,
+            weekly: (resp['weekly'] as num?)?.toInt() ?? 0,
+          );
+          if (snap.total <= 0 && snap.daily <= 0) return;
+          await _persistJson(_listenSnapshotKey,
+              {'total': snap.total, 'daily': snap.daily, 'weekly': snap.weekly});
+          ref.read(listenServerSnapshotProvider.notifier).state = snap;
+          ref.invalidate(listenStatsProvider);
+        } catch (_) {}
       }
     });
   }

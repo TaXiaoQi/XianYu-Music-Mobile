@@ -11,8 +11,41 @@ class ThemeSurface {
   final double opacity;
 }
 
-/// 主题包 v2。未知字段一律忽略；`platform != mobile` 不收。
+/// 主题包 v3 的页面壁纸：`{ "ref": "资产引用", "blur": 20, ... }`。
+/// 参数与客户端 CustomBackground 同语义（0~100 整数：scale=100 即原大、
+/// 位移为相对页面宽高百分比、blur 渲染 ×0.6、maskAlpha 黑遮罩不透明度）。
+/// ref 为 data URL（文件导入原样保留，由导入层落盘改写）、http(s) URL
+/// （广场下发，由导入层下载落盘）或本地路径（已归一化的持久化形态）。
+class PageWallpaper {
+  const PageWallpaper({
+    required this.ref,
+    this.blur,
+    this.opacity,
+    this.maskAlpha,
+    this.scale,
+    this.translateX,
+    this.translateY,
+    this.landscapeScale,
+    this.landscapeTranslateX,
+    this.landscapeTranslateY,
+  });
+
+  final String ref;
+
+  final int? blur;
+  final int? opacity;
+  final int? maskAlpha;
+  final int? scale;
+  final int? translateX;
+  final int? translateY;
+  final int? landscapeScale;
+  final int? landscapeTranslateX;
+  final int? landscapeTranslateY;
+}
+
+/// 主题包 v2/v3。未知字段一律忽略；`platform != mobile` 不收。
 ///
+/// v3 在 v2 基础上新增 `payload.wallpapers`（每页独立壁纸 + 调整参数）。
 /// 契约见《主题中心-移动端客户端对接说明》§2。解析失败返回 null，不抛异常。
 class ThemePackage {
   const ThemePackage({
@@ -27,10 +60,11 @@ class ThemePackage {
     required this.icons,
     required this.stickers,
     required this.surfaces,
+    required this.wallpapers,
     required this.raw,
   });
 
-  /// 包身份。v2 schema 没有 id 字段，用 name|author|preview|version 派生稳定值，
+  /// 包身份。schema 没有 id 字段，用 name|author|preview|version 派生稳定值，
   /// 保证重复导入同一个包是覆盖而不是堆积副本。
   final String id;
 
@@ -57,6 +91,9 @@ class ThemePackage {
   /// 槽位 id → 组件色块。
   final Map<String, ThemeSurface> surfaces;
 
+  /// 页面 id → 页面壁纸（v3；v2 包为空）。
+  final Map<String, PageWallpaper> wallpapers;
+
   /// 原始 JSON 文本，原样存盘与二次导出用。
   final String raw;
 
@@ -70,7 +107,8 @@ class ThemePackage {
     if (decoded is! Map) return null;
 
     if (decoded['platform'] != 'mobile') return null;
-    if (decoded['version'] != 2) return null;
+    final version = decoded['version'];
+    if (version != 2 && version != 3) return null;
 
     final payload = decoded['payload'];
     if (payload is! Map) return null;
@@ -80,7 +118,7 @@ class ThemePackage {
     final preview = _str(decoded['preview']) ?? '';
 
     return ThemePackage(
-      id: _deriveId(name, author, preview, decoded['version']),
+      id: _deriveId(name, author, preview, version),
       name: name.isEmpty ? '未命名主题' : name,
       author: author,
       preview: preview,
@@ -91,12 +129,17 @@ class ThemePackage {
       icons: _slotUrls(payload['icons']),
       stickers: _slotUrls(payload['stickers']),
       surfaces: _surfaces(payload['surfaces']),
+      wallpapers: _wallpapers(payload['wallpapers']),
       raw: text,
     );
   }
 
   /// 本包是否携带任何可生效的槽位（用于"空包"提示）。
-  bool get hasSlots => icons.isNotEmpty || stickers.isNotEmpty || surfaces.isNotEmpty;
+  bool get hasSlots =>
+      icons.isNotEmpty ||
+      stickers.isNotEmpty ||
+      surfaces.isNotEmpty ||
+      wallpapers.isNotEmpty;
 
   /// `#RRGGBB` 或 `#AARRGGBB` → 0xAARRGGBB。非法返回 null。
   static int? parseHexColor(Object? value) {
@@ -157,6 +200,35 @@ class ThemePackage {
       );
     });
     return result;
+  }
+
+  static Map<String, PageWallpaper> _wallpapers(Object? value) {
+    if (value is! Map) return const {};
+    final result = <String, PageWallpaper>{};
+    value.forEach((key, raw) {
+      if (key is! String || key.trim().isEmpty || raw is! Map) return;
+      final ref = _str(raw['ref']);
+      if (ref == null) return;
+      result[key.trim()] = PageWallpaper(
+        ref: ref,
+        blur: _pct(raw['blur'], 0, 100),
+        opacity: _pct(raw['opacity'], 0, 100),
+        maskAlpha: _pct(raw['maskAlpha'], 0, 100),
+        scale: _pct(raw['scale'], 80, 240),
+        translateX: _pct(raw['translateX'], -100, 100),
+        translateY: _pct(raw['translateY'], -100, 100),
+        landscapeScale: _pct(raw['landscapeScale'], 80, 240),
+        landscapeTranslateX: _pct(raw['landscapeTranslateX'], -100, 100),
+        landscapeTranslateY: _pct(raw['landscapeTranslateY'], -100, 100),
+      );
+    });
+    return result;
+  }
+
+  /// 整数参数钳制到 [min, max]；非法或缺省返回 null（渲染层取默认值）。
+  static int? _pct(Object? value, int min, int max) {
+    if (value is! num) return null;
+    return value.round().clamp(min, max);
   }
 
   /// FNV-1a 64 位。用它而不是 Object.hash：后者对字符串带进程随机种子，

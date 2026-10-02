@@ -11,7 +11,6 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -21,10 +20,10 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
@@ -45,6 +44,7 @@ class LyricsOverlayService : Service() {
     private var rootView: LinearLayout? = null
     private var lyricView: LyricsOverlayView? = null
     private var controlsView: LinearLayout? = null
+    private var lockRowView: FrameLayout? = null
     private var playPauseButton: ImageButton? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var eventsChannel: MethodChannel? = null
@@ -54,6 +54,7 @@ class LyricsOverlayService : Service() {
     private var positionMs = 0L
     private var playing = false
     private var textColor = Color.WHITE
+    private var unplayedColor = 0
     private var opacity = 1f
     private var fontScale = 1f
     private var secondaryScale = 0.88f
@@ -197,10 +198,18 @@ class LyricsOverlayService : Service() {
                 alpha = 0
             }.also { rootBg = it }
         }
+        val lockRow = createLockRow()
         val lyric = LyricsOverlayView(this).apply {
             touchHandler = ::onDrag
         }
         val controls = createControls()
+        root.addView(
+            lockRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(38)
+            )
+        )
         root.addView(
             lyric,
             LinearLayout.LayoutParams(overlayWidth(), overlayHeight())
@@ -209,7 +218,7 @@ class LyricsOverlayService : Service() {
             controls,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(44)
+                dp(54)
             ).apply { gravity = Gravity.CENTER_HORIZONTAL }
         )
 
@@ -242,8 +251,10 @@ class LyricsOverlayService : Service() {
         rootView = root
         lyricView = lyric
         controlsView = controls
+        lockRowView = lockRow
         layoutParams = params
         controls.visibility = View.GONE
+        lockRow.visibility = View.GONE
         windowManager.addView(root, params)
         clampToScreen(root, params)
         windowManager.updateViewLayout(root, params)
@@ -270,21 +281,29 @@ class LyricsOverlayService : Service() {
             addIconControl(R.drawable.ic_skip_next, "下一首") {
                 emitEvent("onNext")
             }
-            addIconControl(
-                R.drawable.ic_desktop_lyric_text_smaller,
-                "缩小字号"
-            ) { emitEvent("onFontSmaller") }
-            addIconControl(
-                R.drawable.ic_desktop_lyric_text_larger,
-                "放大字号"
-            ) { emitEvent("onFontLarger") }
-            addIconControl(
-                R.drawable.ic_palette,
-                "切换颜色"
-            ) { emitEvent("onColorCycle") }
-            addTextControl("L", "锁定") { emitEvent("onLock") }
-            addIconControl(R.drawable.ic_close, "关闭") { emitEvent("onClose") }
         }
+    }
+
+    /** 歌词上方右侧的锁定入口（解锁走系统通知）。 */
+    private fun createLockRow(): FrameLayout {
+        val row = FrameLayout(this).apply { clipChildren = false }
+        val button = ImageButton(this).apply {
+            setImageResource(R.drawable.ic_lock_outline)
+            setColorFilter(Color.WHITE)
+            contentDescription = "锁定"
+            scaleType = ImageView.ScaleType.CENTER
+            background = controlBackground()
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setOnClickListener { emitEvent("onLock") }
+        }
+        row.addView(
+            button,
+            FrameLayout.LayoutParams(dp(34), dp(34)).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                marginEnd = dp(2)
+            }
+        )
+        return row
     }
 
     private fun LinearLayout.addIconControl(
@@ -298,7 +317,7 @@ class LyricsOverlayService : Service() {
             contentDescription = description
             scaleType = ImageView.ScaleType.CENTER
             background = controlBackground()
-            setPadding(dp(8), dp(8), dp(8), dp(8))
+            setPadding(dp(9), dp(9), dp(9), dp(9))
             setOnClickListener {
                 action()
                 // 继续操作：底板显示时长顺延。
@@ -310,25 +329,7 @@ class LyricsOverlayService : Service() {
         return button
     }
 
-    private fun LinearLayout.addTextControl(label: String, description: String, action: () -> Unit) {
-        addView(TextView(context).apply {
-            text = label
-            contentDescription = description
-            gravity = Gravity.CENTER
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            background = controlBackground()
-            setOnClickListener {
-                action()
-                // 继续操作：底板显示时长顺延。
-                showBackgroundPanel()
-                scheduleControlsAutoHide()
-            }
-        }, controlLayoutParams())
-    }
-
-    private fun controlLayoutParams() = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+    private fun controlLayoutParams() = LinearLayout.LayoutParams(dp(42), dp(42)).apply {
         marginStart = dp(2)
         marginEnd = dp(2)
     }
@@ -349,6 +350,7 @@ class LyricsOverlayService : Service() {
         runCatching {
             val o = JSONObject(json)
             textColor = o.optInt("textColor", Color.WHITE)
+            unplayedColor = o.optInt("unplayedColor", 0)
             opacity = (o.optInt("opacity", 100) / 100f).coerceIn(0f, 1f)
             fontScale = (o.optInt("fontScale", 100) / 100f).coerceIn(0.4f, 2.5f)
             secondaryScale = (o.optInt("secondaryScale", 88) / 100f).coerceIn(0.4f, 2.5f)
@@ -374,6 +376,7 @@ class LyricsOverlayService : Service() {
         if (rootView == null) addOverlay()
         lyricView?.applyPreferences(
             textColor,
+            unplayedColor,
             opacity,
             fontScale,
             secondaryScale,
@@ -425,6 +428,7 @@ class LyricsOverlayService : Service() {
             // 真正锁定时收起面板（背景+控件），并屏蔽触摸
             rootView?.removeCallbacks(hideControlsRunnable)
             controlsView?.visibility = View.GONE
+            lockRowView?.visibility = View.GONE
             hideBackgroundPanel()
         } else if (revealControls) {
             // 解锁动作：整体唤出控制面板
@@ -510,14 +514,20 @@ class LyricsOverlayService : Service() {
      *  scheduleHide=true 时排 N 秒后整体隐藏；false 表示按住/拖拽中常显，由调用方决定何时隐藏。 */
     private fun showControlsWithAnimation(scheduleHide: Boolean = true) {
         if (locked) return
-        controlsView?.apply {
+        controlsView.showAsControls()
+        lockRowView.showAsControls()
+        showBackgroundPanel(scheduleHide)
+        if (scheduleHide) scheduleControlsAutoHide()
+    }
+
+    /** 控制行（底部三键 + 顶部锁定）同步整体显现。 */
+    private fun View?.showAsControls() {
+        this?.apply {
             visibility = View.VISIBLE
             alpha = 1f
             scaleX = 1f
             scaleY = 1f
         }
-        showBackgroundPanel(scheduleHide)
-        if (scheduleHide) scheduleControlsAutoHide()
     }
 
     /**
@@ -552,21 +562,27 @@ class LyricsOverlayService : Service() {
 
     private fun hideControls() {
         if (!locked) {
-            controlsView?.apply {
-                animate().cancel()
-                animate()
-                    .alpha(0f)
-                    .scaleX(CONTROL_HIDDEN_SCALE)
-                    .scaleY(CONTROL_HIDDEN_SCALE)
-                    .setDuration(CONTROL_ANIMATION_MS)
-                    .withEndAction {
-                        visibility = View.GONE
-                        alpha = 1f
-                        scaleX = 1f
-                        scaleY = 1f
-                    }
-                    .start()
-            }
+            controlsView.animateControlsHide()
+            lockRowView.animateControlsHide()
+        }
+    }
+
+    /** 控制行同步缩小淡出，结束后复位待下次唤出。 */
+    private fun View?.animateControlsHide() {
+        this?.apply {
+            animate().cancel()
+            animate()
+                .alpha(0f)
+                .scaleX(CONTROL_HIDDEN_SCALE)
+                .scaleY(CONTROL_HIDDEN_SCALE)
+                .setDuration(CONTROL_ANIMATION_MS)
+                .withEndAction {
+                    visibility = View.GONE
+                    alpha = 1f
+                    scaleX = 1f
+                    scaleY = 1f
+                }
+                .start()
         }
     }
 
@@ -613,7 +629,7 @@ class LyricsOverlayService : Service() {
                 NOTIFICATION_ID,
                 builder
                     .setSmallIcon(R.drawable.ic_notification)
-                    .setContentTitle("悬浮歌词已锁定")
+                    .setContentTitle("桌面歌词已锁定")
                     .setContentText("点击解锁后可拖动位置")
                     .setContentIntent(unlockIntent)
                     .setOngoing(true)
@@ -629,7 +645,7 @@ class LyricsOverlayService : Service() {
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "悬浮歌词",
+                "桌面歌词",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 setSound(null, null)

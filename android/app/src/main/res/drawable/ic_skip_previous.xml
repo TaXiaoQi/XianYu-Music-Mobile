@@ -3,7 +3,8 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    <!-- 重绘：竖线 + 实心左三角撑满视口，浮窗控制条放大显示 -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M7,6h3v12H7z M13,12l7,-6v12z" />
+        android:pathData="M5,5h3.2v14H5z M20.5,5.6v12.8L10.6,12z" />
 </vector>

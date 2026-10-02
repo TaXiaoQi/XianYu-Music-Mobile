@@ -21,16 +21,6 @@ class FloatingLyricsController with WidgetsBindingObserver {
   static const MethodChannel _events =
       MethodChannel('xianyu/floating_lyrics_events');
 
-  static const List<int> quickColors = [
-    0xFFFFFFFF,
-    0xFFBFBFBF,
-    0xFF91CDFF,
-    0xFFA6EBCB,
-    0xFFB388FF,
-    0xFFFFBCD6,
-    0xFFFFE096,
-  ];
-
   ProviderSubscription<AsyncValue<AppSettings>>? _settingsSub;
   ProviderSubscription<PlaybackState>? _playerSub;
 
@@ -165,6 +155,7 @@ class FloatingLyricsController with WidgetsBindingObserver {
     _channel.invokeMethod('setSettings', {
       'json': jsonEncode({
         'textColor': s.floatingLyricsTextColor,
+        'unplayedColor': s.floatingLyricsUnplayedColor,
         'opacity': s.floatingLyricsOpacity,
         'fontScale': s.floatingLyricsFontScale,
         'secondaryScale': s.floatingLyricsSecondaryScale,
@@ -227,10 +218,6 @@ class FloatingLyricsController with WidgetsBindingObserver {
         _container.read(playerProvider.notifier).previous();
       case 'onNext':
         _container.read(playerProvider.notifier).next();
-      case 'onClose':
-        await _container
-            .read(settingsProvider.notifier)
-            .setFloatingLyricsEnabled(false);
       case 'onLock':
         await _container
             .read(settingsProvider.notifier)
@@ -239,12 +226,6 @@ class FloatingLyricsController with WidgetsBindingObserver {
         await _container
             .read(settingsProvider.notifier)
             .setFloatingLyricsLocked(false);
-      case 'onFontSmaller':
-        await _adjustFontScale(-10);
-      case 'onFontLarger':
-        await _adjustFontScale(10);
-      case 'onColorCycle':
-        await _cycleColor();
       case 'onPositionChanged':
         final x = (call.arguments as Map?)?.cast<String, dynamic>()['x'] as int?;
         final y = (call.arguments as Map?)?.cast<String, dynamic>()['y'] as int?;
@@ -255,23 +236,6 @@ class FloatingLyricsController with WidgetsBindingObserver {
         }
     }
     return null;
-  }
-
-  Future<void> _adjustFontScale(int delta) async {
-    final n = _container.read(settingsProvider.notifier);
-    final s = _container.read(settingsProvider).valueOrNull;
-    if (s == null) return;
-    final next = (s.floatingLyricsFontScale + delta).clamp(40, 250);
-    await n.setFloatingLyricsFontScale(next);
-  }
-
-  Future<void> _cycleColor() async {
-    final n = _container.read(settingsProvider.notifier);
-    final s = _container.read(settingsProvider).valueOrNull;
-    if (s == null) return;
-    final idx = quickColors.indexOf(s.floatingLyricsTextColor);
-    final next = quickColors[(idx + 1) % quickColors.length];
-    await n.setFloatingLyricsTextColor(next);
   }
 
   // ---- 供设置页使用的静态能力 ----

@@ -1,8 +1,84 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/settings.dart';
 import 'theme_package.dart';
+
+/// 主题包壁纸资产获取失败（解码/下载）。toString 直接返回原因本身，
+/// 供页面 toast 原样展示（不带 Exception: 前缀）。
+class ThemeAssetException implements Exception {
+  const ThemeAssetException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// 壁纸资产落盘目录：{docs}/themes/{pkgId}/，随包删除一并清理。
+Future<Directory> _themeAssetDir(String pkgId) async {
+  final docs = await getApplicationDocumentsDirectory();
+  return Directory(p.join(docs.path, 'themes', pkgId)).create(recursive: true);
+}
+
+Uint8List? _decodeDataUrl(String dataUrl) {
+  final idx = dataUrl.indexOf(',');
+  if (idx < 0) return null;
+  try {
+    return base64Decode(dataUrl.substring(idx + 1));
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 魔数嗅探图片扩展名；识别不出按 jpg 落盘（服务端壁纸统一压成 JPEG）。
+String _sniffImageExt(Uint8List bytes) {
+  if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8) return 'jpg';
+  if (bytes.length >= 8 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    return 'png';
+  }
+  if (bytes.length >= 12 &&
+      bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46 &&
+      bytes[8] == 0x57 &&
+      bytes[9] == 0x45 &&
+      bytes[10] == 0x42 &&
+      bytes[11] == 0x50) {
+    return 'webp';
+  }
+  return 'jpg';
+}
+
+Future<Uint8List?> _downloadBytes(String url) async {
+  final client = HttpClient();
+  try {
+    client.connectionTimeout = const Duration(seconds: 15);
+    final req = await client.getUrl(Uri.parse(url));
+    final resp = await req.close().timeout(const Duration(seconds: 60));
+    if (resp.statusCode != HttpStatus.ok) return null;
+    final builder = BytesBuilder(copy: false);
+    await for (final chunk in resp) {
+      builder.add(chunk);
+    }
+    return builder.takeBytes();
+  } catch (_) {
+    return null;
+  } finally {
+    client.close(force: true);
+  }
+}
 
 /// 已导入主题包 + 当前激活包。渲染层通过 [themeIcon] / [themeSticker] /
 /// [themeSurface] 查询，未激活或该槽未设置时返回 null，调用方回落内置。
@@ -74,10 +150,14 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
   /// 导入主题包。同一包（id 相同）重复导入为覆盖，不堆副本。
   /// [fromSquare] 为 true 表示来自广场下载（记入下载集合）；文件导入不传，
   /// 且不抹除既有标记——只增不减。
-  /// 解析失败（格式非法 / platform 非 mobile / version 非 2）返回 null。
+  /// v3 包的页面壁纸资产（data URL / 广场 URL）导入时归一化为本地文件并改写
+  /// ref——避免把巨型 base64 存进 SharedPreferences；任一资产获取失败抛
+  /// [ThemeAssetException]，由调用方按导入失败提示。
+  /// 解析失败（格式非法 / platform 非 mobile / version 非 2|3）返回 null。
   Future<ThemePackage?> importJson(String text, {bool fromSquare = false}) async {
-    final pkg = ThemePackage.parse(text);
-    if (pkg == null) return null;
+    final parsed = ThemePackage.parse(text);
+    if (parsed == null) return null;
+    final pkg = await _materializeWallpapers(parsed);
     state = ThemeLibraryState(
       packages: [...state.packages.where((item) => item.id != pkg.id), pkg],
       activeId: state.activeId,
@@ -89,6 +169,50 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
     return pkg;
   }
 
+  /// 把包内 wallpapers 的 ref 归一化：data URL 解码落盘、http(s) 下载落盘，
+  /// 已是本地路径的原样保留。无 v3 壁纸的包原样返回。
+  Future<ThemePackage> _materializeWallpapers(ThemePackage pkg) async {
+    if (pkg.wallpapers.isEmpty) return pkg;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(pkg.raw);
+    } on FormatException {
+      return pkg;
+    }
+    if (decoded is! Map || decoded['payload'] is! Map) return pkg;
+    final payload = decoded['payload'] as Map;
+    final wallpapers = payload['wallpapers'];
+    if (wallpapers is! Map || wallpapers.isEmpty) return pkg;
+
+    final dir = await _themeAssetDir(pkg.id);
+    var changed = false;
+    for (final entry in wallpapers.entries) {
+      final page = entry.key.toString();
+      final wp = entry.value;
+      if (wp is! Map) continue;
+      final ref = wp['ref'];
+      if (ref is! String || ref.isEmpty) continue;
+      final String localPath;
+      if (ref.startsWith('data:')) {
+        final bytes = _decodeDataUrl(ref);
+        if (bytes == null) throw const ThemeAssetException('页面壁纸数据无效');
+        localPath = p.join(dir.path, 'wall_$page.${_sniffImageExt(bytes)}');
+        await File(localPath).writeAsBytes(bytes, flush: true);
+      } else if (ref.startsWith('http://') || ref.startsWith('https://')) {
+        final bytes = await _downloadBytes(ref);
+        if (bytes == null) throw ThemeAssetException('页面壁纸下载失败（$page）');
+        localPath = p.join(dir.path, 'wall_$page.${_sniffImageExt(bytes)}');
+        await File(localPath).writeAsBytes(bytes, flush: true);
+      } else {
+        continue;
+      }
+      wp['ref'] = localPath;
+      changed = true;
+    }
+    if (!changed) return pkg;
+    return ThemePackage.parse(jsonEncode(decoded)) ?? pkg;
+  }
+
   Future<void> remove(String id) async {
     state = ThemeLibraryState(
       packages: state.packages.where((pkg) => pkg.id != id).toList(),
@@ -96,6 +220,12 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
       downloadedIds: <String>{...state.downloadedIds}..remove(id),
     );
     await _persist();
+    // 清理该包落盘的壁纸资产目录；失败不阻断（目录可能已不存在）。
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'themes', id));
+      if (dir.existsSync()) await dir.delete(recursive: true);
+    } catch (_) {}
   }
 
   /// 应用主题：强调色 / 深浅模式写回既有设置（立即生效，无需重启），

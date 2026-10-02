@@ -37,6 +37,7 @@ class DownloadTask {
   final String? source;
   final String? onlineSongJson;
   final String? onlineInfoJson;
+  final int durationMs;
   final DownloadStatus status;
   final String? error;
   final String? filePath;
@@ -53,6 +54,7 @@ class DownloadTask {
     this.source,
     this.onlineSongJson,
     this.onlineInfoJson,
+    this.durationMs = 0,
     this.status = DownloadStatus.downloading,
     this.error,
     this.filePath,
@@ -93,6 +95,7 @@ class DownloadHistoryEntry {
   final int downloadedAt;
   final String? title;
   final String? artist;
+  final int durationMs;
 
   const DownloadHistoryEntry({
     required this.songPath,
@@ -102,6 +105,7 @@ class DownloadHistoryEntry {
     required this.downloadedAt,
     this.title,
     this.artist,
+    this.durationMs = 0,
   });
 
   Map<String, dynamic> toJson() => {
@@ -112,6 +116,7 @@ class DownloadHistoryEntry {
         'downloadedAt': downloadedAt,
         if (title != null) 'title': title,
         if (artist != null) 'artist': artist,
+        if (durationMs > 0) 'durationMs': durationMs,
       };
 
   factory DownloadHistoryEntry.fromJson(Map<String, dynamic> j) =>
@@ -123,6 +128,7 @@ class DownloadHistoryEntry {
         downloadedAt: (j['downloadedAt'] as num?)?.toInt() ?? 0,
         title: j['title'] as String?,
         artist: j['artist'] as String?,
+        durationMs: (j['durationMs'] as num?)?.toInt() ?? 0,
       );
 
   QueueItem toQueueItem() => QueueItem(
@@ -287,6 +293,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
       source: item.source,
       onlineSongJson: item.onlineSongJson,
       onlineInfoJson: item.onlineInfoJson,
+      durationMs: item.durationMs,
       status: DownloadStatus.waiting,
       startedAt: DateTime.now().millisecondsSinceEpoch,
     );
@@ -308,6 +315,70 @@ class DownloadManager extends StateNotifier<DownloadState> {
     }
     return false;
   }
+
+  /// 已下载且本地文件仍存在的最新文件路径；无则返回 null。
+  /// 供播放链路做"本地优先"（对齐桌面端：有本地下载就不走在线解析），
+  /// 未下载的歌零磁盘 IO（先内存匹配再验文件）。
+  Future<String?> localFileFor(String songPath) async {
+    if (songPath.isEmpty) return null;
+    final matched = state.history
+        .where((h) => h.songPath == songPath && h.filePath.isNotEmpty)
+        .toList()
+      ..sort((a, b) => b.downloadedAt.compareTo(a.downloadedAt));
+    for (final h in matched) {
+      try {
+        final f = File(h.filePath);
+        if (await f.exists() && await f.length() > 0) return h.filePath;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// 跨源模糊匹配兜底：同一首歌从不同源（kw/wy/tx...）加入歌单/收藏时
+  /// 播链键不同，精确匹配 [localFileFor] 命不中其他源的本地文件。
+  /// 规则（保守，宁缺勿错）：标题归一化后完全相等 + 歌手归一化相等或
+  /// 互为包含（合作曲 "/"、"："）+ 双方都有时长时差值 ≤3s；
+  /// 多条命中取最新且文件存在。未命中零磁盘 IO。
+  Future<String?> localFileFuzzyFor({
+    required String title,
+    String? artist,
+    int? durationMs = 0,
+    String? excludeSongPath,
+  }) async {
+    final normTitle = _normForMatch(title);
+    if (normTitle.isEmpty) return null;
+    final normArtist = _normForMatch(artist ?? '');
+    final candidates = state.history
+        .where((h) =>
+            h.filePath.isNotEmpty &&
+            h.songPath != excludeSongPath &&
+            _normForMatch(h.title ?? h.fileName) == normTitle)
+        .toList()
+      ..sort((a, b) => b.downloadedAt.compareTo(a.downloadedAt));
+    for (final h in candidates) {
+      final hArtist = _normForMatch(h.artist ?? '');
+      final artistOk = normArtist.isEmpty ||
+          hArtist.isEmpty ||
+          hArtist == normArtist ||
+          hArtist.contains(normArtist) ||
+          normArtist.contains(hArtist);
+      if (!artistOk) continue;
+      final hDur = h.durationMs;
+      if (hDur > 0 && (durationMs ?? 0) > 0) {
+        if ((hDur - durationMs!).abs() > 3000) continue;
+      }
+      try {
+        final f = File(h.filePath);
+        if (await f.exists() && await f.length() > 0) return h.filePath;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// 匹配归一化：小写 + 去所有空白。刻意不去括号内容——"歌名 (DJ版)"
+  /// 与"歌名"是不同录音，模糊匹配不能跨版本错配。
+  static String _normForMatch(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'\s+'), '');
 
   void _drain() {
     final settings = _ref.read(settingsProvider).valueOrNull;
@@ -333,6 +404,7 @@ class DownloadManager extends StateNotifier<DownloadState> {
         downloadedAt: DateTime.now().millisecondsSinceEpoch,
         title: task.title,
         artist: task.artist,
+        durationMs: task.durationMs,
       );
       await _recordHistory(entry);
       _updateTask(task.songPath, status: DownloadStatus.done, filePath: filePath, progressPercent: 100);
