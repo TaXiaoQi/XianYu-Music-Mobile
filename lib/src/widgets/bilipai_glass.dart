@@ -741,6 +741,10 @@ class RenderLiquidBacking extends RenderBox {
   set useChromeFrame(bool value) {
     if (_useChromeFrame == value) return;
     _useChromeFrame = value;
+    // 登记状态随开关同步：缓存帧面进出登记表与 attach/detach 口径一致
+    if (attached) {
+      value ? registerChromeFace(this) : unregisterChromeFace(this);
+    }
     markNeedsPaint();
   }
 
@@ -802,7 +806,13 @@ class RenderLiquidBacking extends RenderBox {
   @override
   void attach(PipelineOwner owner) {
     super.attach(owner);
-    registerChromeFace(this);
+    // 仅缓存帧面登记：登记表供转场裁剪（_paintChromeFrame）查表与抓帧
+    // 遍历登记原点，不画缓存帧的实例（播放条 alwaysLive 满血、播放页
+    // 液态等）登记无意义，白耗每次抓帧的 localToGlobal——从离屏缓存
+    // 体系摘出
+    if (_useChromeFrame) {
+      registerChromeFace(this);
+    }
     globalScrollOffset.addListener(_onScrollChanged);
     globalScrollTick.addListener(_onScrollTick);
     globalIsTransitioning.addListener(_onTransitionBlurSync);
@@ -811,7 +821,9 @@ class RenderLiquidBacking extends RenderBox {
 
   @override
   void detach() {
-    unregisterChromeFace(this);
+    if (_useChromeFrame) {
+      unregisterChromeFace(this);
+    }
     globalScrollOffset.removeListener(_onScrollChanged);
     globalScrollTick.removeListener(_onScrollTick);
     globalIsTransitioning.removeListener(_onTransitionBlurSync);

@@ -611,6 +611,9 @@ const Map<String, String> enDictManual = {
   '去授权': 'Grant access',
   '去下载': 'Download',
   '内测资格提示': 'Beta access notice',
+  '无法验证内测资格': 'Cannot verify beta access',
+  '请连接网络后重试。若持续失败，请联系管理员。':
+      'Please connect to the network and retry. If the problem persists, contact the administrator.',
   '当前设备未申请内测资格，无法使用内测版本。\n点击「申请资格」填写申请理由，管理员同意后即可继续使用。':
       'This device has not been granted beta access and cannot use the beta build.\nTap "Apply" to submit your reason. Once approved by an admin, you can continue using the app.',
   '该设备的内测申请正在审核中，请耐心等待管理员审核，审核结果将以反馈回复通知。':

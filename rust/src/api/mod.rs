@@ -1357,6 +1357,23 @@ pub fn verify_fallback_module_signature(
     )
 }
 
+/// 校验服务端 check_beta_access 响应签名（ed25519）。返回 true 表示响应可信。
+pub fn verify_beta_access_signature(
+    device_id: String,
+    allowed: bool,
+    pending: bool,
+    exp: i64,
+    signature: String,
+) -> Result<bool, String> {
+    crate::fallback_verify::verify_beta_access_signature(
+        &device_id,
+        allowed,
+        pending,
+        exp,
+        &signature,
+    )
+}
+
 // =========================================================================
 // 插件引擎（QuickJS 沙箱，移植自桌面端 plugin_host）
 // =========================================================================

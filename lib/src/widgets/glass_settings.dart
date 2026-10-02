@@ -30,6 +30,18 @@ bool glassMaterialActive(WidgetRef ref) {
           (s) => s.valueOrNull?.liquidGlass ?? false));
 }
 
+/// 材质隐藏期间的最低透明度保底档：液态 shader 整层停绘后重显首帧
+/// backdrop 采样未就绪会闪黑，需 0.01 保温；毛玻璃是普通 blur 无此
+/// 问题，归零停绘——淡入首绘发生在极低 alpha（不可见），避免
+/// Opacity saveLayer 内首帧重采样闪白（pop 方向闪白的修复）
+double glassHiddenOpacityFloor(WidgetRef ref) {
+  if (!glassMaterialActive(ref)) return 0.0;
+  return ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.liquidGlass ?? false))
+      ? 0.01
+      : 0.0;
+}
+
 Color wallpaperBlockFill(BuildContext context, WidgetRef ref) {
   final cb =
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.customBackground));

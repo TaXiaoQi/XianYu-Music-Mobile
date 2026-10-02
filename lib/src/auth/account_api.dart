@@ -1,12 +1,19 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/settings.dart';
 import '../device/device_info.dart' show fetchDeviceInfo;
+import '../rust/api.dart' as frb;
 import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.2';
+const appVersion = '1.0.3-beta1';
+
+/// 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。
+const _betaAccessCacheKey = 'beta_access_signed_payload_v1';
 
 class HotSearchItem {
   final String keyword;
@@ -117,6 +124,70 @@ class AccountApi {
     final allowed = (data['allowed'] as bool?) ?? false;
     final pending = (data['pending'] as bool?) ?? false;
     return (allowed, pending);
+  }
+
+  /// 内测资格验证（fail-closed，供启动锁使用）：
+  /// 1) 联网请求 check_beta_access 并验签（ed25519，绑定 device_id + 过期时间），
+  ///    验签通过则更新本地缓存；
+  /// 2) 网络失败或响应不可信（无签名/验签失败/设备不匹配/已过期）时回退本地缓存，
+  ///    缓存同样经完整验签；
+  /// 3) 两者皆不可用返回 null，调用方应锁定（无法验证 ≠ 放行）。
+  /// 返回 (allowed, pending)。
+  Future<(bool, bool)?> verifyBetaAccess() async {
+    final deviceId = (await _auth.deviceId()).trim();
+    try {
+      final data = await _auth.requestActionList('check_beta_access', {
+        'device_id': deviceId,
+      }, fetchTimeoutMs: 15000);
+      if (data is Map) {
+        final payload = Map<String, dynamic>.from(data);
+        final parsed = await _parseSignedBetaAccess(payload, deviceId);
+        if (parsed != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_betaAccessCacheKey, jsonEncode(payload));
+          return parsed;
+        }
+      }
+    } catch (_) {}
+    return _readCachedBetaAccess(deviceId);
+  }
+
+  /// 解析并验签一份 check_beta_access 响应。不可信返回 null。
+  Future<(bool, bool)?> _parseSignedBetaAccess(
+      Map<String, dynamic> payload, String deviceId) async {
+    final payloadDevice = (payload['device_id'] ?? '').toString().trim();
+    if (payloadDevice.isEmpty || payloadDevice != deviceId) return null;
+    final exp = (payload['exp'] as num?)?.toInt() ?? 0;
+    if (exp <= DateTime.now().millisecondsSinceEpoch ~/ 1000) return null;
+    final signature = (payload['sig'] ?? '').toString();
+    if (signature.isEmpty) return null;
+    final allowed = payload['allowed'] == true;
+    final pending = payload['pending'] == true;
+    try {
+      final ok = await frb.verifyBetaAccessSignature(
+        deviceId: deviceId,
+        allowed: allowed,
+        pending: pending,
+        exp: exp,
+        signature: signature,
+      );
+      if (ok) return (allowed, pending);
+    } catch (_) {}
+    return null;
+  }
+
+  Future<(bool, bool)?> _readCachedBetaAccess(String deviceId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_betaAccessCacheKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      return await _parseSignedBetaAccess(
+          Map<String, dynamic>.from(decoded), deviceId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<UserAgreement> getUserAgreement() async {

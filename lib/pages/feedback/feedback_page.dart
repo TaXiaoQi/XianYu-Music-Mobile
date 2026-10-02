@@ -39,6 +39,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
 
   String _feedbackType = 'problem';
   final List<String> _images = [];
+  final List<String> _betaImages = [];
   bool _submitting = false;
   bool _compressing = false;
   bool _attachAllLogs = false;
@@ -90,8 +91,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     super.dispose();
   }
 
-  Future<void> _pickImages() async {
-    final remaining = _maxImages - _images.length;
+  Future<void> _pickImages(List<String> target) async {
+    final remaining = _maxImages - target.length;
     if (remaining <= 0) {
       _toast(tr('最多上传 {n} 张图片', {'n': _maxImages}));
       return;
@@ -105,7 +106,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     setState(() => _compressing = true);
     try {
       for (final file in files) {
-        if (_images.length >= _maxImages) break;
+        if (target.length >= _maxImages) break;
         final bytes = await file.readAsBytes();
         if (bytes.length > 8 * 1024 * 1024) {
           _toast(tr('图片超过 8MB，已跳过'));
@@ -113,7 +114,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         }
         final dataUrl = await _compressImage(bytes);
         if (!mounted) return;
-        setState(() => _images.add(dataUrl));
+        setState(() => target.add(dataUrl));
       }
     } catch (e) {
       if (!mounted) return;
@@ -200,12 +201,16 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         title: tr('内测申请'),
         content: reason,
         feedbackType: 'beta',
+        images: [..._betaImages],
       );
       if (!mounted) return;
       FocusScope.of(context).unfocus();
       await _showDoneDialog(tr('申请已提交，请留意审核结果'));
       if (!mounted) return;
-      setState(() => _betaCtrl.clear());
+      setState(() {
+        _betaCtrl.clear();
+        _betaImages.clear();
+      });
     } catch (e) {
       if (!mounted) return;
       final msg = e is AuthException ? e.message : tr('提交失败');
@@ -401,7 +406,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),
-            _buildImageGrid(),
+            _buildImageGrid(_images),
           ],
           if (_feedbackType == 'problem') ...[
             const SizedBox(height: 16),
@@ -507,9 +512,16 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 ),
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              tr('可上传截图辅助说明（最多 {n} 张）', {'n': _maxImages}),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            _buildImageGrid(_betaImages),
             const SizedBox(height: 20),
             FilledButton(
-              onPressed: _submitting ? null : _submitBeta,
+              onPressed: _submitting || _compressing ? null : _submitBeta,
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
@@ -621,20 +633,20 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     );
   }
 
-  Widget _buildImageGrid() {
+  Widget _buildImageGrid(List<String> images) {
     final scheme = Theme.of(context).colorScheme;
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (var i = 0; i < _images.length; i++)
+        for (var i = 0; i < images.length; i++)
           Stack(
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: Image.memory(
                   base64Decode(
-                      _images[i].split(',').last),
+                      images[i].split(',').last),
                   width: 80,
                   height: 80,
                   fit: BoxFit.cover,
@@ -651,7 +663,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 top: 2,
                 right: 2,
                 child: GestureDetector(
-                  onTap: () => setState(() => _images.removeAt(i)),
+                  onTap: () => setState(() => images.removeAt(i)),
                   child: Container(
                     width: 20,
                     height: 20,
@@ -666,9 +678,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ),
             ],
           ),
-        if (_images.length < _maxImages)
+        if (images.length < _maxImages)
           GestureDetector(
-            onTap: _compressing ? null : _pickImages,
+            onTap: _compressing ? null : () => _pickImages(images),
             child: Container(
               width: 80,
               height: 80,

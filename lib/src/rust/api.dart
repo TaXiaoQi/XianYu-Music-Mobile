@@ -1032,6 +1032,21 @@ Future<bool> verifyFallbackModuleSignature({
   signature: signature,
 );
 
+/// 校验服务端 check_beta_access 响应签名（ed25519）。返回 true 表示响应可信。
+Future<bool> verifyBetaAccessSignature({
+  required String deviceId,
+  required bool allowed,
+  required bool pending,
+  required PlatformInt64 exp,
+  required String signature,
+}) => RustLib.instance.api.crateApiVerifyBetaAccessSignature(
+  deviceId: deviceId,
+  allowed: allowed,
+  pending: pending,
+  exp: exp,
+  signature: signature,
+);
+
 /// 初始化全局插件引擎（首次调用时以 `data_dir` 建立 Cookie/Storage 存储）。
 Future<void> pluginEngineInit({required String dataDir}) =>
     RustLib.instance.api.crateApiPluginEngineInit(dataDir: dataDir);

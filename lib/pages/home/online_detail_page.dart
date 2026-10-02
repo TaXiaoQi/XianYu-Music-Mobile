@@ -139,6 +139,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final page = reset ? 1 : _page + 1;
     final raw = widget.args.raw;
     final List<PluginSearchResult> list;
+    bool? pluginIsEnd;
     if (_lxSource != null) {
       list = await _loadLxSongs(raw, page: page, reset: reset);
       if (!mounted) return;
@@ -161,16 +162,23 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       case OnlineDetailType.artist:
         list = await catalog.getArtistWorks(source, raw, page: page);
       case OnlineDetailType.album:
-        list = await catalog.getAlbumSongs(source, raw, page: page);
+        final r = await catalog.getAlbumSongs(source, raw, page: page);
+        list = r.songs;
+        pluginIsEnd = r.isEnd;
       case OnlineDetailType.toplist:
         list = await catalog.getTopListDetail(source, raw, page: page);
       case OnlineDetailType.playlist:
         final item = Map<String, dynamic>.from(raw);
         if (item['_isAlbum'] == true) {
           item.remove('_isAlbum');
-          list = await catalog.getAlbumSongs(source, item, page: page);
+          final r = await catalog.getAlbumSongs(source, item, page: page);
+          list = r.songs;
+          pluginIsEnd = r.isEnd;
         } else {
-          list = await catalog.getMusicSheetInfo(source, raw, page: page);
+          final r =
+              await catalog.getMusicSheetInfoWithEnd(source, raw, page: page);
+          list = r.songs;
+          pluginIsEnd = r.isEnd;
         }
     }
     if (!mounted) return;
@@ -181,7 +189,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       } else {
         _songs = [..._songs, ...list];
       }
-      if (list.length < 30) _isEnd = true;
+      if (pluginIsEnd ?? list.length < 30) _isEnd = true;
       _page = page;
       _loadingMore = false;
     });

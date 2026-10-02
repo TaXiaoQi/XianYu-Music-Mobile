@@ -25,7 +25,7 @@ class LeaderboardPage extends ConsumerStatefulWidget {
 }
 
 class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
-    with SingleTickerProviderStateMixin, HidesShellChrome {
+    with SingleTickerProviderStateMixin, HidesShellChrome, HideMiniBar {
   @override
   bool get hidesChrome => !widget.embedded;
 

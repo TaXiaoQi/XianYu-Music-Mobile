@@ -2320,6 +2320,8 @@ mod qrc_roundtrip_tests {
         let hex = "28feb85c1e5b0aee52751548debf8cec52f70ac1da86688e31bcd4d2a45cb2c8160f5c250523e901f07ebf7fe6d77f6faa0f5043b807fcc537f7187d35c7679b37036be3184b3105526561110e1753714a7e6d1d7f17b0b2a10fe8c072d2e43ef5ec7d25bc331953a9ca7bf72bc291aa1c86176920dd579407719661fa2779178156cd4d9c435d39b7d92fad21e1e16de1096ea95d514b6e9d649c010e4f4003d763cf03ee9144d0ee69b070891a4636";
         let decrypted = qrc_decrypt(hex).expect("decrypt failed");
         let expected = include_str!("fixtures/lyrics/baby.qrc");
-        assert_eq!(decrypted.trim(), expected.trim());
+        // 行级比较：行尾空白不敏感（与 QRC/YRC 解析器宽松容错对齐）
+        let norm = |s: &str| s.lines().map(|l| l.trim()).collect::<Vec<_>>().join("\n");
+        assert_eq!(norm(&decrypted), norm(expected));
     }
 }

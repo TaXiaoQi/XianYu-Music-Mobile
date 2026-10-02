@@ -800,9 +800,6 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         !ref.watch(settingsProvider.select(
             (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
 
-    // 材质开关：决定 chrome 显隐走 0.01 保底常绘（渲显分离）还是归零停绘
-    final materialOn = glassMaterialActive(ref);
-
     void select(int i) {
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       if (searchOpenRaw) closeLandscapeSearch(ref);
@@ -1053,10 +1050,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  // 材质开启时最低 0.01 不归零：opacity=0 会整树停绘，再次
-                  // 显示首帧 backdrop 采样未就绪闪黑；材质关闭（实底）无
-                  // 采样，隐去归零停绘
-                  opacity: hidden ? (materialOn ? 0.01 : 0.0) : 1.0,
+                  // 液态 shader 最低 0.01 保温（整树停绘后重显首帧采样
+                  // 黑闪）；毛玻璃普通 blur 归零停绘，淡入首绘发生在极低
+                  // alpha（不可见），防 saveLayer 内首帧重采样闪白
+                  opacity: hidden ? glassHiddenOpacityFloor(ref) : 1.0,
                   child: AnimatedScale(
                     duration: const Duration(milliseconds: 240),
                     curve: Curves.easeOutCubic,
@@ -1082,13 +1079,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                // 材质开启时 0.01 保底持续绘制，防止显示首帧采样黑闪；
-                // 材质关闭（实底）归零停绘
+                // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘，
+                // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
                 opacity: (floatingSearchBar &&
                         (widget.index == 0 || widget.index == 1) &&
                         !hidden)
                     ? 1.0
-                    : (materialOn ? 0.01 : 0.0),
+                    : glassHiddenOpacityFloor(ref),
                 child: IgnorePointer(
                   ignoring: !(floatingSearchBar &&
                       (widget.index == 0 || widget.index == 1) &&
@@ -1154,11 +1151,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
-                // 材质开启时 0.01 保底持续绘制，防止显示首帧采样黑闪；
-                // 材质关闭（实底）归零停绘
+                // 顶栏恒为毛玻璃 BackdropFilter（无 shader 层）：归零停绘，
+                // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
                 opacity: (widget.index == 0 || widget.index == 1) && !hidden
                     ? 1.0
-                    : (materialOn ? 0.01 : 0.0),
+                    : 0.0,
                 child: IgnorePointer(ignoring: hidden, child: topBar),
               ),
             ),
@@ -1991,11 +1988,8 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 240),
           curve: Curves.easeOutCubic,
-          // 材质开启时 0.01 保底持续绘制，防止再次显示首帧采样未就绪闪黑
-          // （同底栏）；材质关闭（静息胶囊为纯色块）归零停绘
-          opacity: chromeHidden
-              ? (glassMaterialActive(ref) ? 0.01 : 0.0)
-              : 1.0,
+          // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘防淡入闪白
+          opacity: chromeHidden ? glassHiddenOpacityFloor(ref) : 1.0,
           child: Stack(
             clipBehavior: Clip.none,
             children: [

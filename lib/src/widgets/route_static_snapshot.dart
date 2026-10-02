@@ -1,10 +1,8 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/application_logger.dart';
 import 'glass_settings.dart';
 
 class RouteStaticSnapshot extends ConsumerStatefulWidget {
@@ -24,15 +22,11 @@ class RouteStaticSnapshot extends ConsumerStatefulWidget {
 }
 
 class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
-  static const int _downscale = 2;
-
   final GlobalKey _boundaryKey = GlobalKey();
   ui.Image? _image;
   Size? _size;
   bool _enabled = true;
-  bool _capturing = false;
   bool _settleHold = false;
-  int _token = 0;
 
   bool get _moving {
     final s = widget.animation.status;
@@ -43,7 +37,6 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
   void initState() {
     super.initState();
     widget.animation.addStatusListener(_onStatus);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
   }
 
   void _onStatus(AnimationStatus status) {
@@ -59,14 +52,8 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
         _image = null;
         _size = null;
         setState(() {});
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => stale.dispose());
+        WidgetsBinding.instance.addPostFrameCallback((_) => stale.dispose());
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        // 无条件抓：首帧阻塞时 postFrame 会推迟到动画结束后才执行，
-        // 若再叠加 _moving 条件快照将永远抓不到图（转场全程无保护）
-        if (mounted) _capture();
-      });
       return;
     }
     // 转场结束不立即移除快照：被快照完全遮挡的 live 层会被引擎剔除渲染，
@@ -89,57 +76,11 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
 
   @override
   void dispose() {
-    _token++;
     widget.animation.removeStatusListener(_onStatus);
     _image?.dispose();
     _image = null;
     _size = null;
     super.dispose();
-  }
-
-  Future<void> _capture({int attempt = 0}) async {
-    if (!_enabled || _capturing) return;
-    _capturing = true;
-    final token = ++_token;
-    final ctx = _boundaryKey.currentContext;
-    final box = ctx?.findRenderObject();
-    if (!mounted || ctx == null || box is! RenderRepaintBoundary) {
-      _capturing = false;
-      return;
-    }
-    if (box.size.isEmpty || !box.attached) {
-      _capturing = false;
-      return;
-    }
-    final dpr = MediaQuery.devicePixelRatioOf(ctx);
-    final size = box.size;
-    ui.Image? img;
-    try {
-      img = await box.toImage(
-        pixelRatio: dpr / _downscale,
-      );
-    } catch (e) {
-      img = null;
-      if (attempt < 2 && mounted) {
-        // push 后首帧图层未就绪时 toImage 可能抛空断言，不只 debugNeedsPaint 一种
-        _capturing = false;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _capture(attempt: attempt + 1);
-        });
-        return;
-      }
-      AppLog.warn('route-snapshot', 'capture toImage failed: $e');
-    }
-    _capturing = false;
-    if (!mounted || token != _token) {
-      img?.dispose();
-      return;
-    }
-    setState(() {
-      _image?.dispose();
-      _image = img;
-      _size = size;
-    });
   }
 
   @override
@@ -160,12 +101,13 @@ class _RouteStaticSnapshotState extends ConsumerState<RouteStaticSnapshot> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // 不用 Offstage：整树停绘后再还原时，重进绘制管线首帧全场景
-          // backdrop 采样失效（顶栏/底栏/播放条/页面内玻璃齐黑一帧）。
-          // live 层恒 1.0 完整渲染：转场开始到快照抓取完成之间的窗口里
-          // （img 尚为 null）backdrop=完整页面内容，任何玻璃采样都不会黑；
-          // 快照图就绪后盖在 live 层上方，视觉无差异。抓取只发生在
-          // img==null（showImg=false）时，无抓废
+          // 快照接管已退役（不再抓帧，img 恒 null）：toImage 离屏烘焙里
+          // BackdropFilter 采样失效，玻璃只剩 fill 读作实底白卡——pop 时
+          // 页面已渲染好、抓帧 100ms 级就绪，快照在转场中段盖住 live 层，
+          // 毛玻璃材质整体跳变（用户实测）；push 因首帧阻塞抓帧晚于转场
+          // 就绪而从不显示，行为不对称。转场全程维持 live 层：玻璃
+          // RepaintBoundary 保住旧帧、backdrop 背后是下页实时内容，
+          // 观感与静置一致（液态玻璃已按同一原因放弃转场接管）
           IgnorePointer(
             ignoring: showImg,
             // 冻结窗口内静默 live 层：快照已完全遮挡页面，把子树 ticker

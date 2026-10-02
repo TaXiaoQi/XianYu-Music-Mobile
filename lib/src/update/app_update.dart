@@ -218,21 +218,56 @@ bool get isBetaBuild {
   return pre.startsWith('beta');
 }
 
+/// 内测锁（fail-closed）：
+/// - 联网验签通过且 allowed → 放行；
+/// - allowed=false → 锁（pending 显示审核中，否则可跳转申请）；
+/// - 无法验证（断网且无有效缓存 / 响应不可信）→ 锁，仅提供重试与退出。
 Future<bool> maybeGateBetaAccess(WidgetRef ref) async {
   if (!kReleaseMode) return false;
   if (!isBetaBuild) return false;
-  (bool, bool) access;
-  try {
-    access = await ref.read(accountApiProvider).checkBetaAccess();
-  } catch (_) {
-    return false;
-  }
-  final (bool allowed, bool pending) = access;
-  if (allowed) return false;
   final ctx = appNavigatorKey.currentContext;
   if (ctx == null || !ctx.mounted) return false;
-  await showBetaGateDialog(ctx, pending: pending);
-  return true;
+  while (true) {
+    final access = await ref.read(accountApiProvider).verifyBetaAccess();
+    if (!ctx.mounted) return false;
+    if (access != null) {
+      final (bool allowed, bool pending) = access;
+      if (allowed) return false;
+      await showBetaGateDialog(ctx, pending: pending);
+      return true;
+    }
+    final retry = await showBetaUnverifiedDialog(ctx);
+    if (!retry) return true;
+  }
+}
+
+/// 无法验证内测资格。返回 true 表示用户选择重试（点「退出软件」会直接结束应用）。
+Future<bool> showBetaUnverifiedDialog(BuildContext context) async {
+  final retry = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    barrierColor: Colors.black87,
+    useSafeArea: false,
+    builder: (ctx) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text(tr('无法验证内测资格')),
+        content: Text(tr('请连接网络后重试。若持续失败，请联系管理员。'),
+            style: const TextStyle(fontSize: 14, height: 1.5)),
+        actions: [
+          TextButton(
+            onPressed: () => SystemNavigator.pop(),
+            child: Text(tr('退出软件')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(tr('重试')),
+          ),
+        ],
+      ),
+    ),
+  );
+  return retry ?? false;
 }
 
 Future<void> runStartupVersionChecks(WidgetRef ref) async {
