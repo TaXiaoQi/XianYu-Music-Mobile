@@ -35,12 +35,12 @@ class AppLogEntry {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'timestamp': timestamp,
-        'level': level.value,
-        'category': category,
-        'message': message,
-      };
+    'id': id,
+    'timestamp': timestamp,
+    'level': level.value,
+    'category': category,
+    'message': message,
+  };
 
   static AppLogEntry? fromJson(Map<String, dynamic> json) {
     final level = LogLevel.values
@@ -65,7 +65,6 @@ class AppLogEntry {
 }
 
 const int kMaxAppLogEntries = 300;
-const int kMaxAppErrorEntries = 10;
 
 class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   ApplicationLogManager._() : super(const []);
@@ -75,9 +74,6 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   Timer? _persistDebounce;
   int _seq = 0;
 
-  final List<AppLogEntry> _pending = [];
-  bool _flushScheduled = false;
-
   void bootstrap() {
     unawaited(_restore());
   }
@@ -86,29 +82,16 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
 
   void log(LogLevel level, String category, String message) {
     _seq++;
-    _pending.add(AppLogEntry(
-      id: '${DateTime.now().millisecondsSinceEpoch}_$_seq',
-      timestamp: DateTime.now().millisecondsSinceEpoch,
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final entry = AppLogEntry(
+      id: '${now}_$_seq',
+      timestamp: now,
       level: level,
       category: category,
       message: message,
-    ));
+    );
+    state = _appendAndTrim(state, entry);
     debugPrint('[AppLog:${level.value}] [$category] $message');
-    _flushLater();
-  }
-
-  void _flushLater() {
-    if (_flushScheduled) return;
-    _flushScheduled = true;
-    scheduleMicrotask(_flush);
-  }
-
-  void _flush() {
-    _flushScheduled = false;
-    if (_pending.isEmpty) return;
-    final entries = List<AppLogEntry>.of(_pending);
-    _pending.clear();
-    state = _retain([...state, ...entries]);
     _schedulePersist();
   }
 
@@ -117,24 +100,21 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   void warn(String category, String m) => log(LogLevel.warn, category, m);
   void error(String category, String m) => log(LogLevel.error, category, m);
 
+  static List<AppLogEntry> _appendAndTrim(
+    List<AppLogEntry> current,
+    AppLogEntry entry,
+  ) {
+    final result = <AppLogEntry>[...current, entry];
+    if (result.length <= kMaxAppLogEntries) return result;
+    return result.sublist(result.length - kMaxAppLogEntries);
+  }
+
   static List<AppLogEntry> _retain(List<AppLogEntry> source) {
-    var result = source.length > kMaxAppLogEntries
-        ? source.sublist(source.length - kMaxAppLogEntries)
-        : List.of(source);
-    final errorEntries = result.where((e) => e.level == LogLevel.error).toList();
-    if (errorEntries.length > kMaxAppErrorEntries) {
-      final dropIds = errorEntries
-          .sublist(0, errorEntries.length - kMaxAppErrorEntries)
-          .map((e) => e.id)
-          .toSet();
-      result = result.where((e) => !dropIds.contains(e.id)).toList();
-    }
-    return result;
+    if (source.length <= kMaxAppLogEntries) return List.of(source);
+    return source.sublist(source.length - kMaxAppLogEntries);
   }
 
   void clear() {
-    _pending.clear();
-    _flushScheduled = false;
     state = const [];
     _schedulePersist();
   }
@@ -166,9 +146,9 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
           .whereType<AppLogEntry>()
           .toList();
       if (entries.isEmpty) return;
-      state = _retain(entries);
-    } catch (_) {
-    }
+      state = _retain([...entries, ...state]);
+      _schedulePersist();
+    } catch (_) {}
   }
 
   Future<void> _persist() async {
@@ -178,8 +158,7 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
         jsonEncode(state.map((e) => e.toJson()).toList()),
         flush: true,
       );
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   String formatExport({required bool onlyErrors}) {
@@ -193,23 +172,26 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
     final headline = counts[LogLevel.error]! > 0
         ? '检测到 ${counts[LogLevel.error]} 条错误日志'
         : counts[LogLevel.warn]! > 0
-            ? '检测到 ${counts[LogLevel.warn]} 条警告日志'
-            : tr('未发现明显异常');
+        ? '检测到 ${counts[LogLevel.warn]} 条警告日志'
+        : tr('未发现明显异常');
     final buffer = StringBuffer()
       ..writeln(tr('弦予音乐调试日志'))
       ..writeln('导出范围：${onlyErrors ? '错误日志' : '全部日志'}')
       ..writeln('导出时间：${DateTime.now().toIso8601String()}')
       ..writeln('日志数量：${selected.length}')
       ..writeln('自动分析：$headline')
-      ..writeln('日志级别：debug=${counts[LogLevel.debug]} info=${counts[LogLevel.info]} '
-          'warn=${counts[LogLevel.warn]} error=${counts[LogLevel.error]}')
+      ..writeln(
+        '日志级别：debug=${counts[LogLevel.debug]} info=${counts[LogLevel.info]} '
+        'warn=${counts[LogLevel.warn]} error=${counts[LogLevel.error]}',
+      )
       ..writeln('');
     for (final e in selected) {
       buffer.writeln(
-          // 本地时间（与导出时间一致）；带 isUtc 会输出 UTC 并带 Z 后缀，
-          // 看起来像晚 8 小时，排查问题时易误判时段
-          '[${DateTime.fromMillisecondsSinceEpoch(e.timestamp).toIso8601String()}] '
-          '[${e.level.value.toUpperCase()}] [${e.category}] ${e.message}');
+        // 本地时间（与导出时间一致）；带 isUtc 会输出 UTC 并带 Z 后缀，
+        // 看起来像晚 8 小时，排查问题时易误判时段
+        '[${DateTime.fromMillisecondsSinceEpoch(e.timestamp).toIso8601String()}] '
+        '[${e.level.value.toUpperCase()}] [${e.category}] ${e.message}',
+      );
     }
     return buffer.toString().trimRight();
   }
@@ -230,7 +212,8 @@ class AppLog {
 
 final applicationLogsProvider =
     StateNotifierProvider<ApplicationLogManager, List<AppLogEntry>>(
-        (ref) => ApplicationLogManager.instance);
+      (ref) => ApplicationLogManager.instance,
+    );
 
 class AppLogRouteObserver extends NavigatorObserver {
   String _name(Route<dynamic>? route) =>
@@ -253,8 +236,7 @@ class AppLogRouteObserver extends NavigatorObserver {
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    AppLog.info(
-        'route', 'replace ${_name(oldRoute)} -> ${_name(newRoute)}');
+    AppLog.info('route', 'replace ${_name(oldRoute)} -> ${_name(newRoute)}');
   }
 }
 
@@ -270,9 +252,11 @@ class AppLogBackGestureObserver with WidgetsBindingObserver {
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    AppLog.debug('backgesture',
-        'start ${backEvent.isButtonEvent ? 'button' : 'gesture'} '
-        'progress=${backEvent.progress.toStringAsFixed(3)}');
+    AppLog.debug(
+      'backgesture',
+      'start ${backEvent.isButtonEvent ? 'button' : 'gesture'} '
+          'progress=${backEvent.progress.toStringAsFixed(3)}',
+    );
     if (!_pulledNativeStatus) {
       _pulledNativeStatus = true;
       BackGestureNativeBridge.pull();
@@ -296,10 +280,13 @@ class BackGestureNativeBridge {
   }
 
   static void pull() {
-    _channel.invokeMethod<String>('pull').then((status) {
-      if (status != null) AppLog.debug('backgesture', status);
-    }).catchError((Object e) {
-      AppLog.debug('backgesture', 'pull failed: $e');
-    });
+    _channel
+        .invokeMethod<String>('pull')
+        .then((status) {
+          if (status != null) AppLog.debug('backgesture', status);
+        })
+        .catchError((Object e) {
+          AppLog.debug('backgesture', 'pull failed: $e');
+        });
   }
 }
