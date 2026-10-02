@@ -19,6 +19,7 @@ import 'src/navigation/shell.dart' show NavDropletOverlay;
 import 'src/plugin/lx_update_alerts.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
+import 'src/widgets/glass_settings.dart';
 import 'src/widgets/privacy_policy.dart';
 import 'src/widgets/custom_background.dart';
 import 'src/widgets/chrome_glass_frame.dart';
@@ -311,6 +312,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final language = settings?.language ?? AppLanguage.system;
     final locale = _localeFor(language);
     I18n.setMode(_i18nModeFor(language));
+    // stretch 效果的 shader filter 层会让 Impeller 下的 backdrop 采样失效
+    // （见 _NoStretchScrollBehavior 注释），玻璃材质开启时整体禁用
+    final glassActive = glassMaterialActive(ref);
     final l10nDelegates = [
       AppLocalizations.delegate,
       GlobalMaterialLocalizations.delegate,
@@ -348,6 +352,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
             darkTheme: darkTheme,
             themeMode: themeMode,
             locale: locale,
+            scrollBehavior: glassActive
+                ? const _NoStretchScrollBehavior()
+                : null,
             localizationsDelegates: l10nDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             routerConfig: appRouter,
@@ -456,6 +463,27 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     }
     return I18nMode.zhCn;
   }
+}
+
+/// 玻璃材质开启时禁用 Android 12 的 stretch overscroll 效果。
+///
+/// 框架的 StretchingOverscrollIndicator 在 overscroll 时用
+/// ImageFilter.shader（stretch_effect.frag）包裹整个列表内容，而 Impeller 上
+/// BackdropFilter 的 backdrop 采样在该 shader filter 层之下会失效——表现为
+/// 列表滑到最底部（fling 撞边界触发 stretch）时页内玻璃卡片瞬间只剩 tint
+/// 变透明，反向滚动触发 ScrollUpdateNotification→scrollEnd(0) 才恢复。
+/// 顶栏/底栏/mini 播放条在列表子树之外不受影响。材质关闭（纯色块）时
+/// 无 backdrop 采样，保留原生 stretch 不受影响。
+class _NoStretchScrollBehavior extends MaterialScrollBehavior {
+  const _NoStretchScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
 }
 
 class _InitErrorScreen extends StatelessWidget {
