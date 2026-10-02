@@ -1086,58 +1086,68 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                         !hidden)
                     ? 1.0
                     : glassHiddenOpacityFloor(ref),
-                child: IgnorePointer(
-                  ignoring: !(floatingSearchBar &&
-                      (widget.index == 0 || widget.index == 1) &&
-                      !hidden),
-                  child: FloatingTopBar(
-                    chromeFrame: true,
-                    title: widget.index == 1
-                        ? Text(
-                            tr('个人中心'),
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
-                          )
-                        : Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: tr('弦予')),
-                                TextSpan(
-                                  text: tr('音乐'),
-                                  style: const TextStyle(
-                                    color: Color(0xFFEC4141),
-                                    fontWeight: FontWeight.w800,
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 240),
+                  curve: Curves.easeOutCubic,
+                  // 与悬浮底栏同款缩小退让（0.92），退场不再只是淡出
+                  scale: (floatingSearchBar &&
+                          (widget.index == 0 || widget.index == 1) &&
+                          !hidden)
+                      ? 1.0
+                      : 0.92,
+                  child: IgnorePointer(
+                    ignoring: !(floatingSearchBar &&
+                        (widget.index == 0 || widget.index == 1) &&
+                        !hidden),
+                    child: FloatingTopBar(
+                      chromeFrame: true,
+                      title: widget.index == 1
+                          ? Text(
+                              tr('个人中心'),
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
+                            )
+                          : Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(text: tr('弦予')),
+                                  TextSpan(
+                                    text: tr('音乐'),
+                                    style: const TextStyle(
+                                      color: Color(0xFFEC4141),
+                                      fontWeight: FontWeight.w800,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
+                              style: const TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.3,
+                              ),
                             ),
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                            ),
+                      onSearchTap: () => context.push('/search'),
+                      onRecognize: () => context.push('/recognize'),
+                      actions: [
+                        if (widget.index == 0)
+                          BiliPaiIconButton(
+                            iconChild: themeSlotWidget(ref, 'entry.wallpaper',
+                                fallback: const SkinIcon()),
+                            tooltip: tr('皮肤'),
+                            onTap: () => context.push('/wallpaper'),
+                          )
+                        else
+                          BiliPaiIconButton(
+                            iconChild: themeSlotWidget(ref, 'mine.settings',
+                                fallback: const Icon(Icons.settings_outlined)),
+                            tooltip: tr('设置'),
+                            onTap: () => context.push('/settings'),
                           ),
-                    onSearchTap: () => context.push('/search'),
-                    onRecognize: () => context.push('/recognize'),
-                    actions: [
-                      if (widget.index == 0)
-                        BiliPaiIconButton(
-                          iconChild: themeSlotWidget(ref, 'entry.wallpaper',
-                              fallback: const SkinIcon()),
-                          tooltip: tr('皮肤'),
-                          onTap: () => context.push('/wallpaper'),
-                        )
-                      else
-                        BiliPaiIconButton(
-                          iconChild: themeSlotWidget(ref, 'mine.settings',
-                              fallback: const Icon(Icons.settings_outlined)),
-                          tooltip: tr('设置'),
-                          onTap: () => context.push('/settings'),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

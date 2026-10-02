@@ -17,6 +17,9 @@ import android.graphics.Color
 import android.view.Surface
 import android.view.View
 import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.window.BackEvent
 import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedCallback
@@ -179,6 +182,7 @@ class MainActivity : AudioServiceActivity() {
         saf = SafEngine(this)
         super.onCreate(savedInstanceState)
         applyLegacyEdgeToEdgeLayout()
+        applyLandscapeSystemBarImmersive()
         // 开启挖孔(cutout)窗口模式：允许 UI/背景绘制进摄像头区域。
         // 全程沉浸全屏（含横屏）时若不开此模式，Flutter 渲染会被限制在
         // 摄像头清除安全区之外，挖孔那条只能留黑/被截断，表现为「摄像头位置不可显示 UI」。
@@ -272,6 +276,34 @@ class MainActivity : AudioServiceActivity() {
     }
 
     /**
+     * 横屏系统栏沉浸：Flutter 侧的 immersiveSticky（shell.dart 横屏分流）在
+     * 车机等 ROM 上不被执行或被系统在窗口聚焦/键盘弹出等时机打回，状态栏
+     * 常驻盖住页面大标题。这里在窗口层用 InsetsController 按横竖屏直接
+     * 隐藏/恢复系统栏（横屏对应 immersiveSticky 隐藏状态+导航栏，竖屏恢复
+     * 交给既有手动模式）。同时横屏保证 decorFitsSystemWindows(false)：
+     * 若 ROM 拒绝隐藏（部分车机状态栏为系统常驻），真实 inset 仍会传给
+     * Flutter（MediaQuery.padding.top > 0），页面内容自动下移避让而非被盖。
+     * 窗口聚焦/旋转/创建时重申，与 applyLegacyEdgeToEdgeLayout 同节奏。
+     */
+    private fun applyLandscapeSystemBarImmersive() {
+        val landscape =
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        runCatching {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            if (landscape) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    window.setDecorFitsSystemWindows(false)
+                }
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
+    /**
      * 窗口聚焦时重申布局 flag：部分 ROM（含鸿蒙兼容层）在键盘弹出/收回、
      * 焦点切换等时机会重置 systemUiVisibility，丢失后实色状态栏条复现。
      * flag 幂等，且只影响布局不影响系统栏显隐，重复设置安全。
@@ -280,6 +312,7 @@ class MainActivity : AudioServiceActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             applyLegacyEdgeToEdgeLayout()
+            applyLandscapeSystemBarImmersive()
         }
     }
 
@@ -287,10 +320,14 @@ class MainActivity : AudioServiceActivity() {
     override fun onFlutterUiDisplayed() {
         super.onFlutterUiDisplayed()
         applyLegacyEdgeToEdgeLayout()
+        applyLandscapeSystemBarImmersive()
         // 引擎在首帧后仍会多次改写系统栏属性（实测 NOH-AN00：首帧后的
         // 重申会被引擎随后的涂色覆盖，三键区域回黑，直到下一次窗口聚焦
         // 才恢复）。延迟再重申一次，跨过引擎的最后一笔涂色。
-        window.decorView.postDelayed({ applyLegacyEdgeToEdgeLayout() }, 600)
+        window.decorView.postDelayed({
+            applyLegacyEdgeToEdgeLayout()
+            applyLandscapeSystemBarImmersive()
+        }, 600)
     }
 
     /** singleTask 复用已启动 Activity 时的深链回调（外部 VIEW intent 命中现存实例）。 */
@@ -328,6 +365,8 @@ class MainActivity : AudioServiceActivity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         emitRotation()
+        // 旋转后横竖屏系统栏策略立即跟上（横屏隐藏/竖屏恢复）
+        applyLandscapeSystemBarImmersive()
     }
 
     /** 推送当前屏幕方向（1 竖 / 2 横）：主动读 Display 旋转角（0/90/180/270），

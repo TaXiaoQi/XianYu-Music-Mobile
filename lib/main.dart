@@ -92,8 +92,8 @@ Future<void> main() async {
         androidNotificationOngoing: false,
         androidStopForegroundOnPause: false,
         androidNotificationIcon: 'drawable/ic_notification',
-        artDownscaleWidth: 512,
-        artDownscaleHeight: 512,
+        // 不设 artDownscaleWidth/Height：锁屏/通知封面按原图解码（原生侧 -1），
+        // 512 降采样在系统音乐锁屏全屏放大后明显模糊
         androidNotificationClickStartsActivity: true,
       ),
     ).then((h) {

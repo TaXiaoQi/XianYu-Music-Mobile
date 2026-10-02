@@ -48,6 +48,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   /// 显示时先挂回子树再从 0.01 淡入；恢复首帧即进磨砂降级窗口，shader
   /// 在 saveLayer 内不活跃，无黑闪
   bool _barGone = false;
+
+  /// 重挂载恢复帧：隐式动画（AnimatedOpacity/AnimatedScale）首建不播动画，
+  /// 若挂回当帧目标值已是 1.0/1.0，露出会硬切。挂回首帧先以隐藏目标
+  /// （0.01/0.92）渲染，帧末翻回真实目标，让淡入/缩放从隐藏值起步
+  bool _barRecovering = false;
   bool? _lastHidden;
   Timer? _barGoneTimer;
 
@@ -132,6 +137,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       _barGoneTimer?.cancel();
       if (_barGone) {
         _barGone = false;
+        // 挂回首帧以隐藏目标渲染，帧末翻回真实目标 → 隐式动画
+        // 从 0.01/0.92 起步，露出恢复淡入+缩放（否则重挂载首建直接 1.0 硬切）
+        _barRecovering = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _barRecovering = false);
+        });
         _barFadeTimer?.cancel();
         _barFading = true;
         _barFadeTimer = Timer(const Duration(milliseconds: 280), () {
@@ -386,6 +397,8 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     final chromeDur = playerOpen
         ? Duration.zero
         : const Duration(milliseconds: 240);
+    // 重挂载恢复帧沿用隐藏目标（见 _barRecovering），显隐动画从隐藏值起步
+    final effHidden = hidden || _barRecovering;
 
     return AnimatedPositioned(
       duration: (_isPlayerDragging || adoptedExternal)
@@ -401,15 +414,15 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         // 最低 0.01 不归零：opacity=0 会整树停绘，再次显示首帧 backdrop
         // 采样未就绪闪黑；隐去期间保持绘制即无黑闪。Impeller 下 0.01
         // 常绘子树有 alpha 泄漏残影，淡出结束后由 _barGone 整树卸载
-        opacity: hidden ? 0.01 : 1.0,
+        opacity: effHidden ? 0.01 : 1.0,
         child: _barGone
             ? const SizedBox.shrink()
             : AnimatedScale(
           duration: chromeDur,
           curve: Curves.easeOutCubic,
-          scale: hidden ? 0.92 : 1.0,
+          scale: effHidden ? 0.92 : 1.0,
           child: IgnorePointer(
-            ignoring: hidden,
+            ignoring: effHidden,
             child: MiniPlayerBar(
               degraded: hidden || _barFading,
               onPanStart: _onPlayerPanStart,
