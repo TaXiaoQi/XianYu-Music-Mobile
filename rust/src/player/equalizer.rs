@@ -418,6 +418,7 @@ impl Equalizer {
 pub struct UserVolumeSource {
 	current_volume: f32,
 	target_volume: f32,
+	ramp_from: f32,
 	ramp_frames: usize,
 	current_frame: usize,
 	is_ramping: bool,
@@ -435,6 +436,7 @@ impl UserVolumeSource {
 		Self {
 			current_volume: vol,
 			target_volume: vol,
+			ramp_from: vol,
 			ramp_frames: volume_ramp_frames(sample_rate),
 			current_frame: 0,
 			is_ramping: false,
@@ -451,6 +453,7 @@ impl UserVolumeSource {
 			let next_target = f32::from_bits(volume.load(Ordering::Relaxed)).clamp(0.0, 1.0);
 			if (next_target - self.target_volume).abs() > 0.00001 {
 				self.target_volume = next_target;
+				self.ramp_from = self.current_volume;
 				self.ramp_frames = volume_ramp_frames(self.sample_rate);
 				self.current_frame = 0;
 				self.is_ramping = true;
@@ -463,8 +466,9 @@ impl UserVolumeSource {
 					self.current_volume = self.target_volume;
 					self.is_ramping = false;
 				} else {
+					// 线性渐变：以渐变起点为基准按进度插值（增量插值会指数收敛，等效瞬间跳变）
 					self.current_volume =
-						self.current_volume + (self.target_volume - self.current_volume) * progress;
+						self.ramp_from + (self.target_volume - self.ramp_from) * progress;
 				}
 			}
 

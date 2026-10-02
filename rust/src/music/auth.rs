@@ -483,15 +483,8 @@ mod time_calibrate_tests {
     fn parse_http_date_standard() {
         // hyper 响应 Date 头标准格式
         let secs = parse_http_date("Thu, 10 Sep 2026 06:34:48 GMT").expect("应解析成功");
-        let local = local_now_secs();
-        // 服务器时间应在「当前 ±1 天」内（2026-09-10 前后），排除日期表/算法低级错误
-        assert!(
-            (secs - local).abs() < 86_400,
-            "解析结果 {} 与本地时间 {} 偏差超过一天",
-            secs,
-            local
-        );
         // 精确值：2026-09-10 06:34:48 UTC = 1789022088
+        // 固定日期→epoch 断言已验证解析正确性；不与本地时间比对（写死日期会随时间流逝失效）
         assert_eq!(secs, 1789022088);
     }
 
