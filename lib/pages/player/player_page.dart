@@ -474,7 +474,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final showRomaji = settings?.showLyricsRomaji ?? false;
     final offsetMs = settings?.lyricOffsetMs ?? 0;
     final hasRomaji = _lyricsViewHasRomaji;
-    final playerStyle = settings?.playerStyle ?? PlayerStyle.advanced;
+    final playerStyle = settings?.playerStyle ?? PlayerStyle.traditional;
 
     final hideMvVideo = _hideMvVideo && playerStyle == PlayerStyle.traditional;
 

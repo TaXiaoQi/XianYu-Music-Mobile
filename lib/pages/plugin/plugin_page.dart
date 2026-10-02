@@ -1568,6 +1568,9 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
   Future<void> _installFromUrl() async {
     final url = _urlCtrl.text.trim();
     if (url.isEmpty || _loading) return;
+    // 点击安装先主动失焦：输入框 autofocus 拿走的焦点若残留到弹窗
+    // 关闭转场之后，键盘会被再次拉起；统一在发起安装时收起键盘
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() {
       _loading = true;
       _error = null;
@@ -1577,7 +1580,7 @@ class _UrlInstallSheetState extends State<_UrlInstallSheet> {
     if (error == null) {
       Navigator.pop(context);
     } else {
-      // 失败：保留已输入链接与键盘状态，错误原因显示在弹窗内便于重试
+      // 失败：保留已输入链接便于重试（键盘已随失焦收起，错误原因显示在弹窗内）
       setState(() {
         _loading = false;
         _error = error;

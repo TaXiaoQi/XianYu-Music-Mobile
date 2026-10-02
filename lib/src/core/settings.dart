@@ -971,8 +971,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       };
 
   PlayerStyle _playerStyleFromString(String v) => switch (v) {
-        'traditional' => PlayerStyle.traditional,
-        _ => PlayerStyle.advanced,
+        'advanced' => PlayerStyle.advanced,
+        _ => PlayerStyle.traditional,
       };
 
   AppLanguage _langFromString(String v) => switch (v) {

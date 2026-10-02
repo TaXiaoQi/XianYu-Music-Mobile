@@ -897,7 +897,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             icon: Icons.grid_view_outlined,
             title: tr('播放页样式'),
             subtitle: tr('切换正在播放页的布局风格'),
-            trailing: Text(switch (s?.playerStyle ?? PlayerStyle.advanced) {
+            trailing: Text(switch (s?.playerStyle ?? PlayerStyle.traditional) {
               PlayerStyle.advanced => tr('高级模式'),
               PlayerStyle.traditional => tr('传统模式'),
             }),
@@ -919,7 +919,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
             value: s?.landscapeTapToHideChrome ?? true,
             onChanged: (v) => n.setLandscapeTapToHideChrome(v),
           ),
-          if ((s?.playerStyle ?? PlayerStyle.advanced) == PlayerStyle.advanced)
+          if ((s?.playerStyle ?? PlayerStyle.traditional) == PlayerStyle.advanced)
             _switchTile(
               context,
               icon: Icons.sync_alt_outlined,
@@ -2407,7 +2407,7 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     WidgetRef ref,
     AppSettings? s,
   ) async {
-    final cur = s?.playerStyle ?? PlayerStyle.advanced;
+    final cur = s?.playerStyle ?? PlayerStyle.traditional;
     final choice = await showModernChoiceSheet<PlayerStyle>(
       context: context,
       title: tr('正在播放页样式'),
