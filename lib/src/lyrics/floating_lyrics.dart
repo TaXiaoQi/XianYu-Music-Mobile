@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
@@ -11,7 +12,7 @@ import '../player/player_provider.dart';
 import 'lyric_model.dart';
 import 'lyrics_repository.dart';
 
-class FloatingLyricsController {
+class FloatingLyricsController with WidgetsBindingObserver {
   FloatingLyricsController(this._container);
 
   final ProviderContainer _container;
@@ -37,6 +38,7 @@ class FloatingLyricsController {
   bool _mvActive = false;
 
   bool _enabled = false;
+  bool _pendingEnableViaSettings = false;
   int _lastPushedPosMs = -1;
   bool _lastPushedPlaying = false;
   String? _songKey;
@@ -44,6 +46,7 @@ class FloatingLyricsController {
   int _fetchToken = 0;
 
   void init() {
+    WidgetsBinding.instance.addObserver(this);
     _events.setMethodCallHandler(_onEvent);
     I18n.modeVersion.addListener(_onLanguageChanged);
     _settingsSub = _container.listen(settingsProvider, (prev, next) {
@@ -61,6 +64,7 @@ class FloatingLyricsController {
   }
 
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _events.setMethodCallHandler(null);
     I18n.modeVersion.removeListener(_onLanguageChanged);
     _settingsSub?.close();
@@ -271,6 +275,30 @@ class FloatingLyricsController {
   }
 
   // ---- 供设置页使用的静态能力 ----
+
+  /// 未授权时的开启流程：跳系统设置授权页但不立即切换开关；回到前台后
+  /// 复检权限——已授权才真正开启，被拦截/未授权则保持关闭
+  Future<void> requestEnableViaSettings() async {
+    _pendingEnableViaSettings = true;
+    await openPermissionSettings();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_pendingEnableViaSettings) {
+      return;
+    }
+    _pendingEnableViaSettings = false;
+    _confirmPendingEnable();
+  }
+
+  Future<void> _confirmPendingEnable() async {
+    final granted = await isPermissionGranted();
+    if (!granted) return;
+    await _container
+        .read(settingsProvider.notifier)
+        .setFloatingLyricsEnabled(true);
+  }
 
   static Future<bool> isPermissionGranted() async {
     try {

@@ -1288,7 +1288,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
   Future<void> setLandscapeTapToHideChrome(bool v) =>
       _save((state.valueOrNull ?? const AppSettings())
           .copyWith(landscapeTapToHideChrome: v));
-  Future<void> setFloatingLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsEnabled: v));
+  /// 开启桌面歌词时重置固定效果：上次会话的锁定不再沿用，恢复可拖动；
+  /// 关闭时保留锁定与位置不动
+  Future<void> setFloatingLyricsEnabled(bool v) => _save(
+      (state.valueOrNull ?? const AppSettings()).copyWith(
+    floatingLyricsEnabled: v,
+    floatingLyricsLocked: v ? false : null,
+  ));
 
   Future<void> setStatusBarLyricsEnabled(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(statusBarLyricsEnabled: v));
   Future<void> setFloatingLyricsLocked(bool v) => _save((state.valueOrNull ?? const AppSettings()).copyWith(floatingLyricsLocked: v));

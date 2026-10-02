@@ -1781,8 +1781,11 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
           ),
         );
         if (go == true) {
-          await FloatingLyricsController.openPermissionSettings();
-          await n.setFloatingLyricsEnabled(true);
+          // 不立即切换开关：跳系统设置，回前台后由控制器复检权限，
+          // 授权成功才开启；被拦截则保持关闭
+          await ref
+              .read(floatingLyricsControllerProvider)
+              .requestEnableViaSettings();
         }
         return;
       }
