@@ -20,6 +20,121 @@
 				<string>com.netscape.javascript-source</string>
 			</array>
 		</dict>
+		<!-- 音频文件关联：文件 App「分享/用其他 App 打开」菜单出现本应用。
+		     格式清单与桌面端文件关联对齐（audioFileAssociations.ts /
+		     file_assoc.rs AUDIO_EXTENSIONS），另含 Android 端已注册的 opus。
+		     mp3/m4a/wav/aiff/aac 由 public.audio 伞类型覆盖，mp4 走
+		     public.mpeg-4；flac/ogg/opus/m4b 系统未稳定内置 UTI，
+		     经 UTImportedTypeDeclarations 补声明。 -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.mpeg-4</string>
+				<string>org.xiph.flac</string>
+				<string>org.xiph.ogg</string>
+				<string>org.xiph.opus</string>
+				<string>cc.xymusic.mobile.m4b</string>
+			</array>
+		</dict>
+	</array>
+	<!-- 补声明系统未内置的音频 UTI（imported 声明不抢占系统定义，
+	     系统已有同名 UTI 时自动忽略，幂等安全）。 -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.xiph.flac</string>
+			<key>UTTypeDescription</key>
+			<string>FLAC Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>flac</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>audio/flac</string>
+					<string>application/flac</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.xiph.ogg</string>
+			<key>UTTypeDescription</key>
+			<string>Ogg Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ogg</string>
+					<string>oga</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>audio/ogg</string>
+					<string>application/ogg</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.xiph.opus</string>
+			<key>UTTypeDescription</key>
+			<string>Opus Audio</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>opus</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>audio/opus</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>cc.xymusic.mobile.m4b</string>
+			<key>UTTypeDescription</key>
+			<string>MPEG-4 Audio Book</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.audio</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>m4b</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>audio/mp4</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>弦予音乐</string>

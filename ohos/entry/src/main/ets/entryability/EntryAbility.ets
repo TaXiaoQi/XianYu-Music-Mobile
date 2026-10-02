@@ -45,23 +45,31 @@ export default class EntryAbility extends FlutterAbility {
     this.handleOpenWant(want)
   }
 
-  // 文件管理器/浏览器「打开」.js 插件脚本（module.json5 skills 声明
-  // general.javascript + viewData）：把 want.uri 物化到沙盒缓存（沙盒副本
-  // 不随原文件移动/删除失效），封装成 xianyu://open?target=plugin 深链，
-  // 复用 Dart 侧统一的插件导入管线（LX/MusicFree 自动识别 + 安装校验）。
+  // 文件管理器/浏览器「打开」受支持文件（module.json5 skills 声明
+  // general.javascript / general.audio 等 UTD + viewData）：把 want.uri 物化到
+  // 沙盒缓存（沙盒副本不随原文件移动/删除失效），按类型封装成与 Android 端
+  // MainActivity / iOS SceneDelegate 同构的 xianyu://open 深链，复用 Dart 派发
+  // 管线：.js 插件脚本 → target=plugin（导入插件）；音频 → target=file（直接播放）。
   private handleOpenWant(want: Want): void {
     const uri = want.uri;
-    if (!uri || !uri.toLowerCase().endsWith('.js')) {
+    if (!uri) {
+      return;
+    }
+    const fileName = uri.substring(uri.lastIndexOf('/') + 1);
+    const dot = fileName.lastIndexOf('.');
+    const ext = dot > 0 ? fileName.substring(dot + 1).toLowerCase() : '';
+    const isJs = ext === 'js';
+    if (!isJs && !EntryAbility.audioExtensions.has(ext)) {
       return;
     }
     try {
       const src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
-      const fileName = uri.substring(uri.lastIndexOf('/') + 1) || 'plugin.js';
       const dest = `${this.context.cacheDir}/${fileName}`;
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src.fd);
+      const target = isJs ? 'plugin' : 'file';
       const link =
-        `xianyu://open?target=plugin&name=${encodeURIComponent(fileName)}` +
+        `xianyu://open?target=${target}&name=${encodeURIComponent(fileName)}` +
         `&file=${encodeURIComponent(dest)}`;
       this.pendingDeepLink = link;
       this.deepLinkChannel?.invokeMethod('onDeepLink', link);
@@ -69,4 +77,10 @@ export default class EntryAbility extends FlutterAbility {
       // 读取失败（无 URI 读权限/云文件未下载等）：静默放弃，不影响正常启动
     }
   }
+
+  // 音频扩展名集合：与桌面端文件关联清单（audioFileAssociations.ts /
+  // file_assoc.rs AUDIO_EXTENSIONS）及 Android 端 intent-filter 对齐。
+  private static readonly audioExtensions = new Set([
+    'aac', 'aif', 'aiff', 'flac', 'm4a', 'm4b', 'mp3', 'mp4', 'oga', 'ogg', 'opus', 'wav',
+  ]);
 }

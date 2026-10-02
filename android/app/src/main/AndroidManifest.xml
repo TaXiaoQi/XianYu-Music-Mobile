@@ -121,8 +121,11 @@
             <!-- 系统文件管理器/分享面板打开本地音频：ACTION_VIEW 拉起本应用并播放该歌曲。
                  data 为 content://（文件管理器授予读权限）或 file://（低版本直读路径），
                  mime 用 audio/* 覆盖绝大多数音频类型，再用 pathPattern 补 flac/ogg 等
-                 mime 探测不精准的格式。统一走自定义 MethodChannel(xianyu/deeplink)，
-                 由 Flutter 侧按 target=file 深链直接播本地文件。 -->
+                 mime 探测不精准的格式。pathPattern 清单与桌面端文件关联
+                 （audioFileAssociations.ts / file_assoc.rs AUDIO_EXTENSIONS）对齐，
+                 另含 video/mp4（桌面端同样注册 mp4）。统一走自定义
+                 MethodChannel(xianyu/deeplink)，由 Flutter 侧按 target=file
+                 深链直接播本地文件。 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
@@ -132,14 +135,19 @@
                 <data android:mimeType="application/ogg"/>
                 <data android:mimeType="application/x-ogg"/>
                 <data android:mimeType="application/flac"/>
+                <data android:mimeType="video/mp4"/>
                 <data android:pathPattern=".*\\.mp3"/>
                 <data android:pathPattern=".*\\.flac"/>
                 <data android:pathPattern=".*\\.wav"/>
                 <data android:pathPattern=".*\\.m4a"/>
+                <data android:pathPattern=".*\\.m4b"/>
                 <data android:pathPattern=".*\\.aac"/>
                 <data android:pathPattern=".*\\.ogg"/>
+                <data android:pathPattern=".*\\.oga"/>
                 <data android:pathPattern=".*\\.opus"/>
+                <data android:pathPattern=".*\\.aif"/>
                 <data android:pathPattern=".*\\.aiff"/>
+                <data android:pathPattern=".*\\.mp4"/>
             </intent-filter>
             <!-- 插件脚本（.js）直接打开导入：文件管理器/浏览器对下载的 .js 点「打开」
                  时拉起本应用，经 xianyu/deeplink 派发 target=plugin 深链进导入流程。
