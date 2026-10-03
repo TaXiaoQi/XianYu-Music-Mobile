@@ -202,7 +202,7 @@ class LyricsRepository {
     }
   }
 
-  static const _nativeLyricSources = {'tx', 'wy', 'kw', 'kg'};
+  static const _nativeLyricSources = {'tx', 'wy', 'kw', 'kg', 'mg'};
 
   Future<Map<String, String>?> _fetchNativeLyricResult(QueueItem item) async {
     Map<String, dynamic>? songInfo;

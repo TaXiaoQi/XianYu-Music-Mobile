@@ -1,4 +1,4 @@
-// lyric_fetcher.rs - 四音源歌词抓取与解密
+// lyric_fetcher.rs - 五音源歌词抓取与解密
 //
 // 将前端 lxLyricFetcher.ts 中的请求构造+解密逻辑迁移到 Rust。
 // 支持的音源：
@@ -6,6 +6,7 @@
 // - kw (酷我): XOR 加密请求 → zlib 解压 → 逐字歌词解析
 // - tx (QQ音乐): QRC 3DES 解密 → 逐字歌词解析
 // - wy (网易云): eapi AES-ECB 加密 → yrc/krc 逐字歌词
+// - mg (咪咕): copyrightId 资源接口 + 回退端点（对齐桌面端 migu.rs）
 
 //! 拆分说明：QRC 解密见 qrc_crypto，HTTP 管道见 http_util，各音源见 source_*。
 
@@ -15,6 +16,7 @@ mod http_util;
 mod qrc_crypto;
 mod source_kg;
 mod source_kw;
+mod source_migu;
 mod source_tx;
 mod source_wy;
 
@@ -22,6 +24,7 @@ pub(crate) use http_util::*;
 pub(crate) use qrc_crypto::*;
 use source_kg::*;
 use source_kw::*;
+use source_migu::*;
 use source_tx::*;
 use source_wy::*;
 
@@ -174,6 +177,7 @@ pub async fn fetch_lyric_from_source(
         "kw" => fetch_kw_lyric(&song_info).await?,
         "tx" => fetch_tx_lyric(&song_info).await?,
         "wy" => fetch_wy_lyric(&song_info).await?,
+        "mg" => fetch_mg_lyric(&song_info).await?,
         _ => return Ok(None),
     };
     Ok(result)
