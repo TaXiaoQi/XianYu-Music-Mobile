@@ -55,7 +55,9 @@ import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 import 'dart:async';
 
-part 'player_page.lyrics.dart';
+part 'player_page.lyrics.adjust.dart';
+part 'player_page.lyrics.view.dart';
+part 'player_page.lyrics.rail.dart';
 part 'player_page.sheets.dart';
 part 'player_page.controls.dart';
 part 'player_page.controls.cover.dart';
