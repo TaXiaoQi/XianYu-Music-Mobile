@@ -39,6 +39,29 @@ abstract final class PlaylistSongSyncState {
         );
   }
 
+  /// 批量读取全部 cloudId 的仅删本地墓碑（v2 下载 ops 应用前预载，
+  /// 避免逐歌查询反复 jsonDecode）。
+  static Future<Map<String, Map<String, String>>> allCloudKeepSongs() async {
+    final map = await _readMap(_cloudKeepKey);
+    return map.map((cloudId, bucket) => MapEntry(
+          cloudId,
+          bucket is Map
+              ? bucket.cast<String, dynamic>().map(
+                    (k, v) => MapEntry(k, v is String ? v : jsonEncode(v)),
+                  )
+              : const <String, String>{},
+        ));
+  }
+
+  /// 批量读取全部 cloudId 的待上报删除墓碑。
+  static Future<Map<String, Set<String>>> allPendingDeletedSongs() async {
+    final map = await _readMap(_pendingDeletedKey);
+    return map.map((cloudId, list) => MapEntry(
+          cloudId,
+          list is List ? list.whereType<String>().toSet() : const <String>{},
+        ));
+  }
+
   static Future<void> addCloudKeepSongs(
       String cloudId, Map<String, String> payloadByPath) async {
     if (cloudId.isEmpty || payloadByPath.isEmpty) return;

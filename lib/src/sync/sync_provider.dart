@@ -26,6 +26,7 @@ import '../plugin/plugin_user_vars.dart';
 import 'plugin_sync_state.dart';
 import 'favorites_sync_state.dart';
 import 'playlist_song_sync_state.dart';
+import 'playlist_sync_ops.dart';
 import '../recent/recent_provider.dart';
 import '../rust/api.dart' as rust;
 import 'settings_conflict_dialog.dart';

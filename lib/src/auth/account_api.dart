@@ -533,6 +533,19 @@ class AccountApi {
     return data.isEmpty ? null : data;
   }
 
+  /// v2 下载协议：上报本地歌单概要（song_hashes），服务端算 diff 返回最小 ops。
+  Future<Map<String, dynamic>> fileSyncV2DownloadOps(
+      List<Map<String, dynamic>> localPlaylists) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录后再同步歌单'));
+    }
+    return _action('file_sync_v2_download_ops', {
+      'user_id': ciyuanxiId,
+      'local_playlists': localPlaylists,
+    }, fetchTimeoutMs: 30000);
+  }
+
   Future<void> uploadPlugin(
     Map<String, dynamic> plugin, {
     bool isFirst = false,

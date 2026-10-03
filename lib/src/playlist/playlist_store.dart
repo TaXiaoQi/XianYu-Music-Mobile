@@ -87,7 +87,7 @@ class ImportedPlaylist {
 class PlaylistStore {
   static const _key = 'xianyu_imported_playlists_v1';
 
-  String _newId(Set<String> usedIds) {
+  static String newId(Set<String> usedIds) {
     final base = DateTime.now().microsecondsSinceEpoch.toString();
     var id = base;
     var suffix = 1;
@@ -113,7 +113,7 @@ class PlaylistStore {
       final normalized = playlists.map((playlist) {
         if (playlist.id.isNotEmpty && usedIds.add(playlist.id)) return playlist;
         repaired = true;
-        return playlist.copyWith(id: _newId(usedIds));
+        return playlist.copyWith(id: newId(usedIds));
       }).toList();
       if (repaired) await saveAll(normalized);
       return normalized;
@@ -159,7 +159,7 @@ class PlaylistStore {
       } else {
         result.add(
           ImportedPlaylist(
-            id: _newId(usedIds),
+            id: newId(usedIds),
             name: pl.name,
             songs: pl.songs,
             importedAt: DateTime.now().millisecondsSinceEpoch,
@@ -213,7 +213,7 @@ class PlaylistStore {
     final result = [
       ...all,
       ImportedPlaylist(
-        id: _newId(usedIds),
+        id: newId(usedIds),
         name: name,
         songs: const [],
         importedAt: DateTime.now().millisecondsSinceEpoch,

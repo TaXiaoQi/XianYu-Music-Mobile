@@ -16,6 +16,7 @@ class PlaylistSyncService {
         'name': s.title,
         'duration': s.duration * 1000,
         'syncType': SyncNotifier._classifySyncSong(s),
+        'song_hash': playlistSyncSongHash(s),
       };
 
   String _firstRemoteSongCover(List<ImportedSong> songs) {
@@ -172,10 +173,100 @@ class PlaylistSyncService {
     }
   }
 
+  /// v2 下载协议开关：true 走 file_sync_v2_download_ops（服务端 diff 下发最小
+  /// ops），置 false 回退 v1 全量快照下载（与桌面端 USE_SYNC_V2 一致）。
+  static const _useSyncV2 = true;
+
   Future<void> download() async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
-      final data = await _api.fileSyncDownload();
+      if (_useSyncV2) {
+        await _downloadViaOps();
+      } else {
+        await _downloadViaSnapshot();
+      }
+    } catch (e) {
+      AppLogger.instance.log('sync', '歌单下载失败: $e');
+      _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
+    }
+  }
+
+  /// v2 路径：上报本地歌单概要（song_hash），服务端 diff 后下发 ops 幂等应用。
+  Future<void> _downloadViaOps() async {
+    final store = PlaylistStore();
+    final working = await store.loadAll();
+    final library = _ref.read(libraryProvider);
+    if (library.loading) {
+      await _ref.read(libraryProvider.notifier).load();
+    }
+    final index = SyncNotifier._buildLibraryIndex(_ref);
+    final reports = <Map<String, dynamic>>[];
+    for (final p in working) {
+      reports.add({
+        'localId': p.id,
+        if ((p.cloudId ?? '').isNotEmpty) 'cloudId': p.cloudId,
+        'name': p.name,
+        'cloudCoverUrl': _firstRemoteSongCover(p.songs),
+        if (p.importedAt > 0) 'createdAt': p.importedAt,
+        if (p.sourcePluginId != null) 'sourcePluginId': p.sourcePluginId,
+        if (p.sourceUrl != null) 'sourceUrl': p.sourceUrl,
+        'song_hashes': p.songs.map(playlistSyncSongHash).toList(),
+      });
+    }
+
+    final data = await _api.fileSyncV2DownloadOps(reports);
+    final ops = ((data['ops'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    if (ops.isEmpty) {
+      _lens.item = _lens.item.copyWith(
+        syncing: false,
+        lastSummary: tr('云端无变更'),
+        lastTime: DateTime.now(),
+      );
+      return;
+    }
+
+    // 墓碑预载：applySyncOps 为同步纯函数，keep/pending 一次性读入内存
+    final keepAll = await PlaylistSongSyncState.allCloudKeepSongs();
+    final pendingAll = await PlaylistSongSyncState.allPendingDeletedSongs();
+    final target = SyncOpsTarget(
+      playlists: working,
+      resolveSong: (payload) =>
+          _songFromSyncPayload(payload, index.byPath, index.byMeta),
+      isSongKept: (cloudId, path) =>
+          keepAll[cloudId]?.containsKey(path) ?? false,
+      isSongPendingDeleted: (cloudId, path) =>
+          pendingAll[cloudId]?.contains(path) ?? false,
+    );
+    final outcome = applySyncOps(ops, target);
+    await store.saveAll(target.playlists);
+    // remove_songs 已被云端确认，清理对应待上报删除墓碑（对齐 v1 下载语义）
+    for (final op in ops) {
+      if (op['type'] != 'remove_songs') continue;
+      final cloudId = (op['cloudId'] as String?) ?? '';
+      if (cloudId.isEmpty) continue;
+      await PlaylistSongSyncState.prunePendingDeletedSongs(
+        cloudId,
+        ((op['paths'] as List?) ?? const []).whereType<String>(),
+      );
+    }
+    await _ref.read(playlistManagerProvider.notifier).refresh();
+    _lens.item = _lens.item.copyWith(
+      syncing: false,
+      lastSummary: tr('已导入 {n} 个歌单 / {scount} 首', {
+        'n': outcome.createdPlaylists + outcome.mergedPlaylists,
+        'scount': outcome.addedSongs,
+      }),
+      lastTime: DateTime.now(),
+      errors: [],
+    );
+  }
+
+  /// v1 路径：全量快照下载 + 本地合并（回退开关用）。
+  Future<void> _downloadViaSnapshot() async {
+    final data = await _api.fileSyncDownload();
       final cloudPlaylists = ((data?['playlists'] as List?) ?? const [])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
@@ -256,10 +347,6 @@ class PlaylistSyncService {
         lastTime: DateTime.now(),
         errors: [],
       );
-    } catch (e) {
-      AppLogger.instance.log('sync', '歌单下载失败: $e');
-      _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
-    }
   }
 
   Future<void> _propagateDeletedSongsToLocal(
