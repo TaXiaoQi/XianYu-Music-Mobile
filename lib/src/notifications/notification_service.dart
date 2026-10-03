@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../auth/server_models.dart';
+import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 
 const _announcementDismissedKey = 'announcement_dismissed_id';
@@ -60,7 +61,9 @@ class NotificationService {
       await _showListenResetDialog(context, resetAt, reason);
       await prefs.remove('pending_listen_reset_at');
       await prefs.remove('pending_listen_reset_reason');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('notify', '展示听歌重置通知失败: $e');
+    }
   }
 
   Future<void> _showListenResetDialog(
@@ -100,7 +103,9 @@ class NotificationService {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_announcementDismissedKey, _fingerprint(ann));
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('notify', '记录公告已读状态失败: $e');
+    }
   }
 
   String _fingerprint(Announcement ann) => '${ann.id}_${ann.updatedAt}';

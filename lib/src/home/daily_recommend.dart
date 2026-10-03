@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/auth_provider.dart';
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_catalog.dart';
@@ -309,7 +310,8 @@ Future<void> _searchAll(
             score: task.strategy.weight * 0.6 + (1 - rank / _searchLimit) * 0.4,
           ));
         }
-      } catch (_) {
+      } catch (e) {
+        AppLog.debug('home', '插件搜索任务失败: $e');
       }
     }
   }
@@ -331,7 +333,8 @@ Future<List<PluginSearchResult>> _searchPlugin(
     try {
       merged.addAll(
           await engine.searchInPlugin(plugin, key, keyword, limit: _searchLimit));
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('home', '插件源搜索失败: $e');
     }
   }
   return merged;
@@ -387,7 +390,8 @@ Future<List<PluginSearchResult>> _probeSearchOne(
     try {
       final r = await engine.searchInPlugin(p, key, keyword, limit: 1);
       if (r.isNotEmpty) return r;
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('home', '插件源探测搜索失败: $e');
     }
   }
   return const [];
@@ -505,7 +509,8 @@ Future<void> _saveCache(_DailyCache cache) async {
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cacheKey, jsonEncode(cache.toJson()));
-  } catch (_) {
+  } catch (e) {
+    AppLog.debug('home', '写入每日推荐缓存失败: $e');
   }
 }
 
@@ -513,7 +518,9 @@ Future<void> clearDailyRecommendCache() async {
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_cacheKey);
-  } catch (_) {}
+  } catch (e) {
+    AppLog.debug('home', '清除每日推荐缓存失败: $e');
+  }
 }
 
 String? _wySongId(Map<String, dynamic> song) {
@@ -575,7 +582,8 @@ Future<Map<String, _WyTrackPatch>> _fetchWyTrackMeta(List<String> ids) async {
       final dur = dtRaw is num && dtRaw > 0 ? dtRaw.toInt() : 0;
       result[id] = (coverUrl: img, durationMs: dur);
     }
-  } catch (_) {
+  } catch (e) {
+    AppLog.debug('home', '获取网易云歌曲元信息失败: $e');
   } finally {
     client?.close();
   }
@@ -697,7 +705,8 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
         batch: cur.batch,
         loggedIn: cur.loggedIn,
       ));
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('home', '回填网易云封面失败: $e');
     }
   }
 
@@ -758,6 +767,7 @@ Future<void> reportDailyLikeSignals(
       'signal_type': signalType,
       'songs': payload,
     });
-  } catch (_) {
+  } catch (e) {
+    AppLog.debug('home', '上报每日推荐喜欢信号失败: $e');
   }
 }

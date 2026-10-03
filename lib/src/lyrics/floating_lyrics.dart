@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
 import '../player/mv_provider.dart';
@@ -276,13 +277,17 @@ class FloatingLyricsController with WidgetsBindingObserver {
   static Future<void> openPermissionSettings() async {
     try {
       await _channel.invokeMethod('openPermissionSettings');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('lyric', '打开悬浮歌词权限设置失败: $e');
+    }
   }
 
   static Future<void> resetPosition() async {
     try {
       await _channel.invokeMethod('resetPosition');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('lyric', '重置悬浮歌词位置失败: $e');
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 // 桌面联动：移动端作 TCP client，经桌面控制通道（WatchLink 同款帧协议）遥控桌面端。
 // 发现：SSDP M-SEARCH 搜自家 ST（urn:xianyu-music:control:1，纯 Dart RawDatagramSocket），
-// 手动 IP:端口 兜底；鉴权：首配 6 位配对码换 token，SharedPreferences 持久化，
+// 手动 IP:端口 兜底；鉴权：首配 6 位配对码换 token，安全存储持久化
+// （Keystore/Keychain，不可用时回退 SharedPreferences 并自动迁移旧明文键），
 // 启动自动重连（指数退避），10s 心跳保活。
 
 import 'dart:async';
@@ -11,6 +12,8 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
+import '../core/secure_store.dart';
 import '../i18n/i18n.dart';
 import '../watch_link/protocol.dart';
 
@@ -159,7 +162,7 @@ class DesktopLinkNotifier extends StateNotifier<DesktopLinkState> {
     );
 
     final token = pairingCode == null || pairingCode.isEmpty
-        ? (await SharedPreferences.getInstance()).getString(_prefsTokenKey)
+        ? await SecureStore.read(_prefsTokenKey, legacyPrefsKey: _prefsTokenKey)
         : null;
 
     try {
@@ -362,7 +365,9 @@ class DesktopLinkNotifier extends StateNotifier<DesktopLinkState> {
       Timer(const Duration(milliseconds: 400), () {
         try {
           socket?.send(utf8.encode(packet), target, 1900);
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('link', 'SSDP 二次探测发送失败: $e');
+        }
       });
       await Future<void>.delayed(_scanWindow);
       sub.cancel();
@@ -441,7 +446,7 @@ class DesktopLinkNotifier extends StateNotifier<DesktopLinkState> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsHostKey);
     await prefs.remove(_prefsPortKey);
-    await prefs.remove(_prefsTokenKey);
+    await _clearToken();
     state = state.copyWith(
       hasSavedTarget: false,
       host: '',
@@ -471,13 +476,11 @@ class DesktopLinkNotifier extends StateNotifier<DesktopLinkState> {
   }
 
   Future<void> _saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefsTokenKey, token);
+    await SecureStore.write(_prefsTokenKey, token);
   }
 
   Future<void> _clearToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_prefsTokenKey);
+    await SecureStore.delete(_prefsTokenKey, legacyPrefsKey: _prefsTokenKey);
   }
 
   /// 关闭链路；[keepTarget] 表示保留已保存的连接目标（重连场景）。

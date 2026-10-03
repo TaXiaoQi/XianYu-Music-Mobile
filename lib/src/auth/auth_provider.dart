@@ -4,14 +4,18 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
+import '../core/secure_store.dart' show kTokenSealPrefix, sealToken, unsealToken;
 import '../device/device_info.dart' show fetchStableDeviceId;
 import '../rust/api.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
+/// 官方后端地址（仅用于更新检查与设置页默认值展示；请求地址由 Rust 侧
+/// base_url.txt 或其内置默认决定，签名密钥只保留在 Rust 二进制内，
+/// 不再由 Dart 侧注入，也不再明文落盘）。
 const defaultAuthBaseUrl = 'https://api.xianyumusic.cn/api';
-const defaultAuthApiSecret = 'acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3';
 
 class AuthUser {
   final String id;
@@ -226,18 +230,43 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> init() async {
     try {
       final dir = await _dataDir();
-      await authSetBaseUrl(dataDir: dir, baseUrl: defaultAuthBaseUrl);
-      await authSetApiSecret(dataDir: dir, apiSecret: defaultAuthApiSecret);
+      // base_url / api_secret 不再由 Dart 侧写盘：Rust 侧缺文件时用内置默认，
+      // 自建服务器用户在设置页保存的自定义值不会再被启动覆盖
       final credsJson = await authGetCredentials(dataDir: dir);
       if (credsJson.trim().isNotEmpty && credsJson != 'null') {
         final j = jsonDecode(credsJson) as Map<String, dynamic>;
-        _token = (j['token'] as String?) ?? '';
+        final stored = (j['token'] as String?) ?? '';
         final userJson = j['user'];
+        AuthUser? user;
         if (userJson is Map<String, dynamic>) {
-          state = AuthState(user: AuthUser.fromJson(userJson));
+          user = AuthUser.fromJson(userJson);
+          state = AuthState(user: user);
+        }
+        if (stored.isNotEmpty) {
+          final token = await unsealToken(stored);
+          if (token == null || token.isEmpty) {
+            // 加密密钥丢失/密文损坏：会话不可恢复，按未登录处理并清理
+            _token = null;
+            try {
+              await authClearCredentials(dataDir: dir);
+            } catch (e) {
+              AppLog.warn('auth', '失效凭据清理失败: $e');
+            }
+          } else {
+            _token = token;
+            if (!stored.startsWith(kTokenSealPrefix)) {
+              // 旧版明文 token：升级为加密落盘
+              await authSaveCredentials(
+                dataDir: dir,
+                token: await sealToken(token),
+                userJson: jsonEncode(user?.toJson()),
+              );
+            }
+          }
         }
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('auth', '凭据恢复失败: $e');
     }
   }
 
@@ -306,7 +335,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final dir = await _dataDir();
       await authClearCredentials(dataDir: dir);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('auth', '会话失效后清理本地凭据失败: $e');
+    }
     _token = null;
     state = const AuthState(sessionExpired: true);
   }
@@ -325,9 +356,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _persistAuth(String token, AuthUser user) async {
     final dir = await _dataDir();
     _token = token;
+    // token 加密后落盘（密钥在系统安全存储），文件泄露不泄露明文
     await authSaveCredentials(
       dataDir: dir,
-      token: token,
+      token: await sealToken(token),
       userJson: jsonEncode(user.toJson()),
     );
     state = AuthState(user: user);
@@ -502,7 +534,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     try {
       final dir = await _dataDir();
       await authClearCredentials(dataDir: dir);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('auth', '登出时清理本地凭据失败: $e');
+    }
     _token = null;
     state = const AuthState();
   }

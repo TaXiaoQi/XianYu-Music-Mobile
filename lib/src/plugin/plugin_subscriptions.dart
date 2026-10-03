@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
+
 class PluginSubscription {
   final String id;
   final String name;
@@ -51,7 +53,8 @@ class PluginSubscriptionsNotifier
           .map((e) => PluginSubscription.fromJson(e.cast<String, dynamic>()))
           .where((s) => s.url.isNotEmpty)
           .toList();
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('plugin', '读取插件订阅失败: $e');
     }
   }
 
@@ -60,7 +63,8 @@ class PluginSubscriptionsNotifier
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
           _key, jsonEncode(state.map((e) => e.toJson()).toList()));
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('plugin', '保存插件订阅失败: $e');
     }
   }
 

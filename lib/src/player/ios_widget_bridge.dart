@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../library/saf_channel.dart';
 import '../lyrics/lyric_model.dart';
@@ -64,7 +65,9 @@ class IosWidgetController {
       if (pending != null && pending.isNotEmpty && !_disposed) {
         await _handleAction(pending);
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('widget', '读取小组件待处理指令失败: $e');
+    }
   }
 
   Future<void> _handleAction(String action) async {
@@ -91,7 +94,9 @@ class IosWidgetController {
         _lyrics = const [];
         try {
           await _channel.invokeMethod('clear');
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('widget', '清除小组件状态失败: $e');
+        }
       }
       return;
     }
@@ -167,7 +172,9 @@ class IosWidgetController {
         'coverPath': coverToSend,
         'songChanged': false,
       });
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('widget', '推送小组件状态失败: $e');
+    }
   }
 
   // ---- 封面加载 ----

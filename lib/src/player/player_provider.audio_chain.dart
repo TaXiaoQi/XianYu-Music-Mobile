@@ -33,7 +33,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       try {
         await _player.setVolume(_effectiveVolume())
             .timeout(const Duration(seconds: 2));
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '重建后音量设置失败: $e');
+      }
     } finally {
       _rebuildingPlayer = false;
     }
@@ -57,7 +59,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       if (ok) {
         try {
           await _player.stop();
-        } catch (_) {}
+        } catch (e) {
+          AppLog.warn('player', '播放器停止失败: $e');
+        }
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
       }
@@ -69,7 +73,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       if (ok) {
         try {
           await _player.stop();
-        } catch (_) {}
+        } catch (e) {
+          AppLog.warn('player', '播放器停止失败: $e');
+        }
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
         return;
@@ -121,7 +127,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     if (ok) {
       try {
         await _player.stop();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '播放器停止失败: $e');
+      }
       state = state.copyWith(isPlaying: playing);
       _syncToSystemMediaSession();
       return;
@@ -138,7 +146,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       }
       state = state.copyWith(isPlaying: playing);
       _syncToSystemMediaSession();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '关闭独占后恢复播放失败: $e');
+    }
   }
 
   Future<bool> _tryStartExclusive(
@@ -246,7 +256,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     _stopExclusivePolling();
     try {
       await stopUsbExclusivePlayback();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '停止独占播放失败: $e');
+    }
     // 管线没了，预排的下一首与过渡计数一并作废
     _gaplessNextIndex = -1;
     _gaplessNextPath = null;
@@ -288,7 +300,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     if (!state.usbExclusive && !state.dspActive) return;
     try {
       setUsbExclusiveCrossfade(ms: enabled ? (seconds * 1000) : 0);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '交叉淡入淡出下发失败: $e');
+    }
   }
 
   /// 下发跳过静音参数到 Rust 管线（未接管时忽略）。
@@ -300,7 +314,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         thresholdDb: thresholdDb,
         keepMs: keepMs,
       );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '跳过静音下发失败: $e');
+    }
   }
 
   Future<void> _pollExclusive() async {
@@ -364,7 +380,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       }
       // 快播完了就把下一首预排给 Rust（本地/直链才预排）
       _maybeQueueGaplessNext();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '独占管线轮询失败: $e');
+    }
   }
 
   Future<void> _onExclusiveDisconnect() async {
@@ -481,7 +499,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
             settingsJson: jsonEncode(s.toEqualizerRustJson()));
         await setUsbExclusiveSoundEffect(
             settingsJson: jsonEncode(s.toRustJson()));
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '独占音效同步失败: $e');
+      }
     });
   }
 
@@ -496,7 +516,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         final pitch = s.pitchShift.clamp(50.0, 200.0) / 100.0;
         await _player.setPitch(pitch);
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('player', '倍速/变调应用失败: $e');
     }
   }
 
@@ -509,7 +530,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       try {
         await setUsbExclusiveVolume(
             volume: _ref.read(volumeProvider) * _mvSongGain);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', 'MV 音量下发失败: $e');
+      }
     }
   }
 
@@ -520,7 +543,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       try {
         await setUsbExclusiveVolume(
             volume: _ref.read(volumeProvider) * _mvSongGain);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', 'MV 音量下发失败: $e');
+      }
     }
   }
 
@@ -590,11 +615,15 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     if (state.usbExclusive || state.dspActive) {
       try {
         await setUsbExclusiveVolumeBalanceGain(gain: _effectiveBalanceGain());
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '均衡增益下发失败: $e');
+      }
     } else if (!item.isOnline && !state.dspActive) {
       try {
         await _player.setVolume(_effectiveVolume());
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '音量设置失败: $e');
+      }
     }
   }
 }

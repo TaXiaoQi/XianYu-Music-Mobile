@@ -16,7 +16,8 @@ extension _ProfileViewActions on _ProfileViewState {
       if (avatarSt == 'none' || nicknameSt == 'none') {
         await _notifier.getProfile();
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('auth', '刷新账号状态失败: $e');
     } finally {
       if (mounted) setState(() => _refreshingStatus = false);
     }

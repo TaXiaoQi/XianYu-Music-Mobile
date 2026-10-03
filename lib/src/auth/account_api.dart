@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../device/device_info.dart' show fetchDeviceInfo;
 import '../rust/api.dart' as frb;
@@ -10,7 +11,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.3-beta1';
+const appVersion = '1.0.3-beta2';
 
 /// 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。
 const _betaAccessCacheKey = 'beta_access_signed_payload_v1';
@@ -94,7 +95,9 @@ class AccountApi {
         'ciyuanxi_id': _ciyuanxiId ?? '',
         'device_id': await _auth.deviceId(),
       }, fetchTimeoutMs: 6000);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('auth', '上报隐私政策确认失败: $e');
+    }
   }
 
   Future<AboutConfig> fetchAboutConfig() async {
@@ -148,7 +151,9 @@ class AccountApi {
           return parsed;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('auth', '检查 Beta 资格失败，回退本地缓存: $e');
+    }
     return _readCachedBetaAccess(deviceId);
   }
 
@@ -172,7 +177,9 @@ class AccountApi {
         signature: signature,
       );
       if (ok) return (allowed, pending);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('auth', '验签 Beta 资格失败: $e');
+    }
     return null;
   }
 
@@ -294,7 +301,8 @@ class AccountApi {
         'id': id,
         'ciyuanxi_id': ciyuanxiId,
       }, fetchTimeoutMs: 15000);
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('auth', '上报反馈通知确认失败: $e');
     }
   }
 
@@ -323,7 +331,8 @@ class AccountApi {
         'id': id,
         'ciyuanxi_id': ciyuanxiId,
       }, fetchTimeoutMs: 15000);
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('auth', '上报昵称变更确认失败: $e');
     }
   }
 
@@ -800,7 +809,8 @@ class AccountApi {
   Future<void> _fireAndForget(String action, Map<String, dynamic> body) async {
     try {
       await _action(action, body);
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('auth', '后台请求 $action 失败: $e');
     }
   }
 }

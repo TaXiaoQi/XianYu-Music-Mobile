@@ -36,8 +36,8 @@ class _PredictiveBackTabContainerState
     with WidgetsBindingObserver, TickerProviderStateMixin {
   late final AnimationController _ctrl;
   PredictiveBackPhase _phase = PredictiveBackPhase.idle;
-  PredictiveBackEvent? _startBackEvent;
-  PredictiveBackEvent? _currentBackEvent;
+
+  final BackGestureProgressSynth _synth = BackGestureProgressSynth();
 
   int _exitIndex = 1;
 
@@ -86,35 +86,33 @@ class _PredictiveBackTabContainerState
     if (!_shouldClaim(backEvent)) return false;
     _exitIndex = widget.currentIndex;
     _ctrl.stop();
-    _ctrl.value = 1 - backEvent.progress;
-    setState(() {
-      _phase = PredictiveBackPhase.start;
-      _startBackEvent = backEvent;
-      _currentBackEvent = backEvent;
-    });
+    _synth.reset();
+    _ctrl.value = 1 - _synth.progressOf(backEvent);
+    setState(() => _phase = PredictiveBackPhase.start);
     AppLogger.instance.log('backgesture', 'tab 认领 start idx=$_exitIndex progress=${backEvent.progress.toStringAsFixed(3)}');
     return true;
   }
 
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
-    _ctrl.value = 1 - backEvent.progress;
-    setState(() {
-      _phase = PredictiveBackPhase.update;
-      _currentBackEvent = backEvent;
-    });
-    AppLogger.instance.log('backgesture', 'tab update progress=${backEvent.progress.toStringAsFixed(3)}');
+    // ROM 门控时系统 progress 恒 0（见 BackGestureProgressSynth），tab 返回
+    // 同样需要触点合成进度，否则手势全程冻结、松手直接跳 commit
+    final effective = _synth.progressOf(backEvent);
+    if (_synth.engagedThisFrame) {
+      AppLogger.instance.log('backgesture', 'tab synth engage');
+    }
+    _ctrl.value = 1 - effective;
+    setState(() => _phase = PredictiveBackPhase.update);
   }
 
   @override
   void handleCommitBackGesture() {
     if (!_inTransition) return;
-    AppLogger.instance.log('backgesture', 'tab commit');
+    AppLogger.instance.log('backgesture',
+        'tab commit updates=${_synth.updateCount} last=${_synth.lastProgress.toStringAsFixed(3)}');
     setState(() => _phase = PredictiveBackPhase.commit);
-    _startBackEvent = null;
-    _currentBackEvent = null;
     widget.navigationShell.goBranch(0);
-    _ctrl.animateTo(0.0, duration: _commitDuration).whenComplete(() {
+    _ctrl.animateTo(0.0, duration: _commitDuration, curve: Curves.easeOutCubic).whenComplete(() {
       if (mounted) setState(() => _phase = PredictiveBackPhase.idle);
     });
   }
@@ -122,11 +120,10 @@ class _PredictiveBackTabContainerState
   @override
   void handleCancelBackGesture() {
     if (!_inTransition) return;
-    AppLogger.instance.log('backgesture', 'tab cancel');
+    AppLogger.instance.log('backgesture',
+        'tab cancel updates=${_synth.updateCount} last=${_synth.lastProgress.toStringAsFixed(3)}');
     setState(() => _phase = PredictiveBackPhase.cancel);
-    _startBackEvent = null;
-    _currentBackEvent = null;
-    _ctrl.animateTo(1.0, duration: _cancelDuration).whenComplete(() {
+    _ctrl.animateTo(1.0, duration: _cancelDuration, curve: Curves.easeOutCubic).whenComplete(() {
       if (mounted) setState(() => _phase = PredictiveBackPhase.idle);
     });
   }
@@ -160,13 +157,16 @@ class _PredictiveBackTabContainerState
       children: [
         if (home != null) Positioned.fill(child: IgnorePointer(child: home)),
         Positioned.fill(
-          child: PredictiveBackSharedElementPageTransition(
+          child: AnimatedBuilder(
             animation: _ctrl,
-            secondaryAnimation: kAlwaysDismissedAnimation,
-            phase: _phase,
-            startBackEvent: _startBackEvent,
-            currentBackEvent: _currentBackEvent,
-            child: exit,
+            builder: (context, _) => FractionalTranslation(
+              // 平移返回：当前 tab 页随手势整体右移、下层首页静止透出；
+              // commit 时滑出屏幕，cancel 时滑回原位。
+              // 此前用的是整页缩小卡片（shared element），与二级页返回
+              // 动画同形，tab 切换语义下应为平移
+              translation: Offset(1 - _ctrl.value, 0),
+              child: exit,
+            ),
           ),
         ),
       ],

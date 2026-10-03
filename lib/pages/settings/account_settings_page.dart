@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/core/db_path.dart';
 import '../../src/rust/api.dart' as rust;
@@ -315,10 +316,13 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
       }
       final secretFile = File('$dir/auth/api_secret.txt');
       if (await secretFile.exists()) {
+        // 文件只会在用户保存过自定义密钥时存在（历史版本写入的默认值
+        // 由 Rust 侧读取时自动迁移删除），内容即自定义密钥
         final c = (await secretFile.readAsString()).trim();
-        if (c.isNotEmpty && c != defaultAuthApiSecret) secret = c;
+        if (c.isNotEmpty) secret = c;
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('settings', '读取后端连接配置失败: $e');
     }
     if (!mounted) return;
     setState(() {

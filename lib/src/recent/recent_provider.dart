@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../favorites/favorites_provider.dart';
 import '../library/library_provider.dart';
@@ -66,7 +67,9 @@ class RecentManager extends StateNotifier<RecentState> {
             final s = Song.fromJson(e as Map<String, dynamic>);
             songMap[s.path] = s;
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.warn('recent', '读取最近播放的本地歌曲信息失败: $e');
+        }
       }
 
       final onlinePaths = paths.where(_isOnline).toList();
@@ -139,7 +142,9 @@ class RecentManager extends StateNotifier<RecentState> {
       if (!isFav) {
         await _ref.read(onlineMetaStoreProvider).remove([songPath]);
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('recent', '从最近播放移除失败: $e');
+    }
     await refresh();
   }
 
@@ -148,7 +153,9 @@ class RecentManager extends StateNotifier<RecentState> {
       final dbPath = await _ref.read(dbPathProvider.future);
       await statsClearRecentHistory(dbPath: dbPath);
       await _ref.read(onlineMetaStoreProvider).clear();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('recent', '清空最近播放失败: $e');
+    }
     await refresh();
   }
 }

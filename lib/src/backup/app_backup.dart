@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
 import '../plugin/plugin_backup_import.dart';
@@ -166,7 +167,9 @@ class AppBackupService {
             final m = (e as Map).cast<String, dynamic>();
             songMap[m['path'] as String? ?? ''] = m;
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('backup', '读取本地歌曲信息失败: $e');
+        }
       }
       final onlineMeta = await _ref.read(onlineMetaStoreProvider)
           .getAll(paths.where(_isOnlinePath).toList());
@@ -183,7 +186,9 @@ class AppBackupService {
           'song': song,
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('backup', '收集最近播放记录失败: $e');
+    }
     return out;
   }
 
@@ -472,7 +477,9 @@ class AppBackupService {
         await statsAddToHistory(dbPath: dbPath, songPath: entry.key);
       }
       await _ref.read(recentProvider.notifier).refresh();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('backup', '导入最近播放记录失败: $e');
+    }
   }
 
   AppSettings _settingsFromJson(AppSettings fallback, Map<String, dynamic> j) {

@@ -75,7 +75,7 @@ Future<String?> fetchPluginScriptWithRetry(
         try {
           snippet = (await resp.transform(utf8.decoder).join()).trim();
           if (snippet.length > 200) snippet = snippet.substring(0, 200);
-        } catch (_) {}
+        } catch (e) { AppLog.debug('plugin', '读取错误响应体失败: $e'); }
         AppLog.warn(
           'plugin',
           'fetch script http ${resp.statusCode} $url body=${snippet.isEmpty ? '(empty)' : snippet}',
@@ -127,8 +127,7 @@ final pluginEngineProvider = FutureProvider<PluginEngine>((ref) async {
       ref.read(pluginUserVarValuesProvider.notifier).valuesOf(pluginId);
   try {
     await frbPluginEngineInit(dataDir);
-  } catch (_) {
-  }
+  } catch (e) { AppLog.warn('plugin', '插件引擎初始化失败: $e'); }
   return engine;
 });
 
@@ -342,8 +341,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       await _ref
           .read(pluginSubscriptionsProvider.notifier)
           .addFromInstall(url, name: name);
-    } catch (_) {
-    }
+    } catch (e) { AppLog.warn('plugin', '记录订阅来源失败: $e'); }
   }
 
   List<Map<String, dynamic>>? _parsePluginList(String content) {
@@ -579,7 +577,7 @@ class PluginManager extends StateNotifier<PluginListState> {
             if (name.isNotEmpty && value != null) put(name, value.toString());
           }
         }
-      } catch (_) {}
+      } catch (_) { /* 行内容解析失败，跳过该条 */ }
     }
     if (cookies.isEmpty) return;
     try {
@@ -591,7 +589,7 @@ class PluginManager extends StateNotifier<PluginListState> {
           'overwriteCookies': true,
         }),
       );
-    } catch (_) {}
+    } catch (e) { AppLog.warn('plugin', '导入插件 Cookie 失败: $e'); }
   }
 
   List<String> _extractSources(bool isLx, Map<String, dynamic>? metadata) {

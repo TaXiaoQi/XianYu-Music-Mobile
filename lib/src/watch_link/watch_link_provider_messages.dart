@@ -1,4 +1,4 @@
-﻿part of 'watch_link_provider.dart';
+part of 'watch_link_provider.dart';
 
 extension WatchLinkControllerMessages on WatchLinkController {
   // ---- 字节入口与消息分发 ----
@@ -114,7 +114,9 @@ extension WatchLinkControllerMessages on WatchLinkController {
             'singer': item.artist,
           },
         );
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('watch', '上报不喜爱失败: $e');
+      }
     }
     await _container.read(playerProvider.notifier).next();
   }

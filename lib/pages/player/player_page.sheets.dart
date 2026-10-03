@@ -723,7 +723,9 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                     : () async {
                         try {
                           await ref.read(playerProvider.notifier).clearQueue();
-                        } catch (_) {}
+                        } catch (e) {
+                          AppLog.warn('ui', '清空播放队列失败: $e');
+                        }
                       },
               ),
             ],

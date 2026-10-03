@@ -1,4 +1,4 @@
-﻿part of 'player_provider.dart';
+part of 'player_provider.dart';
 
 extension PlayerNotifierSession on PlayerNotifier {
   void _syncToSystemMediaSession() {
@@ -192,7 +192,8 @@ extension PlayerNotifierSession on PlayerNotifier {
         cacheRoot: cacheRoot,
         path: item.path,
       );
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('player', '封面预加载失败: $e');
     }
   }
 
@@ -270,7 +271,9 @@ extension PlayerNotifierSession on PlayerNotifier {
       if (!currentItem.isOnline && currentItem.coverUrl?.isNotEmpty != true) {
         try {
           await _resolveNotificationCover(currentItem);
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('player', '恢复封面解析失败: $e');
+        }
       }
       _syncToSystemMediaSession();
 
@@ -391,7 +394,9 @@ extension PlayerNotifierSession on PlayerNotifier {
     try {
       final status = await Permission.notification.status;
       if (!status.isGranted) await Permission.notification.request();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '通知权限检查失败: $e');
+    }
   }
 
   Future<void> _persistSession() async {

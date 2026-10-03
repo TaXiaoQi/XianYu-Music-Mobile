@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # versionCode 过渡说明：已发出的 1.0.2-beta1（旧公式）= 1000201，新公式推导
 # 1.0.2 = 1000200 反而更低会被判降级；手动抬至 1000299 保证 beta1 用户可无缝
 # 覆盖升级，且低于 1.0.3 公式值（1000300）保持单调。1.0.3 起恢复自动推导。
-version: 1.0.3-beta1+1000300
+version: 1.0.3-beta2+1000300
 
 environment:
   # 下限放宽到 3.11：Flutter-OH 3.41.10-ohos 对应 Dart 3.11（鸿蒙构建用），
@@ -74,6 +74,15 @@ dependencies:
   crypto: ^3.0.0
   # 插件同步：用户变量（API key / Cookie）AES-256-CBC 加密（对齐桌面端）
   encrypt: ^5.0.3
+  # 敏感凭据安全存储（Android Keystore / iOS Keychain）：
+  # 登录 token 加密密钥、桌面联动 token。鸿蒙由下方 vendored 插件提供
+  # 真安全存储（HUKS），插件缺失时 SecureStore 回退 SharedPreferences
+  flutter_secure_storage: ^11.2.0
+  # 鸿蒙原生实现（仅声明 ohos 平台，Android/iOS 构建零参与）：
+  # vendor 自 SIG fluttertpc fork 并剥离 Dart 层，官方主包经同名
+  # MethodChannel 直连原生实现，详见 third_party/.../README.md
+  flutter_secure_storage_ohos:
+    path: third_party/flutter_secure_storage_ohos
 
   # 文件夹选择与存储权限（本地音乐扫描）
   # file_picker 12.x 与 share_plus 13.x 均依赖 win32 ^6，版本协调；

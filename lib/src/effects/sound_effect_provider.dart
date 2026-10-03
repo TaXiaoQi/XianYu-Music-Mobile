@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 
 const eqFreqLabels = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
@@ -667,7 +668,9 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
             .toList();
         state = SoundEffectState(settings: s, customEqPresets: customs);
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('effect', '加载音效设置失败: $e');
+    }
   }
 
   Future<void> _update(
@@ -692,7 +695,9 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
               state.customEqPresets.map((p) => p.toJson()).toList(),
         }),
       );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('effect', '保存音效设置失败: $e');
+    }
   }
 
   Future<void> _mutateCustom(List<CustomEqPreset> list) async {

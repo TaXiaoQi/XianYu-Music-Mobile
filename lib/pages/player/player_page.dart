@@ -12,6 +12,7 @@ import '../effects/effects_page.dart';
 import '../../src/navigation/routes.dart'
     show playerNavigatorKey, coverPageRoute;
 import 'comment_sheet.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
 import '../../src/theme/theme_icon.dart';
@@ -809,7 +810,9 @@ class _TraditionalPlayerLayoutState
             prefs.getString('player_cover_lyric_align') ?? 'left';
         _coverSizeTier = prefs.getString('player_cover_size') ?? 'large';
       });
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '读取封面偏好设置失败: $e');
+    }
   }
 
   Future<void> _setCoverLyricAlign(String v) async {
@@ -818,7 +821,9 @@ class _TraditionalPlayerLayoutState
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('player_cover_lyric_align', v);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '保存封面歌词对齐设置失败: $e');
+    }
   }
 
   Future<void> _setCoverSizeTier(String v) async {
@@ -827,7 +832,9 @@ class _TraditionalPlayerLayoutState
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('player_cover_size', v);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '保存封面尺寸设置失败: $e');
+    }
   }
 
   int _sleepMinutes = 10;
@@ -843,7 +850,9 @@ class _TraditionalPlayerLayoutState
       setState(
         () => _sleepMinutes = prefs.getInt('player_sleep_minutes') ?? 10,
       );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '读取定时暂停设置失败: $e');
+    }
   }
 
   void _startSleepTimer(int minutes) {
@@ -886,7 +895,9 @@ class _TraditionalPlayerLayoutState
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('player_sleep_minutes', _sleepMinutes);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '保存定时暂停设置失败: $e');
+    }
   }
 
   late final PageController _pageController;
@@ -1563,7 +1574,9 @@ class _TraditionalPlayerLayoutState
         'report_daily_dislike',
         {'ciyuanxi_id': ciyuanxiId, 'song_name': c.title, 'singer': c.artist},
       );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '上报不喜欢的歌曲失败: $e');
+    }
     if (!context.mounted) return;
     showXianYuToast(context, tr('已减少此类推荐'));
     await ref.read(playerProvider.notifier).next();

@@ -66,7 +66,7 @@ extension _SearchPageInput on _SearchPageState {
         feed(s.title);
         feed(s.artist);
       }
-    } catch (_) {}
+    } catch (e) { AppLog.warn('search', '搜索建议查询失败: $e'); }
 
     if (!mounted || _ctrl.text.trim() != q) return;
     setState(() {

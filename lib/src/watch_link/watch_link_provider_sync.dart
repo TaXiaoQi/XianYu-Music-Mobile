@@ -1,4 +1,4 @@
-﻿part of 'watch_link_provider.dart';
+part of 'watch_link_provider.dart';
 
 extension WatchLinkControllerSync on WatchLinkController {
   void _pushState() {
@@ -72,7 +72,7 @@ extension WatchLinkControllerSync on WatchLinkController {
         Map<String, dynamic>.from(arg),
       );
       _container.read(soundEffectProvider.notifier).set(s);
-    } catch (_) {}
+    } catch (_) { /* 解析失败按默认值处理 */ }
   }
 
   void _pushSnapshot({bool cloud = false}) {
@@ -138,7 +138,9 @@ extension WatchLinkControllerSync on WatchLinkController {
       if (payload.isEmpty || payload == 'null') return;
       if ((!_connected && !_cloudWatchOnline) || !_transferActive) return;
       _send(LinkMessage.lyric(id: id, payload: payload), cloud: cloud);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('watch', '拉取歌词失败: $e');
+    }
   }
 
   // ---- 接下来五首批量预载 ----
@@ -167,14 +169,18 @@ extension WatchLinkControllerSync on WatchLinkController {
           if (bytes != null && bytes.isNotEmpty) {
             coverData = await compute(_encodeLinkCoverBytes, bytes);
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('watch', '预载封面失败: $e');
+        }
         String? lyricPayload;
         try {
           final payload = await _container
               .read(lyricsRepositoryProvider)
               .fetchPayloadJson(next);
           if (payload.isNotEmpty && payload != 'null') lyricPayload = payload;
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('watch', '预载歌词失败: $e');
+        }
         if ((!_connected && !_cloudWatchOnline) || !_snapshotAllowed()) return;
         if (coverData == null && lyricPayload == null) continue;
         _send(LinkMessage.precache(
@@ -242,7 +248,9 @@ extension WatchLinkControllerSync on WatchLinkController {
         if (_coverDataCache.length > 16) _coverDataCache.clear();
         _coverDataCache[url] = data;
         _sendCoverData(item, data, cloud: cloud);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('watch', '推送封面失败: $e');
+      }
       return;
     }
     var path = item.coverPath;

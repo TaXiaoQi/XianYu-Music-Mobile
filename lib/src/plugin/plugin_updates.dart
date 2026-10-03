@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 import 'plugin_preferences.dart';
@@ -342,7 +343,8 @@ class PluginUpdateService {
       try {
         final result = await checkPluginUpdate(source);
         if (result != null) results[source.id] = result;
-      } catch (_) {
+      } catch (e) {
+        AppLog.debug('plugin', '插件更新检查失败(${source.id}): $e');
       }
     }
     return results;
@@ -357,7 +359,8 @@ class PluginUpdateService {
         if (result == null || !result.hasUpdate) continue;
         final outcome = await performPluginUpdate(source, result);
         if (outcome.success) installed++;
-      } catch (_) {
+      } catch (e) {
+        AppLog.debug('plugin', '插件自动更新失败(${source.id}): $e');
       }
     }
     return installed;
@@ -388,6 +391,7 @@ Future<void> runPluginAutoUpdateOnStartup(
     if (installed > 0 && log != null) {
       log(tr('启动自动更新：已更新 {n} 个插件', {'n': installed}));
     }
-  } catch (_) {
+  } catch (e) {
+    AppLog.warn('plugin', '启动插件自动更新失败: $e');
   }
 }

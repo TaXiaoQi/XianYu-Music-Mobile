@@ -2,6 +2,8 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'application_logger.dart';
+
 Future<String?> extractMotionPhotoVideo(File jpg, String destPath) async {
   try {
     final raf = await jpg.open();
@@ -27,7 +29,9 @@ Future<String?> extractMotionPhotoVideo(File jpg, String destPath) async {
     try {
       final f = File(destPath);
       if (await f.exists()) await f.delete();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('library', '清理未完成的动态照片文件失败: $e');
+    }
     return null;
   }
 }
@@ -137,7 +141,9 @@ Future<String?> _copyRange(
   if (await f.length() <= 0) {
     try {
       await f.delete();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('library', '删除空动态照片文件失败: $e');
+    }
     return null;
   }
   return destPath;

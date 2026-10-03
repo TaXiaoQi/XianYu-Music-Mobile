@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../core/app_logger.dart';
+import '../core/application_logger.dart';
 import '../core/app_colors.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';

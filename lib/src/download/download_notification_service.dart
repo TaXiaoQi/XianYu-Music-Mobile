@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/services.dart';
 
+import '../core/application_logger.dart';
+
 class DownloadNotificationService {
   static const _channel = MethodChannel('xianyu/download_notification');
 
@@ -24,13 +26,17 @@ class DownloadNotificationService {
         'isFinished': isFinished,
         'isFailed': isFailed,
       });
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('download', '更新下载通知失败: $e');
+    }
   }
 
   static Future<void> dismiss() async {
     if (!Platform.isAndroid) return;
     try {
       await _channel.invokeMethod('dismissDownloadNotification');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('download', '清除下载通知失败: $e');
+    }
   }
 }

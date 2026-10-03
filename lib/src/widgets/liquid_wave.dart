@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 
+import '../core/application_logger.dart';
 import 'blur_budget.dart';
 
 final ValueNotifier<double> globalScrollOffset = ValueNotifier<double>(0);
@@ -81,7 +82,8 @@ class _LiquidWaveState extends State<LiquidWave> {
       if (!mounted) return;
       setState(() => _shader = program.fragmentShader());
       WidgetsBinding.instance.addPostFrameCallback((_) => _capture());
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('ui', '加载水波纹着色器失败: $e');
     }
   }
 

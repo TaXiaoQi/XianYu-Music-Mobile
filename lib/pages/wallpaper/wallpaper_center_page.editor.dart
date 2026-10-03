@@ -86,7 +86,7 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
         AppLog.warn('wallpaper', 'prepare gif copy=$target');
         return target;
       }
-    } catch (_) {}
+    } catch (e) { AppLog.debug('wallpaper', 'GIF 探测失败: $e'); }
     try {
       final bytes = await src.readAsBytes();
       final codec = await ui.instantiateImageCodec(
@@ -99,8 +99,7 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
       codec.dispose();
       await src.copy(target);
       return target;
-    } catch (_) {
-    }
+    } catch (e) { AppLog.debug('wallpaper', '图片解码探测失败: $e'); }
     final converted = await FlutterImageCompress.compressAndGetFile(
       src.path,
       target,
@@ -251,7 +250,7 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
           e.deleteSync();
         }
       }
-    } catch (_) {}
+    } catch (e) { AppLog.debug('wallpaper', '清理旧壁纸文件失败: $e'); }
   }
 
   Future<void> _apply() async {

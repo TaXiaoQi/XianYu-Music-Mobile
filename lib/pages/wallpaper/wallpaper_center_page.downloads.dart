@@ -42,7 +42,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
                 )
                 .toList();
       if (mounted) setState(() => _downloads = list);
-    } catch (_) {}
+    } catch (e) { AppLog.warn('wallpaper', '读取下载列表失败: $e'); }
   }
 
   Future<void> _remove(int index) async {
@@ -60,7 +60,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
         final f = File(localPath);
         if (await f.exists()) await f.delete();
       }
-    } catch (_) {}
+    } catch (e) { AppLog.warn('wallpaper', '删除下载记录失败: $e'); }
   }
 
   @override

@@ -27,7 +27,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
             headers: resolved['headers'] as Map<String, String>?,
           );
         }
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '音源候选解析失败: $e');
+      }
     }
     return null;
   }
@@ -64,7 +66,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
             ((jsonDecode(failedJson) as Map<String, dynamic>)['pluginId']
                     as String?) ??
                 '';
-      } catch (_) {}
+      } catch (_) {
+        // 解析失败按默认值处理
+      }
     }
 
     AppLog.info('autoswitch', '重搜换源: ${item.title}');
@@ -99,9 +103,13 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
                   .searchInPlugin(plugin, key, keyword, limit: 10)
                   .timeout(const Duration(seconds: 8));
               if (r.isNotEmpty) return r;
-            } catch (_) {}
+            } catch (e) {
+              AppLog.debug('player', '插件子源搜索失败: $e');
+            }
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('player', '插件搜索失败: $e');
+        }
         return const [];
       }
 
@@ -179,7 +187,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
           } else {
             url = await _tryLxResolve(jsonEncode(song), qualityChain);
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('player', '换源候选解析失败: $e');
+        }
         if (url == null || !PlayerNotifier._isPlayableUrl(url.url)) continue;
         if (state.current?.path != item.path) return false;
 
@@ -282,7 +292,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
               }
             }
           }
-        } catch (_) {}
+        } catch (_) {
+          // 解析失败按默认值处理
+        }
       }
       curKey = lxSourceKeyForPlatform(label);
     }

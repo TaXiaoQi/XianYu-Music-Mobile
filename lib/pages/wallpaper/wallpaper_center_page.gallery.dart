@@ -409,11 +409,11 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
         final s = _fileSize(f);
         try {
           await f.delete();
-        } catch (_) {}
+        } catch (e) { AppLog.debug('wallpaper', '删除缓存文件失败: $e'); }
         total -= s;
         if (total <= _cacheLimitBytes) break;
       }
-    } catch (_) {}
+    } catch (e) { AppLog.debug('wallpaper', '清理壁纸缓存失败: $e'); }
   }
 
   static int _fileSize(File f) {
@@ -525,7 +525,7 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
         'xianyu_downloaded_wallpapers_v1',
         jsonEncode(list),
       );
-    } catch (_) {}
+    } catch (e) { AppLog.warn('wallpaper', '记录下载壁纸失败: $e'); }
   }
 
   Widget _spinner({double size = 16}) => SizedBox(

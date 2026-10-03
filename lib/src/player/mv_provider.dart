@@ -59,7 +59,9 @@ bool _hasMvIdentityHint(QueueItem c) {
         return true;
       }
     }
-  } catch (_) {}
+  } catch (_) {
+    /* 解析失败按默认值处理 */
+  }
   return false;
 }
 
@@ -97,6 +99,7 @@ Map<String, dynamic> mvSongOf(QueueItem c) {
       }
       return raw;
     } catch (_) {
+      /* 解析失败按默认值处理 */
     }
   }
   return {
@@ -493,7 +496,9 @@ class MvNotifier extends StateNotifier<MvState> {
       }
       try {
         await c.setVolume(0);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', 'MV 音量归零失败: $e');
+      }
     }
     await pn.setMvAudioOverride(false);
   }

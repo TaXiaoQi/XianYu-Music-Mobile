@@ -33,7 +33,9 @@ ImportedSong importedSongFromQueueItem(QueueItem item) {
       pluginId = j['pluginId'] as String?;
       source = j['source'] as String?;
       format = j['format'] as String?;
-    } catch (_) {}
+    } catch (_) {
+      // 解析失败按默认值处理
+    }
   }
   final isLocal = infoJson == null || infoJson.isEmpty;
   return ImportedSong(

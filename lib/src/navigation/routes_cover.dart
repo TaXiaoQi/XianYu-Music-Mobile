@@ -193,12 +193,6 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         }
         final isPortrait =
             MediaQuery.orientationOf(context) == Orientation.portrait;
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: isPortrait ? Curves.linear : Curves.easeOut,
-          reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
-        );
-        final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
         final page = isPortrait
             ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
@@ -210,14 +204,35 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
                 ),
                 child: child,
               );
+        final content = RoutePageBackdrop(
+          completion: animation,
+          location: location,
+          child: page,
+        );
+        if (isPortrait && phase != PredictiveBackPhase.idle) {
+          // 预测返回手势期（含 commit/cancel 收尾）：Android 16 同款整页
+          // 缩小卡片（缩放+贴边位移+圆角+纵向跟随），下层页面从缩小露出
+          // 的区域透出。此前手势期沿用平移基线，观感是「整页盖走」而非
+          // 官方缩小返回
+          return PredictiveBackSharedElementPageTransition(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            phase: phase,
+            startBackEvent: startBackEvent,
+            currentBackEvent: currentBackEvent,
+            child: content,
+          );
+        }
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: isPortrait ? Curves.linear : Curves.easeOut,
+          reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
+        );
+        final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
         return SlideTransition(
           position: Tween<Offset>(begin: begin, end: Offset.zero)
               .animate(curved),
-          child: RoutePageBackdrop(
-            completion: animation,
-            location: location,
-            child: page,
-          ),
+          child: content,
         );
       },
     );
@@ -330,12 +345,6 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         }
         final isPortrait =
             MediaQuery.orientationOf(context) == Orientation.portrait;
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: isPortrait ? Curves.linear : Curves.easeOut,
-          reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
-        );
-        final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
         final page = isPortrait
             ? RouteStaticSnapshot(animation: animation, child: child)
             : FadeTransition(
@@ -347,15 +356,36 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
                 ),
                 child: child,
               );
-        final transition = SlideTransition(
-          position: Tween<Offset>(begin: begin, end: Offset.zero)
-              .animate(curved),
-          child: RoutePageBackdrop(
-            completion: animation,
-            location: location,
-            child: page,
-          ),
+        final content = RoutePageBackdrop(
+          completion: animation,
+          location: location,
+          child: page,
         );
+        final Widget transition;
+        if (isPortrait && phase != PredictiveBackPhase.idle) {
+          // 手势期（含 commit/cancel 收尾）：整页缩小卡片，同 _CoverRoute；
+          // 飞回封面（PredictiveCoverReturnView）继续叠加在其上
+          transition = PredictiveBackSharedElementPageTransition(
+            animation: animation,
+            secondaryAnimation: secondaryAnimation,
+            phase: phase,
+            startBackEvent: startBackEvent,
+            currentBackEvent: currentBackEvent,
+            child: content,
+          );
+        } else {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: isPortrait ? Curves.linear : Curves.easeOut,
+            reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
+          );
+          final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
+          transition = SlideTransition(
+            position: Tween<Offset>(begin: begin, end: Offset.zero)
+                .animate(curved),
+            child: content,
+          );
+        }
         if (phase != PredictiveBackPhase.idle) {
           return Stack(
             children: [

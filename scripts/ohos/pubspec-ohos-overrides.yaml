@@ -107,6 +107,12 @@ dependency_overrides:
   # 仅用于随机临时文件名），统一钉到 ^4.6.0。
   uuid: ^4.6.0
 
+  # ---- flutter_secure_storage（2026-10-03）无需 override ----
+  # 鸿蒙原生实现走主 pubspec 的 path 依赖 third_party/flutter_secure_storage_ohos
+  # （vendor 自 SIG fork、剥离 Dart 层，官方主包 11.2.0 经同名 MethodChannel 直连，
+  # 详见 third_party/flutter_secure_storage_ohos/README.md）。path 依赖对所有平台
+  # 生效且仅声明 ohos 平台，Android/iOS 构建零参与，故不占 override 名额。
+
   # ---- file_picker (P2: 插件导入/歌词字体/本地扫描/备份恢复) ----
   # vendored: third_party/file_picker = SIG fluttertpc_file_picker
   # br_v10.3.8_ohos 改名（file_picker_ohos -> file_picker）+ 12.x 静态门面

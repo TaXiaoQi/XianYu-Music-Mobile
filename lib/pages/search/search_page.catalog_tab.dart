@@ -235,7 +235,7 @@ extension _CatalogTabSearch on _CatalogTabState {
             }
           }
       }
-    } catch (_) {}
+    } catch (e) { AppLog.warn('search', '本地目录搜索失败: $e'); }
     return out;
   }
 
@@ -286,7 +286,7 @@ extension _CatalogTabSearch on _CatalogTabState {
             ));
           }
       }
-    } catch (_) {}
+    } catch (e) { AppLog.warn('search', 'MusicFree 目录搜索失败: $e'); }
     return out;
   }
 

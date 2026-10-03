@@ -1,4 +1,4 @@
-﻿part of 'player_provider.dart';
+part of 'player_provider.dart';
 
 extension PlayerNotifierOnline on PlayerNotifier {
   Future<void> _playRemote(QueueItem item) async {
@@ -13,7 +13,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
       }
       try {
         await _player.stop();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '播放器停止失败: $e');
+      }
       await service.precacheRemote(item.path);
       final plan = await service.playbackSource(item.path);
       if (!plan.isCached) {
@@ -31,7 +33,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
       final result = await service.transcodeToWav(item.path);
       try {
         await _player.stop();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '播放器停止失败: $e');
+      }
       await _player.setFilePath(result.path);
       await _updateRgGain(result.path);
       await _player.setVolume(_effectiveVolume());
@@ -42,7 +46,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
     final plan = await service.playbackSource(item.path);
     try {
       await _player.stop();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '播放器停止失败: $e');
+    }
     if (plan.isCached) {
       await _player.setFilePath(plan.cachedPath!);
       await _updateRgGain(plan.cachedPath);
@@ -91,7 +97,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
             cacheRoot: cacheRoot,
           );
         }
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '封面预缓存失败: $e');
+      }
     }));
   }
 
@@ -137,7 +145,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
         await _player.setFilePath(plan.cachedPath!);
         return plan.cachedPath;
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('player', '远程歌曲预加载失败: $e');
+    }
     return null;
   }
 
@@ -176,7 +186,8 @@ extension PlayerNotifierOnline on PlayerNotifier {
         preferred: preferred,
         fallback: fb,
       );
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('player', '在线预缓存调度失败: $e');
     }
   }
 
@@ -215,7 +226,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
     if (proxyUrl != null) {
       try {
         await _player.stop();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '播放器停止失败: $e');
+      }
       final ok = await _tryStartDspPipeline(proxyUrl,
           streamCacheUrl: clean,
           streamCacheHeaders: h,
@@ -268,7 +281,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
       try {
         await _player.setSpeed(1.0);
         await _player.setPitch(1.0);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '播放器速度重置失败: $e');
+      }
     }
     if (isPlaying) {
       await _player.play();
@@ -284,7 +299,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
       (headers ?? {}).forEach((k, v) {
         try {
           req.headers.set(k, v);
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('player', '诊断请求头设置失败: $e');
+        }
       });
       final res = await req.close().timeout(const Duration(seconds: 8));
       final type = res.headers.contentType?.toString() ?? '-';
@@ -317,15 +334,19 @@ extension PlayerNotifierOnline on PlayerNotifier {
   }) async {
     try {
       await _player.stop();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '播放器停止失败: $e');
+    }
     final plainPath =
         await _decryptUrlToTemp(url, headers, key, isCenc: isCenc);
     await _player.setFilePath(plainPath);
     if (startAtSecs > 0) {
       try {
         await _player
-            .seek(Duration(milliseconds: (startAtSecs * 1000).round()));
-      } catch (_) {}
+                .seek(Duration(milliseconds: (startAtSecs * 1000).round()));
+          } catch (e) {
+            AppLog.warn('player', '恢复播放进度失败: $e');
+          }
     }
     await _player.setVolume(_effectiveVolume());
     if (isPlaying) {
@@ -356,7 +377,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
     for (var i = 0; i < list.length - PlayerNotifier._decryptCacheMax + 1; i++) {
       try {
         list[i].deleteSync();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '解密缓存清理失败: $e');
+      }
     }
     final dest = p.join(dir.path,
         'dec_${sha256.convert(utf8.encode(url)).toString().substring(0, 24)}.tmp');
@@ -368,7 +391,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
           return dest;
         }
         f.deleteSync();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '解密缓存校验失败: $e');
+      }
     }
     final plainPath = await downloadOnlineSong(
       url: url,

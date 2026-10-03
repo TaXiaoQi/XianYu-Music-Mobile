@@ -54,7 +54,7 @@ abstract class PluginUserVarCrypto {
       if (json is Map) {
         return json.map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
       }
-    } catch (_) {}
+    } catch (_) { /* 解密/解析失败按 null 兜底 */ }
     return null;
   }
 }

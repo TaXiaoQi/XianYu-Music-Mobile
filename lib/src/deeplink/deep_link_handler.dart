@@ -325,7 +325,8 @@ class XianYuDeepLink {
     if (container.read(libraryProvider).songs.isEmpty) {
       try {
         await container.read(libraryProvider.notifier).load();
-      } catch (_) {
+      } catch (e) {
+        AppLog.debug('deeplink', '深链兜底加载媒体库失败: $e');
       }
     }
     return true;
@@ -562,7 +563,8 @@ class XianYuDeepLink {
     try {
       await searchNotifier.setSource(src);
       await searchNotifier.search(keyword);
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('deeplink', '在线搜索分享曲失败: $e');
     }
     final results = container.read(onlineSearchProvider).results;
     if (results.isNotEmpty) {
@@ -579,7 +581,8 @@ class XianYuDeepLink {
       for (final (ps, items) in all) {
         if (items.isNotEmpty) return service.toQueueItem(ps, items.first);
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('deeplink', '插件搜索分享曲失败: $e');
     }
     return null;
   }

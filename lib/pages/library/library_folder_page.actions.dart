@@ -13,7 +13,8 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
         if (!dir.existsSync()) dir.createSync(recursive: true);
         await ref.read(scanFoldersProvider.notifier).addFolder(dir.path);
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('library', '初始化沙盒音乐目录失败: $e');
     }
   }
 

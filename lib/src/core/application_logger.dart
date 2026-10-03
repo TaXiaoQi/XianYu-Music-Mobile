@@ -13,7 +13,9 @@ enum LogLevel {
   debug('debug'),
   info('info'),
   warn('warn'),
-  error('error');
+  error('error'),
+  // 未捕获异常/平台异常专用：与普通错误分流，导出头单独统计
+  fatal('fatal');
 
   const LogLevel(this.value);
   final String value;
@@ -78,7 +80,8 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
     unawaited(_restore());
   }
 
-  bool get hasErrorLogs => state.any((e) => e.level == LogLevel.error);
+  bool get hasErrorLogs =>
+      state.any((e) => e.level.index >= LogLevel.error.index);
 
   void log(LogLevel level, String category, String message) {
     _seq++;
@@ -99,6 +102,7 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   void info(String category, String m) => log(LogLevel.info, category, m);
   void warn(String category, String m) => log(LogLevel.warn, category, m);
   void error(String category, String m) => log(LogLevel.error, category, m);
+  void fatal(String category, String m) => log(LogLevel.fatal, category, m);
 
   static List<AppLogEntry> _appendAndTrim(
     List<AppLogEntry> current,
@@ -163,14 +167,21 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
 
   String formatExport({required bool onlyErrors}) {
     final selected = onlyErrors
-        ? state.where((e) => e.level == LogLevel.error).toList()
+        ? state
+            .where((e) => e.level.index >= LogLevel.error.index)
+            .toList()
         : state;
     final counts = <LogLevel, int>{for (final l in LogLevel.values) l: 0};
     for (final e in state) {
       counts[e.level] = (counts[e.level] ?? 0) + 1;
     }
-    final headline = counts[LogLevel.error]! > 0
-        ? '检测到 ${counts[LogLevel.error]} 条错误日志'
+    final fatalCount = counts[LogLevel.fatal]!;
+    final errorCount = counts[LogLevel.error]!;
+    final headline = fatalCount > 0
+        ? '检测到 $fatalCount 条致命崩溃'
+            '${errorCount > 0 ? '、$errorCount 条错误日志' : ''}'
+        : errorCount > 0
+        ? '检测到 $errorCount 条错误日志'
         : counts[LogLevel.warn]! > 0
         ? '检测到 ${counts[LogLevel.warn]} 条警告日志'
         : tr('未发现明显异常');
@@ -182,7 +193,7 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       ..writeln('自动分析：$headline')
       ..writeln(
         '日志级别：debug=${counts[LogLevel.debug]} info=${counts[LogLevel.info]} '
-        'warn=${counts[LogLevel.warn]} error=${counts[LogLevel.error]}',
+        'warn=${counts[LogLevel.warn]} error=$errorCount fatal=$fatalCount',
       )
       ..writeln('');
     for (final e in selected) {
@@ -208,6 +219,8 @@ class AppLog {
       ApplicationLogManager.instance.warn(category, m);
   static void error(String category, String m) =>
       ApplicationLogManager.instance.error(category, m);
+  static void fatal(String category, String m) =>
+      ApplicationLogManager.instance.fatal(category, m);
 }
 
 final applicationLogsProvider =
@@ -221,29 +234,29 @@ class AppLogRouteObserver extends NavigatorObserver {
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    AppLog.info('route', 'push ${_name(route)}');
+    AppLog.debug('route', 'push ${_name(route)}');
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    AppLog.info('route', 'pop ${_name(route)}');
+    AppLog.debug('route', 'pop ${_name(route)}');
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    AppLog.info('route', 'remove ${_name(route)}');
+    AppLog.debug('route', 'remove ${_name(route)}');
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    AppLog.info('route', 'replace ${_name(oldRoute)} -> ${_name(newRoute)}');
+    AppLog.debug('route', 'replace ${_name(oldRoute)} -> ${_name(newRoute)}');
   }
 }
 
 class AppLogLifecycleObserver with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    AppLog.info('lifecycle', '应用状态 -> ${state.name}');
+    AppLog.debug('lifecycle', '应用状态 -> ${state.name}');
   }
 }
 
@@ -252,11 +265,8 @@ class AppLogBackGestureObserver with WidgetsBindingObserver {
 
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
-    AppLog.debug(
-      'backgesture',
-      'start ${backEvent.isButtonEvent ? 'button' : 'gesture'} '
-          'progress=${backEvent.progress.toStringAsFixed(3)}',
-    );
+    // 手势开始的详情由 detector 的 claim 日志覆盖（非认领路径 decline 也有
+    // 记录），这里不再重复打点；保留首次拉取原生状态的诊断动作
     if (!_pulledNativeStatus) {
       _pulledNativeStatus = true;
       BackGestureNativeBridge.pull();
@@ -271,11 +281,9 @@ class BackGestureNativeBridge {
   static const MethodChannel _channel = MethodChannel('xianyu/backgesture');
 
   static void init() {
-    _channel.setMethodCallHandler((call) async {
-      if (call.method == 'event') {
-        AppLog.debug('backgesture', 'native ${call.arguments}');
-      }
-    });
+    // 原生逐帧 event 不再逐条入日志（健康 ROM 上每手势会刷几十条，纯垃圾）；
+    // 合成进度的关键节点由 detector 的 claim/synth engage/commit 日志覆盖。
+    // pull 保留：一次性确认原生观察者注册状态
     pull();
   }
 

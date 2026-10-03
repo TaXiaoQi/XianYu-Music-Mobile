@@ -27,7 +27,9 @@ final coverCacheRootProvider = FutureProvider<String>((ref) async {
   if (legacy.existsSync()) {
     try {
       legacy.deleteSync(recursive: true);
-    } catch (_) {}
+    } catch (_) {
+      // 启动早期路径，AppLog 未必就绪；旧封面目录清理失败可安全忽略。
+    }
   }
   final root = Directory(p.join(appData, 'cover_cache'));
   if (!root.existsSync()) root.createSync(recursive: true);

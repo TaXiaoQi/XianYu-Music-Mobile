@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../core/application_logger.dart';
 import 'blur_budget.dart';
 import 'chrome_glass_frame.dart';
 import 'glass_settings.dart';
@@ -302,7 +303,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       setState(() {
         _shader = program.fragmentShader();
       });
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('ui', '加载液态玻璃着色器失败: $e');
     }
   }
 

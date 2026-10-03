@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:zxing2/qrcode.dart';
 
 import '../../src/auth/auth_provider.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
@@ -93,10 +94,14 @@ class _ScanPageState extends ConsumerState<ScanPage>
     if (c == null) return;
     try {
       if (c.value.isStreamingImages) await c.stopImageStream();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('scan', '停止相机预览流失败: $e');
+    }
     try {
       await c.dispose();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('scan', '释放相机失败: $e');
+    }
   }
 
   String? _extractCode(String? raw) {
@@ -129,7 +134,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
       if (code == null || code == _lastCode) return;
       _lastCode = code;
       _handleCode(code);
-    } catch (_) {}
+    } catch (_) { /* 当前帧无二维码，解码失败属正常情况 */ }
   }
 
   Future<void> _resume() async {
@@ -137,7 +142,9 @@ class _ScanPageState extends ConsumerState<ScanPage>
     if (c != null && c.value.isInitialized) {
       try {
         if (!c.value.isStreamingImages) await c.startImageStream(_onImageStream);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('scan', '恢复相机预览流失败: $e');
+      }
     } else {
       await _initCamera();
     }
@@ -183,7 +190,9 @@ class _ScanPageState extends ConsumerState<ScanPage>
     if (c != null) {
       try {
         if (c.value.isStreamingImages) await c.stopImageStream();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('scan', '停止相机预览流失败: $e');
+      }
     }
     if (!mounted) {
       _handling = false;
@@ -293,7 +302,9 @@ class _ScanPageState extends ConsumerState<ScanPage>
       final next = !_torchOn;
       await c.setFlashMode(next ? FlashMode.torch : FlashMode.off);
       if (mounted) setState(() => _torchOn = next);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('scan', '切换闪光灯失败: $e');
+    }
   }
 
   @override

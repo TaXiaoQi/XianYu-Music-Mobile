@@ -21,7 +21,8 @@ extension _PluginPageSettings on _PluginPageState {
               .read(pluginManagerProvider.notifier)
               .getUserVars(s.id);
           hasVars = vars.isNotEmpty;
-        } catch (_) {
+        } catch (e) {
+          AppLog.warn('plugin', '读取插件变量失败: $e');
         }
         _hasVars[s.id] = hasVars;
         needRefresh = needRefresh || hasVars;

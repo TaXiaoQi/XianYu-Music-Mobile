@@ -7,10 +7,14 @@ extension PlayerNotifierCast on PlayerNotifier {
     _flushPlayStats();
     try {
       await _stopExclusive();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '停止独占失败: $e');
+    }
     try {
       await _player.pause();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '暂停播放器失败: $e');
+    }
     state = state.copyWith(isPlaying: false);
     _syncToSystemMediaSession();
   }
@@ -163,7 +167,9 @@ extension PlayerNotifierCast on PlayerNotifier {
     if (media == null) throw StateError(tr('无法获取播放链接'));
     try {
       await _player.stop();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '播放器停止失败: $e');
+    }
     await _ref.read(dlnaCastProvider.notifier).castMedia(
           title: item.title,
           artist: item.artist,

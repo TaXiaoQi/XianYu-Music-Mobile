@@ -233,6 +233,13 @@ class BatchActionBar extends ConsumerStatefulWidget {
 class _BatchActionBarState extends ConsumerState<BatchActionBar> {
   final GlobalKey _rootKey = GlobalKey();
 
+  /// 缓存 StateController 而非在 dispose 里 ref.read：本条所在页面被每页
+  /// 壁纸的嵌套 ProviderScope（RoutePageBackdrop）包住，pop 卸载时祖先
+  /// scope 的 container 先销毁，dispose 里再 ref.read 会抛
+  /// "ProviderContainer already disposed" fatal。全局 provider 的
+  /// controller 挂在根容器上，缓存后跨卸载写值始终安全。
+  StateController<double>? _liftController;
+
   @override
   void initState() {
     super.initState();
@@ -251,14 +258,22 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
 
   @override
   void dispose() {
-    ref.read(batchBarLiftProvider.notifier).state = 0;
+    // 首个 postFrame 前就卸载时从未上报过抬升，计数无需清零
+    _liftController?.state = 0;
     super.dispose();
   }
 
   void _reportLift() {
     final render = _rootKey.currentContext?.findRenderObject();
     if (render is RenderBox) {
-      ref.read(batchBarLiftProvider.notifier).state = render.size.height;
+      final controller = _liftController;
+      if (controller != null) {
+        controller.state = render.size.height;
+      } else {
+        final fresh = ref.read(batchBarLiftProvider.notifier);
+        _liftController = fresh;
+        fresh.state = render.size.height;
+      }
     }
   }
 

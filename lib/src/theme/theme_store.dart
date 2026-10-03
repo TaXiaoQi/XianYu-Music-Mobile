@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import 'theme_package.dart';
 
@@ -225,7 +226,9 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
       final docs = await getApplicationDocumentsDirectory();
       final dir = Directory(p.join(docs.path, 'themes', id));
       if (dir.existsSync()) await dir.delete(recursive: true);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('theme', '清理主题壁纸资产目录失败: $e');
+    }
   }
 
   /// 应用主题：强调色 / 深浅模式写回既有设置（立即生效，无需重启），

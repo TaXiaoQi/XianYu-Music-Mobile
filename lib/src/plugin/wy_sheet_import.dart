@@ -297,7 +297,7 @@ class WySheetImport {
       if (s >= 0 && e > s) {
         try {
           return jsonDecode(text.substring(s, e + 1));
-        } catch (_) {}
+        } catch (_) { /* 去 JSONP 包装后仍解析失败，按无数据处理 */ }
       }
       return null;
     }

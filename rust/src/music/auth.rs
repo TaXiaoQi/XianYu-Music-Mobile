@@ -2,10 +2,10 @@
 //
 // 从桌面端（authService.ts + httpClient.ts + md5.ts 迁移）移植：
 // MD5 签名算法、带签名头的 POST 请求、token 的安全存储。
-// 移动端 token 以文件形式存于 auth 目录（与 base_url/api_secret 一致），
-// 需要系统安全存储时可由宿主在 Flutter 侧覆盖。
+// 移动端 token 经 Flutter 侧 AES 加密后以 `xy1:<iv>:<密文>` 形式存于
+// auth 目录（密钥在系统安全存储），文件泄露不暴露明文。
 //
-// 签名密钥不再暴露在前端 JS 中，全部在 Rust 侧完成。
+// 签名密钥不暴露在前端中，全部在 Rust 侧完成且默认密钥不落盘。
 
 use serde::Serialize;
 use serde_json::Value;
@@ -181,7 +181,9 @@ fn read_base_url(data_dir: &Path) -> String {
     }
 }
 
-/// 从文件读取 API 签名密钥，不存在时返回默认值
+/// 从文件读取 API 签名密钥，不存在时返回默认值。
+/// 历史版本会把内置默认密钥写入文件（明文落盘）；现检测到文件内容
+/// 等于默认值时删除文件迁移为内置默认，密钥不再落盘。
 fn read_api_secret(data_dir: &Path) -> String {
     match api_secret_file_path(data_dir) {
         Ok(path) => {
@@ -190,7 +192,10 @@ fn read_api_secret(data_dir: &Path) -> String {
                     .unwrap_or_default()
                     .trim()
                     .to_string();
-                if saved.is_empty() {
+                if saved.is_empty() || saved == DEFAULT_API_SECRET {
+                    if saved == DEFAULT_API_SECRET {
+                        let _ = fs::remove_file(&path);
+                    }
                     DEFAULT_API_SECRET.to_string()
                 } else {
                     saved
@@ -456,18 +461,18 @@ pub fn get_auth_base_url(data_dir: &Path) -> Result<String, String> {
     Ok(read_base_url(data_dir))
 }
 
-/// 设置 API 签名密钥（自建服务器使用）。
+/// 设置 API 签名密钥（自建服务器使用）。空值 = 恢复内置默认密钥：
+/// 删除文件而不是把默认密钥写盘。
 pub fn set_auth_api_secret(data_dir: &Path, api_secret: String) -> Result<(), String> {
     let trimmed = api_secret.trim();
-    let secret = if trimmed.is_empty() {
-        DEFAULT_API_SECRET.to_string()
-    } else {
-        trimmed.to_string()
-    };
-
     let path = api_secret_file_path(data_dir)?;
-    fs::write(&path, &secret).map_err(|e| format!("api_secret 文件写入失败: {e}"))?;
-    Ok(())
+    if trimmed.is_empty() {
+        if path.exists() {
+            fs::remove_file(&path).map_err(|e| format!("api_secret 删除失败: {e}"))?;
+        }
+        return Ok(());
+    }
+    fs::write(&path, trimmed).map_err(|e| format!("api_secret 文件写入失败: {e}"))
 }
 
 /// 获取当前 API 签名密钥。

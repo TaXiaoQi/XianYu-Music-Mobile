@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../rust/api.dart' as frb;
@@ -399,9 +400,12 @@ class RemoteLibraryNotifier extends StateNotifier<RemoteLibraryState> {
       var usage = state.cacheUsage;
       try {
         usage = await _service.cacheUsage();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('remote', '获取缓存占用失败: $e');
+      }
       state = state.copyWith(sources: sources, cacheUsage: usage);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('remote', '刷新远程音源列表失败: $e');
     } finally {
       state = state.copyWith(loading: false);
     }
@@ -467,9 +471,13 @@ class RemoteAutoSyncService {
           await prefs.setInt('$_keyPrefix${source.id}',
               DateTime.now().millisecondsSinceEpoch);
           synced = true;
-        } catch (_) {}
+        } catch (e) {
+          AppLog.warn('remote', '自动同步远程音源失败: $e');
+        }
       }
-    } catch (_) {} finally {
+    } catch (e) {
+      AppLog.warn('remote', '自动同步检查失败: $e');
+    } finally {
       _running = false;
     }
     if (synced) {

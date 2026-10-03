@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../online/online_meta_store.dart';
@@ -120,7 +121,9 @@ Future<void> _persistJson(String key, Map<String, dynamic> data) async {
   try {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(key, jsonEncode(data));
-  } catch (_) {}
+  } catch (e) {
+    AppLog.debug('home', '写入统计缓存失败: $e');
+  }
 }
 
 Future<Map<String, dynamic>?> _loadJson(String key) async {
@@ -153,7 +156,9 @@ final FutureProvider<ListenStatsData> listenStatsProvider =
     totalSecs = (dj['total'] as num?)?.toInt() ?? 0;
     todaySecs = (dj['daily'] as num?)?.toInt() ?? 0;
     todayCount = (dj['today_play_count'] as num?)?.toInt() ?? 0;
-  } catch (_) {}
+  } catch (e) {
+    AppLog.warn('home', '读取本地听歌统计失败: $e');
+  }
 
   final auth = ref.watch(authProvider);
   ListenServerSnapshot? snapshot;
@@ -207,7 +212,9 @@ final FutureProvider<ListenStatsData> listenStatsProvider =
         if (resp['resetAt'] != null) {
           try {
             await statsClearListenStats(dbPath: dbPath);
-          } catch (_) {}
+          } catch (e) {
+            AppLog.debug('home', '清空本地听歌统计失败: $e');
+          }
           await _persistJson(_listenBaselineKey,
               {'total': 0, 'daily': 0, 'date': _todayStr()});
           await _persistJson(_listenSnapshotKey,
@@ -265,7 +272,9 @@ final FutureProvider<ListenStatsData> listenStatsProvider =
               {'total': snap.total, 'daily': snap.daily, 'weekly': snap.weekly});
           ref.read(listenServerSnapshotProvider.notifier).state = snap;
           ref.invalidate(listenStatsProvider);
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('home', '服务端快照兜底拉取失败: $e');
+        }
       }
     });
   }

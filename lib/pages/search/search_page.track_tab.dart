@@ -220,7 +220,8 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     networkUrl: r.img,
                     radius: m.songRadius,
                   );
-                } catch (_) {
+                } catch (e) {
+                  AppLog.debug('search', '封面飞入动画失败: $e');
                 }
               },
             );

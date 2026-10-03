@@ -209,6 +209,7 @@ String _extractJsonFromZip(Uint8List data) {
       try {
         return utf8.decode(_gunzip(entries[name]!));
       } catch (_) {
+        /* 解压失败则尝试其他候选文件 */
       }
     }
   }

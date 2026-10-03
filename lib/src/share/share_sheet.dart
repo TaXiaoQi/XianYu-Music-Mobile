@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:tencent_kit/tencent_kit.dart';
 
 import '../online/cover_proxy.dart';
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/platform_caps.dart';
 import '../library/saf_channel.dart';
@@ -284,7 +285,9 @@ Future<(QueueItem, File?)> _resolveLocalCover(
         }
       }
       if (p.isNotEmpty) updated = song.copyWith(coverPath: p);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('share', '解析歌曲封面失败: $e');
+    }
   }
   final file = await _localCoverFile(updated);
   return (updated, file);
@@ -339,7 +342,9 @@ Future<void> _shareViaQQ(
     if (coverFile != null) {
       coverPath = (await _resizeCoverForShare(coverFile))?.path ?? coverFile.path;
     }
-  } catch (_) {}
+  } catch (e) {
+    AppLog.debug('share', '压缩分享封面失败: $e');
+  }
 
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
   final useMusicCard = scene == TencentScene.kScene_QQ;
@@ -405,7 +410,9 @@ Future<File?> _localCoverFile(QueueItem song) async {
     try {
       final f = File(_stripFileScheme(path));
       if (await f.exists()) return f;
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('share', '读取本地封面失败: $e');
+    }
   }
 
   final online = _decodeMap(song.onlineSongJson);
@@ -432,7 +439,9 @@ Future<File?> _downloadCoverToTemp(String url) async {
       await file.writeAsBytes(bytes);
       return file;
     }
-  } catch (_) {}
+  } catch (e) {
+    AppLog.debug('share', '下载分享封面失败: $e');
+  }
   return _downloadToTemp(url);
 }
 

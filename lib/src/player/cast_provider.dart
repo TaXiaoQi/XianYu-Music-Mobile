@@ -151,17 +151,23 @@ class CastNotifier extends StateNotifier<CastState> {
         if (ignored != true) {
           AppLog.info('dlna', '已拉起电池优化白名单授权框（灭屏投放必需）');
         }
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('cast', '电池优化白名单请求失败: $e');
+      }
     }
     try {
       await _dlnaChannel.invokeMethod<void>('acquireWifiLock');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('cast', '获取 Wi-Fi 锁失败: $e');
+    }
   }
 
   Future<void> _releaseCastNetwork() async {
     try {
       await _dlnaChannel.invokeMethod<void>('releaseWifiLock');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('cast', '释放 Wi-Fi 锁失败: $e');
+    }
   }
 
   Future<void> disconnect({bool stopTv = true}) async {
@@ -172,7 +178,9 @@ class CastNotifier extends StateNotifier<CastState> {
     if (dev != null && stopTv) {
       try {
         await dlnaCastStop(deviceJson: dev);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('cast', '通知电视停止失败: $e');
+      }
     }
   }
 
@@ -222,7 +230,9 @@ class CastNotifier extends StateNotifier<CastState> {
     if (startSec > 0.5) {
       try {
         await dlnaCastSeek(deviceJson: dev, secs: startSec);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('cast', '续播定位失败: $e');
+      }
     }
     _lastVolumeSent = -1;
     _consecutiveErrors = 0;
@@ -240,7 +250,9 @@ class CastNotifier extends StateNotifier<CastState> {
     if (dev == null) return;
     try {
       await dlnaCastPlay(deviceJson: dev);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('cast', '投屏恢复播放失败: $e');
+    }
   }
 
   Future<void> castPause() async {
@@ -248,7 +260,9 @@ class CastNotifier extends StateNotifier<CastState> {
     if (dev == null) return;
     try {
       await dlnaCastPause(deviceJson: dev);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('cast', '投屏暂停失败: $e');
+    }
   }
 
   Future<void> castSeek(double secs) async {
@@ -267,7 +281,9 @@ class CastNotifier extends StateNotifier<CastState> {
     _lastVolumeSent = percent;
     try {
       await dlnaCastSetVolume(deviceJson: dev, percent: percent);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('cast', '投屏音量同步失败: $e');
+    }
   }
 
   // ---------------- 状态轮询 ----------------
@@ -321,7 +337,9 @@ class CastNotifier extends StateNotifier<CastState> {
             }),
           );
           if (refreshed) _resolvedAtMs = DateTime.now().millisecondsSinceEpoch;
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('cast', '媒体地址刷新失败: $e');
+        }
       }
     } catch (e) {
       _consecutiveErrors += 1;
@@ -385,14 +403,18 @@ class CastNotifier extends StateNotifier<CastState> {
     if (!state.rendererRunning) return;
     try {
       await _disableRenderer();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('cast', '旧渲染器停止失败: $e');
+    }
     await applyRendererSetting();
   }
 
   Future<int> _enableRenderer(String name) async {
     try {
       await _dlnaChannel.invokeMethod<void>('acquireMulticast');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('cast', '加入组播失败: $e');
+    }
     final udn = await _rendererUdn();
     final port = await dlnaEnableRenderer(friendlyName: name, udn: udn);
     unawaited(_dmrLoop());
@@ -405,7 +427,9 @@ class CastNotifier extends StateNotifier<CastState> {
     await dlnaDisableRenderer();
     try {
       await _dlnaChannel.invokeMethod<void>('releaseMulticast');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('cast', '退出组播失败: $e');
+    }
   }
 
   Future<void> _dmrLoop() async {
@@ -470,7 +494,9 @@ class CastNotifier extends StateNotifier<CastState> {
           if (!playerOpenNotifier.value) {
             openPlayer();
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.warn('cast', '打开播放器页失败: $e');
+        }
         break;
       case 'play':
       case 'pause':
@@ -536,7 +562,9 @@ class CastNotifier extends StateNotifier<CastState> {
         volumePercent: (vol.clamp(0.0, 1.0) * 100).round(),
         muted: false,
       );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('cast', '播放状态上报失败: $e');
+    }
   }
 
   @override

@@ -44,7 +44,8 @@ class PlayStatsReporter {
         await statsRecordPlay(dbPath: dbPath, payloadJson: payloadJson);
         _ref.invalidate(listenStatsProvider);
         _ref.invalidate(mostPlayedProvider);
-      } catch (_) {
+      } catch (e) {
+        AppLog.warn('stats', 'record_play_stats 失败: $e');
       }
     });
   }
@@ -72,7 +73,8 @@ class PlayStatsReporter {
           await _ref.read(onlineMetaStoreProvider).put(item);
         }
         _ref.invalidate(recentProvider);
-      } catch (_) {
+      } catch (e) {
+        AppLog.warn('stats', 'record_recent_play 失败: $e');
       }
     });
   }

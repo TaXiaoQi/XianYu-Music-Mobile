@@ -209,7 +209,8 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           _buildMediaItem(item, _lastSyncDuration, Uri.file(file.path)),
         );
       }
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('player', '通知封面物化失败: $e');
     } finally {
       _artMaterializing.remove(url);
     }
@@ -840,7 +841,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (state.usbExclusive || state.dspActive) {
           try {
             cancelUsbExclusiveNext();
-          } catch (_) {}
+          } catch (e) {
+            AppLog.warn('player', '取消无缝预排失败: $e');
+          }
         }
       },
     );
@@ -863,11 +866,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _ref.listen(volumeProvider, (_, v) {
       try {
         _player.setVolume(_effectiveVolume());
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '音量设置失败: $e');
+      }
       if (state.usbExclusive || state.dspActive) {
         try {
           setUsbExclusiveVolume(volume: _mvAudioOverride ? 0.0 : v);
-        } catch (_) {}
+        } catch (e) {
+          AppLog.warn('player', '独占音量下发失败: $e');
+        }
       }
     });
     _ref.listen(
@@ -914,7 +921,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (!playing && state.isPlaying) {
       try {
         await _pauseForInterruption();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '切本地源后暂停失败: $e');
+      }
     }
   }
 
@@ -991,7 +1000,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (!item.isOnline && item.coverUrl?.isNotEmpty != true) {
       try {
         await _resolveNotificationCover(item);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '通知封面解析失败: $e');
+      }
       if (epoch != _playEpoch) return;
     }
     final sameSongReplay = continueStatsSession;
@@ -1022,7 +1033,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
           try {
             await _player.stop();
-          } catch (_) {}
+          } catch (e) {
+            AppLog.warn('player', '播放器停止失败: $e');
+          }
           if (epoch != _playEpoch) return;
           await _playOnline(
             item,
@@ -1035,7 +1048,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (epoch != _playEpoch) return;
           try {
             await _player.stop();
-          } catch (_) {}
+          } catch (e) {
+            AppLog.warn('player', '播放器停止失败: $e');
+          }
           if (epoch != _playEpoch) return;
           _rgGain = 1.0;
           await _playRemote(item);
@@ -1047,7 +1062,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (epoch != _playEpoch) return;
           try {
             await _player.stop();
-          } catch (_) {}
+          } catch (e) {
+            AppLog.warn('player', '播放器停止失败: $e');
+          }
           await _startOnlineUrl(target, item: item, startAtSecs: startAtSecs);
         } else if (SafChannel.isSafPath(target)) {
           final tmp = await getTemporaryDirectory();
@@ -1078,7 +1095,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (epoch != _playEpoch) return;
           try {
             await _player.stop();
-          } catch (_) {}
+          } catch (e) {
+            AppLog.warn('player', '播放器停止失败: $e');
+          }
           if (_isTranscodePath(target)) {
             final result =
                 await RemoteLibraryService(_ref).transcodeToWav(target);
@@ -1097,7 +1116,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           if (startAtSecs > 0) {
             try {
               await seek(startAtSecs);
-            } catch (_) {}
+            } catch (e) {
+              AppLog.warn('player', '恢复播放进度失败: $e');
+            }
           }
           await _player.setVolume(_effectiveVolume());
           if (epoch != _playEpoch) return;
@@ -1125,10 +1146,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(isPlaying: false, resolving: false);
       try {
         await _stopExclusive();
-      } catch (_) {}
+      } catch (err) {
+        AppLog.warn('player', '退出独占输出失败: $err');
+      }
       try {
         await _player.stop();
-      } catch (_) {}
+      } catch (err) {
+        AppLog.warn('player', '播放器停止失败: $err');
+      }
       if (!skipOnFailure) {
         final msg = e is PluginEngineException
             ? e.message
@@ -1282,6 +1307,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             seedKey, url.quality ?? '320k', url.url,
             headers: url.headers, ekey: url.ekey, cek: url.cek);
       } catch (_) {
+        // 解析失败按默认值处理
       }
     }
     state = state.copyWith(
@@ -1312,7 +1338,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
       unawaited(notifier.probeQueueMvs(upcoming));
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('player', 'MV 预探测调度失败: $e');
+    }
   }
 
   static int? _parseQualitySize(dynamic size) {
@@ -1498,7 +1526,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       _sleepFade = 1.0;
       try {
         await _player.setVolume(_effectiveVolume());
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('player', '音量恢复失败: $e');
+      }
       _sleepFadeBusy = false;
     }
   }
@@ -1606,7 +1636,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (idx >= 0 && idx < state.queue.length) {
           try {
             await _playAt(idx, startAtSecs: pendingPos, skipOnFailure: false);
-          } catch (_) {
+          } catch (e) {
+            AppLog.warn('player', '恢复上次播放失败: $e');
           }
           _persistSession();
           return;
@@ -1818,7 +1849,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (pid is String && pid.isNotEmpty) return 'plugin:$pid';
         final src = m['source'];
         if (src is String && src.isNotEmpty) return 'lx:$src';
-      } catch (_) {}
+      } catch (_) {
+        // 解析失败按默认值处理
+      }
     }
     final src = item.source;
     if (src != null && src.isNotEmpty) return 'lx:$src';
@@ -1907,7 +1940,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _interruptionSub?.cancel();
     try {
       stopUsbExclusivePlayback();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '独占播放停止失败: $e');
+    }
     _player.dispose();
     super.dispose();
   }

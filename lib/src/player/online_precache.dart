@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../lyrics/lyrics_repository.dart';
 import '../online/cover_proxy.dart';
@@ -78,7 +79,8 @@ class OnlinePrecache {
 
       final gen = ++_generation;
       unawaited(_run(gen, ref, notifier, upcoming, preferred, fallback));
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('player', '在线预缓存调度失败: $e');
     }
   }
 
@@ -96,7 +98,8 @@ class OnlinePrecache {
       try {
         await _prefetchOne(gen, ref, notifier, item, candidates)
             .timeout(_perSongTimeout, onTimeout: () {});
-      } catch (_) {
+      } catch (e) {
+        AppLog.debug('player', '预缓存单曲失败 ${item.path}: $e');
       }
     }
   }
@@ -136,7 +139,9 @@ class OnlinePrecache {
           resolved = r;
           break;
         }
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '预缓存音质探测失败: $e');
+      }
     }
     if (resolved == null || resolved.url.isEmpty) return;
 
@@ -145,7 +150,9 @@ class OnlinePrecache {
             const Duration(seconds: 10),
             onTimeout: () => const [],
           );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('player', '歌词预取失败: $e');
+    }
 
     final cover = item.coverUrl;
     if (cover != null && cover.isNotEmpty && !cover.startsWith('file:')) {

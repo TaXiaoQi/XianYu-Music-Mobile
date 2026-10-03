@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
@@ -253,10 +254,14 @@ class PlayerWidgetController {
     });
     try {
       await _channel.invokeMethod('setState', {'json': json});
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '小组件状态推送失败: $e');
+    }
     try {
       await _channel.invokeMethod('update');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '小组件刷新失败: $e');
+    }
   }
 }
 

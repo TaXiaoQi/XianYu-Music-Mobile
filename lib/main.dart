@@ -117,7 +117,7 @@ void _installErrorReporting(ProviderContainer container) {
     final stack = details.stack?.toString() ?? '';
     AppLogger.instance
         .log('fatal', '未捕获异常: $msg\n$stack');
-    AppLog.error('fatal', '$msg\n$stack');
+    AppLog.fatal('flutter', '$msg\n$stack');
     FlutterError.presentError(details);
     try {
       container.read(accountApiProvider).reportError(
@@ -126,7 +126,8 @@ void _installErrorReporting(ProviderContainer container) {
             errorStack: stack,
             page: 'global',
           );
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('startup', '错误上报失败: $e');
     }
   };
   PlatformDispatcher.instance.onError = (error, stack) {
@@ -135,7 +136,7 @@ void _installErrorReporting(ProviderContainer container) {
     scheduleMicrotask(() => reportingError = false);
     AppLogger.instance
         .log('fatal', '平台异常: $error\n$stack');
-    AppLog.error('platform', '$error\n$stack');
+    AppLog.fatal('platform', '$error\n$stack');
     try {
       container.read(accountApiProvider).reportError(
             errorType: 'platform',
@@ -143,7 +144,9 @@ void _installErrorReporting(ProviderContainer container) {
             errorStack: stack.toString(),
             page: 'global',
           );
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('startup', '错误上报失败: $e');
+    }
     return true;
   };
 }

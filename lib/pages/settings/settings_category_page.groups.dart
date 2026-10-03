@@ -161,7 +161,8 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
         _currentBytes = c.toInt();
         _maxBytes = m.toInt();
       });
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('settings', '读取播放缓存大小失败: $e');
     }
   }
 

@@ -1,7 +1,13 @@
 part of 'shell.dart';
 
 mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
-  ProviderContainer? _container;
+  /// 缓存 StateController 而非 ProviderContainer：本页可能被每页壁纸的
+  /// 嵌套 ProviderScope 包住（RoutePageBackdrop/PageWallpaperScope），pop
+  /// 后该子 container 已销毁，dispose 的 postFrame 若再经 container.read
+  /// 会抛 "ProviderContainer already disposed" 且丢失减量——计数泄漏后
+  /// chrome 永久隐藏。未 override 的全局 provider 状态挂在根 container
+  /// 上，缓存 notifier 跨卸载读取始终安全且指向同一份计数。
+  StateController<int>? _navBarHidden;
 
   bool _counted = false;
 
@@ -13,23 +19,23 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !hidesChrome) return;
       if (EmbeddedShellScope.of(context)) return;
-      _container = ProviderScope.containerOf(context, listen: false);
+      _navBarHidden = ProviderScope.containerOf(context, listen: false)
+          .read(navBarHiddenProvider.notifier);
       _counted = true;
       AppLogger.instance.log('shell', '进入二级页面 ${widget.runtimeType}');
-      _container!.read(navBarHiddenProvider.notifier).state++;
+      _navBarHidden!.state++;
     });
   }
 
   @override
   void dispose() {
     if (_counted) {
-      final container = _container;
+      final controller = _navBarHidden;
       _counted = false;
       AppLogger.instance.log('shell', '离开二级页面 ${widget.runtimeType}');
-      if (container != null) {
+      if (controller != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          final notifier = container.read(navBarHiddenProvider.notifier);
-          if (notifier.state > 0) notifier.state--;
+          if (controller.state > 0) controller.state--;
         });
       }
     }
@@ -43,7 +49,11 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 /// 转场期间不生效（条不受切换动画影响，落定后才淡出/淡入）
 
 mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
-  ProviderContainer? _miniBarContainer;
+  /// 缓存 StateController 而非 ProviderContainer，原因同 HidesShellChrome：
+  /// 嵌套 ProviderScope 包住的页面 pop 后子 container 已销毁，dispose 的
+  /// postFrame 经 container.read 会抛 fatal 且丢失减量，miniBarHiddenProvider
+  /// 计数泄漏 >0 → 全局 mini 播放条被永久隐藏（重启前不再恢复）
+  StateController<int>? _miniBarHidden;
 
   bool _miniBarCounted = false;
 
@@ -58,9 +68,10 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (EmbeddedShellScope.of(context)) return;
-      _miniBarContainer = ProviderScope.containerOf(context, listen: false);
+      _miniBarHidden = ProviderScope.containerOf(context, listen: false)
+          .read(miniBarHiddenProvider.notifier);
       _miniBarCounted = true;
-      _miniBarContainer!.read(miniBarHiddenProvider.notifier).state++;
+      _miniBarHidden!.state++;
       if (hideMiniBarWhenCovered) return;
       // 监听被覆盖状态：覆盖层落定（secondaryAnimation completed）释放
       // 计数让播放条回归，覆盖层 pop 回来（dismissed）后重新压住
@@ -79,7 +90,7 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     } else if (status == AnimationStatus.dismissed) {
       // 覆盖层离开、本页重新可见：重新压住
       if (_miniBarCounted || !mounted) return;
-      _miniBarContainer?.read(miniBarHiddenProvider.notifier).state++;
+      _miniBarHidden?.state++;
       _miniBarCounted = true;
     }
     // forward/reverse 为转场途中，保持前一状态不动
@@ -88,22 +99,18 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   void _releaseCount() {
     if (!_miniBarCounted) return;
     _miniBarCounted = false;
-    final container = _miniBarContainer;
-    if (container != null) {
-      final notifier = container.read(miniBarHiddenProvider.notifier);
-      if (notifier.state > 0) notifier.state--;
-    }
+    final controller = _miniBarHidden;
+    if (controller != null && controller.state > 0) controller.state--;
   }
 
   @override
   void dispose() {
     if (_miniBarCounted) {
-      final container = _miniBarContainer;
+      final controller = _miniBarHidden;
       _miniBarCounted = false;
-      if (container != null) {
+      if (controller != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          final notifier = container.read(miniBarHiddenProvider.notifier);
-          if (notifier.state > 0) notifier.state--;
+          if (controller.state > 0) controller.state--;
         });
       }
     }

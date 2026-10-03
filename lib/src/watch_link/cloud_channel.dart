@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../core/application_logger.dart';
+
 class CloudLinkEvent {
   const CloudLinkEvent._(this.kind, {this.peerName = ''});
 
@@ -90,7 +92,7 @@ class WatchCloudChannel {
         default:
           break;
       }
-    } catch (_) {}
+    } catch (_) { /* 解析失败按默认值处理 */ }
   }
 
   Future<void> send(Uint8List bytes) async {
@@ -98,7 +100,9 @@ class WatchCloudChannel {
     if (ws == null || _closed) return;
     try {
       ws.add(bytes);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('watch', '云端通道发送失败: $e');
+    }
   }
 
   Future<void> close() async {
@@ -109,6 +113,8 @@ class WatchCloudChannel {
     _ws = null;
     try {
       await ws?.close();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('watch', '关闭云端通道失败: $e');
+    }
   }
 }

@@ -25,7 +25,9 @@ extension _ShellScaffoldLandscape on _ShellScaffoldState {
           const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
         );
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('ui', '设置横屏沉浸式系统栏失败: $e');
+    }
   }
 
   Widget _landscapeFadePanel({

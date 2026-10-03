@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
 import 'plugin_models.dart';
 
 class PluginStore {
@@ -60,7 +61,8 @@ class PluginStore {
     if (file.existsSync()) {
       try {
         await file.delete();
-      } catch (_) {
+      } catch (e) {
+        AppLog.warn('plugin', '删除插件脚本失败($pluginId): $e');
       }
     }
   }
@@ -70,7 +72,8 @@ class PluginStore {
     if (dir.existsSync()) {
       try {
         await dir.delete(recursive: true);
-      } catch (_) {
+      } catch (e) {
+        AppLog.warn('plugin', '清空插件脚本目录失败: $e');
       }
     }
     await saveSources(const []);

@@ -144,7 +144,9 @@ class AudioProxyServer {
       probeLog('onRequest error path=${req.uri.path} err=$e');
       try {
         await req.response.close();
-      } catch (_) {}
+      } catch (err) {
+        AppLog.debug('proxy', '响应关闭失败: $err');
+      }
     }
   }
 
@@ -335,7 +337,9 @@ class AudioProxyServer {
         'dl=${stEnd?.downloaded} firstMs=${readTimer.elapsedMilliseconds}ms');
     try {
       await res.close();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('proxy', '响应关闭失败: $e');
+    }
     return true;
   }
 
@@ -343,7 +347,9 @@ class AudioProxyServer {
     try {
       req.response.statusCode = status;
       await req.response.close();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('proxy', '错误响应发送失败: $e');
+    }
   }
 
   Future<void> _serveWithHead(
@@ -399,7 +405,9 @@ class AudioProxyServer {
         unawaited(res.done.whenComplete(() {
           try {
             ureq.abort();
-          } catch (_) {}
+          } catch (e) {
+            AppLog.debug('proxy', '中断上游请求失败: $e');
+          }
         }));
         final upstreamFullBody = uresp.statusCode != HttpStatus.partialContent;
         var skip = 0;
@@ -442,7 +450,9 @@ class AudioProxyServer {
 
     try {
       await res.close();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('proxy', '响应关闭失败: $e');
+    }
   }
 
   Future<void> _passthrough(
@@ -480,7 +490,9 @@ class AudioProxyServer {
       unawaited(res.done.whenComplete(() {
         try {
           ureq?.abort();
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('proxy', '中断上游请求失败: $e');
+        }
       }));
       try {
         await for (final chunk
@@ -500,13 +512,17 @@ class AudioProxyServer {
           'served=${served}B stalled=$stalled t=${sw.elapsedMilliseconds}ms');
       try {
         await res.close();
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('proxy', '响应关闭失败: $e');
+      }
     } catch (e) {
       probeLog('passthrough upstream-error err=$e');
       try {
         req.response.statusCode = HttpStatus.badGateway;
         await req.response.close();
-      } catch (_) {}
+      } catch (err) {
+        AppLog.debug('proxy', '回写 502 失败: $err');
+      }
     } finally {
       client.close(force: true);
     }
@@ -528,7 +544,7 @@ class AudioProxyServer {
       }
       try {
         ureq.headers.set(name, value);
-      } catch (_) {}
+      } catch (_) { /* 请求头含非法字符，跳过 */ }
     });
   }
 
@@ -541,7 +557,7 @@ class AudioProxyServer {
     if (v == null || v.isEmpty) return;
     try {
       to.headers.set(name, v);
-    } catch (_) {}
+    } catch (_) { /* 响应头含非法字符，跳过 */ }
   }
 
   _ByteRange? _parseRange(String? raw) {

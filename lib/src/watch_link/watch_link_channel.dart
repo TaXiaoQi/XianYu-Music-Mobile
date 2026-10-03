@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../core/application_logger.dart';
+
 class WatchLinkConnection {
   const WatchLinkConnection({required this.connected, required this.name});
 
@@ -70,31 +72,41 @@ class WatchLinkChannel {
   Future<void> connect(String address) async {
     try {
       await _ch.invokeMethod('connect', {'address': address});
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('watch', '连接手表失败: $e');
+    }
   }
 
   Future<void> start() async {
     try {
       await _ch.invokeMethod('start');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('watch', '启动手表服务失败: $e');
+    }
   }
 
   Future<void> stop() async {
     try {
       await _ch.invokeMethod('stop');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('watch', '停止手表服务失败: $e');
+    }
   }
 
   Future<void> disconnect() async {
     try {
       await _ch.invokeMethod('disconnect');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('watch', '断开手表连接失败: $e');
+    }
   }
 
   Future<void> send(Uint8List bytes) async {
     try {
       await _ch.invokeMethod('send', {'bytes': bytes});
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('watch', '发送数据到手表失败: $e');
+    }
   }
 
   Future<bool> hasPermission() async {
@@ -108,7 +120,9 @@ class WatchLinkChannel {
   Future<void> requestPermission() async {
     try {
       await _ch.invokeMethod('requestPermission');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('watch', '请求手表权限失败: $e');
+    }
   }
 
   // ---- Wear Engine ----
@@ -124,7 +138,9 @@ class WatchLinkChannel {
   Future<void> installHealth() async {
     try {
       await _ch.invokeMethod('wearInstallHealth');
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('watch', '安装手表健康服务失败: $e');
+    }
   }
 
   Future<WearAuthResult> wearAuthorize() async {

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../core/application_logger.dart';
 import '../player/player_provider.dart';
 import 'plugin_catalog.dart';
 import 'plugin_engine.dart';
@@ -23,7 +24,8 @@ class PluginSearchService {
         try {
           final items = await catalog.searchMusic(source, keyword, limit: limit);
           if (items.isNotEmpty) results.add((source, items));
-        } catch (_) {
+        } catch (e) {
+          AppLog.debug('plugin', '插件搜索失败(${source.name}): $e');
         }
         continue;
       }
@@ -36,7 +38,8 @@ class PluginSearchService {
           final items =
               await engine.searchInPlugin(source, key, keyword, limit: limit);
           merged.addAll(items);
-        } catch (_) {
+        } catch (e) {
+          AppLog.debug('plugin', '插件搜索失败(${source.name}/$key): $e');
         }
       }
       if (merged.isNotEmpty) {

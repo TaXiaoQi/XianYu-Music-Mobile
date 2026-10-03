@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/library/library_provider.dart';

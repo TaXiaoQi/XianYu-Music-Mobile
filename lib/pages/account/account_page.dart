@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/sync/sync_provider.dart' show syncProvider;

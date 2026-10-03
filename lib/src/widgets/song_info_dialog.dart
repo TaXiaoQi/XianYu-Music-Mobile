@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
@@ -79,7 +80,9 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       _discCtrl.text = (j['discNumber'] as String?) ?? '';
       _yearCtrl.text = (j['year'] as String?) ?? '';
       if (mounted) setState(() => _detail = j);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('ui', '读取歌曲详情失败: $e');
+    }
   }
 
   @override
@@ -299,7 +302,9 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
             quality = '$kbps kbps';
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('ui', '读取文件大小/音质信息失败: $e');
+      }
       final ext = item.path.split('.').last.toLowerCase();
       if (ext.isNotEmpty && ext.length <= 5) {
         sourceText = tr('本地音乐 · {ext}', {'ext': ext.toUpperCase()});

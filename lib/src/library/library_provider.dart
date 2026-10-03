@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
@@ -321,8 +322,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         loading: false,
         error: null,
       );
-    } catch (_) {
-    }
+    } catch (e) { AppLog.warn('library', '从数据库重载歌曲失败: $e'); }
   }
 
   Future<int> scanAllFolders() async {
@@ -432,8 +432,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               cacheRoot: cacheRoot,
               path: path,
               fd: fd,
-            );
-          } catch (_) {}
+          );
+          } catch (e) { AppLog.debug('library', '提取歌曲封面失败: $e'); }
         } else {
           final localCopy = await SafChannel.copyTreeDocToInternal(
               treeUri, f.docId, scanDir);
@@ -455,12 +455,12 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
                   sourceKey: path,
                   realPath: localCopy,
                 );
-              } catch (_) {}
-            } catch (_) {} finally {
+              } catch (e) { AppLog.debug('library', '提取歌曲封面(本地副本)失败: $e'); }
+            } catch (e) { AppLog.debug('library', '解析本地副本音频失败: $e'); } finally {
               try {
                 final file = File(localCopy);
                 if (file.existsSync()) file.deleteSync();
-              } catch (_) {}
+              } catch (e) { AppLog.debug('library', '删除临时副本失败: $e'); }
             }
           }
         }

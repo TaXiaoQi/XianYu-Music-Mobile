@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../core/app_logger.dart';
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
@@ -284,7 +285,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
       try {
         final j = jsonDecode(uploadJsonStr) as Map<String, dynamic>;
         state = state.copyWith(uploadConfig: UploadConfig.fromJson(j));
-      } catch (_) {}
+      } catch (_) { /* 解析失败按默认值处理 */ }
     }
 
     final autoEnabled = prefs.getBool('${_autoSyncKey}_enabled') ?? true;
@@ -305,7 +306,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_loginSyncKey, false);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('sync', '重置登录同步标记失败: $e');
+    }
   }
 
   Future<void> updateUploadConfig(UploadConfig next) async {
@@ -345,7 +348,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool(_loginSyncKey, true);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.warn('sync', '记录登录同步标记失败: $e');
+      }
       _loginSyncInProgress = false;
     }
   }

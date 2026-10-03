@@ -378,6 +378,7 @@ String? _decodeLxCoverResult(String raw) {
     final v = jsonDecode(raw);
     if (v is String && v.isNotEmpty) return v;
   } catch (_) {
+    /* 解析失败按默认值处理 */
   }
   if (raw.startsWith('http')) return raw;
   return null;

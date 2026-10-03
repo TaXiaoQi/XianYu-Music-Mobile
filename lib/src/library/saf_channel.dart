@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
+import '../core/application_logger.dart';
 import '../rust/api.dart';
 
 class SafAudioFile {
@@ -161,7 +162,7 @@ class SafChannel {
       for (final e in dir.listSync()) {
         if (e is File) e.deleteSync();
       }
-    } catch (_) {}
+    } catch (e) { AppLog.debug('library', '清理扫描临时文件失败: $e'); }
   }
 
   static Future<String> ensureLocalPlaybackCopy(
@@ -189,7 +190,7 @@ class SafChannel {
         for (final e in dir.listSync()) {
           if (e is File) e.deleteSync();
         }
-      } catch (_) {}
+      } catch (e) { AppLog.debug('library', '清理播放缓存失败: $e'); }
     }
     final copied = await copyTreeDocToInternal(treeUri, docId, dir.path);
     if (copied.isEmpty) return songPath;
@@ -202,7 +203,7 @@ class SafChannel {
         try {
           final f = File(oldest);
           if (f.existsSync()) f.deleteSync();
-        } catch (_) {}
+        } catch (e) { AppLog.debug('library', '删除旧播放副本失败: $e'); }
       }
     }
     return copied;

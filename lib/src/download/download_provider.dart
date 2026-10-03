@@ -202,7 +202,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
     try {
       final d = await getDownloadsDirectory();
       if (d != null) return d.path;
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('download', '获取系统下载目录失败: $e');
+    }
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(docs.path, 'Downloads'));
     if (!dir.existsSync()) dir.createSync(recursive: true);
@@ -311,7 +313,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
     for (final h in matched) {
       try {
         if (await File(h.filePath).exists()) return true;
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('download', '检查下载文件失败: $e');
+      }
     }
     return false;
   }
@@ -329,7 +333,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
       try {
         final f = File(h.filePath);
         if (await f.exists() && await f.length() > 0) return h.filePath;
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('download', '检查下载文件失败: $e');
+      }
     }
     return null;
   }
@@ -370,7 +376,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
       try {
         final f = File(h.filePath);
         if (await f.exists() && await f.length() > 0) return h.filePath;
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('download', '检查下载文件失败: $e');
+      }
     }
     return null;
   }
@@ -600,7 +608,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
       for (final f in [File(tempPath), tempLyrics, File('$baseNoExt.cover')]) {
         try {
           if (await f.exists()) await f.delete();
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('download', '清理临时文件失败: $e');
+        }
       }
       return finalPath;
     } catch (_) {
@@ -700,7 +710,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
         'embedCover': embedCover,
       });
       await finalizeDownloadExtras(requestJson: request);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('download', '下载收尾（歌词/封面/元数据）失败: $e');
     }
   }
 
@@ -910,7 +921,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
               await _deleteDownloadedFile('$base.cover');
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('download', '清理已下载文件失败: $e');
+        }
       }
     }
     final dataDir = await _ref.read(appDataDirProvider.future);
@@ -922,7 +935,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
     try {
       final f = File(path);
       if (f.existsSync()) f.deleteSync();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('download', '删除下载文件失败: $e');
+    }
     if (await File(path).exists()) {
       await MediaStoreWriter.deleteMedia(path);
     }

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:record/record.dart';
 
 import '../rust/api.dart' as frb;
+import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 
 class RecognizeMatch {
@@ -73,7 +74,8 @@ class RecognizeService {
 
     try {
       await completer.future.timeout(const Duration(seconds: maxSeconds + 2));
-    } on TimeoutException catch (_) {
+    } on TimeoutException catch (e) {
+      AppLog.debug('recognize', '录音等待超时兜底: $e');
     } finally {
       _timer?.cancel();
       _timer = null;
@@ -106,11 +108,13 @@ class RecognizeService {
     _sub = null;
     try {
       await _recorder.stop();
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('recognize', '停止录音失败: $e');
     }
     try {
       await frb.cancelRecognizeSystemAudio();
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('recognize', '取消系统音频识别失败: $e');
     }
   }
 

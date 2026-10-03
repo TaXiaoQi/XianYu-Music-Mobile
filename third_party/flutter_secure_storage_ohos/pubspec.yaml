@@ -1,0 +1,15 @@
+name: flutter_secure_storage_ohos
+description: >-
+  OpenHarmony 原生实现（vendored）。仅保留 ohos 原生 ArkTS 插件与平台声明，
+  不含 Dart 层——官方 flutter_secure_storage 主包经同名 MethodChannel 直连。
+version: 1.0.0+xy.1
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+  flutter: ">=3.0.0"
+
+flutter:
+  plugin:
+    platforms:
+      ohos:
+        package: com.example.flutter_secure_storage_ohos
+        pluginClass: FlutterSecureStorageOhosPlugin

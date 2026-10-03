@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
@@ -85,7 +86,9 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         final m = RegExp(r'(/storage/emulated/\d+)').firstMatch(ext.path);
         if (m != null) fallbackDir = '${m.group(1)}/Music';
       }
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('audio', '获取外部存储目录失败，回退临时目录: $e');
+    }
     fallbackDir ??= tmpDir.path;
 
     final items = <_Item>[];

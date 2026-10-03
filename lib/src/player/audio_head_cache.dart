@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../core/application_logger.dart';
 import 'media_url.dart';
 
 class AudioHeadEntry {
@@ -143,7 +144,9 @@ class AudioHeadCache {
         }
         try {
           req.headers.set(name, value);
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('player', '预取请求头设置失败: $e');
+        }
       });
       final resp = await req.close().timeout(const Duration(seconds: 20));
 

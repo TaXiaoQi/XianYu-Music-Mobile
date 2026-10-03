@@ -593,7 +593,9 @@ class PluginEngine {
               await _callGetMediaSourceWithRetry(source.id, musicItem, q);
           final url = extractMfPlayableUrl(response, requestedKey: q);
           if (url != null) return url;
-        } catch (_) {
+        } catch (e) {
+          AppLog.debug('plugin',
+              '[getMusicFreeUrl] ${source.name} 备选音质 $q 失败: $e');
         }
       }
     }
@@ -931,7 +933,8 @@ class PluginEngine {
     _aliases.removeWhere((k, v) => k == pluginId || v == id);
     try {
       await frb.pluginEngineDestroy(dataDir: dataDir, pluginId: id);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('plugin', '销毁插件实例失败($id): $e');
     }
   }
 
@@ -941,7 +944,8 @@ class PluginEngine {
     _aliases.clear();
     try {
       await frb.pluginEngineDestroyAll(dataDir: dataDir);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('plugin', '批量销毁插件实例失败: $e');
     }
   }
 

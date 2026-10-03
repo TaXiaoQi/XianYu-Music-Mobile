@@ -1,4 +1,4 @@
-﻿part of 'player_provider.dart';
+part of 'player_provider.dart';
 
 extension PlayerNotifierQuality on PlayerNotifier {
   Future<void> _prewarmOnlineSizes(QueueItem item) async {
@@ -83,7 +83,9 @@ extension PlayerNotifierQuality on PlayerNotifier {
               if (norm != null) out.add(norm);
             }
           }
-        } catch (_) {}
+        } catch (_) {
+          // 读取失败按默认值处理
+        }
       }
       if (out.isEmpty) {
         out.addAll(const {'128k', '320k', 'flac'});
@@ -202,7 +204,9 @@ extension PlayerNotifierQuality on PlayerNotifier {
       resolved = await probe
           .probe(quality)
           .timeout(const Duration(seconds: 20), onTimeout: () => null);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('player', '音质预热失败: $e');
+    }
     final res = resolved;
     if (res == null || res.url.isEmpty || res.ekey != null || res.cek != null) {
       return;
@@ -220,7 +224,9 @@ extension PlayerNotifierQuality on PlayerNotifier {
       await AudioProxyServer.instance.ensureStarted();
       unawaited(streamCacheBeginUrlDownload(
           url: clean, headers: jsonEncode(h)));
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('player', '流缓存预热失败: $e');
+    }
   }
 
   Future<List<String>> qualityOptions() =>
@@ -280,7 +286,8 @@ extension PlayerNotifierQuality on PlayerNotifier {
               out[q] = QualitySizeInfo(url: entry.url, bytes: size.toInt());
               continue;
             }
-          } catch (_) {
+          } catch (e) {
+            AppLog.debug('player', '音质体积探测失败: $e');
           }
         }
         final meta = metaSizes[q];
@@ -421,7 +428,8 @@ extension PlayerNotifierQuality on PlayerNotifier {
             if (res != null && res.url.isNotEmpty) {
               probe.trustDeclared(grp);
             }
-          } catch (_) {
+          } catch (e) {
+            AppLog.debug('player', '音质探测失败: $e');
           }
         }));
       } else {

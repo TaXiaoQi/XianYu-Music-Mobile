@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/theme/theme_icon.dart';
 import '../../src/theme/theme_tint.dart';
@@ -286,9 +287,9 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
               );
             }
           }
-        } catch (_) {}
+        } catch (e) { AppLog.debug('recognize', 'kg 取链失败: $e'); }
       }
-    } catch (_) {}
+    } catch (e) { AppLog.warn('recognize', 'kg 兜底匹配失败: $e'); }
     return null;
   }
 
@@ -330,7 +331,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
           );
           if (item != null) return item;
         }
-      } catch (_) {
+      } catch (e) {
+        AppLog.warn('recognize', '在线匹配失败(${src.id}): $e');
       }
     }
     return null;
@@ -368,7 +370,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
             return _queueItemFromTrack(track, songJson, sourceKey);
           }
         }
-      } catch (_) {
+      } catch (e) {
+        AppLog.debug('recognize', '在线取链失败($sourceKey): $e');
       }
     }
     return null;

@@ -1,4 +1,4 @@
-﻿part of 'watch_link_provider.dart';
+part of 'watch_link_provider.dart';
 
 extension WatchLinkControllerTransport on WatchLinkController {
   void _send(LinkMessage msg, {bool cloud = false, bool low = false}) {
@@ -9,7 +9,8 @@ extension WatchLinkControllerTransport on WatchLinkController {
         q.add((frame, useCloud));
       }
       _drainTx();
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('watch', '发送手表消息失败: $e');
     }
   }
 

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/saf_channel.dart';
@@ -428,7 +429,8 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
               ),
             );
           }
-        } catch (_) {
+        } catch (e) {
+          AppLog.debug('playlist', '解析音频失败，跳过 ${f.name}: $e');
         } finally {
           await SafChannel.closeFd(fd);
         }

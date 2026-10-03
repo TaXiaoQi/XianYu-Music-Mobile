@@ -1,4 +1,4 @@
-﻿part of 'player_provider.dart';
+part of 'player_provider.dart';
 
 extension PlayerNotifierQueue on PlayerNotifier {
   Future<void> playQueue(List<QueueItem> items,
@@ -51,7 +51,9 @@ extension PlayerNotifierQueue on PlayerNotifier {
     if (_activeProbeKey != null) {
       try {
         onlineQualityProbeRegistry.invalidate(_activeProbeKey!);
-      } catch (_) {}
+      } catch (e) {
+        AppLog.debug('player', '探测任务清理失败: $e');
+      }
       _activeProbeKey = null;
     }
     _skipDepth = 0;
@@ -59,7 +61,9 @@ extension PlayerNotifierQueue on PlayerNotifier {
     await _stopExclusive();
     try {
       await _player.stop();
-    } catch (_) {}
+    } catch (e) {
+      AppLog.warn('player', '播放器停止失败: $e');
+    }
     state = const PlaybackState();
     await _persistSession();
   }

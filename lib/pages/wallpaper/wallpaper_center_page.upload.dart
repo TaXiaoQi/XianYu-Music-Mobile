@@ -194,7 +194,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
     if (mounted) setState(() {});
     try {
       await old.dispose();
-    } catch (_) {}
+    } catch (e) { AppLog.debug('wallpaper', '释放视频控制器失败: $e'); }
   }
 
   Future<void> _setupUploadVideo(String path, {XFile? still}) async {
@@ -217,13 +217,13 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
       }
       try {
         await c.dispose();
-      } catch (_) {}
+      } catch (e) { AppLog.debug('wallpaper', '释放视频控制器失败: $e'); }
       return;
     }
     if (!mounted) {
       try {
         await c.dispose();
-      } catch (_) {}
+      } catch (e) { AppLog.debug('wallpaper', '释放视频控制器失败: $e'); }
       return;
     }
     setState(() {
@@ -262,7 +262,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
         _videoPath = null;
         _error = null;
       });
-    } catch (_) {}
+    } catch (e) { AppLog.warn('wallpaper', '选择图片失败: $e'); }
   }
 
   Future<void> _pickVideo() async {
@@ -270,7 +270,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
       final picked = await ImagePicker().pickVideo(source: ImageSource.gallery);
       if (picked == null || !mounted) return;
       await _setupUploadVideo(picked.path);
-    } catch (_) {}
+    } catch (e) { AppLog.warn('wallpaper', '选择视频失败: $e'); }
   }
 
   /// 从预览 RepaintBoundary 抓当前视频帧作为封面

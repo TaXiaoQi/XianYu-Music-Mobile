@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../library/saf_channel.dart';
 import '../online/cover_proxy.dart';
@@ -188,7 +189,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       if (p.isEmpty) return;
       _cache[widget.songPath] = p;
       if (mounted && File(p).existsSync()) setState(() => _thumbPath = p);
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('ui', '读取封面缩略图缓存失败: $e');
+    }
   }
 
   void _setPath(String? p) {
@@ -343,7 +346,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       final p = await getSongCover(
           dbPath: dbPath, cacheRoot: cacheRoot, path: songPath);
       if (p.isNotEmpty) _cache[fullKey] = p;
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('ui', '预取封面失败: $e');
+    }
   }
 
   static Future<void> _warmNetworkImage(String url) async {
@@ -361,7 +366,8 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     stream.addListener(listener);
     try {
       await c.future.timeout(const Duration(seconds: 15));
-    } catch (_) {
+    } catch (e) {
+      AppLog.debug('ui', '网络封面预热超时或失败: $e');
     } finally {
       stream.removeListener(listener);
     }
@@ -374,7 +380,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
       final p = await getSongCoverThumbnail(
           dbPath: dbPath, cacheRoot: cacheRoot, path: songPath);
       if (p.isNotEmpty) _cache[songPath] = p;
-    } catch (_) {}
+    } catch (e) {
+      AppLog.debug('ui', '预取缩略图失败: $e');
+    }
   }
 
   Widget _placeholder() {

@@ -113,6 +113,7 @@ class PlaylistSyncService {
                 final decoded = jsonDecode(entry.value);
                 if (decoded is Map<String, dynamic>) payloadSongs.add(decoded);
               } catch (_) {
+                // 解析失败按默认值处理
               }
             }
           }

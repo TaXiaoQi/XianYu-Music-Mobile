@@ -220,12 +220,12 @@ class LyricsRepository {
         if (musicInfo is Map<String, dynamic>) songInfo = musicInfo;
         final pid = parsed['pluginId'] as String?;
         if (pid != null && pid.isNotEmpty) pluginId = pid;
-      } catch (_) {}
+      } catch (_) { /* 解析失败按默认值处理 */ }
     }
     if (songInfo == null && item.onlineInfoJson != null) {
       try {
         songInfo = jsonDecode(item.onlineInfoJson!) as Map<String, dynamic>;
-      } catch (_) {}
+      } catch (_) { /* 解析失败按默认值处理 */ }
     }
     if (songInfo == null || songInfo.isEmpty) {
       AppLog.warn('lyric', '原生歌词兜底: 无 songInfo');
@@ -252,7 +252,9 @@ class LyricsRepository {
             ].firstWhere((e) => (e ?? '').trim().isNotEmpty, orElse: () => null);
             mapped = lxSourceKeyForPlatform(label ?? '');
           }
-        } catch (_) {}
+        } catch (e) {
+          AppLog.debug('lyric', '读取插件源信息失败: $e');
+        }
       }
       sourceKey = mapped;
       if (!_nativeLyricSources.contains(sourceKey)) {

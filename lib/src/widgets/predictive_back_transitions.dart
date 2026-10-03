@@ -12,6 +12,95 @@ import '../navigation/routes.dart'
 
 const bool kFrameworkPredictiveCompare = false;
 
+/// 预测返回手势的可用屏宽（逻辑像素）：合成进度按首触点到当前触点的
+/// 横向位移占屏宽比例计算。
+double predictiveBackScreenWidth() {
+  final view = WidgetsBinding.instance.platformDispatcher.implicitView;
+  final size = view?.physicalSize;
+  if (view == null || size == null || size.isEmpty) return 360;
+  return size.width / view.devicePixelRatio;
+}
+
+/// 系统手势进度合成器（ROM 门控兜底）。
+///
+/// 部分系统认领预测返回后逐帧 progress 恒 0（引擎送达值恒 0，见
+/// MainActivity.registerBackGestureObserver 注释），页面全程不动、松手
+/// 直接跳 commit/cancel。用触点位移合成进度驱动动画：
+///  · 连续 2 帧零进度且位移 >24px 才接管——真系统从第 1 帧就吐真进度，
+///    永不进入合成，行为不变；
+///  · 接管瞬间以当帧位移为进度原点：页面从静止连续起步，消除「前几帧
+///    不动、接管帧瞬跳到已滑距离」的开始端抽搐；
+///  · 系统 micro 噪声（孤立 1~2 帧 p>0.02，实测在 commit 前吐 0.05/0.117）
+///    不交还：单帧毛刺就关闭合成会让页面在合成进度与系统微值之间来回
+///    瞬跳（中途回跳抽搐），连续 3 帧有效进度才认定系统真正接管。
+class BackGestureProgressSynth {
+  Offset? firstTouch;
+
+  int updateCount = 0;
+
+  int zeroStreak = 0;
+
+  int sysStreak = 0;
+
+  bool synth = false;
+
+  bool engagedThisFrame = false;
+
+  double lastProgress = 0;
+
+  double _signedAtEngage = 0;
+
+  void reset() {
+    firstTouch = null;
+    updateCount = 0;
+    zeroStreak = 0;
+    sysStreak = 0;
+    synth = false;
+    engagedThisFrame = false;
+    lastProgress = 0;
+    _signedAtEngage = 0;
+  }
+
+  double _signedDelta(PredictiveBackEvent backEvent) {
+    final touch = backEvent.touchOffset;
+    if (touch == null || firstTouch == null) return 0;
+    final dx = touch.dx - firstTouch!.dx;
+    return backEvent.swipeEdge == SwipeEdge.right ? -dx : dx;
+  }
+
+  /// 消费一帧系统事件，返回该帧应使用的有效进度（0~1）。
+  double progressOf(PredictiveBackEvent backEvent) {
+    final touch = backEvent.touchOffset;
+    firstTouch ??= touch;
+    updateCount++;
+    engagedThisFrame = false;
+    final p = backEvent.progress;
+    lastProgress = p;
+    if (p <= 0.001) {
+      zeroStreak++;
+      sysStreak = 0;
+    } else {
+      zeroStreak = 0;
+      sysStreak = p > 0.02 ? sysStreak + 1 : 0;
+      if (sysStreak >= 3) synth = false;
+    }
+    final displaced = firstTouch != null && touch != null &&
+        (touch - firstTouch!).distance > 24;
+    if (!synth && p <= 0.001 && zeroStreak >= 2 && displaced) {
+      synth = true;
+      engagedThisFrame = true;
+      _signedAtEngage = _signedDelta(backEvent);
+    }
+    double effective = p;
+    if (synth) {
+      final s = (_signedDelta(backEvent) - _signedAtEngage) /
+          predictiveBackScreenWidth();
+      if (s > p) effective = clampDouble(s, 0.0, 1.0);
+    }
+    return effective;
+  }
+}
+
 class PredictiveBackGestureDetector extends StatefulWidget {
   const PredictiveBackGestureDetector({super.key, required this.route, required this.builder});
 
@@ -51,22 +140,7 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   bool _owned = false;
 
-  int _updateCount = 0;
-
-  Offset? _firstTouch;
-
-  int _zeroStreak = 0;
-
-  bool _synth = false;
-
-  double _lastProgress = 0;
-
-  double get _screenWidth {
-    final view = WidgetsBinding.instance.platformDispatcher.implicitView;
-    final size = view?.physicalSize;
-    if (view == null || size == null || size.isEmpty) return 360;
-    return size.width / view.devicePixelRatio;
-  }
+  final BackGestureProgressSynth _synth = BackGestureProgressSynth();
 
   PredictiveBackEvent? get startBackEvent => _startBackEvent;
   PredictiveBackEvent? _startBackEvent;
@@ -100,11 +174,7 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
     }
     AppLog.debug('backgesture', 'claim $_routeName progress=${backEvent.progress.toStringAsFixed(3)}');
     _owned = true;
-    _updateCount = 0;
-    _firstTouch = backEvent.touchOffset;
-    _zeroStreak = 0;
-    _synth = false;
-    _lastProgress = 0;
+    _synth.reset();
     phase = PredictiveBackPhase.start;
 
     widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
@@ -115,36 +185,9 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   @override
   void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
     if (!_owned) return;
-    final touch = backEvent.touchOffset;
-    _firstTouch ??= touch;
-    _updateCount++;
-    final p = backEvent.progress;
-    _lastProgress = p;
-    if (p <= 0.001) {
-      _zeroStreak++;
-    } else {
-      _zeroStreak = 0;
-      // 系统 progress 有噪声（0→微值→0 抖动）。单帧微值就关 synth 会让页面在
-      // touch 合成进度与系统微进度之间逐帧横跳（抽搐），只在系统真正接管时交还。
-      if (p > 0.02) _synth = false;
-    }
-    if (_updateCount == 1) {
-      AppLog.debug('backgesture',
-          'update $_routeName #$_updateCount progress=${p.toStringAsFixed(3)} '
-          'edge=${backEvent.swipeEdge} '
-          'touch=${touch == null ? 'null' : '${touch.dx.toStringAsFixed(0)},${touch.dy.toStringAsFixed(0)}'}');
-    }
-    final displaced = _firstTouch != null && touch != null &&
-        (touch - _firstTouch!).distance > 24;
-    if (!_synth && p <= 0.001 && _zeroStreak >= 2 && displaced) {
-      _synth = true;
+    final effective = _synth.progressOf(backEvent);
+    if (_synth.engagedThisFrame) {
       AppLog.debug('backgesture', 'synth engage $_routeName');
-    }
-    double effective = p;
-    if (_synth && touch != null && _firstTouch != null) {
-      final dx = touch.dx - _firstTouch!.dx;
-      final signed = backEvent.swipeEdge == SwipeEdge.right ? -dx : dx;
-      effective = signed / _screenWidth > p ? clampDouble(signed / _screenWidth, 0.0, 1.0) : p;
     }
     phase = PredictiveBackPhase.update;
 
@@ -157,9 +200,13 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
     if (!_owned) return;
     _owned = false;
     AppLog.debug('backgesture',
-        'cancel $_routeName updates=$_updateCount '
-        'last=${_lastProgress.toStringAsFixed(3)} synth=$_synth');
-    phase = PredictiveBackPhase.idle;
+        'cancel $_routeName updates=${_synth.updateCount} '
+        'last=${_synth.lastProgress.toStringAsFixed(3)} synth=${_synth.synth}');
+    // 相位不直接归 idle：cancel 后控制器回弹期间维持手势分支渲染，页面
+    // 沿当前动画平滑复位（缩放/位移随控制器一起回去）；回弹收尾再归
+    // idle 切回基线分支，否则缩放/贴边状态会在 cancel 瞬间跳回原位
+    phase = PredictiveBackPhase.cancel;
+    _listenSettle();
 
     widget.route.handleCancelBackGesture();
     startBackEvent = currentBackEvent = null;
@@ -170,12 +217,36 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
     if (!_owned) return;
     _owned = false;
     AppLog.debug('backgesture',
-        'commit $_routeName updates=$_updateCount '
-        'last=${_lastProgress.toStringAsFixed(3)} synth=$_synth');
-    phase = PredictiveBackPhase.idle;
+        'commit $_routeName updates=${_synth.updateCount} '
+        'last=${_synth.lastProgress.toStringAsFixed(3)} synth=${_synth.synth}');
+    // commit 后路由随即 pop，收尾动画期间保持 commit 相位：缩小卡片沿
+    // commit 映射飞出并淡出，而不是在提交瞬间切回 idle 基线动画
+    phase = PredictiveBackPhase.commit;
+    _listenSettle();
 
     widget.route.handleCommitBackGesture();
     startBackEvent = currentBackEvent = null;
+  }
+
+  /// cancel/commit 之后路由控制器收尾（回弹或 pop）结束的瞬间把手势相位
+  /// 归零。pop 场景路由随后卸载，监听自然失效；回弹场景保证静止后回到
+  /// 基线分支（此时控制器=1，两个分支视觉一致，切换无跳变）。
+  /// 经 route.animation 挂监听（TransitionRoute.controller 是 protected）。
+  void _listenSettle() {
+    final anim = widget.route.animation;
+    if (anim == null) return;
+    late final AnimationStatusListener listener;
+    listener = (AnimationStatus status) {
+      if (status != AnimationStatus.completed &&
+          status != AnimationStatus.dismissed) {
+        return;
+      }
+      anim.removeStatusListener(listener);
+      if (!_owned && mounted && _phase != PredictiveBackPhase.idle) {
+        phase = PredictiveBackPhase.idle;
+      }
+    };
+    anim.addStatusListener(listener);
   }
 
   @override
@@ -192,11 +263,14 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   @override
   Widget build(BuildContext context) {
+    // 相位在 cancel/commit 后仍保持（见 _listenSettle），builder 据此在
+    // 收尾动画期间维持手势分支渲染，因此这里直接透传当前相位而非按
+    // _owned 门控归 idle
     return widget.builder(
       context,
-      _owned ? phase : PredictiveBackPhase.idle,
-      _owned ? startBackEvent : null,
-      _owned ? currentBackEvent : null,
+      _phase,
+      _startBackEvent,
+      _currentBackEvent,
     );
   }
 }
