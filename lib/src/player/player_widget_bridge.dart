@@ -79,7 +79,7 @@ class PlayerWidgetController {
     final notifier = _container.read(playerProvider.notifier);
     switch (call.method) {
       case 'toggle':
-        notifier.toggle();
+        notifier.toggle(origin: 'androidWidget');
       case 'previous':
         notifier.previous();
       case 'next':

@@ -873,7 +873,7 @@ class _TraditionalPlayerLayoutState
     if (!mounted) return;
     setState(() => _sleepDeadline = null);
     if (ref.read(playerProvider).isPlaying) {
-      ref.read(playerProvider.notifier).pauseFromSystem();
+      ref.read(playerProvider.notifier).pauseFromSystem(origin: 'sleepTimer');
       showXianYuToast(
         context,
         tr('定时时间到，已暂停播放'),
