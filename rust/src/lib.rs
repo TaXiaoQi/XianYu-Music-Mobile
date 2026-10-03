@@ -16,6 +16,7 @@ pub mod remote;
 pub mod statistics;
 pub mod plugins;
 pub mod plugin_host;
+pub mod fallback_host;
 pub mod recognize;
 pub mod custom_fonts;
 pub mod toolbox;

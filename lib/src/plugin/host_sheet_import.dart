@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import '../core/application_logger.dart';
 import '../rust/api.dart' as frb;
+import 'fallback_modules/registry.dart';
+import 'fallback_modules/types.dart';
 
 /// 宿主侧歌单导入兜底：五平台统一薄壳。
 ///
@@ -24,8 +26,12 @@ class HostSheetImportResult {
   });
 }
 
-/// Rust PlaylistImportResult JSON → 宿主导入结果；空结果按 null 处理
-/// （与旧实现「不适用或失败返回 null」语义一致）
+/// 平台 key → 模块方法后缀（kg→Kg / qishui→Qishui）
+String _methodSuffix(String platform) =>
+    platform.isEmpty ? platform : platform[0].toUpperCase() + platform.substring(1);
+
+/// 经热修模块或 Rust 内置实现拉取歌单并映射为宿主导入结果；
+/// 空结果按 null 处理（与旧实现「不适用或失败返回 null」语义一致）
 Future<HostSheetImportResult?> _importViaRust(
   String platform,
   String keyword,
@@ -33,9 +39,18 @@ Future<HostSheetImportResult?> _importViaRust(
   final t = keyword.trim();
   if (t.isEmpty) return null;
   try {
-    final raw = await frb.fetchPlaylistFromSource(source: platform, rawId: t);
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return null;
+    // 先走服务端热修模块（getListDetail{Platform}），未加载/失败回退 Rust 内置实现
+    final decoded = await dispatchFallbackModule<Map<String, dynamic>?>(
+      kFallbackModulePlaylistImport,
+      'getListDetail$_methodSuffix(platform)',
+      {'rawId': t},
+      () async {
+        final raw = await frb.fetchPlaylistFromSource(source: platform, rawId: t);
+        final obj = jsonDecode(raw);
+        return obj is Map ? Map<String, dynamic>.from(obj) : null;
+      },
+    );
+    if (decoded == null) return null;
     final songs = decoded['songs'];
     if (songs is! List || songs.isEmpty) return null;
     final info = decoded['info'] is Map ? decoded['info'] as Map : const {};

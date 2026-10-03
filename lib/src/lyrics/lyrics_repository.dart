@@ -9,6 +9,8 @@ import '../core/db_path.dart';
 import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_backup_import.dart';
+import '../plugin/fallback_modules/registry.dart';
+import '../plugin/fallback_modules/types.dart';
 import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
 import '../rust/api.dart';
@@ -259,13 +261,21 @@ class LyricsRepository {
     }
     AppLog.debug('lyric', '原生歌词兜底: sourceKey=$sourceKey');
     try {
-      final raw = await fetchLyricFromSource(
-        source: sourceKey,
-        songInfoJson: jsonEncode(songInfo),
+      // 先走服务端热修模块（lx_lyric/fetchLyric），未加载/失败回退 Rust 内置实现
+      final obj = await dispatchFallbackModule<Map<String, dynamic>?>(
+        kFallbackModuleLxLyric,
+        'fetchLyric',
+        {'source': sourceKey, 'songInfo': songInfo},
+        () async {
+          final raw = await fetchLyricFromSource(
+            source: sourceKey,
+            songInfoJson: jsonEncode(songInfo),
+          );
+          if (raw.isEmpty || raw == 'null') return null;
+          return jsonDecode(raw) as Map<String, dynamic>;
+        },
       );
-      AppLog.debug('lyric', '原生歌词兜底: 抓取返回 len=${raw.length}');
-      if (raw.isEmpty || raw == 'null') return null;
-      final obj = jsonDecode(raw) as Map<String, dynamic>;
+      if (obj == null) return null;
       final lengths =
           obj.map((k, v) => MapEntry(k, v is String ? v.length : 0));
       AppLog.debug('lyric', '原生歌词兜底: 字段长度=$lengths');

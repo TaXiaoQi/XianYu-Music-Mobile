@@ -1351,6 +1351,66 @@ pub fn verify_beta_access_signature(
 }
 
 // =========================================================================
+// 兜底模块宿主（QuickJS 热修沙箱，移植自桌面端 fallback_host）
+// =========================================================================
+
+/// 加载兜底模块（验签 + 编译 + 硬校验一体），返回 `FallbackLoadResult` JSON。
+pub async fn fallback_module_load(
+    data_dir: String,
+    module_key: String,
+    version: i64,
+    code: String,
+    signature: String,
+    app_version: String,
+) -> Result<String, String> {
+    let engine = crate::fallback_host::global_engine(&data_dir);
+    let result = engine
+        .load(&module_key, version, &code, &signature, &app_version)
+        .await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 调用兜底模块方法，返回 `FallbackCallResult` JSON（`ok`/`error`/`data`/`logs`）。
+pub async fn fallback_module_call(
+    data_dir: String,
+    module_key: String,
+    method: String,
+    args_json: String,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let engine = crate::fallback_host::global_engine(&data_dir);
+    let result = engine
+        .call(&module_key, &method, &args_json, timeout_ms.unwrap_or(0))
+        .await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 保序逐项批量调用，返回 `FallbackCallManyResult` JSON；单项失败不影响后续。
+pub async fn fallback_module_call_many(
+    data_dir: String,
+    module_key: String,
+    method: String,
+    args_json_list: Vec<String>,
+    timeout_ms: Option<u64>,
+) -> Result<String, String> {
+    let engine = crate::fallback_host::global_engine(&data_dir);
+    let result = engine
+        .call_many(&module_key, &method, &args_json_list, timeout_ms.unwrap_or(0))
+        .await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// 整包替换配置快照，返回所存配置的 sha256-hex（对原始入参字符串取摘要）。
+pub fn fallback_module_update_config(data_dir: String, config_json: String) -> Result<String, String> {
+    crate::fallback_host::global_engine(&data_dir).update_config(&config_json)
+}
+
+/// 启动对账：返回当前已存配置的 hash（未推送过为空串），比对不一致即重推。
+pub fn fallback_module_config_hash(data_dir: String) -> Result<String, String> {
+    Ok(crate::fallback_host::global_engine(&data_dir).config_hash())
+}
+
+// =========================================================================
 // 插件引擎（QuickJS 沙箱，移植自桌面端 plugin_host）
 // =========================================================================
 

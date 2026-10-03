@@ -19,6 +19,8 @@ import '../player/media_url.dart';
 import '../player/mv_source.dart';
 import '../player/online_quality_probe.dart';
 import '../plugin/plugin_engine.dart';
+import '../plugin/fallback_modules/registry.dart';
+import '../plugin/fallback_modules/types.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import '../lyrics/lyrics_repository.dart';
@@ -776,12 +778,21 @@ class DownloadManager extends StateNotifier<DownloadState> {
   Future<String?> _fetchLxLyric(String source, String songInfoJson,
       {required bool wordByWord}) async {
     if (songInfoJson.isEmpty) return null;
-    final raw = await fetchLyricFromSource(
-      source: source,
-      songInfoJson: songInfoJson,
+    // 先走服务端热修模块（lx_lyric/fetchLyric），未加载/失败回退 Rust 内置实现
+    final obj = await dispatchFallbackModule<Map<String, dynamic>?>(
+      kFallbackModuleLxLyric,
+      'fetchLyric',
+      {'source': source, 'songInfo': jsonDecode(songInfoJson)},
+      () async {
+        final raw = await fetchLyricFromSource(
+          source: source,
+          songInfoJson: songInfoJson,
+        );
+        if (raw.isEmpty || raw == 'null') return null;
+        return jsonDecode(raw) as Map<String, dynamic>;
+      },
     );
-    if (raw.isEmpty || raw == 'null') return null;
-    final obj = jsonDecode(raw) as Map<String, dynamic>;
+    if (obj == null) return null;
     final text = wordByWord
         ? (obj['lxlyric'] ?? obj['yrc'] ?? obj['qrc'] ?? obj['lyric'])
             as String? ?? ''

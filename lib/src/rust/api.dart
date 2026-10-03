@@ -1059,6 +1059,66 @@ Future<bool> verifyBetaAccessSignature({
   signature: signature,
 );
 
+/// 加载兜底模块（验签 + 编译 + 硬校验一体），返回 `FallbackLoadResult` JSON。
+Future<String> fallbackModuleLoad({
+  required String dataDir,
+  required String moduleKey,
+  required PlatformInt64 version,
+  required String code,
+  required String signature,
+  required String appVersion,
+}) => RustLib.instance.api.crateApiFallbackModuleLoad(
+  dataDir: dataDir,
+  moduleKey: moduleKey,
+  version: version,
+  code: code,
+  signature: signature,
+  appVersion: appVersion,
+);
+
+/// 调用兜底模块方法，返回 `FallbackCallResult` JSON（`ok`/`error`/`data`/`logs`）。
+Future<String> fallbackModuleCall({
+  required String dataDir,
+  required String moduleKey,
+  required String method,
+  required String argsJson,
+  BigInt? timeoutMs,
+}) => RustLib.instance.api.crateApiFallbackModuleCall(
+  dataDir: dataDir,
+  moduleKey: moduleKey,
+  method: method,
+  argsJson: argsJson,
+  timeoutMs: timeoutMs,
+);
+
+/// 保序逐项批量调用，返回 `FallbackCallManyResult` JSON；单项失败不影响后续。
+Future<String> fallbackModuleCallMany({
+  required String dataDir,
+  required String moduleKey,
+  required String method,
+  required List<String> argsJsonList,
+  BigInt? timeoutMs,
+}) => RustLib.instance.api.crateApiFallbackModuleCallMany(
+  dataDir: dataDir,
+  moduleKey: moduleKey,
+  method: method,
+  argsJsonList: argsJsonList,
+  timeoutMs: timeoutMs,
+);
+
+/// 整包替换配置快照，返回所存配置的 sha256-hex（对原始入参字符串取摘要）。
+Future<String> fallbackModuleUpdateConfig({
+  required String dataDir,
+  required String configJson,
+}) => RustLib.instance.api.crateApiFallbackModuleUpdateConfig(
+  dataDir: dataDir,
+  configJson: configJson,
+);
+
+/// 启动对账：返回当前已存配置的 hash（未推送过为空串），比对不一致即重推。
+Future<String> fallbackModuleConfigHash({required String dataDir}) =>
+    RustLib.instance.api.crateApiFallbackModuleConfigHash(dataDir: dataDir);
+
 /// 初始化全局插件引擎（首次调用时以 `data_dir` 建立 Cookie/Storage 存储）。
 Future<void> pluginEngineInit({required String dataDir}) =>
     RustLib.instance.api.crateApiPluginEngineInit(dataDir: dataDir);

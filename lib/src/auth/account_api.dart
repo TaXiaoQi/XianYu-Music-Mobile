@@ -216,6 +216,10 @@ class AccountApi {
     }
   }
 
+  /// 拉取服务端下发的兜底（热修）模块清单
+  Future<Map<String, dynamic>> fetchFallbackModules() =>
+      _action('get_fallback_modules', {}, fetchTimeoutMs: 15000);
+
   Future<int> submitFeedback({
     required String title,
     required String content,

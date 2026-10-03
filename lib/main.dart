@@ -14,6 +14,7 @@ import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/player/cast_provider.dart';
 import 'src/plugin/plugin_updates.dart';
+import 'src/plugin/fallback_modules/sync.dart';
 import 'src/auth/account_api.dart';
 import 'src/player/ios_widget_bridge.dart';
 import 'src/player/player_provider.dart';
@@ -167,6 +168,10 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
 
     ref.listenManual(rustInitProvider, (prev, next) {
       if (next.hasValue || next.hasError) _runStartupPluginAutoUpdate();
+      // Rust 就绪后挂载兜底模块同步（验签/load 依赖桥）
+      if (next.hasValue) {
+        initFallbackModuleSync(ProviderScope.containerOf(context));
+      }
     });
 
     ref.listenManual(settingsProvider, (prev, next) {

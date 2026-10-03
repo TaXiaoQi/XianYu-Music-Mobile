@@ -568,6 +568,11 @@ impl PluginEngine {
         &self.store
     }
 
+    /// 兜底模块宿主复用同一 HttpBridge（SSRF 防护与 Cookie 存储共享）。
+    pub fn http_bridge(&self) -> Arc<HttpBridge> {
+        self.http.clone()
+    }
+
     /// 取走并清空待送达的 LX 自报更新载荷（无则返回 None）。
     fn drain_pending_lx_alerts(&self) -> Option<Vec<serde_json::Value>> {
         let mut guard = self.pending_lx_alerts.lock().unwrap();
