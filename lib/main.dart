@@ -180,6 +180,8 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
         unawaited(container
             .read(dlnaCastProvider.notifier)
             .applyRendererSetting());
+        // 兜底模块配置快照变化推送（500ms 防抖）
+        scheduleFallbackModuleConfigPush(container);
       }
     });
   }
