@@ -1,4 +1,4 @@
-﻿part of 'player_provider.dart';
+part of 'player_provider.dart';
 
 class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler {
   PlayerNotifier? _notifier;
@@ -10,8 +10,18 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
   void syncMediaItem(QueueItem item, double durationSecs) {
     _lastSyncItem = item;
     _lastSyncDuration = durationSecs;
-    mediaItem.add(_buildMediaItem(item, durationSecs, _artUriFor(item)));
-    unawaited(_materializeOnlineArt(item));
+    mediaItem.add(
+      _buildMediaItem(item, durationSecs, _materializer.artUriFor(item)),
+    );
+    unawaited(
+      _materializer.materializeOnlineArt(item).then((path) {
+        if (path != null && _lastSyncItem?.path == item.path) {
+          mediaItem.add(
+            _buildMediaItem(item, _lastSyncDuration, Uri.file(path)),
+          );
+        }
+      }),
+    );
   }
 
   void syncQueue(List<QueueItem> items, Map<String, String> artCache) {
@@ -20,60 +30,15 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
         _buildMediaItem(
           item,
           _lastSyncItem?.path == item.path ? _lastSyncDuration : 0,
-          _artUriForWithCache(item, artCache),
+          _materializer.artUriForWithCache(item, artCache),
         ),
     ]);
-  }
-
-  Uri? _artUriForWithCache(QueueItem item, Map<String, String> artCache) {
-    final url = item.coverUrl;
-    if (url != null && url.isNotEmpty) {
-      final cached = artCache[url];
-      if (cached != null && File(cached).existsSync()) return Uri.file(cached);
-      final art = _artFileCache[url];
-      if (art != null && File(art).existsSync()) return Uri.file(art);
-      // 需代理的 CDN 不交 http URL：避免直连低清图与高清物化结果竞态。
-      if (!CoverProxy.needsProxy(url)) return Uri.tryParse(url);
-      return null;
-    }
-    final local = item.coverPath;
-    if (local != null &&
-        local.isNotEmpty &&
-        !local.startsWith('http') &&
-        File(local).existsSync()) {
-      return Uri.file(local);
-    }
-    return null;
   }
 
   QueueItem? _lastSyncItem;
   double _lastSyncDuration = 0;
 
-  final Map<String, String> _artFileCache = {};
-  final Set<String> _artMaterializing = {};
-
-  Uri? _artUriFor(QueueItem item) {
-    final url = item.coverUrl;
-    if (url != null && url.isNotEmpty) {
-      final cached = _artFileCache[url];
-      if (cached != null) {
-        if (File(cached).existsSync()) return Uri.file(cached);
-        _artFileCache.remove(url);
-      }
-      // 需代理的 CDN 不交 http URL：系统直连下载既无 Referer 易 403，
-      // 又可能与随后落盘的高清封面竞态（低清结果后到会覆盖通知）。
-      if (!CoverProxy.needsProxy(url)) return Uri.tryParse(url);
-      return null;
-    }
-    final local = item.coverPath;
-    if (local != null &&
-        local.isNotEmpty &&
-        !local.startsWith('http') &&
-        File(local).existsSync()) {
-      return Uri.file(local);
-    }
-    return null;
-  }
+  final CoverMaterializer _materializer = CoverMaterializer();
 
   as_pkg.MediaItem _buildMediaItem(
       QueueItem item, double durationSecs, Uri? artUri) {
@@ -86,68 +51,6 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
           durationSecs > 0 ? Duration(milliseconds: (durationSecs * 1000).round()) : null,
       artUri: artUri,
     );
-  }
-
-  /// 把常见 CDN 的缩略图 URL 升级为高清候选；认不出的规则返回 null
-  /// （视为已是原图）。只做可安全升级的替换，失败由调用方回退原 URL。
-  String? _hdCoverUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return null;
-    final host = uri.host;
-    // 网易云：?param=200y200 → 1024y1024（官方图片服务参数，超原图上限自动适配）
-    if (host.endsWith('126.net') || host.endsWith('163.com')) {
-      final param = uri.queryParameters['param'];
-      if (param != null && RegExp(r'^\d+y\d+$').hasMatch(param)) {
-        return uri
-            .replace(queryParameters: <String, String>{
-              ...uri.queryParameters,
-              'param': '1024y1024',
-            })
-            .toString();
-      }
-      return null;
-    }
-    // 酷我 / 咪咕：路径中的尺寸段（/300x300/、/W300h300/）删掉即为原图
-    if (host.endsWith('kuwo.cn') || host.endsWith('migu.cn')) {
-      final cleaned = url
-          .replaceFirst(RegExp(r'/\d+x\d+/'), '/')
-          .replaceFirst(RegExp(r'/[Ww]\d+[Hh]\d+/'), '/');
-      return cleaned == url ? null : cleaned;
-    }
-    return null;
-  }
-
-  Future<void> _materializeOnlineArt(QueueItem item) async {
-    if (!Platform.isAndroid) return;
-    final url = item.coverUrl;
-    if (url == null || url.isEmpty) return;
-    final cached = _artFileCache[url];
-    if (cached != null) {
-      if (File(cached).existsSync()) return;
-      _artFileCache.remove(url);
-    }
-    if (!_artMaterializing.add(url)) return;
-    try {
-      // 优先拉高清候选，失败再回退原 URL；落盘 key 仍用原 URL 的哈希。
-      final hd = _hdCoverUrl(url);
-      var bytes = hd == null ? null : await CoverProxy.fetch(hd);
-      bytes ??= await CoverProxy.fetch(url);
-      if (bytes == null || bytes.isEmpty) return;
-      final dir = await getTemporaryDirectory();
-      final key = md5.convert(utf8.encode(url)).toString();
-      final file = File('${dir.path}/media_art_$key.jpg');
-      await file.writeAsBytes(bytes, flush: true);
-      _artFileCache[url] = file.path;
-      if (_lastSyncItem?.path == item.path) {
-        mediaItem.add(
-          _buildMediaItem(item, _lastSyncDuration, Uri.file(file.path)),
-        );
-      }
-    } catch (e) {
-      AppLog.debug('player', '通知封面物化失败: $e');
-    } finally {
-      _artMaterializing.remove(url);
-    }
   }
 
   void syncPlaybackState({

@@ -391,7 +391,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
 
   Future<void> _onExclusiveDisconnect() async {
     final cur = state.current;
-    _flushPlayStats();
+    statsReporter.flush(state);
     AppLog.warn('play',
         '[dsp] 管线提前退出(active=false) 自动重播回退 cur=${cur?.title}');
     if (cur != null) statsReporter.reportBehavior(cur, 'usb_disconnect', 0);
@@ -404,7 +404,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
   Future<void> _onExclusiveTrackEnd() async {
     final ended = state.current;
     if (ended != null) statsReporter.reportBehavior(ended, 'complete', 0);
-    _flushPlayStats();
+    statsReporter.flush(state);
     await _stopExclusive();
     if (state.playMode == 1) {
       await _playAt(state.queueIndex);
@@ -473,10 +473,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     }
     final ended = state.current;
     if (ended != null) statsReporter.reportBehavior(ended, 'complete', 0);
-    _flushPlayStats();
+    statsReporter.flush(state);
     final item = queue[target];
-    _currentPlayCountRecorded = false;
-    _accumulatedTime = 0;
+    statsReporter.resetCounters();
     AppLog.info('play', '[gapless] 已无缝接上 index=$target title=${item.title}');
     state = state.copyWith(
       queueIndex: target,
@@ -489,7 +488,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     statsReporter.reportBehavior(item, 'play', 0);
     statsReporter.recordRecentPlay(item);
     statsReporter.recordHistory(item);
-    _trackStartTime = DateTime.now();
+    statsReporter.noteTrackStart();
     _syncToSystemMediaSession();
     unawaited(Future(() => _preloadQueueCovers()));
   }

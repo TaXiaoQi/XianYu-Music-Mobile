@@ -251,8 +251,8 @@ extension PlayerNotifierOnline on PlayerNotifier {
           '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
           'buffered=${_player.bufferedPosition.inMilliseconds}ms '
           'dur=${_player.duration?.inMilliseconds}ms url=$clean');
-      unawaited(_diagProbeUrl(clean, h));
-      await _dumpPlayerThreads();
+      unawaited(diagProbeUrl(clean, h));
+      await dumpPlayerThreads();
       unawaited(_player
           .stop()
           .then((_) => AppLog.info('play', '[startOnlineUrl] 超时后 stop 成功'))
@@ -289,38 +289,6 @@ extension PlayerNotifierOnline on PlayerNotifier {
       await _player.play();
     }
     _triggerOnlinePrecache(item);
-  }
-
-  Future<void> _diagProbeUrl(String url, Map<String, String>? headers) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-    final sw = Stopwatch()..start();
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      (headers ?? {}).forEach((k, v) {
-        try {
-          req.headers.set(k, v);
-        } catch (e) {
-          AppLog.debug('player', '诊断请求头设置失败: $e');
-        }
-      });
-      final res = await req.close().timeout(const Duration(seconds: 8));
-      final type = res.headers.contentType?.toString() ?? '-';
-      final len = res.contentLength;
-      AppLog.warn('probe',
-          'conn ok t=${sw.elapsedMilliseconds}ms status=${res.statusCode} type=$type len=$len');
-      var got = 0;
-      await for (final chunk in res.timeout(const Duration(seconds: 3))) {
-        got += chunk.length;
-        if (sw.elapsedMilliseconds >= 3000) break;
-      }
-      final secs = sw.elapsedMilliseconds ~/ 1000 + 1;
-      AppLog.warn('probe',
-          'bytes=$got in ${sw.elapsedMilliseconds}ms rate=${(got ~/ secs) ~/ 1024}KB/s');
-    } catch (e) {
-      AppLog.warn('probe', 'probe failed after ${sw.elapsedMilliseconds}ms: $e');
-    } finally {
-      client.close(force: true);
-    }
   }
 
   Future<void> _startEncryptedFile(

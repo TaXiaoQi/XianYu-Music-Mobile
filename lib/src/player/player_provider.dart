@@ -16,6 +16,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../auth/account_api.dart';
 import '../core/app_logger.dart';
+import '../core/diagnostics.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -49,6 +50,7 @@ import 'online_quality_probe.dart';
 import 'online_precache.dart';
 import '../i18n/i18n.dart';
 
+part 'player_provider.cover_materializer.dart';
 part 'player_provider.queue.dart';
 part 'player_provider.report.dart';
 part 'player_provider.session.dart';
@@ -165,7 +167,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<dynamic>? _interruptionSub;
   bool _interruptedByInterruption = false;
   Timer? _listenTimer;
-  double _lastStatPos = -1;
   bool _playbackErrorHandling = false;
   bool _onTrackEndBusy = false;
   Timer? _exclusiveTimer;
@@ -190,17 +191,6 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   String? _sessionQualityOverride;
   double? _replayAnchorSecs;
 
-  static const MethodChannel _diagChannel = MethodChannel('xianyu/diag');
-
-  Future<void> _dumpPlayerThreads() async {
-    try {
-      final out = await _diagChannel.invokeMethod<String>('threadDump');
-      AppLog.warn('exodump', '播放器线程堆栈快照:\n${out ?? 'null'}');
-    } catch (e) {
-      AppLog.warn('exodump', '线程转储失败: $e');
-    }
-  }
-
   double? _restoredOnlinePending;
   double? _restoredLocalPending;
   /// 已预排给 Rust 的「下一首」下标（-1 = 未预排）；无缝拼接发生时按它推进队列。
@@ -209,54 +199,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   String? _gaplessNextPath;
   /// 最近一次看到的无缝拼接次数（来自 device_info 的 transitionSeq）。
   int _lastTransitionSeq = 0;
-  DateTime? _trackStartTime;
-  double _accumulatedTime = 0;
-  bool _currentPlayCountRecorded = false;
 
   // ---- 统计上报服务装配 ----
   late final PlayStatsReporter statsReporter = PlayStatsReporter(_ref);
 
-  /// 听歌时长累计口径：服务端快照 + 本地会话增量；达到阈值即落库。
-  void _flushPlayStats() {
-    final item = state.current;
-    if (item == null) return;
-    double currentSession = 0;
-    final pos = state.position;
-    if (_trackStartTime != null && state.isPlaying && pos > 0) {
-      final delta = _lastStatPos >= 0 ? pos - _lastStatPos : 0.0;
-      if (delta > 0) {
-        final wallSec =
-            DateTime.now().difference(_trackStartTime!).inMilliseconds / 1000.0;
-        if (delta <= wallSec + 2) currentSession = delta;
-      }
-    }
-    _lastStatPos = pos;
-    final totalDuration = _accumulatedTime + currentSession;
-    final shouldPersist =
-        totalDuration >= 10 || (_currentPlayCountRecorded && totalDuration > 0);
-
-    if (shouldPersist) {
-      final countAsPlay = !_currentPlayCountRecorded;
-      if (countAsPlay) _currentPlayCountRecorded = true;
-      statsReporter.recordPlayStats(
-        item,
-        totalDuration,
-        countAsPlay: countAsPlay,
-        fallbackDurationMs: (state.duration * 1000).toInt(),
-      );
-      _accumulatedTime = 0;
-    } else {
-      _accumulatedTime = totalDuration;
-    }
-    _trackStartTime = state.isPlaying ? DateTime.now() : null;
-  }
-
-  final Map<String, String> _notifCoverCache = {};
-  final Map<String, Future<String>> _notifCoverPending = {};
-  // 本地歌通知封面高清化：path → 内嵌原图缓存文件（Rust get_song_cover 产物）。
-  final Map<String, String> _hdCoverCache = {};
-  final Set<String> _hdCoverPending = {};
-  final Set<String> _preloadedCovers = {};
+  final CoverMaterializer coverMaterializer = CoverMaterializer();
   bool _notifPermissionAsked = false;
 
   final List<String> _shuffleHistory = [];
@@ -361,7 +308,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     });
     _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (state.isPlaying) {
-        _flushPlayStats();
+        statsReporter.flush(state);
       }
     });
     _stallTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
@@ -508,10 +455,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
     AppLog.info('play', '_playAt index=$index path=${state.queue[index].path}');
     unawaited(_ensureNotificationPermission());
-    _flushPlayStats();
+    statsReporter.flush(state);
     if (!continueStatsSession) {
-      _currentPlayCountRecorded = false;
-      _accumulatedTime = 0;
+      statsReporter.resetCounters();
     }
 
     _restoredOnlinePending = null;
@@ -699,7 +645,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         statsReporter.recordRecentPlay(item);
         statsReporter.recordHistory(item);
       }
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       _replayAnchorSecs = null;
       _syncToSystemMediaSession();
       unawaited(Future(() => _preloadQueueCovers()));
@@ -1149,7 +1095,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> _resumeAfterInterruption() async {
     if (_ref.read(dlnaCastProvider).isCasting) return;
     try {
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       if (state.usbExclusive || state.dspActive) {
         await resumeUsbExclusive();
       } else {
@@ -1174,11 +1120,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (_ref.read(dlnaCastProvider).isCasting) {
       final cast = _ref.read(dlnaCastProvider.notifier);
       if (state.isPlaying) {
-        _flushPlayStats();
+        statsReporter.flush(state);
         await cast.castPause();
         state = state.copyWith(isPlaying: false);
       } else {
-        _trackStartTime = DateTime.now();
+        statsReporter.noteTrackStart();
         await cast.castResume();
         state = state.copyWith(isPlaying: true);
       }
@@ -1187,12 +1133,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     if (state.usbExclusive || state.dspActive) {
       if (state.isPlaying) {
-        _flushPlayStats();
+        statsReporter.flush(state);
         _lastUserPauseAt = DateTime.now();
         await pauseUsbExclusive();
         state = state.copyWith(isPlaying: false);
       } else {
-        _trackStartTime = DateTime.now();
+        statsReporter.noteTrackStart();
         await resumeUsbExclusive();
         state = state.copyWith(isPlaying: true);
       }
@@ -1201,11 +1147,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return;
     }
     if (state.isPlaying) {
-      _flushPlayStats();
+      statsReporter.flush(state);
       _lastUserPauseAt = DateTime.now();
       await _player.pause();
     } else {
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       final pendingPos = _restoredOnlinePending;
       if (pendingPos != null) {
         _restoredOnlinePending = null;
@@ -1485,11 +1431,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
     }
     if (ended != null) statsReporter.reportBehavior(ended, 'complete', 0);
-    _flushPlayStats();
+    statsReporter.flush(state);
     if (state.playMode == 1) {
       await seek(0);
       await _player.play();
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       return;
     }
     final next = _pickNextIndex();

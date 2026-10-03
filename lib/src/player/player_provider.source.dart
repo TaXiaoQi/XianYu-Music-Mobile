@@ -215,12 +215,11 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         }
         _skipDepth = 0;
         state = state.copyWith(resolving: false, error: null);
-        _currentPlayCountRecorded = false;
-        _accumulatedTime = 0;
+        statsReporter.resetCounters();
         statsReporter.recordRecentPlay(newItem);
         statsReporter.recordHistory(newItem);
         statsReporter.reportBehavior(newItem, 'play', 0);
-        _trackStartTime = DateTime.now();
+        statsReporter.noteTrackStart();
         _syncToSystemMediaSession();
         AppLog.info('autoswitch', '重搜换源命中: ${plugin.name}');
         _showPlaybackToast(
@@ -369,12 +368,11 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       }
       _skipDepth = 0;
       state = state.copyWith(resolving: false, error: null);
-      _currentPlayCountRecorded = false;
-      _accumulatedTime = 0;
+      statsReporter.resetCounters();
       statsReporter.recordRecentPlay(newItem);
       statsReporter.recordHistory(newItem);
       statsReporter.reportBehavior(newItem, 'play', 0);
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       _syncToSystemMediaSession();
       AppLog.info('autoswitch', '落雪换源命中: $srcId');
       _showPlaybackToast(
@@ -482,12 +480,11 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       await _startOnlineUrl(hit.url,
           headers: hit.headers, item: item, ekey: hit.ekey, cek: hit.cek);
       state = state.copyWith(resolving: false, error: null);
-      _currentPlayCountRecorded = false;
-      _accumulatedTime = 0;
+      statsReporter.resetCounters();
       statsReporter.recordRecentPlay(item);
       statsReporter.recordHistory(item);
       statsReporter.reportBehavior(item, 'play', 0);
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       _syncToSystemMediaSession();
       _showPlaybackToast(tr('播放失败，已自动切换音源重播'));
       return true;

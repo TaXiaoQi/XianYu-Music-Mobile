@@ -4,7 +4,7 @@ extension PlayerNotifierCast on PlayerNotifier {
   // ---------------- DLNA 投屏支持 ----------------
 
   Future<void> pauseLocalEngine() async {
-    _flushPlayStats();
+    statsReporter.flush(state);
     // 不经 toggle，需自行标注来源，否则日志只显示 origin=unknown
     _pauseOrigin = 'castLocalEngine';
     try {
@@ -41,9 +41,8 @@ extension PlayerNotifierCast on PlayerNotifier {
   }) async {
     await _stopExclusive();
     _playEpoch++;
-    _flushPlayStats();
-    _currentPlayCountRecorded = false;
-    _accumulatedTime = 0;
+    statsReporter.flush(state);
+    statsReporter.resetCounters();
     _restoredOnlinePending = null;
     _restoredLocalPending = null;
     if (_activeProbeKey != null) {
@@ -75,7 +74,7 @@ extension PlayerNotifierCast on PlayerNotifier {
       // 本机音效里的变速/变调设置，否则桌面端原速音频会被加速播放
       await _startOnlineUrl(uri, item: item, castPlayback: true);
       state = state.copyWith(isPlaying: true);
-      _trackStartTime = DateTime.now();
+      statsReporter.noteTrackStart();
       _syncToSystemMediaSession();
     } catch (e) {
       state = state.copyWith(

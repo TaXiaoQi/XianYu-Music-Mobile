@@ -6,7 +6,7 @@ extension PlayerNotifierSession on PlayerNotifier {
     if (cur != null) {
       var item = cur;
       if (!cur.isOnline && cur.coverUrl?.isNotEmpty != true) {
-        final hd = _hdCoverCache[cur.path];
+        final hd = coverMaterializer.hdCoverCache[cur.path];
         if (hd != null && hd.isNotEmpty && File(hd).existsSync()) {
           // 内嵌原图（高清）：锁屏/通知放大展示不糊。
           item = cur.copyWith(coverPath: hd);
@@ -17,7 +17,7 @@ extension PlayerNotifierSession on PlayerNotifier {
               !cp.startsWith('http') &&
               File(cp).existsSync();
           if (!coverPathLive) {
-            final cached = _notifCoverCache[cur.path];
+            final cached = coverMaterializer.notifCoverCache[cur.path];
             if (cached != null && cached.isNotEmpty) {
               item = cur.copyWith(coverPath: cached);
             }
@@ -28,7 +28,7 @@ extension PlayerNotifierSession on PlayerNotifier {
       }
       audioHandler?.syncMediaItem(item, state.duration);
       if (state.queue.isNotEmpty) {
-        audioHandler?.syncQueue(state.queue, _notifCoverCache);
+        audioHandler?.syncQueue(state.queue, coverMaterializer.notifCoverCache);
       }
       audioHandler?.syncPlaybackState(
         isPlaying: state.isPlaying,
@@ -49,26 +49,26 @@ extension PlayerNotifierSession on PlayerNotifier {
       if (File(cp).existsSync()) return;
       AppLog.info('media_cover', 'coverPath 失效，走缩略图兜底: $cp');
     }
-    final pending = _notifCoverPending[item.path];
+    final pending = coverMaterializer.notifCoverPending[item.path];
     if (pending != null) {
       await pending;
       return;
     }
     final fut = _resolveNotificationCoverInner(item);
-    _notifCoverPending[item.path] = fut;
+    coverMaterializer.notifCoverPending[item.path] = fut;
     try {
       await fut;
     } finally {
-      _notifCoverPending.remove(item.path);
+      coverMaterializer.notifCoverPending.remove(item.path);
     }
   }
 
   /// 提取本地歌内嵌原图（getSongCover，带 Rust 侧缓存/负缓存/信号量），
   /// 完成后若仍是当前曲目则重推媒体会话，通知/锁屏展示高清封面。
   Future<void> _materializeLocalHdCover(QueueItem item) async {
-    if (_hdCoverPending.contains(item.path)) return;
-    if (_hdCoverCache.containsKey(item.path)) return;
-    _hdCoverPending.add(item.path);
+    if (coverMaterializer.hdCoverPending.contains(item.path)) return;
+    if (coverMaterializer.hdCoverCache.containsKey(item.path)) return;
+    coverMaterializer.hdCoverPending.add(item.path);
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
       final cacheRoot = await _ref.read(coverCacheRootProvider.future);
@@ -78,14 +78,14 @@ extension PlayerNotifierSession on PlayerNotifier {
         path: item.path,
       );
       if (p.isEmpty) return;
-      _hdCoverCache[item.path] = p;
+      coverMaterializer.hdCoverCache[item.path] = p;
       if (state.current?.path == item.path) {
         _syncToSystemMediaSession();
       }
     } catch (_) {
       // 提取失败保持缩略图占位，下次播放重新尝试。
     } finally {
-      _hdCoverPending.remove(item.path);
+      coverMaterializer.hdCoverPending.remove(item.path);
     }
   }
 
@@ -113,16 +113,16 @@ extension PlayerNotifierSession on PlayerNotifier {
     } catch (_) {
       return null;
     }
-    final p = _notifCoverCache[item.path];
+    final p = coverMaterializer.notifCoverCache[item.path];
     if (p == null || p.isEmpty) return null;
     return File(p).existsSync() ? p : null;
   }
 
   Future<String> _resolveNotificationCoverInner(QueueItem item) async {
-    if (_notifCoverCache.containsKey(item.path)) {
-      return _notifCoverCache[item.path] ?? '';
+    if (coverMaterializer.notifCoverCache.containsKey(item.path)) {
+      return coverMaterializer.notifCoverCache[item.path] ?? '';
     }
-    _notifCoverCache[item.path] = '';
+    coverMaterializer.notifCoverCache[item.path] = '';
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
       final cacheRoot = await _ref.read(coverCacheRootProvider.future);
@@ -142,7 +142,7 @@ extension PlayerNotifierSession on PlayerNotifier {
           );
         }
       }
-      _notifCoverCache[item.path] = p;
+      coverMaterializer.notifCoverCache[item.path] = p;
       if (p.isNotEmpty && state.current?.path == item.path) {
         _syncToSystemMediaSession();
       } else if (p.isEmpty) {
@@ -167,9 +167,9 @@ extension PlayerNotifierSession on PlayerNotifier {
       }
     }
     for (final item in targets) {
-      if (!_preloadedCovers.add(item.path)) continue;
-      if (_preloadedCovers.length > 64) {
-        _preloadedCovers.remove(_preloadedCovers.first);
+      if (!coverMaterializer.preloadedCovers.add(item.path)) continue;
+      if (coverMaterializer.preloadedCovers.length > 64) {
+        coverMaterializer.preloadedCovers.remove(coverMaterializer.preloadedCovers.first);
       }
       Future(() => _preloadOneCover(item));
     }
