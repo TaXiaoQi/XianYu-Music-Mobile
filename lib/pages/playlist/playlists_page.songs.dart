@@ -1,0 +1,551 @@
+part of 'playlists_page.dart';
+
+class _AlbumHeader extends StatelessWidget {
+  const _AlbumHeader({
+    required this.name,
+    required this.song,
+    required this.count,
+    required this.onPlayAll,
+    this.onUpdate,
+    this.updating = false,
+    this.favoriteLabel,
+    this.isFavorite = false,
+    this.onToggleFavorite,
+    this.trailing,
+  });
+
+  final String name;
+  final ImportedSong? song;
+  final int count;
+  final VoidCallback? onPlayAll;
+  final VoidCallback? onUpdate;
+  final bool updating;
+  final String? favoriteLabel;
+  final bool isFavorite;
+  final VoidCallback? onToggleFavorite;
+
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final s = song;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(
+        children: [
+          s == null
+              ? Container(
+                  width: 76,
+                  height: 76,
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.queue_music,
+                      size: 30, color: scheme.primary),
+                )
+              : CoverImage(
+                  songPath: s.path,
+                  networkUrl: s.coverUrl,
+                  thumbPath: s.coverThumbPath,
+                  width: 76,
+                  height: 76,
+                  radius: 12,
+                ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  tr('{n} 首', {'n': count}),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 12.5, color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    FilledButton.icon(
+                      onPressed: onPlayAll,
+                      icon: const Icon(Icons.play_arrow, size: 18),
+                      label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        minimumSize: const Size(0, 34),
+                      ),
+                    ),
+                    if (onUpdate != null) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: tr('从源端更新'),
+                        child: IconButton.filledTonal(
+                          onPressed: updating ? null : onUpdate,
+                          icon: updating
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2),
+                                )
+                              : Icon(Icons.sync,
+                                  size: 18, color: scheme.primary),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(38, 34),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (onToggleFavorite != null) ...[
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: favoriteLabel ?? '',
+                        child: IconButton.filledTonal(
+                          onPressed: onToggleFavorite,
+                          icon: Icon(
+                            isFavorite ? Icons.favorite : Icons.favorite_border,
+                            size: 18,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                          style: IconButton.styleFrom(
+                            minimumSize: const Size(38, 34),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaylistSongs extends ConsumerStatefulWidget {
+  const _PlaylistSongs({
+    required this.playlist,
+    required this.manager,
+    required this.onRemove,
+    required this.batch,
+    this.filter = '',
+  });
+
+  final ImportedPlaylist playlist;
+  final PlaylistManager manager;
+  final void Function(int index) onRemove;
+  final SongBatchController batch;
+  final String filter;
+
+  @override
+  ConsumerState<_PlaylistSongs> createState() => _PlaylistSongsState();
+}
+
+class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
+  final ScrollController _controller = ScrollController();
+  final ScrollController _batchController = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _batchController.dispose();
+    super.dispose();
+  }
+
+  List<ImportedSong> _selected(List<ImportedSong> songs) =>
+      songs.where((s) => widget.batch.selected.contains(s.path)).toList();
+
+  Future<void> _batchPlay(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    final items = sel.map(_queueItemFromImported).toList();
+    await ref.read(playerProvider.notifier).playQueue(items, startIndex: 0);
+    widget.batch.exit();
+  }
+
+  Future<void> _batchAddToFavorites(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    final fav = ref.read(favoritesProvider.notifier);
+    await fav.addAll(sel.map(_queueItemFromImported).toList());
+    if (!mounted) return;
+    showXianYuToast(context, tr('已收藏 {n} 首歌曲', {'n': sel.length}));
+    widget.batch.exit();
+  }
+
+  Future<void> _batchAddToPlaylist(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    await showAddToPlaylistSheet(context, ref, sel);
+    widget.batch.exit();
+  }
+
+  Future<void> _batchDownload(List<ImportedSong> songs) async {
+    final selected = _selected(songs);
+    if (selected.isEmpty) return;
+    final dn = ref.read(downloadProvider.notifier);
+    if (!await dn.requireDownloadDir(context)) return;
+    final localSkipped = selected.where((s) => s.isLocal).length;
+    var downloadedSkipped = 0;
+    final toDownload = <ImportedSong>[];
+    for (final s in selected.where((s) => !s.isLocal)) {
+      if (await dn.isAlreadyDownloaded(s.path)) {
+        downloadedSkipped++;
+      } else {
+        toDownload.add(s);
+      }
+    }
+    if (!mounted) return;
+    if (localSkipped > 0) {
+      showXianYuToast(
+          context, tr('已跳过 {n} 首本地歌曲', {'n': localSkipped}));
+    }
+    if (downloadedSkipped > 0) {
+      showXianYuToast(
+          context, tr('已跳过 {n} 首已下载歌曲', {'n': downloadedSkipped}));
+    }
+    if (toDownload.isEmpty) {
+      showXianYuToast(context, tr('没有可下载的在线歌曲'));
+      return;
+    }
+    for (final s in toDownload) {
+      dn.download(_queueItemFromImported(s));
+    }
+    showXianYuToast(context, tr('开始下载 {n} 首歌曲', {'n': toDownload.length}));
+    widget.batch.exit();
+  }
+
+  Future<void> _confirmBatchRemove(List<ImportedSong> songs) async {
+    final sel = _selected(songs);
+    if (sel.isEmpty) return;
+    final loggedIn =
+        (ref.read(accountApiProvider).ciyuanxiId ?? '').isNotEmpty;
+    final synced =
+        loggedIn && (widget.playlist.cloudId ?? '').isNotEmpty;
+    if (synced) {
+      final removed = await removePlaylistSongsWithScope(
+          context, ref, widget.playlist, sel);
+      if (removed) widget.batch.exit();
+      return;
+    }
+    final ok = await showPredictiveDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('从歌单移除')),
+        content: Text(tr('确定要从歌单移除选中的 {n} 首歌曲吗？', {'n': sel.length})),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('移除')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    for (final s in sel) {
+      await widget.manager.removeSong(widget.playlist.id, s.path);
+    }
+    widget.batch.exit();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: widget.batch,
+      builder: (context, _) {
+        final scheme = Theme.of(context).colorScheme;
+        final m = ListMetrics.ofRef(ref);
+        final hasSong =
+            ref.watch(playerProvider.select((s) => s.current != null));
+        final songs = widget.playlist.songs;
+        final inBatch = widget.batch.batchMode;
+        final batch = widget.batch;
+
+        final q = widget.filter.trim().toLowerCase();
+        final filtered = q.isEmpty
+            ? null
+            : <int>[
+                for (var i = 0; i < songs.length; i++)
+                  if (songs[i].title.toLowerCase().contains(q) ||
+                      songs[i].artist.toLowerCase().contains(q))
+                    i
+              ];
+        final indices = filtered ??
+            List<int>.generate(songs.length, (i) => i);
+        final visSongs = indices.map((i) => songs[i]).toList();
+
+        void onReorder(int oldIndex, int newIndex) {
+          if (newIndex < 0 ||
+              newIndex >= songs.length ||
+              newIndex == oldIndex) {
+            return;
+          }
+          final paths = songs.map((s) => s.path).toList();
+          final moved = paths.removeAt(oldIndex);
+          paths.insert(newIndex.clamp(0, paths.length), moved);
+          widget.manager.reorderSongs(widget.playlist.id, paths);
+        }
+
+        final rowExtent = m.songCover + 2 * m.vPad;
+        final bottomPad = (hasSong ? 92.0 : 150.0) +
+            MediaQuery.of(context).padding.bottom +
+            (inBatch ? 140 : 0);
+
+        Widget batchRow(int display) {
+          final song = songs[indices[display]];
+          final row = CoverRow(
+            cover: CoverImage(
+              songPath: song.path,
+              networkUrl: song.coverUrl,
+              thumbPath: song.coverThumbPath,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.music_note,
+            ),
+            onTap: () => batch.toggle(song.path),
+            verticalPadding: m.vPad,
+            horizontalPadding: 0,
+            title: Text(
+              song.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: m.titleSize, fontWeight: FontWeight.w600),
+            ),
+            subtitle: Text(
+              '${song.artist} · ${song.album}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+            ),
+            trailing: SourceTag(
+              path: song.path,
+              isOnline: !song.isLocal,
+              source: song.source,
+              pluginId: song.pluginId,
+            ),
+          );
+          return wrapBatchRow(
+            context,
+            row: row,
+            selected: batch.isSelected(song.path),
+            onToggle: () => batch.toggle(song.path),
+          );
+        }
+
+        Widget songRow(int display) {
+          final orig = indices[display];
+          final song = songs[orig];
+          return RepaintBoundary(
+            key: ValueKey('${song.path}_$orig'),
+            child: Builder(
+              builder: (rowContext) {
+                BuildContext? coverCtx;
+                final g = songRowPlay(ref, onPlay: () async {
+                  final ok = await launchFlyCover(
+                    rowContext,
+                    coverContext: coverCtx,
+                    coverSize: m.songCover,
+                    vPad: m.vPad,
+                    songPath: song.path,
+                    networkUrl: song.coverUrl,
+                    thumbPath: song.coverThumbPath,
+                    radius: m.songRadius,
+                  );
+                  if (ok) widget.manager.play(widget.playlist, orig);
+                });
+                final row = g.wrap(
+                  CoverRow(
+                    cover: Builder(
+                      builder: (c) {
+                        coverCtx = c;
+                        return CoverImage(
+                          songPath: song.path,
+                          networkUrl: song.coverUrl,
+                          thumbPath: song.coverThumbPath,
+                          width: m.songCover,
+                          height: m.songCover,
+                          radius: m.songRadius,
+                        );
+                      },
+                    ),
+                    onTap: g.onTap,
+                    verticalPadding: m.vPad,
+                    horizontalPadding: 0,
+                    title: Text(
+                      song.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: m.titleSize,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      '${song.artist} · ${song.album}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: m.subtitleSize,
+                          color: scheme.onSurfaceVariant),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SourceTag(
+                          path: song.path,
+                          isOnline: !song.isLocal,
+                          source: song.source,
+                          pluginId: song.pluginId,
+                        ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: Icon(Icons.close,
+                              size: 18, color: scheme.outline),
+                          tooltip: tr('从歌单移除'),
+                          onPressed: () => widget.onRemove(orig),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+                return Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 44),
+                      child: row,
+                    ),
+                    Positioned(
+                      left: 8,
+                      top: 0,
+                      bottom: 0,
+                      width: 36,
+                      child: Center(child: DragHandle(index: orig)),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        }
+
+        return Stack(
+          children: [
+            if (inBatch)
+              ListView.builder(
+                controller: _batchController,
+                padding: EdgeInsets.only(bottom: bottomPad),
+                itemExtent: rowExtent,
+                addAutomaticKeepAlives: false,
+                itemCount: indices.length,
+                itemBuilder: (context, display) => RepaintBoundary(
+                  key: ValueKey(
+                      'batch_${songs[indices[display]].path}_${indices[display]}'),
+                  child: batchRow(display),
+                ),
+              )
+            else if (filtered != null)
+              ListView.builder(
+                controller: _controller,
+                padding: EdgeInsets.only(bottom: bottomPad),
+                itemExtent: rowExtent,
+                addAutomaticKeepAlives: false,
+                itemCount: indices.length,
+                itemBuilder: (context, index) => songRow(index),
+              )
+            else
+              ReorderableListView.builder(
+                scrollController: _controller,
+                padding: EdgeInsets.only(bottom: bottomPad),
+                buildDefaultDragHandles: false,
+                proxyDecorator: (child, index, animation) =>
+                    Material(type: MaterialType.transparency, child: child),
+                itemCount: songs.length,
+                onReorderItem: onReorder,
+                itemBuilder: (context, index) => songRow(index),
+              ),
+            if (inBatch)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: BatchActionBar(
+                  selectedCount: batch.selectedCount,
+                  totalCount: indices.length,
+                  showPlay: true,
+                  showFavorite: true,
+                  showPlaylist: true,
+                  showDownload: true,
+                  showRemove: true,
+                  onSelectAll: () =>
+                      batch.toggleSelectAll({for (final s in visSongs) s.path}),
+                  onPlay: () => _batchPlay(visSongs),
+                  onFavorite: () => _batchAddToFavorites(visSongs),
+                  onPlaylist: () => _batchAddToPlaylist(visSongs),
+                  onDownload: () => _batchDownload(visSongs),
+                  onRemove: () => _confirmBatchRemove(visSongs),
+                  onDone: batch.exit,
+                ),
+              ),
+            if (!inBatch && filtered == null)
+              SongListScrollFabs(
+                controller: _controller,
+                paths: songs.map((s) => s.path).toList(),
+                rowTopOf: (i) => i * rowExtent,
+                itemExtent: rowExtent,
+                bottom: bottomPad + 8,
+                right: 12,
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+QueueItem _queueItemFromImported(ImportedSong song) {
+  if (song.isLocal) {
+    return QueueItem(
+      path: song.path,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      durationMs: song.duration * 1000,
+    );
+  }
+  final songJson = <String, dynamic>{
+    'pluginId': song.pluginId,
+    'source': song.source,
+    'format': song.format,
+    'musicInfo': song.musicInfo,
+  };
+  return QueueItem(
+    path: song.path,
+    title: song.title,
+    artist: song.artist,
+    album: song.album,
+    durationMs: song.duration * 1000,
+    coverUrl: song.coverUrl,
+    onlineSongJson: jsonEncodeSafe(songJson),
+    onlineQuality: '320k',
+  );
+}
