@@ -1,16 +1,13 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'dart:ui' as ui;
-
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../effects/effects_page.dart';
 import '../../src/navigation/routes.dart'
     show playerNavigatorKey, coverPageRoute;
@@ -55,6 +52,8 @@ import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
+import 'dart:async';
+
 part 'player_page.lyrics.dart';
 part 'player_page.sheets.dart';
 part 'player_page.controls.dart';
@@ -239,11 +238,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
             ),
           ),
-          Positioned.fill(
-            child: _BlurredCoverBackground(
-              current: current,
-            ),
-          ),
+          Positioned.fill(child: _BlurredCoverBackground(current: current)),
           if (mv.ready && mv.controller != null)
             Positioned.fill(
               child: IgnorePointer(
@@ -258,20 +253,22 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        LayoutBuilder(builder: (context, cons) {
-                          final ar = mv.controller!.value.aspectRatio;
-                          final w = cons.maxWidth;
-                          final h = cons.maxHeight;
-                          final vw = w >= h * ar ? h * ar : w;
-                          final vh = w >= h * ar ? h : w / ar;
-                          return Align(
-                            child: SizedBox(
-                              width: vw,
-                              height: vh,
-                              child: VideoPlayer(mv.controller!),
-                            ),
-                          );
-                        }),
+                        LayoutBuilder(
+                          builder: (context, cons) {
+                            final ar = mv.controller!.value.aspectRatio;
+                            final w = cons.maxWidth;
+                            final h = cons.maxHeight;
+                            final vw = w >= h * ar ? h * ar : w;
+                            final vh = w >= h * ar ? h : w / ar;
+                            return Align(
+                              child: SizedBox(
+                                width: vw,
+                                height: vh,
+                                child: VideoPlayer(mv.controller!),
+                              ),
+                            );
+                          },
+                        ),
                         Container(color: const Color(0x66000000)),
                       ],
                     ),
@@ -280,54 +277,55 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               ),
             ),
           _DragDismissSheet(
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) {
-            _chromeVisibleAtPointerDown = _chromeVisible;
-            _wakeChrome();
-          },
-          child: playerStyle == PlayerStyle.traditional
-              ? _TraditionalPlayerLayout(
-                  notifier: notifier,
-                  current: current,
-                  chromeVisible: _chromeVisible,
-                  mvEnabled: mv.requested,
-                  mvLoading: mv.loading,
-                  mvReady: mv.ready,
-                  mvPhase: mv.phase,
-                  mvBufferedSec: mv.bufferedSec,
-                  mvSupported: mvSupports(current),
-                  onHideMvChanged: (hide) {
-                    if (_hideMvVideo != hide) {
-                      setState(() => _hideMvVideo = hide);
-                    }
-                  },
-                  onToggleMv: current != null
-                      ? () async {
-                          final messenger = ScaffoldMessenger.of(context);
-                          final err =
-                              await ref.read(mvProvider.notifier).toggle(current);
-                          if (err != null && mounted) {
-                            messenger.showSnackBar(
-                              SnackBar(content: Text(tr(err))),
-                            );
-                          }
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (_) {
+                _chromeVisibleAtPointerDown = _chromeVisible;
+                _wakeChrome();
+              },
+              child: playerStyle == PlayerStyle.traditional
+                  ? _TraditionalPlayerLayout(
+                      notifier: notifier,
+                      current: current,
+                      chromeVisible: _chromeVisible,
+                      mvEnabled: mv.requested,
+                      mvLoading: mv.loading,
+                      mvReady: mv.ready,
+                      mvPhase: mv.phase,
+                      mvBufferedSec: mv.bufferedSec,
+                      mvSupported: mvSupports(current),
+                      onHideMvChanged: (hide) {
+                        if (_hideMvVideo != hide) {
+                          setState(() => _hideMvVideo = hide);
                         }
-                      : null,
-                  onContentAreaTap: _onContentAreaTap,
-                )
-              : _buildAdvancedBody(
-                  notifier: notifier,
-                  current: current,
-                  scheme: scheme,
-                  fontSizeIdx: fontSizeIdx,
-                  showTranslation: showTranslation,
-                  showRomaji: showRomaji,
-                  offsetMs: offsetMs,
-                  hasRomaji: hasRomaji,
-                ),
-        ),
-      ),
+                      },
+                      onToggleMv: current != null
+                          ? () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              final err = await ref
+                                  .read(mvProvider.notifier)
+                                  .toggle(current);
+                              if (err != null && mounted) {
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text(tr(err))),
+                                );
+                              }
+                            }
+                          : null,
+                      onContentAreaTap: _onContentAreaTap,
+                    )
+                  : _buildAdvancedBody(
+                      notifier: notifier,
+                      current: current,
+                      scheme: scheme,
+                      fontSizeIdx: fontSizeIdx,
+                      showTranslation: showTranslation,
+                      showRomaji: showRomaji,
+                      offsetMs: offsetMs,
+                      hasRomaji: hasRomaji,
+                    ),
+            ),
+          ),
         ],
       ),
     );
@@ -363,10 +361,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(
-                    Icons.keyboard_arrow_down,
-                    size: 28,
-                  ),
+                  icon: const Icon(Icons.keyboard_arrow_down, size: 28),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 Expanded(
@@ -395,27 +390,26 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
               child: Center(
                 child: Hero(
                   tag: 'player-cover',
-                  flightShuttleBuilder: (ctx, animation, direction, fromCtx,
-                      toCtx) {
-                    return PlayerCoverShuttle(
-                      animation: animation,
-                      songPath: current?.path ?? '',
-                      networkUrl: current?.coverUrl,
-                      fromRadius: 23,
-                      toRadius: 31,
-                      borderColor:
-                          Colors.white.withValues(alpha: 0.18),
-                      shadow: BoxShadow(
-                        color: scheme.primary.withValues(alpha: 0.28),
-                        blurRadius: 36,
-                        spreadRadius: 2,
-                      ),
-                      gradient: [
-                        scheme.primary,
-                        scheme.primary.withValues(alpha: 0.72),
-                      ],
-                    );
-                  },
+                  flightShuttleBuilder:
+                      (ctx, animation, direction, fromCtx, toCtx) {
+                        return PlayerCoverShuttle(
+                          animation: animation,
+                          songPath: current?.path ?? '',
+                          networkUrl: current?.coverUrl,
+                          fromRadius: 23,
+                          toRadius: 31,
+                          borderColor: Colors.white.withValues(alpha: 0.18),
+                          shadow: BoxShadow(
+                            color: scheme.primary.withValues(alpha: 0.28),
+                            blurRadius: 36,
+                            spreadRadius: 2,
+                          ),
+                          gradient: [
+                            scheme.primary,
+                            scheme.primary.withValues(alpha: 0.72),
+                          ],
+                        );
+                      },
                   child: FlyingCoverAnchor(
                     child: CoverReturnSource(
                       songPath: current?.path,
@@ -431,42 +425,41 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             ),
         ],
         flexible: mvReady
-                ? const SizedBox.shrink()
-                : _showLyrics
-                ? ClipRect(
-                    child: RepaintBoundary(
-                      child: _LyricsView(
-                        key: _lyricsKey,
-                        current: current,
-                        visible: _showLyrics,
-                        onTap: () {
-                          setState(() => _showLyrics = false);
-                        },
-                        onRomajiAvailable: (has) {
-                          if (_lyricsViewHasRomaji != has) {
-                            setState(() => _lyricsViewHasRomaji = has);
-                          }
-                        },
-                      ),
-                    ),
-                  )
-                : Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 32, vertical: 8),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: _LyricPreview(current: current),
-                    ),
+            ? const SizedBox.shrink()
+            : _showLyrics
+            ? ClipRect(
+                child: RepaintBoundary(
+                  child: _LyricsView(
+                    key: _lyricsKey,
+                    current: current,
+                    visible: _showLyrics,
+                    onTap: () {
+                      setState(() => _showLyrics = false);
+                    },
+                    onRomajiAvailable: (has) {
+                      if (_lyricsViewHasRomaji != has) {
+                        setState(() => _lyricsViewHasRomaji = has);
+                      }
+                    },
                   ),
+                ),
+              )
+            : Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 32,
+                  vertical: 8,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _LyricPreview(current: current),
+                ),
+              ),
         bottom: [
           if (_showLyrics && !mvReady) const SizedBox(height: 8),
           RepaintBoundary(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-              child: _GlassControlCard(
-                notifier: notifier,
-                current: current,
-              ),
+              child: _GlassControlCard(notifier: notifier, current: current),
             ),
           ),
         ],
@@ -568,88 +561,96 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         child: mvReady
             ? const SizedBox.shrink()
             : Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 20),
-                child: LayoutBuilder(
-                  builder: (context, cons) {
-                    final side = cons.maxWidth;
-                    final coverSize = side * 0.9 < cons.maxHeight * 0.8
-                        ? side * 0.9
-                        : cons.maxHeight * 0.8;
-                    return Center(
-                      child: GestureDetector(
-                        onTap: () =>
-                            setState(() => _showLyrics = !_showLyrics),
-                        child: Hero(
-                          tag: 'player-cover',
-                          flightShuttleBuilder: (ctx, animation, direction,
-                                  fromCtx, toCtx) =>
-                              PlayerCoverShuttle(
-                                animation: animation,
-                                songPath: current?.path ?? '',
-                                networkUrl: current?.coverUrl,
-                                fromRadius: 23,
-                                toRadius: 31,
-                                borderColor:
-                                    Colors.white.withValues(alpha: 0.18),
-                                shadow: BoxShadow(
-                                  color: scheme
-                                      .primary
-                                      .withValues(alpha: 0.28),
-                                  blurRadius: 36,
-                                  spreadRadius: 2,
+                padding: const EdgeInsets.fromLTRB(8, 0, 12, 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 20),
+                        child: LayoutBuilder(
+                          builder: (context, cons) {
+                            final side = cons.maxWidth;
+                            final coverSize = side * 0.9 < cons.maxHeight * 0.8
+                                ? side * 0.9
+                                : cons.maxHeight * 0.8;
+                            return Center(
+                              child: GestureDetector(
+                                onTap: () =>
+                                    setState(() => _showLyrics = !_showLyrics),
+                                child: Hero(
+                                  tag: 'player-cover',
+                                  flightShuttleBuilder:
+                                      (
+                                        ctx,
+                                        animation,
+                                        direction,
+                                        fromCtx,
+                                        toCtx,
+                                      ) => PlayerCoverShuttle(
+                                        animation: animation,
+                                        songPath: current?.path ?? '',
+                                        networkUrl: current?.coverUrl,
+                                        fromRadius: 23,
+                                        toRadius: 31,
+                                        borderColor: Colors.white.withValues(
+                                          alpha: 0.18,
+                                        ),
+                                        shadow: BoxShadow(
+                                          color: scheme.primary.withValues(
+                                            alpha: 0.28,
+                                          ),
+                                          blurRadius: 36,
+                                          spreadRadius: 2,
+                                        ),
+                                        gradient: [
+                                          scheme.primary,
+                                          scheme.primary.withValues(
+                                            alpha: 0.72,
+                                          ),
+                                        ],
+                                      ),
+                                  child: FlyingCoverAnchor(
+                                    child: CoverReturnSource(
+                                      songPath: current?.path,
+                                      networkUrl: current?.coverUrl,
+                                      child: _BigCover(
+                                        current: current,
+                                        size: coverSize,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                                gradient: [
-                                  scheme.primary,
-                                  scheme.primary.withValues(alpha: 0.72),
-                                ],
                               ),
-                          child: FlyingCoverAnchor(
-                            child: CoverReturnSource(
-                              songPath: current?.path,
-                              networkUrl: current?.coverUrl,
-                              child: _BigCover(
-                                current: current,
-                                size: coverSize,
-                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 22),
+                        child: ClipRect(
+                          child: RepaintBoundary(
+                            child: _LyricsView(
+                              key: _lyricsKey,
+                              current: current,
+                              visible: _showLyrics,
+                              onTap: () =>
+                                  setState(() => _showLyrics = !_showLyrics),
+                              onRomajiAvailable: (has) {
+                                if (_lyricsViewHasRomaji != has) {
+                                  setState(() => _lyricsViewHasRomaji = has);
+                                }
+                              },
                             ),
                           ),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 22),
-                child: ClipRect(
-                  child: RepaintBoundary(
-                    child: _LyricsView(
-                      key: _lyricsKey,
-                      current: current,
-                      visible: _showLyrics,
-                      onTap: () =>
-                          setState(() => _showLyrics = !_showLyrics),
-                      onRomajiAvailable: (has) {
-                        if (_lyricsViewHasRomaji != has) {
-                          setState(() => _lyricsViewHasRomaji = has);
-                        }
-                      },
                     ),
-                  ),
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
-      ),
       ),
       bottom: [
         RepaintBoundary(
@@ -662,12 +663,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 notifier: notifier,
                 current: current,
                 landscape: true,
-                onLyricAdjust: () => _TraditionalPlayerLayoutState
-                    ._showLyricAdjustMenu(
-                  context,
-                  ref,
-                  hasRomaji: hasRomaji,
-                ),
+                onLyricAdjust: () =>
+                    _TraditionalPlayerLayoutState._showLyricAdjustMenu(
+                      context,
+                      ref,
+                      hasRomaji: hasRomaji,
+                    ),
               ),
             ),
           ),
@@ -808,8 +809,7 @@ class _TraditionalPlayerLayoutState
             prefs.getString('player_cover_lyric_align') ?? 'left';
         _coverSizeTier = prefs.getString('player_cover_size') ?? 'large';
       });
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Future<void> _setCoverLyricAlign(String v) async {
@@ -841,9 +841,9 @@ class _TraditionalPlayerLayoutState
       final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
       setState(
-          () => _sleepMinutes = prefs.getInt('player_sleep_minutes') ?? 10);
-    } catch (_) {
-    }
+        () => _sleepMinutes = prefs.getInt('player_sleep_minutes') ?? 10,
+      );
+    } catch (_) {}
   }
 
   void _startSleepTimer(int minutes) {
@@ -854,8 +854,11 @@ class _TraditionalPlayerLayoutState
     });
     _sleepFire = Timer(Duration(minutes: minutes), _onSleepTimeout);
     _persistSleepMinutes();
-    showXianYuToast(context, tr('已定时：{n} 分钟后暂停播放', {'n': minutes}),
-        duration: const Duration(seconds: 1));
+    showXianYuToast(
+      context,
+      tr('已定时：{n} 分钟后暂停播放', {'n': minutes}),
+      duration: const Duration(seconds: 1),
+    );
   }
 
   void _cancelSleepTimer() {
@@ -871,8 +874,11 @@ class _TraditionalPlayerLayoutState
     setState(() => _sleepDeadline = null);
     if (ref.read(playerProvider).isPlaying) {
       ref.read(playerProvider.notifier).pauseFromSystem();
-      showXianYuToast(context, tr('定时时间到，已暂停播放'),
-          duration: const Duration(seconds: 2));
+      showXianYuToast(
+        context,
+        tr('定时时间到，已暂停播放'),
+        duration: const Duration(seconds: 2),
+      );
     }
   }
 
@@ -918,9 +924,11 @@ class _TraditionalPlayerLayoutState
       );
     }
     if (_showLyrics != (i == 1)) setState(() => _showLyrics = i == 1);
-    _notifyHideMv(ref.read(mvProvider).ready &&
-        _showLyrics &&
-        !ref.read(isLandscapeProvider));
+    _notifyHideMv(
+      ref.read(mvProvider).ready &&
+          _showLyrics &&
+          !ref.read(isLandscapeProvider),
+    );
   }
 
   void _notifyHideMv(bool hide) {
@@ -1008,9 +1016,7 @@ class _TraditionalPlayerLayoutState
     final mvReady = ref.watch(mvProvider.select((s) => s.ready));
     return _PlayerShell(
       current: current,
-      top: [
-        _buildTopBar(context),
-      ],
+      top: [_buildTopBar(context)],
       flexible: mvReady
           ? AnimatedSlide(
               offset: _showLyrics ? Offset.zero : const Offset(0.08, 0),
@@ -1027,26 +1033,26 @@ class _TraditionalPlayerLayoutState
               ),
             )
           : Stack(
-        fit: StackFit.expand,
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: 2,
-            allowImplicitScrolling: true,
-            onPageChanged: (i) {
-              if (_showLyrics != (i == 1)) {
-                setState(() => _showLyrics = i == 1);
-              }
-            },
-            itemBuilder: (context, i) {
-              if (i == 0) {
-                return _KeepAliveWrap(child: _buildCoverSection(context));
-              }
-              return _KeepAliveWrap(child: _buildLyricsPage(current));
-            },
-          ),
-        ],
-      ),
+              fit: StackFit.expand,
+              children: [
+                PageView.builder(
+                  controller: _pageController,
+                  itemCount: 2,
+                  allowImplicitScrolling: true,
+                  onPageChanged: (i) {
+                    if (_showLyrics != (i == 1)) {
+                      setState(() => _showLyrics = i == 1);
+                    }
+                  },
+                  itemBuilder: (context, i) {
+                    if (i == 0) {
+                      return _KeepAliveWrap(child: _buildCoverSection(context));
+                    }
+                    return _KeepAliveWrap(child: _buildLyricsPage(current));
+                  },
+                ),
+              ],
+            ),
       bottom: [
         _buildActionsRow(context),
         const SizedBox(height: 4),
@@ -1081,36 +1087,41 @@ class _TraditionalPlayerLayoutState
         child: mvReady
             ? const SizedBox.shrink()
             : Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 24),
-              child: _buildCoverSection(context, showLyricPreview: false),
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 12, right: 56),
-              child: ClipRect(
-              child: RepaintBoundary(
-                child: _LyricsView(
-                  key: _lyricsKey,
-                  current: current,
-                  visible: true,
-                  onTap: widget.onContentAreaTap ?? () {},
-                  onRomajiAvailable: (hasRomaji) {
-                    if (_lyricsViewHasRomaji != hasRomaji) {
-                      setState(() => _lyricsViewHasRomaji = hasRomaji);
-                    }
-                  },
-                ),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 24),
+                      child: _buildCoverSection(
+                        context,
+                        showLyricPreview: false,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 56),
+                      child: ClipRect(
+                        child: RepaintBoundary(
+                          child: _LyricsView(
+                            key: _lyricsKey,
+                            current: current,
+                            visible: true,
+                            onTap: widget.onContentAreaTap ?? () {},
+                            onRomajiAvailable: (hasRomaji) {
+                              if (_lyricsViewHasRomaji != hasRomaji) {
+                                setState(
+                                  () => _lyricsViewHasRomaji = hasRomaji,
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            ),
-          ),
-        ],
-      ),
       ),
       bottom: [
         AutoHideChrome(
@@ -1155,10 +1166,7 @@ class _TraditionalPlayerLayoutState
   }) {
     showSheetDialog<void>(
       context,
-      (_) => _LyricsAdjustDialog(
-        hasRomaji: hasRomaji,
-        showAlign: showAlign,
-      ),
+      (_) => _LyricsAdjustDialog(hasRomaji: hasRomaji, showAlign: showAlign),
     );
   }
 
@@ -1200,8 +1208,9 @@ class _TraditionalPlayerLayoutState
                       label,
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight:
-                            align == value ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: align == value
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                         color: align == value
                             ? const Color(0xFFEC4141)
                             : scheme.onSurfaceVariant,
@@ -1241,11 +1250,7 @@ class _TraditionalPlayerLayoutState
               ),
             ),
             const Spacer(),
-            Icon(
-              Icons.chevron_right_rounded,
-              size: 20,
-              color: scheme.outline,
-            ),
+            Icon(Icons.chevron_right_rounded, size: 20, color: scheme.outline),
           ],
         ),
       ),
@@ -1353,8 +1358,10 @@ class _TraditionalPlayerLayoutState
     );
   }
 
-  Widget _buildCoverSection(BuildContext context,
-      {bool showLyricPreview = true}) {
+  Widget _buildCoverSection(
+    BuildContext context, {
+    bool showLyricPreview = true,
+  }) {
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
     return LayoutBuilder(
       builder: (context, cons) {
@@ -1363,10 +1370,12 @@ class _TraditionalPlayerLayoutState
           'small' => 0.70,
           _ => 1.0,
         };
-        final coverSize = math.min(
-          cons.maxWidth * (showLyricPreview ? 0.85 : 0.92),
-          cons.maxHeight * (showLyricPreview ? 0.6 : 0.88),
-        ) * coverTierScale;
+        final coverSize =
+            math.min(
+              cons.maxWidth * (showLyricPreview ? 0.85 : 0.92),
+              cons.maxHeight * (showLyricPreview ? 0.6 : 0.88),
+            ) *
+            coverTierScale;
         final hInset = (cons.maxWidth - coverSize) / 2;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1379,25 +1388,25 @@ class _TraditionalPlayerLayoutState
                 tag: 'player-cover',
                 flightShuttleBuilder:
                     (ctx, animation, direction, fromCtx, toCtx) {
-                  final scheme = Theme.of(context).colorScheme;
-                  return PlayerCoverShuttle(
-                    animation: animation,
-                    songPath: widget.current?.path ?? '',
-                    networkUrl: widget.current?.coverUrl,
-                    fromRadius: 23,
-                    toRadius: 23,
-                    borderColor: Colors.white.withValues(alpha: 0.14),
-                    shadow: BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 28,
-                      offset: const Offset(0, 10),
-                    ),
-                    gradient: [
-                      scheme.primary,
-                      scheme.primary.withValues(alpha: 0.72),
-                    ],
-                  );
-                },
+                      final scheme = Theme.of(context).colorScheme;
+                      return PlayerCoverShuttle(
+                        animation: animation,
+                        songPath: widget.current?.path ?? '',
+                        networkUrl: widget.current?.coverUrl,
+                        fromRadius: 23,
+                        toRadius: 23,
+                        borderColor: Colors.white.withValues(alpha: 0.14),
+                        shadow: BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 28,
+                          offset: const Offset(0, 10),
+                        ),
+                        gradient: [
+                          scheme.primary,
+                          scheme.primary.withValues(alpha: 0.72),
+                        ],
+                      );
+                    },
                 child: FlyingCoverAnchor(
                   child: CoverReturnSource(
                     songPath: widget.current?.path,
@@ -1445,7 +1454,8 @@ class _TraditionalPlayerLayoutState
   Widget _buildCaption(BuildContext context, {required double inset}) {
     final c = widget.current;
     final chain = _resolveAudioChain(ref, c);
-    final isFav = c != null &&
+    final isFav =
+        c != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(c.path)));
     final fromDaily = c?.fromDailyRecommend ?? false;
     return Padding(
@@ -1551,14 +1561,9 @@ class _TraditionalPlayerLayoutState
     try {
       await ref.read(authProvider.notifier).requestAction(
         'report_daily_dislike',
-        {
-          'ciyuanxi_id': ciyuanxiId,
-          'song_name': c.title,
-          'singer': c.artist,
-        },
+        {'ciyuanxi_id': ciyuanxiId, 'song_name': c.title, 'singer': c.artist},
       );
-    } catch (_) {
-    }
+    } catch (_) {}
     if (!context.mounted) return;
     showXianYuToast(context, tr('已减少此类推荐'));
     await ref.read(playerProvider.notifier).next();
@@ -1574,7 +1579,9 @@ class _TraditionalPlayerLayoutState
       playerProvider.select((s) => s.currentQuality),
     );
     final lyricsEnabled = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
+      settingsProvider.select(
+        (s) => s.valueOrNull?.floatingLyricsEnabled ?? false,
+      ),
     );
     final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
     final mvQuality = ref.watch(
@@ -1582,88 +1589,109 @@ class _TraditionalPlayerLayoutState
     );
     final mvQualityShown =
         mvRequested && mvQuality != null && mvQuality.isNotEmpty;
-    final dlActive = current != null &&
-        dl.tasks.any((t) =>
-            t.songPath == current.path &&
-            (t.status == DownloadStatus.waiting ||
-                t.status == DownloadStatus.downloading));
-    final dlDone = current != null &&
-        (isLocal ||
-            dl.history.any((h) => h.songPath == current.path));
+    final dlActive =
+        current != null &&
+        dl.tasks.any(
+          (t) =>
+              t.songPath == current.path &&
+              (t.status == DownloadStatus.waiting ||
+                  t.status == DownloadStatus.downloading),
+        );
+    final dlDone =
+        current != null &&
+        (isLocal || dl.history.any((h) => h.songPath == current.path));
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Expanded(child: Center(child: _actionItem(
-            context,
-            icon: Icons.graphic_eq,
-            tooltip: tr('音效'),
-            active: !bypass && _hasPlayerEffects(sfx),
-            enabled: !mvRequested,
-            onTap: () => playerNavigatorKey.currentState?.push(
-              coverPageRoute<void>(context, (_) => const EffectsPage()),
-            ),
-          ))),
-          Expanded(child: Center(child: _qualityActionItem(
-            context,
-            quality: mvQualityShown ? mvQuality : currentQuality,
-            onTap: () {
-              final c = current;
-              if (c == null) return;
-              if (c.isOnline) {
-                _showQualitySheet(context, ref);
-              } else {
-                showXianYuToast(context, tr('本地音乐以原音质播放'));
-              }
-            },
-          ))),
-          Expanded(child: Center(child: _downloadActionItem(
-            context,
-            isLocal: isLocal,
-            dlActive: dlActive,
-            dlDone: dlDone,
-            onTap: () {
-              if (current == null) return;
-              if (dlActive) {
-                showXianYuToast(context, tr('正在下载中…'));
-                return;
-              }
-              if (dlDone) {
-                showXianYuToast(
-                  context,
-                  isLocal ? tr('本地音乐已在设备') : tr('已下载，可到下载页查看'),
-                );
-                return;
-              }
-              _showDownloadQualitySheet(context, ref, current);
-            },
-          ))),
-          Expanded(child: Center(child: _actionItem(
-            context,
-            icon: Icons.chat_bubble_outline,
-            iconWidget: themeSlotWidget(
-              ref,
-              'player.comment',
-              size: 24,
-              fallback: _MessageCircleIcon(
-                size: 24,
-                color: current != null && current.isOnline
-                    ? Colors.white.withValues(alpha: 0.85)
-                    : Colors.white.withValues(alpha: 0.32),
+          Expanded(
+            child: Center(
+              child: _actionItem(
+                context,
+                icon: Icons.graphic_eq,
+                tooltip: tr('音效'),
+                active: !bypass && _hasPlayerEffects(sfx),
+                enabled: !mvRequested,
+                onTap: () => playerNavigatorKey.currentState?.push(
+                  coverPageRoute<void>(context, (_) => const EffectsPage()),
+                ),
               ),
             ),
-            tooltip: tr('评论'),
-            enabled: current != null && current.isOnline,
-            onTap: () {
-              final c = current;
-              if (c == null) return;
-              showSheetDialog<void>(
+          ),
+          Expanded(
+            child: Center(
+              child: _qualityActionItem(
                 context,
-                (_) => CommentSheet(songJson: c.onlineSongJson!),
-              );
-            },
-          ))),
-          Expanded(child: Center(child: _lyricsActionItem(context, lyricsEnabled))),
+                quality: mvQualityShown ? mvQuality : currentQuality,
+                onTap: () {
+                  final c = current;
+                  if (c == null) return;
+                  if (c.isOnline) {
+                    _showQualitySheet(context, ref);
+                  } else {
+                    showXianYuToast(context, tr('本地音乐以原音质播放'));
+                  }
+                },
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: _downloadActionItem(
+                context,
+                isLocal: isLocal,
+                dlActive: dlActive,
+                dlDone: dlDone,
+                onTap: () {
+                  if (current == null) return;
+                  if (dlActive) {
+                    showXianYuToast(context, tr('正在下载中…'));
+                    return;
+                  }
+                  if (dlDone) {
+                    showXianYuToast(
+                      context,
+                      isLocal ? tr('本地音乐已在设备') : tr('已下载，可到下载页查看'),
+                    );
+                    return;
+                  }
+                  _showDownloadQualitySheet(context, ref, current);
+                },
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: _actionItem(
+                context,
+                icon: Icons.chat_bubble_outline,
+                iconWidget: themeSlotWidget(
+                  ref,
+                  'player.comment',
+                  size: 24,
+                  fallback: _MessageCircleIcon(
+                    size: 24,
+                    color: current != null && current.isOnline
+                        ? Colors.white.withValues(alpha: 0.85)
+                        : Colors.white.withValues(alpha: 0.32),
+                  ),
+                ),
+                tooltip: tr('评论'),
+                enabled: current != null && current.isOnline,
+                onTap: () {
+                  final c = current;
+                  if (c == null) return;
+                  showSheetDialog<void>(
+                    context,
+                    (_) => CommentSheet(songJson: c.onlineSongJson!),
+                  );
+                },
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(child: _lyricsActionItem(context, lyricsEnabled)),
+          ),
         ],
       ),
     );
@@ -1702,156 +1730,164 @@ class _TraditionalPlayerLayoutState
   }
 
   Future<void> _showCoverMoreSheet(
-      BuildContext context, bool lyricsEnabled) async {
+    BuildContext context,
+    bool lyricsEnabled,
+  ) async {
     final c = widget.current;
     if (c == null) return;
-    await showSheetDialog<void>(
-      context,
-      (ctx) {
-        final scheme = Theme.of(ctx).colorScheme;
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-                child: Text(
-                  c.title,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    await showSheetDialog<void>(context, (ctx) {
+      final scheme = Theme.of(ctx).colorScheme;
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                c.title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                child: Text(
-                  c.artist.isEmpty ? tr('未知歌手') : c.artist,
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Text(
+                c.artist.isEmpty ? tr('未知歌手') : c.artist,
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              StatefulBuilder(
-                builder: (ctx, setSheetState) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _sheetSegmentRow(
-                      ctx,
-                      label: tr('迷你歌词对齐'),
-                      current: _coverLyricAlign,
-                      options: [
-                        (value: 'left', label: tr('左对齐')),
-                        (value: 'center', label: tr('居中')),
-                        (value: 'right', label: tr('右对齐')),
-                      ],
-                      onSelected: (v) {
-                        setSheetState(() {});
-                        _setCoverLyricAlign(v);
-                      },
-                    ),
-                    _sheetSegmentRow(
-                      ctx,
-                      label: tr('封面大小'),
-                      current: _coverSizeTier,
-                      options: [
-                        (value: 'large', label: tr('大')),
-                        (value: 'medium', label: tr('中')),
-                        (value: 'small', label: tr('小')),
-                      ],
-                      onSelected: (v) {
-                        setSheetState(() {});
-                        _setCoverSizeTier(v);
-                      },
-                    ),
-                  ],
-                ),
+            ),
+            StatefulBuilder(
+              builder: (ctx, setSheetState) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sheetSegmentRow(
+                    ctx,
+                    label: tr('迷你歌词对齐'),
+                    current: _coverLyricAlign,
+                    options: [
+                      (value: 'left', label: tr('左对齐')),
+                      (value: 'center', label: tr('居中')),
+                      (value: 'right', label: tr('右对齐')),
+                    ],
+                    onSelected: (v) {
+                      setSheetState(() {});
+                      _setCoverLyricAlign(v);
+                    },
+                  ),
+                  _sheetSegmentRow(
+                    ctx,
+                    label: tr('封面大小'),
+                    current: _coverSizeTier,
+                    options: [
+                      (value: 'large', label: tr('大')),
+                      (value: 'medium', label: tr('中')),
+                      (value: 'small', label: tr('小')),
+                    ],
+                    onSelected: (v) {
+                      setSheetState(() {});
+                      _setCoverSizeTier(v);
+                    },
+                  ),
+                ],
               ),
-              _SleepTimerRow(
-                initialMinutes: _sleepMinutes,
-                deadlineGetter: () => _sleepDeadline,
-                onCommit: _startSleepTimer,
-                onCancel: _cancelSleepTimer,
-              ),
-              if (widget.mvSupported && widget.onToggleMv != null)
-                ListTile(
-                  leading: widget.mvLoading
-                      ? SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.2, color: scheme.primary),
-                        )
-                      : Icon(
-                          widget.mvEnabled
-                              ? Icons.movie
-                              : Icons.movie_creation_outlined,
-                          color: widget.mvEnabled
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                          size: 22,
+            ),
+            _SleepTimerRow(
+              initialMinutes: _sleepMinutes,
+              deadlineGetter: () => _sleepDeadline,
+              onCommit: _startSleepTimer,
+              onCancel: _cancelSleepTimer,
+            ),
+            if (widget.mvSupported && widget.onToggleMv != null)
+              ListTile(
+                leading: widget.mvLoading
+                    ? SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: scheme.primary,
                         ),
-                  title: Text(() {
-                    if (!widget.mvLoading) {
-                      return widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV');
-                    }
-                    if (widget.mvPhase == 'init') {
-                      return widget.mvBufferedSec > 0
-                          ? tr('MV 加载中（已缓冲 {sec} 秒）',
-                              {'sec': widget.mvBufferedSec})
-                          : tr('MV 加载中（准备画面）');
-                    }
-                    return tr('MV 加载中（解析地址）');
-                  }()),
-                  onTap: widget.mvLoading
-                      ? null
-                      : () {
-                          Navigator.pop(ctx);
-                          widget.onToggleMv?.call();
-                        },
-                ),
-              ListTile(
-                leading:
-                    Icon(Icons.playlist_add, color: scheme.primary, size: 22),
-                title: Text(tr('添加到歌单')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  showAddToPlaylistSheet(
-                      ctx, ref, [importedSongFromQueueItem(c)]);
-                },
+                      )
+                    : Icon(
+                        widget.mvEnabled
+                            ? Icons.movie
+                            : Icons.movie_creation_outlined,
+                        color: widget.mvEnabled
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant,
+                        size: 22,
+                      ),
+                title: Text(() {
+                  if (!widget.mvLoading) {
+                    return widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV');
+                  }
+                  if (widget.mvPhase == 'init') {
+                    return widget.mvBufferedSec > 0
+                        ? tr('MV 加载中（已缓冲 {sec} 秒）', {
+                            'sec': widget.mvBufferedSec,
+                          })
+                        : tr('MV 加载中（准备画面）');
+                  }
+                  return tr('MV 加载中（解析地址）');
+                }()),
+                onTap: widget.mvLoading
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        widget.onToggleMv?.call();
+                      },
               ),
-              ListTile(
-                enabled: !widget.mvEnabled,
-                leading: Icon(
-                  Icons.closed_caption_outlined,
-                  color: widget.mvEnabled
-                      ? scheme.outline
-                      : (lyricsEnabled
+            ListTile(
+              leading: Icon(
+                Icons.playlist_add,
+                color: scheme.primary,
+                size: 22,
+              ),
+              title: Text(tr('添加到歌单')),
+              onTap: () {
+                Navigator.pop(ctx);
+                showAddToPlaylistSheet(ctx, ref, [
+                  importedSongFromQueueItem(c),
+                ]);
+              },
+            ),
+            ListTile(
+              enabled: !widget.mvEnabled,
+              leading: Icon(
+                Icons.closed_caption_outlined,
+                color: widget.mvEnabled
+                    ? scheme.outline
+                    : (lyricsEnabled
                           ? scheme.primary
                           : scheme.onSurfaceVariant),
-                  size: 22,
-                ),
-                title: Text(tr('桌面歌词')),
-                trailing: Text(
-                  lyricsEnabled ? tr('已开启') : tr('已关闭'),
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: widget.mvEnabled
-                          ? scheme.outline
-                          : scheme.onSurfaceVariant),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
-                },
+                size: 22,
               ),
-            ],
-          ),
-        );
-      },
-    );
+              title: Text(tr('桌面歌词')),
+              trailing: Text(
+                lyricsEnabled ? tr('已开启') : tr('已关闭'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: widget.mvEnabled
+                      ? scheme.outline
+                      : scheme.onSurfaceVariant,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
+              },
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   Widget _sheetSegmentRow(
@@ -1867,9 +1903,10 @@ class _TraditionalPlayerLayoutState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label,
-              style:
-                  TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1912,8 +1949,9 @@ class _TraditionalPlayerLayoutState
           : themeSlotIcon(
               ref,
               'action.download',
-              fallback:
-                  dlDone ? Icons.check_circle_outline : Icons.download_outlined,
+              fallback: dlDone
+                  ? Icons.check_circle_outline
+                  : Icons.download_outlined,
               color: dlDone
                   ? const Color(0xFF07C160)
                   : Colors.white.withValues(alpha: 0.85),
@@ -1980,12 +2018,13 @@ class _TraditionalPlayerLayoutState
     return IconButton(
       iconSize: 28,
       tooltip: tooltip,
-      icon: iconWidget ??
+      icon:
+          iconWidget ??
           Icon(
             icon,
             color: enabled
                 ? (iconColor ??
-                    (active ? accent : Colors.white.withValues(alpha: 0.85)))
+                      (active ? accent : Colors.white.withValues(alpha: 0.85)))
                 : Colors.white.withValues(alpha: 0.32),
           ),
       onPressed: enabled ? onTap : null,

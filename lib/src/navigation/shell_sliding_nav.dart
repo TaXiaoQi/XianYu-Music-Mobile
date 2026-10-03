@@ -1,6 +1,8 @@
 part of 'shell.dart';
 
+
 /// 顶层水滴快照：_SlidingNavBottom 每帧写入，NavDropletOverlay 消费渲染
+
 class NavDropletSnapshot {
   const NavDropletSnapshot({
     required this.rect,
@@ -34,12 +36,15 @@ class NavDropletSnapshot {
   final bool isDark;
 }
 
-final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot =
-    ValueNotifier(null);
+
+final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot = ValueNotifier(
+  null,
+);
 
 /// 顶层水滴 overlay 宿主：挂在 app.dart builder Stack 中 mini 播放条之上。
 /// 底栏指示水滴独立于底栏树渲染——长按放大可鼓出栏缘、覆盖并折射上方
 /// 内容（对齐 B 站参考效果），不再被顶层播放条盖住上缘。
+
 class NavDropletOverlay extends ConsumerStatefulWidget {
   const NavDropletOverlay({super.key});
 
@@ -70,7 +75,8 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
     // 底栏 hidden = navBarHidden 计数 >0 || 非 root 路径（设置等页面走
     // 后者且会 postFrame 重写快照，仅靠清快照拦不住残影），overlay 显隐
     // 条件必须与 _ShellScaffold 的 hidden 完全一致
-    final chromeHidden = ref.watch(navBarHiddenProvider) > 0 ||
+    final chromeHidden =
+        ref.watch(navBarHiddenProvider) > 0 ||
         !ref.watch(navOnRootPathProvider);
     return Positioned.fill(
       child: IgnorePointer(
@@ -110,8 +116,10 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                   child: const SizedBox.expand(),
                                 ),
                                 CustomPaint(
-                                  painter:
-                                      _DropletEdgePainter(s.press, s.isDark),
+                                  painter: _DropletEdgePainter(
+                                    s.press,
+                                    s.isDark,
+                                  ),
                                 ),
                               ],
                             ),
@@ -122,7 +130,8 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                   ? Colors.white.withValues(alpha: 0.10)
                                   : Colors.black.withValues(alpha: 0.10),
                               borderRadius: BorderRadius.circular(
-                                  s.rect.shortestSide / 2),
+                                s.rect.shortestSide / 2,
+                              ),
                             ),
                           ),
                   ),
@@ -198,9 +207,12 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _sySpd += ((tY - _syPos) * sStiff - _sySpd * sDamp) * dt;
     _syPos += _sySpd * dt;
 
-    final settled = !_dragging &&
-        _sxSpd.abs() < 0.001 && _sxPos.abs() < 0.002 &&
-        _sySpd.abs() < 0.001 && _syPos.abs() < 0.002;
+    final settled =
+        !_dragging &&
+        _sxSpd.abs() < 0.001 &&
+        _sxPos.abs() < 0.002 &&
+        _sySpd.abs() < 0.001 &&
+        _syPos.abs() < 0.002;
     if (settled) {
       _sxPos = _sxSpd = _syPos = _sySpd = 0;
       _springTicker.stop();
@@ -257,8 +269,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     if (widget.index != oldWidget.index && !_dragging) {
       _move.animateWith(
         SpringSimulation(
-          const SpringDescription(
-              mass: 1, stiffness: 420, damping: 25.4),
+          const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
           _move.value,
           widget.index.toDouble(),
           0,
@@ -287,191 +298,186 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       animation: Listenable.merge([_move, _press, _coverAnim]),
       builder: (context, _) => LayoutBuilder(
         builder: (context, constraints) {
-        final overlayDroplet = widget.lens && widget.glassBuilder != null;
-        final maxW = constraints.maxWidth;
-        final maxH = overlayDroplet
-            ? 70.0
-            : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
-        final tabW = (maxW - 20) / items.length;
-        final dropH = (maxH * 0.8).clamp(54.0, 60.0);
-        final pos = _dragging ? _dragPos : _move.value;
+          final overlayDroplet = widget.lens && widget.glassBuilder != null;
+          final maxW = constraints.maxWidth;
+          final maxH = overlayDroplet
+              ? 70.0
+              : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
+          final tabW = (maxW - 20) / items.length;
+          final dropH = (maxH * 0.8).clamp(54.0, 60.0);
+          final pos = _dragging ? _dragPos : _move.value;
 
-        final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
-        final dragMf = _dragging
-            ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
-            : (velPx > 45
-                ? ((velPx - 45) / 1400).clamp(0.0, 1.0)
-                : 0.0);
-        final pressG = Curves.easeOut.transform(_press.value);
-        final mf = math.max(pressG, dragMf);
+          final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
+          final dragMf = _dragging
+              ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
+              : (velPx > 45 ? ((velPx - 45) / 1400).clamp(0.0, 1.0) : 0.0);
+          final pressG = Curves.easeOut.transform(_press.value);
+          final mf = math.max(pressG, dragMf);
 
-        if (_dragging && !_springTicker.isActive) _ensureTicker();
+          if (_dragging && !_springTicker.isActive) _ensureTicker();
 
-        double k = 1 + dragMf * 0.22 + pressG * 0.55;
-        if (!overlayDroplet) {
-          // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
-          // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
-          // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
-          k = math.min(k, maxH / dropH);
-        }
-        final stretchX = _dragging ? _sxPos : 0.0;
-        final stretchY = _dragging ? _syPos : 0.0;
-        // 红色胶囊（非液态）样式：滑动选择时长度收一点，松手回到原长。
-        // 用 _press 驱动，收和放都是 150ms 平滑过渡，不会在松手瞬间硬跳；
-        // 横向也不再跟着 k 变长，否则快速拖动时反而比静止时更长。
-        final squeeze = widget.lens ? 1.0 : 1 - pressG * 0.15;
-        final sx = widget.lens
-            ? k * (1 + stretchX)
-            : (1 + stretchX) * squeeze;
-        final sy = k * (1 + stretchY);
+          double k = 1 + dragMf * 0.22 + pressG * 0.55;
+          if (!overlayDroplet) {
+            // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
+            // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
+            // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
+            k = math.min(k, maxH / dropH);
+          }
+          final stretchX = _dragging ? _sxPos : 0.0;
+          final stretchY = _dragging ? _syPos : 0.0;
+          // 红色胶囊（非液态）样式：滑动选择时长度收一点，松手回到原长。
+          // 用 _press 驱动，收和放都是 150ms 平滑过渡，不会在松手瞬间硬跳；
+          // 横向也不再跟着 k 变长，否则快速拖动时反而比静止时更长。
+          final squeeze = widget.lens ? 1.0 : 1 - pressG * 0.15;
+          final sx = widget.lens
+              ? k * (1 + stretchX)
+              : (1 + stretchX) * squeeze;
+          final sy = k * (1 + stretchY);
 
-        final d = dropH;
-        final bool scaledIndicator = overlayDroplet;
-        final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
-        Widget indicator;
-        if (widget.lens && dropletOn) {
-          final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
-          final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          final press = pressG.clamp(0.0, 1.0);
-          indicator = ClipOval(
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                LiveLiquidSurface(
-                  radius: scaledIndicator ? d * sy / 2 : d / 2,
-                  refract: amount,
-                  chroma: widget.dropletChroma,
-                  blurSigma: 0,
-                  backgroundColor: Colors.transparent,
-                  specular: 0.12,
-                  edgeAmount: band,
-                  saturation: 1.4,
-                  depthEffect: 1.2,
-                  child: const SizedBox.expand(),
-                ),
-                CustomPaint(
-                  painter: _DropletEdgePainter(press, isDark),
-                ),
-              ],
-            ),
-          );
-        } else {
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          indicator = DecoratedBox(
-            decoration: BoxDecoration(
-              color: widget.lens
-                  ? (isDark
-                      ? Colors.white.withValues(alpha: 0.10)
-                      : Colors.black.withValues(alpha: 0.10))
-                  : Theme.of(context)
-                      .colorScheme
-                      .primary
-                      .withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(d / 2),
-            ),
-            child: const SizedBox.expand(),
-          );
-        }
-
-        final indicatorW = widget.lens ? d : (tabW - 8);
-
-        final tabRow = Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (var i = 0; i < items.length; i++)
-                  Expanded(
-                    child: _NavTab(
-                      item: items[i],
-                      selected: i == widget.index,
-                      iconScale: widget.lens
-                          ? 1 +
-                              0.2 *
-                                  (1 - (i - pos).abs()).clamp(0.0, 1.0)
-                          : 1.0,
-                      onTap: () => widget.onSelect(i),
-                      suppressSplash: widget.lens,
-                    ),
+          final d = dropH;
+          final bool scaledIndicator = overlayDroplet;
+          final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
+          Widget indicator;
+          if (widget.lens && dropletOn) {
+            final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
+            final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final press = pressG.clamp(0.0, 1.0);
+            indicator = ClipOval(
+              clipBehavior: Clip.antiAlias,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  LiveLiquidSurface(
+                    radius: scaledIndicator ? d * sy / 2 : d / 2,
+                    refract: amount,
+                    chroma: widget.dropletChroma,
+                    blurSigma: 0,
+                    backgroundColor: Colors.transparent,
+                    specular: 0.12,
+                    edgeAmount: band,
+                    saturation: 1.4,
+                    depthEffect: 1.2,
+                    child: const SizedBox.expand(),
                   ),
-              ],
-            ),
-          ),
-        );
+                  CustomPaint(painter: _DropletEdgePainter(press, isDark)),
+                ],
+              ),
+            );
+          } else {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            indicator = DecoratedBox(
+              decoration: BoxDecoration(
+                color: widget.lens
+                    ? (isDark
+                          ? Colors.white.withValues(alpha: 0.10)
+                          : Colors.black.withValues(alpha: 0.10))
+                    : Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(d / 2),
+              ),
+              child: const SizedBox.expand(),
+            );
+          }
 
-        final gestures = Listener(
-          onPointerDown:
-              widget.lens ? (e) => _onPointerDown(e, tabW, items.length) : null,
-          onPointerUp: widget.lens ? (_) => _setPressed(false) : null,
-          onPointerCancel:
-              widget.lens ? (_) => _onPressCancel() : null,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: (d) => _onDragStart(d, tabW, items.length),
-            onHorizontalDragUpdate: (d) => _onDragUpdate(d, tabW, items.length),
-            onHorizontalDragEnd: (d) => _onDragEnd(d, tabW, items.length - 1),
-            onHorizontalDragCancel: () => _onDragCancel(items.length - 1),
-            child: Stack(
-              children: [
-                tabRow,
-                if (!overlayDroplet)
-                  Positioned(
-                    left: 10 + pos * tabW + (tabW - indicatorW) / 2,
-                    top: (maxH - dropH) / 2,
-                    bottom: (maxH - dropH) / 2,
-                    width: indicatorW,
-                    child: IgnorePointer(
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.diagonal3Values(sx, sy, 1)
-                          ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
-                        child: indicator,
+          final indicatorW = widget.lens ? d : (tabW - 8);
+
+          final tabRow = Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < items.length; i++)
+                    Expanded(
+                      child: _NavTab(
+                        item: items[i],
+                        selected: i == widget.index,
+                        iconScale: widget.lens
+                            ? 1 + 0.2 * (1 - (i - pos).abs()).clamp(0.0, 1.0)
+                            : 1.0,
+                        onTap: () => widget.onSelect(i),
+                        suppressSplash: widget.lens,
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-
-        if (overlayDroplet) {
-          final w = indicatorW * sx;
-          final h = dropH * sy;
-          final cx = 10 + pos * tabW + tabW / 2;
-          // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
-          // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
-          // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
-          // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
-          // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
-          final isDark = Theme.of(context).brightness == Brightness.dark;
-          _syncSnapshot(
-            cx: cx,
-            w: w,
-            h: h,
-            maxH: maxH,
-            liquid: dropletOn,
-            radius: d * sy / 2,
-            refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
-            band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
-            chroma: widget.dropletChroma,
-            shear: _dragVel.sign * _sxPos * 0.12,
-            depth: 1.2 * mf,
-            press: pressG.clamp(0.0, 1.0),
-            isDark: isDark,
           );
-          return widget.glassBuilder!(
-              SizedBox(key: _barKey, height: maxH, child: gestures));
-        }
-        if (navDropletSnapshot.value != null) {
-          // 降级为树内水滴（玻璃引擎不可用）时清掉顶层快照，避免残影
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) navDropletSnapshot.value = null;
-          });
-        }
-        return gestures;
+
+          final gestures = Listener(
+            onPointerDown: widget.lens
+                ? (e) => _onPointerDown(e, tabW, items.length)
+                : null,
+            onPointerUp: widget.lens ? (_) => _setPressed(false) : null,
+            onPointerCancel: widget.lens ? (_) => _onPressCancel() : null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onHorizontalDragStart: (d) => _onDragStart(d, tabW, items.length),
+              onHorizontalDragUpdate: (d) =>
+                  _onDragUpdate(d, tabW, items.length),
+              onHorizontalDragEnd: (d) => _onDragEnd(d, tabW, items.length - 1),
+              onHorizontalDragCancel: () => _onDragCancel(items.length - 1),
+              child: Stack(
+                children: [
+                  tabRow,
+                  if (!overlayDroplet)
+                    Positioned(
+                      left: 10 + pos * tabW + (tabW - indicatorW) / 2,
+                      top: (maxH - dropH) / 2,
+                      bottom: (maxH - dropH) / 2,
+                      width: indicatorW,
+                      child: IgnorePointer(
+                        child: Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.diagonal3Values(sx, sy, 1)
+                            ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
+                          child: indicator,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          );
+
+          if (overlayDroplet) {
+            final w = indicatorW * sx;
+            final h = dropH * sy;
+            final cx = 10 + pos * tabW + tabW / 2;
+            // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
+            // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
+            // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
+            // 栏缘、覆盖并折射上方内容，不再被顶层播放条盖住上缘。
+            // rect 在帧末实测（此时布局已定，localToGlobal 含显隐动画变换）。
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            _syncSnapshot(
+              cx: cx,
+              w: w,
+              h: h,
+              maxH: maxH,
+              liquid: dropletOn,
+              radius: d * sy / 2,
+              refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
+              band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
+              chroma: widget.dropletChroma,
+              shear: _dragVel.sign * _sxPos * 0.12,
+              depth: 1.2 * mf,
+              press: pressG.clamp(0.0, 1.0),
+              isDark: isDark,
+            );
+            return widget.glassBuilder!(
+              SizedBox(key: _barKey, height: maxH, child: gestures),
+            );
+          }
+          if (navDropletSnapshot.value != null) {
+            // 降级为树内水滴（玻璃引擎不可用）时清掉顶层快照，避免残影
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) navDropletSnapshot.value = null;
+            });
+          }
+          return gestures;
         },
       ),
     );
@@ -517,7 +523,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       final rectStable = prev != null && prev.rect == rect;
       // 交互中 press/refract 等随 rebuild 逐帧渐变，有变必须写快照；
       // rect 稳定（且无 rebuild 驱动）后循环自然终止，静息零开销
-      final changed = prev == null ||
+      final changed =
+          prev == null ||
           prev.rect != rect ||
           prev.liquid != liquid ||
           prev.press != press ||
@@ -576,8 +583,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _dragging = true;
     _dragVel = 0;
     _lastDragTime = d.sourceTimeStamp;
-    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
-        .clamp(0.0, count - 1.0);
+    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5).clamp(0.0, count - 1.0);
     _move.stop();
     _move.value = _dragPos;
     _press.forward(from: 0);
@@ -587,8 +593,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   void _onDragUpdate(DragUpdateDetails d, double tabW, int count) {
     final prev = _dragPos;
-    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5)
-        .clamp(0.0, count - 1.0);
+    _dragPos = ((d.localPosition.dx - 10) / tabW - 0.5).clamp(0.0, count - 1.0);
     _move.stop();
     _move.value = _dragPos;
     final ts = d.sourceTimeStamp;
@@ -605,7 +610,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     final vTab = d.velocity.pixelsPerSecond.dx / tabW;
     final projected = (_dragPos + vTab * 0.12).clamp(0.0, maxIndex.toDouble());
     _commitDragTarget(
-        projected.roundToDouble().clamp(0.0, maxIndex.toDouble()));
+      projected.roundToDouble().clamp(0.0, maxIndex.toDouble()),
+    );
   }
 
   void _onDragCancel(int maxIndex) {
@@ -617,8 +623,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _press.reverse();
     _move.animateWith(
       SpringSimulation(
-        const SpringDescription(
-            mass: 1, stiffness: 420, damping: 25.4),
+        const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
         _move.value,
         target,
         _dragVel,
@@ -664,8 +669,13 @@ class _NavTab extends ConsumerWidget {
         children: [
           Transform.scale(
             scale: iconScale,
-            child: themeSlotIcon(ref, item.themeSlot,
-                fallback: item.icon, size: 22, color: color),
+            child: themeSlotIcon(
+              ref,
+              item.themeSlot,
+              fallback: item.icon,
+              size: 22,
+              color: color,
+            ),
           ),
           const SizedBox(height: 3),
           Text(
@@ -693,7 +703,6 @@ class _NavTab extends ConsumerWidget {
     );
   }
 }
-
 
 class _DropletEdgePainter extends CustomPainter {
   const _DropletEdgePainter(this.progress, this.isDark);
@@ -728,4 +737,3 @@ class _DropletEdgePainter extends CustomPainter {
   bool shouldRepaint(_DropletEdgePainter oldDelegate) =>
       oldDelegate.progress != progress || oldDelegate.isDark != isDark;
 }
-

@@ -1,16 +1,14 @@
 part of 'player_page.dart';
 
 class _LyricsAdjustDialog extends ConsumerStatefulWidget {
-  const _LyricsAdjustDialog({
-    required this.hasRomaji,
-    required this.showAlign,
-  });
+  const _LyricsAdjustDialog({required this.hasRomaji, required this.showAlign});
 
   final bool hasRomaji;
   final bool showAlign;
 
   @override
-  ConsumerState<_LyricsAdjustDialog> createState() => _LyricsAdjustDialogState();
+  ConsumerState<_LyricsAdjustDialog> createState() =>
+      _LyricsAdjustDialogState();
 }
 
 enum _LyricAdjustPanel { main, font, offset }
@@ -31,8 +29,12 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           switch (_panel) {
-            _LyricAdjustPanel.main =>
-              _buildMain(context, scheme, align, notifier),
+            _LyricAdjustPanel.main => _buildMain(
+              context,
+              scheme,
+              align,
+              notifier,
+            ),
             _LyricAdjustPanel.font => _buildFont(context),
             _LyricAdjustPanel.offset => _buildOffset(context),
           },
@@ -80,7 +82,10 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
         const SizedBox(height: 16),
         if (widget.showAlign) ...[
           _TraditionalPlayerLayoutState._buildAlignSegmented(
-              context, align, notifier),
+            context,
+            align,
+            notifier,
+          ),
           const SizedBox(height: 8),
           const Divider(height: 1),
           const SizedBox(height: 4),
@@ -161,8 +166,9 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
                       labels[i],
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight:
-                            current == i ? FontWeight.w700 : FontWeight.w500,
+                        fontWeight: current == i
+                            ? FontWeight.w700
+                            : FontWeight.w500,
                         color: current == i
                             ? const Color(0xFFEC4141)
                             : scheme.onSurfaceVariant,
@@ -178,11 +184,7 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
         const SizedBox(height: 12),
         Row(
           children: [
-            Icon(
-              Icons.font_download_outlined,
-              size: 18,
-              color: scheme.outline,
-            ),
+            Icon(Icons.font_download_outlined, size: 18, color: scheme.outline),
             const SizedBox(width: 8),
             Text(
               tr('自定义歌词字体'),
@@ -231,19 +233,13 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           value > 0
               ? tr('提前 {v}ms', {'v': value})
               : value < 0
-                  ? tr('延后 {v}ms', {'v': -value})
-                  : tr('无偏移'),
-          style: TextStyle(
-            fontSize: 13,
-            color: scheme.onSurfaceVariant,
-          ),
+              ? tr('延后 {v}ms', {'v': -value})
+              : tr('无偏移'),
+          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
         ),
         Text(
           tr('蓝牙耳机存在固有延迟，歌词提前时请向"延后"方向调节'),
-          style: TextStyle(
-            fontSize: 11,
-            color: scheme.onSurfaceVariant,
-          ),
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
         ),
         Slider(
           value: value.toDouble(),
@@ -257,17 +253,19 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           alignment: WrapAlignment.center,
           spacing: 8,
           runSpacing: 8,
-          children: [
-            '-200', '-100', '-10', '-1', '+1', '+10', '+100', '+200',
-          ].map((label) {
-            final step = int.parse(label);
-            return _LyricsViewState._offsetStepChip(
-              context,
-              label,
-              scheme,
-              () => notifier.setLyricOffsetMs((value + step).clamp(-2000, 2000)),
-            );
-          }).toList(),
+          children: ['-200', '-100', '-10', '-1', '+1', '+10', '+100', '+200']
+              .map((label) {
+                final step = int.parse(label);
+                return _LyricsViewState._offsetStepChip(
+                  context,
+                  label,
+                  scheme,
+                  () => notifier.setLyricOffsetMs(
+                    (value + step).clamp(-2000, 2000),
+                  ),
+                );
+              })
+              .toList(),
         ),
       ],
     );
@@ -430,7 +428,11 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 
   String _blurSnapshotKey(
-      int index, double sigma, double mainFont, int widthBucket) {
+    int index,
+    double sigma,
+    double mainFont,
+    int widthBucket,
+  ) {
     return '${widget.current?.path}|$index|s${sigma.toStringAsFixed(1)}'
         '|f${mainFont.toStringAsFixed(1)}|w$widthBucket'
         '|t${_showTranslation ? 1 : 0}|r${_showRomaji ? 1 : 0}'
@@ -438,9 +440,14 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   }
 
   _BlurredLineSnapshot? _findFallbackSnapshot(
-      int index, double sigma, double mainFont, int widthBucket) {
+    int index,
+    double sigma,
+    double mainFont,
+    int widthBucket,
+  ) {
     final pathPrefix = '${widget.current?.path}|$index|';
-    final tail = '|f${mainFont.toStringAsFixed(1)}|w$widthBucket'
+    final tail =
+        '|f${mainFont.toStringAsFixed(1)}|w$widthBucket'
         '|t${_showTranslation ? 1 : 0}|r${_showRomaji ? 1 : 0}'
         '|a${_align.index}';
     _BlurredLineSnapshot? best;
@@ -468,7 +475,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (_blurCapturing.contains(key)) return;
     _blurCapturing.add(key);
     _blurCaptureQueue.add(
-        _BlurCaptureTask(index: index, key: key, sigma: sigma));
+      _BlurCaptureTask(index: index, key: key, sigma: sigma),
+    );
     _pumpBlurCaptures();
   }
 
@@ -483,8 +491,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       } finally {
         _blurCapturePumping = false;
         if (mounted && _blurCaptureQueue.isNotEmpty) {
-          WidgetsBinding.instance
-              .addPostFrameCallback((_) => _pumpBlurCaptures());
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _pumpBlurCaptures(),
+          );
         }
       }
     });
@@ -501,8 +510,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         boundary.debugNeedsPaint) {
       return;
     }
-    final dpr =
-        MediaQuery.of(context).devicePixelRatio.clamp(1.0, 2.0).toDouble();
+    final dpr = MediaQuery.of(
+      context,
+    ).devicePixelRatio.clamp(1.0, 2.0).toDouble();
     final ui.Image raw;
     try {
       raw = await boundary.toImage(pixelRatio: dpr);
@@ -515,7 +525,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       raw,
       Offset.zero,
       Paint()
-        ..imageFilter = ImageFilter.blur(sigmaX: task.sigma, sigmaY: task.sigma),
+        ..imageFilter = ImageFilter.blur(
+          sigmaX: task.sigma,
+          sigmaY: task.sigma,
+        ),
     );
     final picture = recorder.endRecording();
     final blurred = await picture.toImage(raw.width, raw.height);
@@ -565,8 +578,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   void didUpdateWidget(_LyricsView oldWidget) {
     super.didUpdateWidget(oldWidget);
     final pathChanged = oldWidget.current?.path != widget.current?.path;
-    final onlineJsonChanged = oldWidget.current?.onlineSongJson !=
-        widget.current?.onlineSongJson;
+    final onlineJsonChanged =
+        oldWidget.current?.onlineSongJson != widget.current?.onlineSongJson;
     if (pathChanged || onlineJsonChanged) {
       final p = ref.read(playerProvider).position;
       _anchorPos = p;
@@ -636,7 +649,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         offset = contribution;
       } else {
         final itemE = _pullEase((t - startMs) / durationMs);
-        offset = (contribution - _pullDistance * itemE).clamp(0.0, double.infinity);
+        offset = (contribution - _pullDistance * itemE).clamp(
+          0.0,
+          double.infinity,
+        );
       }
       final clamped = math.max(offset, previous);
       previous = clamped;
@@ -863,7 +879,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       String jsonStr = '';
 
       if (item.isOnline) {
-        final repoLines = await ref.read(lyricsRepositoryProvider).fetchLyrics(item);
+        final repoLines = await ref
+            .read(lyricsRepositoryProvider)
+            .fetchLyrics(item);
         final viewLines = _lyricLinesToViewItems(repoLines);
         if (viewLines.isNotEmpty && mounted) {
           _cacheLyrics(item.path, viewLines);
@@ -951,8 +969,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (layout == null) {
       if (idx >= 0 && _lines.length > 1) {
         final maxScroll = _scrollCtrl.position.maxScrollExtent;
-        final target = (maxScroll * idx / (_lines.length - 1))
-            .clamp(0.0, maxScroll);
+        final target = (maxScroll * idx / (_lines.length - 1)).clamp(
+          0.0,
+          maxScroll,
+        );
         if ((target - _scrollCtrl.offset).abs() >= 1) {
           _scrollCtrl.jumpTo(target);
         }
@@ -970,8 +990,10 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _pendingCenterFallback?.cancel();
     _pendingCenterFallback = null;
     _lastActiveIndex = idx;
-    final target = (layout.$1 + layout.$2 / 2 - viewport / 2)
-        .clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+    final target = (layout.$1 + layout.$2 / 2 - viewport / 2).clamp(
+      0.0,
+      _scrollCtrl.position.maxScrollExtent,
+    );
     if ((target - _scrollCtrl.offset).abs() >= 1) {
       _scrollCtrl.jumpTo(target);
     }
@@ -1009,7 +1031,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (layout != null && viewport > 0) {
       targetOffset = layout.$1 + layout.$2 / 2 - viewport / 2;
     } else {
-      targetOffset = maxScroll *
+      targetOffset =
+          maxScroll *
           (activeIndex / (_lines.length > 1 ? (_lines.length - 1) : 1));
     }
     targetOffset = targetOffset.clamp(0.0, maxScroll);
@@ -1110,7 +1133,8 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         ),
       );
     } else {
-      final typicalH = mainFont * 1.35 +
+      final typicalH =
+          mainFont * 1.35 +
           (_showRomaji ? romajiFont * 1.2 + 5 : 0) +
           (_showTranslation ? transFont * 1.35 + 6 : 0);
       content = LayoutBuilder(
@@ -1118,17 +1142,20 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           final viewport = constraints.maxHeight;
           if (_lastViewportHeight != null &&
               (_lastViewportHeight! - viewport).abs() > 1) {
-            final widthChanged = _lastViewportWidth != null &&
+            final widthChanged =
+                _lastViewportWidth != null &&
                 (_lastViewportWidth! - constraints.maxWidth).abs() > 1;
             _viewportChangeDebounce?.cancel();
             _viewportChangeDebounce = Timer(
-                const Duration(milliseconds: 350), () {
-              if (!mounted) return;
-              if (widthChanged) _lineLayouts.clear();
-              _pendingCenterJump = true;
-              _pendingCenterFallback?.cancel();
-              _tryPendingCenterJump();
-            });
+              const Duration(milliseconds: 350),
+              () {
+                if (!mounted) return;
+                if (widthChanged) _lineLayouts.clear();
+                _pendingCenterJump = true;
+                _pendingCenterFallback?.cancel();
+                _tryPendingCenterJump();
+              },
+            );
           }
           _lastViewportHeight = viewport;
           _lastViewportWidth = constraints.maxWidth;
@@ -1136,200 +1163,217 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           final topPad = blank < 20 ? 20.0 : blank;
           final bottomPad = blank < 40 ? 40.0 : blank;
           return NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is UserScrollNotification) {
-            _onUserScrollStart();
-            _scheduleAutoRecenter();
-          } else if (notification is ScrollUpdateNotification) {
-            if (_userInteracted) _updateDraggingIndex();
-          }
-          return false;
-        },
-        child: ListView.builder(
-          controller: _scrollCtrl,
-          padding: EdgeInsets.fromLTRB(28, topPad, 28, bottomPad),
-          scrollCacheExtent: ScrollCacheExtent.pixels(200),
-          addAutomaticKeepAlives: false,
-          addRepaintBoundaries: true,
-          itemCount: _lines.length,
-          itemBuilder: (context, idx) {
-            final line = _lines[idx];
-            final isActive = idx == activeIndex;
-            final isDragging = idx == _draggingIndex;
-            final dist = (idx - activeIndex).abs();
-            final inactiveAlpha = dist == 1
-                ? 0.42
-                : dist == 2
+            onNotification: (notification) {
+              if (notification is UserScrollNotification) {
+                _onUserScrollStart();
+                _scheduleAutoRecenter();
+              } else if (notification is ScrollUpdateNotification) {
+                if (_userInteracted) _updateDraggingIndex();
+              }
+              return false;
+            },
+            child: ListView.builder(
+              controller: _scrollCtrl,
+              padding: EdgeInsets.fromLTRB(28, topPad, 28, bottomPad),
+              scrollCacheExtent: ScrollCacheExtent.pixels(200),
+              addAutomaticKeepAlives: false,
+              addRepaintBoundaries: true,
+              itemCount: _lines.length,
+              itemBuilder: (context, idx) {
+                final line = _lines[idx];
+                final isActive = idx == activeIndex;
+                final isDragging = idx == _draggingIndex;
+                final dist = (idx - activeIndex).abs();
+                final inactiveAlpha = dist == 1
+                    ? 0.42
+                    : dist == 2
                     ? 0.28
                     : 0.16;
-            final passed = idx < activeIndex;
-            final blurSigma = (!_userInteracted && !isActive)
-                ? math.min(1.0 + dist + (passed ? 1.0 : 0.0), 8.0)
-                : 0.0;
+                final passed = idx < activeIndex;
+                final blurSigma = (!_userInteracted && !isActive)
+                    ? math.min(1.0 + dist + (passed ? 1.0 : 0.0), 8.0)
+                    : 0.0;
 
-            Widget lineChild = Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (_showRomaji &&
-                    line.romaji != null &&
-                    line.romaji!.isNotEmpty) ...[
-                  Text(
-                    line.romaji!,
-                    textAlign: _align,
-                    style: TextStyle(
-                      fontSize: romajiFont,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white.withValues(alpha: 0.34),
-                      height: 1.2,
-                      fontFamily: lyricFontFamily,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                ],
-                if (isActive && line.words.isNotEmpty)
-                  RepaintBoundary(
-                    child: ValueListenableBuilder<double>(
-                      valueListenable: _progress,
-                      builder: (context, pos, _) {
-                        return Wrap(
-                          alignment: switch (_align) {
-                            TextAlign.left => WrapAlignment.start,
-                            TextAlign.right => WrapAlignment.end,
-                            _ => WrapAlignment.center,
+                Widget lineChild = Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_showRomaji &&
+                        line.romaji != null &&
+                        line.romaji!.isNotEmpty) ...[
+                      Text(
+                        line.romaji!,
+                        textAlign: _align,
+                        style: TextStyle(
+                          fontSize: romajiFont,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white.withValues(alpha: 0.34),
+                          height: 1.2,
+                          fontFamily: lyricFontFamily,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                    ],
+                    if (isActive && line.words.isNotEmpty)
+                      RepaintBoundary(
+                        child: ValueListenableBuilder<double>(
+                          valueListenable: _progress,
+                          builder: (context, pos, _) {
+                            return Wrap(
+                              alignment: switch (_align) {
+                                TextAlign.left => WrapAlignment.start,
+                                TextAlign.right => WrapAlignment.end,
+                                _ => WrapAlignment.center,
+                              },
+                              children: [
+                                for (final w in line.words)
+                                  _buildKaraokeWord(
+                                    w,
+                                    pos - _offsetMs / 1000.0,
+                                    mainFont,
+                                    lyricFontFamily,
+                                  ),
+                              ],
+                            );
                           },
-                          children: [
-                            for (final w in line.words)
-                              _buildKaraokeWord(
-                                w,
-                                pos - _offsetMs / 1000.0,
-                                mainFont,
-                                lyricFontFamily,
-                              ),
-                          ],
-                        );
-                      },
-                    ),
-                  )
-                else
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    style: TextStyle(
-                      fontSize: mainFont,
-                      fontWeight: FontWeight.w700,
-                      color: isDragging
-                          ? Colors.white
-                          : Colors.white
-                              .withValues(alpha: isActive ? 1.0 : inactiveAlpha),
-                      height: 1.35,
-                      fontFamily: lyricFontFamily,
-                    ),
-                    child: Text(line.text, textAlign: _align),
-                  ),
-                if (_showTranslation &&
-                    line.translation != null &&
-                    line.translation!.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    line.translation!,
-                    textAlign: _align,
-                    style: TextStyle(
-                      fontSize: transFont,
-                      fontWeight: FontWeight.w500,
-                      color: isDragging
-                          ? Colors.white.withValues(alpha: 0.8)
-                          : Colors.white
-                              .withValues(alpha: isActive ? 0.58 : 0.34),
-                      height: 1.35,
-                      fontFamily: lyricFontFamily,
-                    ),
-                  ),
-                ],
-              ],
-            );
-
-            lineChild = AnimatedScale(
-              scale: isActive ? 1.0 : 0.92,
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOutCubic,
-              child: lineChild,
-            );
-
-            if (dist >= 1) {
-              final steady = _blurSteady;
-              final widthBucket = constraints.maxWidth.isFinite
-                  ? constraints.maxWidth.round()
-                  : 0;
-              final snapKey =
-                  _blurSnapshotKey(idx, blurSigma, mainFont, widthBucket);
-              final snap = steady
-                  ? (_blurSnapshots[snapKey] ??
-                      _findFallbackSnapshot(
-                          idx, blurSigma, mainFont, widthBucket))
-                  : null;
-              if (snap != null) {
-                lineChild = RawImage(
-                  image: snap.image,
-                  width: snap.width,
-                  height: snap.height,
-                  fit: BoxFit.fill,
+                        ),
+                      )
+                    else
+                      AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        style: TextStyle(
+                          fontSize: mainFont,
+                          fontWeight: FontWeight.w700,
+                          color: isDragging
+                              ? Colors.white
+                              : Colors.white.withValues(
+                                  alpha: isActive ? 1.0 : inactiveAlpha,
+                                ),
+                          height: 1.35,
+                          fontFamily: lyricFontFamily,
+                        ),
+                        child: Text(line.text, textAlign: _align),
+                      ),
+                    if (_showTranslation &&
+                        line.translation != null &&
+                        line.translation!.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        line.translation!,
+                        textAlign: _align,
+                        style: TextStyle(
+                          fontSize: transFont,
+                          fontWeight: FontWeight.w500,
+                          color: isDragging
+                              ? Colors.white.withValues(alpha: 0.8)
+                              : Colors.white.withValues(
+                                  alpha: isActive ? 0.58 : 0.34,
+                                ),
+                          height: 1.35,
+                          fontFamily: lyricFontFamily,
+                        ),
+                      ),
+                    ],
+                  ],
                 );
-              } else {
-                if (steady) {
-                  lineChild = RepaintBoundary(
-                    key: _blurBoundaryKeys.putIfAbsent(idx, GlobalKey.new),
-                    child: lineChild,
-                  );
-                  _scheduleBlurCapture(idx, snapKey, blurSigma);
-                }
-                if (idx == _prevActiveIndex) {
-                  lineChild = TweenAnimationBuilder<double>(
-                    tween: Tween(end: blurSigma.toDouble()),
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutCubic,
-                    builder: (context, sigma, child) => sigma <= 0.1
-                        ? child!
-                        : ImageFiltered(
-                            imageFilter: ImageFilter.blur(
-                                sigmaX: sigma, sigmaY: sigma),
-                            child: child,
-                          ),
-                    child: lineChild,
-                  );
-                } else {
-                  lineChild = blurSigma <= 0.1
-                      ? lineChild
-                      : ImageFiltered(
-                          imageFilter: ImageFilter.blur(
-                              sigmaX: blurSigma, sigmaY: blurSigma),
-                          child: lineChild,
-                        );
-                }
-              }
-            }
 
-            lineChild = ListenableBuilder(
-              listenable: _pullRevision,
-              child: lineChild,
-              builder: (context, child) {
-                final signed = (idx - activeIndex).clamp(-4, 4);
-                final dy = signed * -2.0 + (_pullOffsets[idx] ?? 0.0);
-                if (dy == 0) return child!;
-                return Transform.translate(offset: Offset(0, dy), child: child);
+                lineChild = AnimatedScale(
+                  scale: isActive ? 1.0 : 0.92,
+                  duration: const Duration(milliseconds: 320),
+                  curve: Curves.easeOutCubic,
+                  child: lineChild,
+                );
+
+                if (dist >= 1) {
+                  final steady = _blurSteady;
+                  final widthBucket = constraints.maxWidth.isFinite
+                      ? constraints.maxWidth.round()
+                      : 0;
+                  final snapKey = _blurSnapshotKey(
+                    idx,
+                    blurSigma,
+                    mainFont,
+                    widthBucket,
+                  );
+                  final snap = steady
+                      ? (_blurSnapshots[snapKey] ??
+                            _findFallbackSnapshot(
+                              idx,
+                              blurSigma,
+                              mainFont,
+                              widthBucket,
+                            ))
+                      : null;
+                  if (snap != null) {
+                    lineChild = RawImage(
+                      image: snap.image,
+                      width: snap.width,
+                      height: snap.height,
+                      fit: BoxFit.fill,
+                    );
+                  } else {
+                    if (steady) {
+                      lineChild = RepaintBoundary(
+                        key: _blurBoundaryKeys.putIfAbsent(idx, GlobalKey.new),
+                        child: lineChild,
+                      );
+                      _scheduleBlurCapture(idx, snapKey, blurSigma);
+                    }
+                    if (idx == _prevActiveIndex) {
+                      lineChild = TweenAnimationBuilder<double>(
+                        tween: Tween(end: blurSigma.toDouble()),
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, sigma, child) => sigma <= 0.1
+                            ? child!
+                            : ImageFiltered(
+                                imageFilter: ImageFilter.blur(
+                                  sigmaX: sigma,
+                                  sigmaY: sigma,
+                                ),
+                                child: child,
+                              ),
+                        child: lineChild,
+                      );
+                    } else {
+                      lineChild = blurSigma <= 0.1
+                          ? lineChild
+                          : ImageFiltered(
+                              imageFilter: ImageFilter.blur(
+                                sigmaX: blurSigma,
+                                sigmaY: blurSigma,
+                              ),
+                              child: lineChild,
+                            );
+                    }
+                  }
+                }
+
+                lineChild = ListenableBuilder(
+                  listenable: _pullRevision,
+                  child: lineChild,
+                  builder: (context, child) {
+                    final signed = (idx - activeIndex).clamp(-4, 4);
+                    final dy = signed * -2.0 + (_pullOffsets[idx] ?? 0.0);
+                    if (dy == 0) return child!;
+                    return Transform.translate(
+                      offset: Offset(0, dy),
+                      child: child,
+                    );
+                  },
+                );
+
+                return _MeasuredLine(
+                  index: idx,
+                  onMeasured: _onLineMeasured,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: lineChild,
+                  ),
+                );
               },
-            );
-
-            return _MeasuredLine(
-              index: idx,
-              onMeasured: _onLineMeasured,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: lineChild,
-              ),
-            );
-          },
-        ),
-      );
+            ),
+          );
         },
       );
       if (_pendingCenterJump) {
@@ -1397,89 +1441,86 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              Text(
+            Text(
               tr('歌词字号'),
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
-              StatefulBuilder(
-                builder: (ctx, setSheetState) {
-                  return Row(
-                    children: [
-                      ...List.generate(4, (i) {
-                        final labels = [tr('小'), tr('标准'), tr('大'), tr('特大')];
-                        return Expanded(
-                          child: InkWell(
-                            onTap: () {
-                              setSheetState(() => current = i);
-                              notifier.setLyricFontSize(i);
-                            },
-                            child: Container(
-                              alignment: Alignment.center,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
-                              margin: const EdgeInsets.only(right: 8),
-                              decoration: BoxDecoration(
+            StatefulBuilder(
+              builder: (ctx, setSheetState) {
+                return Row(
+                  children: [
+                    ...List.generate(4, (i) {
+                      final labels = [tr('小'), tr('标准'), tr('大'), tr('特大')];
+                      return Expanded(
+                        child: InkWell(
+                          onTap: () {
+                            setSheetState(() => current = i);
+                            notifier.setLyricFontSize(i);
+                          },
+                          child: Container(
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: current == i
+                                  ? const Color(
+                                      0xFFEC4141,
+                                    ).withValues(alpha: 0.14)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              labels[i],
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: current == i
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                                 color: current == i
-                                    ? const Color(
-                                        0xFFEC4141,
-                                      ).withValues(alpha: 0.14)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                labels[i],
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: current == i
-                                      ? FontWeight.w700
-                                      : FontWeight.w500,
-                                  color: current == i
-                                      ? const Color(0xFFEC4141)
-                                      : Theme.of(
-                                          ctx,
-                                        ).colorScheme.onSurfaceVariant,
-                                ),
+                                    ? const Color(0xFFEC4141)
+                                    : Theme.of(
+                                        ctx,
+                                      ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ),
-                        );
-                      }),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Icon(
-                    Icons.font_download_outlined,
-                    size: 18,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(width: 8),
-                    Text(
-                    tr('自定义歌词字体'),
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  _FontImportAction(sheetCtx: sheetCtx),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                tr('支持 .ttf / .otf 字体文件，导入后立即应用到歌词'),
-                style: TextStyle(
-                  fontSize: 11,
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.font_download_outlined,
+                  size: 18,
                   color: Theme.of(context).colorScheme.outline,
                 ),
+                const SizedBox(width: 8),
+                Text(
+                  tr('自定义歌词字体'),
+                  style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                _FontImportAction(sheetCtx: sheetCtx),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              tr('支持 .ttf / .otf 字体文件，导入后立即应用到歌词'),
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.outline,
               ),
-            ],
-          ),
-        );
+            ),
+          ],
+        ),
+      );
     });
   }
 
@@ -1491,6 +1532,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
         setSheetState(() => value = v);
         notifier.setLyricOffsetMs(v);
       }
+
       return Padding(
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
         child: Column(
@@ -1500,111 +1542,111 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                  Text(
+                Text(
                   tr('歌词偏移'),
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
-                  TextButton(
-                    onPressed: () {
-                      notifier.setLyricOffsetMs(0);
-                      Navigator.of(sheetCtx).pop();
-                    },
-                    child:   Text(tr('重置')),
-                  ),
-                ],
-              ),
-              StatefulBuilder(
-                builder: (ctx, setSheetState) {
-                  final scheme = Theme.of(ctx).colorScheme;
-                  return Column(
-                    children: [
-                      Text(
-                        value > 0
-                            ? tr('提前 {v}ms', {'v': value})
-                            : value < 0
-                            ? tr('延后 {v}ms', {'v': -value})
-                            : tr('无偏移'),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: scheme.onSurfaceVariant,
+                TextButton(
+                  onPressed: () {
+                    notifier.setLyricOffsetMs(0);
+                    Navigator.of(sheetCtx).pop();
+                  },
+                  child: Text(tr('重置')),
+                ),
+              ],
+            ),
+            StatefulBuilder(
+              builder: (ctx, setSheetState) {
+                final scheme = Theme.of(ctx).colorScheme;
+                return Column(
+                  children: [
+                    Text(
+                      value > 0
+                          ? tr('提前 {v}ms', {'v': value})
+                          : value < 0
+                          ? tr('延后 {v}ms', {'v': -value})
+                          : tr('无偏移'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    Slider(
+                      value: value.toDouble(),
+                      min: -500,
+                      max: 500,
+                      divisions: 100,
+                      label: '${value}ms',
+                      onChanged: (v) => apply(v.round(), setSheetState),
+                    ),
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _offsetStepChip(
+                          ctx,
+                          '-100',
+                          scheme,
+                          () => apply(
+                            (value - 100).clamp(-500, 500),
+                            setSheetState,
+                          ),
                         ),
-                      ),
-                      Slider(
-                        value: value.toDouble(),
-                        min: -500,
-                        max: 500,
-                        divisions: 100,
-                        label: '${value}ms',
-                        onChanged: (v) => apply(v.round(), setSheetState),
-                      ),
-                      Wrap(
-                        alignment: WrapAlignment.center,
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _offsetStepChip(
-                            ctx,
-                            '-100',
-                            scheme,
-                            () => apply(
-                              (value - 100).clamp(-500, 500),
-                              setSheetState,
-                            ),
+                        _offsetStepChip(
+                          ctx,
+                          '-10',
+                          scheme,
+                          () => apply(
+                            (value - 10).clamp(-500, 500),
+                            setSheetState,
                           ),
-                          _offsetStepChip(
-                            ctx,
-                            '-10',
-                            scheme,
-                            () => apply(
-                              (value - 10).clamp(-500, 500),
-                              setSheetState,
-                            ),
+                        ),
+                        _offsetStepChip(
+                          ctx,
+                          '-1',
+                          scheme,
+                          () => apply(
+                            (value - 1).clamp(-500, 500),
+                            setSheetState,
                           ),
-                          _offsetStepChip(
-                            ctx,
-                            '-1',
-                            scheme,
-                            () => apply(
-                              (value - 1).clamp(-500, 500),
-                              setSheetState,
-                            ),
+                        ),
+                        _offsetStepChip(
+                          ctx,
+                          '+1',
+                          scheme,
+                          () => apply(
+                            (value + 1).clamp(-500, 500),
+                            setSheetState,
                           ),
-                          _offsetStepChip(
-                            ctx,
-                            '+1',
-                            scheme,
-                            () => apply(
-                              (value + 1).clamp(-500, 500),
-                              setSheetState,
-                            ),
+                        ),
+                        _offsetStepChip(
+                          ctx,
+                          '+10',
+                          scheme,
+                          () => apply(
+                            (value + 10).clamp(-500, 500),
+                            setSheetState,
                           ),
-                          _offsetStepChip(
-                            ctx,
-                            '+10',
-                            scheme,
-                            () => apply(
-                              (value + 10).clamp(-500, 500),
-                              setSheetState,
-                            ),
+                        ),
+                        _offsetStepChip(
+                          ctx,
+                          '+100',
+                          scheme,
+                          () => apply(
+                            (value + 100).clamp(-500, 500),
+                            setSheetState,
                           ),
-                          _offsetStepChip(
-                            ctx,
-                            '+100',
-                            scheme,
-                            () => apply(
-                              (value + 100).clamp(-500, 500),
-                              setSheetState,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-        );
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      );
     });
   }
 
@@ -1665,10 +1707,7 @@ Widget _buildKaraokeWord(
       style: style.copyWith(
         color: highlightColor,
         shadows: [
-          Shadow(
-            color: Colors.white.withValues(alpha: 0.35),
-            blurRadius: 10,
-          ),
+          Shadow(color: Colors.white.withValues(alpha: 0.35), blurRadius: 10),
         ],
       ),
     );
@@ -1826,100 +1865,101 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
           child: AnimatedContainer(
-          duration: const Duration(milliseconds: 280),
-          curve: Curves.easeOutCubic,
-          width: panelWidth,
-          decoration: BoxDecoration(
-            color: surfaceFillWithBudget(panelBg, budget),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
-                blurRadius: 18,
-                offset: const Offset(0, 6),
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            width: panelWidth,
+            decoration: BoxDecoration(
+              color: surfaceFillWithBudget(panelBg, budget),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.5),
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                onTap: () => setState(() => _expanded = !_expanded),
-                borderRadius: BorderRadius.circular(20),
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Center(
-                    child: AnimatedRotation(
-                      turns: _expanded ? 0.25 : 0.0,
-                      duration: const Duration(milliseconds: 280),
-                      curve: Curves.easeOutCubic,
-                      child: Icon(
-                        Icons.tune_rounded,
-                        size: 20,
-                        color: _expanded
-                            ? const Color(0xFFEC4141)
-                            : Colors.white.withValues(alpha: 0.9),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.12),
+                  blurRadius: 18,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: () => setState(() => _expanded = !_expanded),
+                  borderRadius: BorderRadius.circular(20),
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Center(
+                      child: AnimatedRotation(
+                        turns: _expanded ? 0.25 : 0.0,
+                        duration: const Duration(milliseconds: 280),
+                        curve: Curves.easeOutCubic,
+                        child: Icon(
+                          Icons.tune_rounded,
+                          size: 20,
+                          color: _expanded
+                              ? const Color(0xFFEC4141)
+                              : Colors.white.withValues(alpha: 0.9),
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              AnimatedSize(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: _expanded
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Divider(
-                            height: 1,
-                            indent: 8,
-                            endIndent: 8,
-                            thickness: 0.5,
-                            color: Colors.white.withValues(alpha: 0.15),
-                          ),
-                          const SizedBox(height: 4),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: _expanded
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Divider(
+                              height: 1,
+                              indent: 8,
+                              endIndent: 8,
+                              thickness: 0.5,
+                              color: Colors.white.withValues(alpha: 0.15),
+                            ),
+                            const SizedBox(height: 4),
 
-                          _RailIconButton(
-                            icon: Icons.format_size_rounded,
-                            active: widget.fontSizeIdx != 1,
-                            onTap: widget.onFontSize,
-                          ),
+                            _RailIconButton(
+                              icon: Icons.format_size_rounded,
+                              active: widget.fontSizeIdx != 1,
+                              onTap: widget.onFontSize,
+                            ),
 
-                          _RailIconButton(
-                            icon: Icons.translate_rounded,
-                            active:
-                                widget.showTranslation && widget.hasTranslation,
-                            disabled: !widget.hasTranslation,
-                            onTap: widget.onToggleTranslation,
-                          ),
+                            _RailIconButton(
+                              icon: Icons.translate_rounded,
+                              active:
+                                  widget.showTranslation &&
+                                  widget.hasTranslation,
+                              disabled: !widget.hasTranslation,
+                              onTap: widget.onToggleTranslation,
+                            ),
 
-                          _RailIconButton(
-                            icon: Icons.abc_rounded,
-                            active: widget.showRomaji && widget.hasRomaji,
-                            disabled: !widget.hasRomaji,
-                            onTap: widget.onToggleRomaji,
-                          ),
+                            _RailIconButton(
+                              icon: Icons.abc_rounded,
+                              active: widget.showRomaji && widget.hasRomaji,
+                              disabled: !widget.hasRomaji,
+                              onTap: widget.onToggleRomaji,
+                            ),
 
-                          _RailIconButton(
-                            icon: Icons.av_timer_rounded,
-                            active: widget.offsetMs != 0,
-                            onTap: widget.onOffset,
-                          ),
+                            _RailIconButton(
+                              icon: Icons.av_timer_rounded,
+                              active: widget.offsetMs != 0,
+                              onTap: widget.onOffset,
+                            ),
 
-                          const SizedBox(height: 6),
-                        ],
-                      )
-                    : const SizedBox(width: 40, height: 0),
-              ),
-            ],
-          ),
+                            const SizedBox(height: 6),
+                          ],
+                        )
+                      : const SizedBox(width: 40, height: 0),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1960,7 +2000,7 @@ class _FontImportAction extends ConsumerWidget {
           }
         },
         icon: const Icon(Icons.file_open_outlined, size: 18),
-        label:   Text(tr('选择字体')),
+        label: Text(tr('选择字体')),
       );
     }
 
@@ -1981,7 +2021,7 @@ class _FontImportAction extends ConsumerWidget {
             await n.setLyricFontPath('');
           },
           icon: const Icon(Icons.refresh, size: 16),
-          label:   Text(tr('恢复默认')),
+          label: Text(tr('恢复默认')),
         ),
       ],
     );

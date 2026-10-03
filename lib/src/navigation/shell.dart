@@ -1,7 +1,5 @@
-import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:flutter/material.dart';
@@ -10,7 +8,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import '../core/app_logger.dart';
 import '../core/app_colors.dart';
 import '../core/haptics.dart';
@@ -51,6 +48,8 @@ import '../../pages/leaderboard/leaderboard_prefetch.dart';
 import '../../pages/search/search_page.dart';
 import 'routes.dart';
 import '../i18n/i18n.dart';
+import 'dart:async';
+
 part 'shell_mini_bar.dart';
 part 'shell_back.dart';
 part 'shell_landscape.dart';
@@ -68,13 +67,15 @@ final isLandscapeProvider = StateProvider<bool>((ref) => false);
 
 final landscapeLibraryProvider = StateProvider<int?>((ref) => null);
 
-final landscapeLibrarySearchActiveProvider =
-    StateProvider<bool>((ref) => false);
+final landscapeLibrarySearchActiveProvider = StateProvider<bool>(
+  (ref) => false,
+);
 
 final landscapeLibraryQueryProvider = StateProvider<String>((ref) => '');
 
-final landscapeLibrarySearchCtrlProvider =
-    Provider<TextEditingController>((ref) {
+final landscapeLibrarySearchCtrlProvider = Provider<TextEditingController>((
+  ref,
+) {
   final ctrl = TextEditingController();
   ref.onDispose(ctrl.dispose);
   return ctrl;
@@ -94,8 +95,7 @@ final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 
 final landscapeContentPathProvider = StateProvider<String?>((ref) => null);
 
-final musicLibraryPageKeys =
-    List<GlobalKey>.generate(5, (_) => GlobalKey());
+final musicLibraryPageKeys = List<GlobalKey>.generate(5, (_) => GlobalKey());
 
 final landscapePaneOpenProvider = Provider<bool>((ref) {
   return ref.watch(landscapeAccountOpenProvider) ||
@@ -203,7 +203,8 @@ class _AppShellState extends ConsumerState<AppShell> {
       chromeGlassFrame.value = null;
       if (stale != null) {
         WidgetsBinding.instance.addPostFrameCallback(
-            (_) => stale.image.dispose());
+          (_) => stale.image.dispose(),
+        );
       }
       schedule(const Duration(milliseconds: 300));
     }
@@ -233,13 +234,11 @@ class _AppShellState extends ConsumerState<AppShell> {
       ),
     );
   }
+
 }
 
 class _ShellScaffold extends ConsumerStatefulWidget {
-  const _ShellScaffold({
-    required this.navigationShell,
-    required this.index,
-  });
+  const _ShellScaffold({required this.navigationShell, required this.index});
 
   final StatefulNavigationShell navigationShell;
   final int index;
@@ -260,23 +259,90 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   StreamSubscription<dynamic>? _rotationSub;
 
+  /// 悬浮 chrome（底栏/悬浮顶栏）完全隐藏后整树卸载。Impeller 下
+  /// Opacity(0.01) 常绘子树的 alpha 泄漏——内容以约 10% 亮度透出，二级页上
+  /// 残留底栏与选中圆形（与 mini 播放条幽灵 bar 同源，那里已用整树卸载修掉）
+  bool _chromeGone = false;
+
+  /// 重挂载恢复帧：隐式动画（AnimatedOpacity/AnimatedScale）首建不播动画，
+  /// 挂回首帧若目标值已是 1.0/1.0 会硬切，需先以隐藏目标渲染一帧
+  bool _chromeRecovering = false;
+
+  /// 恢复窗口：停绘后挂回的首帧 backdrop 采样未就绪，降级磨砂防黑闪
+  bool _chromeFading = false;
+
+  bool? _lastChromeHidden;
+  Timer? _chromeGoneTimer;
+  Timer? _chromeFadeTimer;
+
   static const _rootPaths = {'/', '/home', '/mine'};
 
   static bool _isRootPathOf(String path) => _rootPaths.contains(path);
+
+  /// hidden 变化时调度悬浮 chrome 的整树卸载/挂回：淡出动画（240ms）结束后
+  /// 停绘，恢复时先挂回并按隐藏目标渲染一帧再翻回真实目标，保住淡入/缩放
+  /// 隐式动画。与 mini 播放条 _syncBarGone 同构。
+  void _syncChromeHidden() {
+    if (!mounted) return;
+    _syncChromeGone(
+      ref.read(navBarHiddenProvider) > 0 || !ref.read(navOnRootPathProvider),
+    );
+  }
+
+  void _syncChromeGone(bool hidden) {
+    if (_lastChromeHidden == hidden) return;
+    _lastChromeHidden = hidden;
+    if (hidden) {
+      _chromeGoneTimer?.cancel();
+      _chromeGoneTimer = Timer(const Duration(milliseconds: 320), () {
+        if (mounted) setState(() => _chromeGone = true);
+      });
+      // 缓存帧里含旧底栏与圆形：隐藏后它不再刷新，留着会被其它
+      // useChromeFrame 玻璃面裁出残影——立即失效（宁缺勿错）
+      final stale = chromeGlassFrame.value;
+      if (stale != null) {
+        chromeGlassFrame.value = null;
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => stale.image.dispose(),
+        );
+      }
+    } else {
+      _chromeGoneTimer?.cancel();
+      if (_chromeGone) {
+        _chromeGone = false;
+        _chromeRecovering = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _chromeRecovering = false);
+        });
+        _chromeFadeTimer?.cancel();
+        _chromeFading = true;
+        _chromeFadeTimer = Timer(const Duration(milliseconds: 280), () {
+          if (mounted) setState(() => _chromeFading = false);
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _router = GoRouter.of(context);
-    _isRootPath =
-        _isRootPathOf(_routerTopPath(_router.routerDelegate.currentConfiguration));
+    _isRootPath = _isRootPathOf(
+      _routerTopPath(_router.routerDelegate.currentConfiguration),
+    );
     ref.read(navOnRootPathProvider.notifier).state = _isRootPath;
     _router.routerDelegate.addListener(_onRouteChanged);
+    // 悬浮 chrome 显隐驱动整树卸载/挂回：hidden = 计数 >0 || 非 root 路径，
+    // 两路都要监听（二级页靠后者隐藏，计数不增）
+    ref.listenManual(navBarHiddenProvider, (_, _) => _syncChromeHidden());
+    ref.listenManual(navOnRootPathProvider, (_, _) => _syncChromeHidden());
+    // 冷启动直接落在二级页时上面两个监听都不会触发，先同步一次
+    _syncChromeGone(ref.read(navBarHiddenProvider) > 0 || !_isRootPath);
     if (defaultTargetPlatform == TargetPlatform.android) {
-      _rotationSub = const EventChannel('xianyu/rotation/events')
-          .receiveBroadcastStream()
-          .listen(_onRotationEvent, onError: (_) {});
+      _rotationSub = const EventChannel(
+        'xianyu/rotation/events',
+      ).receiveBroadcastStream().listen(_onRotationEvent, onError: (_) {});
     }
   }
 
@@ -315,6 +381,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _router.routerDelegate.removeListener(_onRouteChanged);
     _libPaneMountTimer?.cancel();
     _rotationSub?.cancel();
+    _chromeGoneTimer?.cancel();
+    _chromeFadeTimer?.cancel();
     super.dispose();
   }
 
@@ -359,132 +427,136 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _lastPhysicalLandscape = landscape;
     if (!flipped) return;
     if (!landscape) {
-        final lib = ref.read(landscapeLibraryProvider);
-        final playlist = ref.read(landscapePlaylistOpenProvider);
-        final searchOpen = ref.read(landscapeSearchOpenProvider);
-        final searchResults = ref.read(landscapeSearchResultsProvider);
-        final download = ref.read(landscapeDownloadOpenProvider);
-        final account = ref.read(landscapeAccountOpenProvider);
-        final content = ref.read(landscapeContentPathProvider);
-        void closeAll() {
-          ref.read(landscapeLibraryProvider.notifier).state = null;
-          ref.read(landscapeSearchOpenProvider.notifier).state = false;
-          ref.read(landscapeSearchResultsProvider.notifier).state = false;
-          ref.read(landscapeDownloadOpenProvider.notifier).state = false;
-          ref.read(landscapeAccountOpenProvider.notifier).state = false;
-          ref.read(landscapePlaylistOpenProvider.notifier).state = null;
-          ref.read(landscapeContentPathProvider.notifier).state = null;
-        }
+      final lib = ref.read(landscapeLibraryProvider);
+      final playlist = ref.read(landscapePlaylistOpenProvider);
+      final searchOpen = ref.read(landscapeSearchOpenProvider);
+      final searchResults = ref.read(landscapeSearchResultsProvider);
+      final download = ref.read(landscapeDownloadOpenProvider);
+      final account = ref.read(landscapeAccountOpenProvider);
+      final content = ref.read(landscapeContentPathProvider);
+      void closeAll() {
+        ref.read(landscapeLibraryProvider.notifier).state = null;
+        ref.read(landscapeSearchOpenProvider.notifier).state = false;
+        ref.read(landscapeSearchResultsProvider.notifier).state = false;
+        ref.read(landscapeDownloadOpenProvider.notifier).state = false;
+        ref.read(landscapeAccountOpenProvider.notifier).state = false;
+        ref.read(landscapePlaylistOpenProvider.notifier).state = null;
+        ref.read(landscapeContentPathProvider.notifier).state = null;
+      }
 
-        final back = _rotateBackPath;
-        _rotateBackPath = null;
-        closeAll();
-        final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
-        final onShell = _isRootPathOf(top);
-        final onSettings = top == '/settings';
-        if (onSettings && kLandscapeSettingPaths.contains(back)) {
-          final category = ref.read(landscapeSettingsCategoryProvider);
-          context.push(category ?? back!);
-        } else if (onShell) {
-          if (lib != null) {
-            const libRoutes = [
-              '/library',
-              '/favorites',
-              '/recent',
-              '/playlists',
-              '/library/folders',
-            ];
-            context.push(libRoutes[lib.clamp(0, libRoutes.length - 1)]);
-          } else if (searchOpen) {
-            context.push(searchResults ? '/search/result' : '/search');
-          } else if (content != null) {
-            context.push(content);
-          } else if (playlist != null) {
-            context.push('/playlist/$playlist');
-          } else if (download) {
-            context.push('/download');
-          } else if (account) {
-            context.push('/account');
-          }
-        }
-        return;
-      }
-      final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
-      const libRoutes = [
-        '/library',
-        '/favorites',
-        '/recent',
-        '/playlists',
-        '/library/folders',
-      ];
-      if (path == '/search' || path == '/search/result') {
-        _rotateBackPath = path;
-        ref.read(landscapeSearchOpenProvider.notifier).state = true;
-        ref.read(landscapeSearchResultsProvider.notifier).state =
-            path == '/search/result';
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (kLandscapeSettingPaths.contains(path)) {
-        _rotateBackPath = path;
-        ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
-        final hasSettingsBelow = _router
-            .routerDelegate.currentConfiguration.matches
-            .any((m) => m is RouteMatch && m.matchedLocation == '/settings');
-        if (hasSettingsBelow) {
-          context.pop();
-        } else {
-          context.go('/settings');
-        }
-      } else if (libRoutes.contains(path)) {
-        _rotateBackPath = path;
-        _deferLibPaneMount();
-        ref.read(landscapeLibraryProvider.notifier).state =
-            libRoutes.indexOf(path);
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path == '/home/daily' ||
-          path == '/home/toplists' ||
-          path == '/leaderboard') {
-        _rotateBackPath = path;
-        ref.read(landscapeContentPathProvider.notifier).state = path;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path == '/download') {
-        _rotateBackPath = path;
-        ref.read(landscapeDownloadOpenProvider.notifier).state = true;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path == '/account') {
-        _rotateBackPath = path;
-        ref.read(landscapeAccountOpenProvider.notifier).state = true;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (path.startsWith('/playlist/')) {
-        _rotateBackPath = path;
-        ref.read(landscapePlaylistOpenProvider.notifier).state =
-            path.split('/').last;
-        while (context.canPop()) {
-          context.pop();
-        }
-      } else if (!_noRotateRedirectPaths.contains(path) && path != '/settings') {
-        _rotateBackPath = path;
-        while (context.canPop()) {
-          context.pop();
+      final back = _rotateBackPath;
+      _rotateBackPath = null;
+      closeAll();
+      final top = _routerTopPath(_router.routerDelegate.currentConfiguration);
+      final onShell = _isRootPathOf(top);
+      final onSettings = top == '/settings';
+      if (onSettings && kLandscapeSettingPaths.contains(back)) {
+        final category = ref.read(landscapeSettingsCategoryProvider);
+        context.push(category ?? back!);
+      } else if (onShell) {
+        if (lib != null) {
+          const libRoutes = [
+            '/library',
+            '/favorites',
+            '/recent',
+            '/playlists',
+            '/library/folders',
+          ];
+          context.push(libRoutes[lib.clamp(0, libRoutes.length - 1)]);
+        } else if (searchOpen) {
+          context.push(searchResults ? '/search/result' : '/search');
+        } else if (content != null) {
+          context.push(content);
+        } else if (playlist != null) {
+          context.push('/playlist/$playlist');
+        } else if (download) {
+          context.push('/download');
+        } else if (account) {
+          context.push('/account');
         }
       }
+      return;
+    }
+    final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
+    const libRoutes = [
+      '/library',
+      '/favorites',
+      '/recent',
+      '/playlists',
+      '/library/folders',
+    ];
+    if (path == '/search' || path == '/search/result') {
+      _rotateBackPath = path;
+      ref.read(landscapeSearchOpenProvider.notifier).state = true;
+      ref.read(landscapeSearchResultsProvider.notifier).state =
+          path == '/search/result';
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (kLandscapeSettingPaths.contains(path)) {
+      _rotateBackPath = path;
+      ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
+      final hasSettingsBelow = _router
+          .routerDelegate
+          .currentConfiguration
+          .matches
+          .any((m) => m is RouteMatch && m.matchedLocation == '/settings');
+      if (hasSettingsBelow) {
+        context.pop();
+      } else {
+        context.go('/settings');
+      }
+    } else if (libRoutes.contains(path)) {
+      _rotateBackPath = path;
+      _deferLibPaneMount();
+      ref.read(landscapeLibraryProvider.notifier).state = libRoutes.indexOf(
+        path,
+      );
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/home/daily' ||
+        path == '/home/toplists' ||
+        path == '/leaderboard') {
+      _rotateBackPath = path;
+      ref.read(landscapeContentPathProvider.notifier).state = path;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/download') {
+      _rotateBackPath = path;
+      ref.read(landscapeDownloadOpenProvider.notifier).state = true;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/account') {
+      _rotateBackPath = path;
+      ref.read(landscapeAccountOpenProvider.notifier).state = true;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path.startsWith('/playlist/')) {
+      _rotateBackPath = path;
+      ref.read(landscapePlaylistOpenProvider.notifier).state = path
+          .split('/')
+          .last;
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (!_noRotateRedirectPaths.contains(path) && path != '/settings') {
+      _rotateBackPath = path;
+      while (context.canPop()) {
+        context.pop();
+      }
+    }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final screen = MediaQuery.maybeOf(context);
-    final landscape = screen == null ||
-        screen.size.width >= screen.size.height * 1.05;
+    final landscape =
+        screen == null || screen.size.width >= screen.size.height * 1.05;
 
     if (_lastImmersive != landscape) {
       _lastImmersive = landscape;
@@ -510,8 +582,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     });
 
     final floating =
-        ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
-            true;
+        ref.watch(
+          settingsProvider.select((s) => s.valueOrNull?.floatingNavBar),
+        ) ??
+        true;
 
     final libSel = ref.watch(landscapeLibraryProvider);
 
@@ -571,26 +645,34 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     const libPaneActive = false;
 
-    final floatingSearchBar =
-        ref.watch(settingsProvider.select(
-            (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floatingSearchBar = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
 
-    final useCameraArea = landscape &&
+    final useCameraArea =
+        landscape &&
         ref.watch(
-            settingsProvider.select(
-                (s) => s.valueOrNull?.landscapeCameraArea ?? true));
+          settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeCameraArea ?? true,
+          ),
+        );
 
-    final landscapeFadeEnabled = landscape &&
-        ref.watch(settingsProvider.select(
-            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true));
+    final landscapeFadeEnabled =
+        landscape &&
+        ref.watch(
+          settingsProvider.select(
+            (s) => s.valueOrNull?.landscapeTransitionEnabled ?? true,
+          ),
+        );
 
     final libPaneMountable = landscape && _libPaneMountable;
     final Widget landscapeHome = Offstage(
       offstage: anyPaneOpen,
       child: EmbeddedShellScope(
         child: LandscapeTabSwitcher(
-          currentIndex:
-              libPaneMountable ? (libSel == null ? 0 : 1 + libSel) : 0,
+          currentIndex: libPaneMountable
+              ? (libSel == null ? 0 : 1 + libSel)
+              : 0,
           enabled: landscapeFadeEnabled,
           suppress: anyPaneOpen,
           children: [
@@ -612,20 +694,27 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
     // chrome 缓存帧抓取门控：竖屏悬浮 chrome（底栏/悬浮顶栏）可见且为
     // 液态材质时才允许抓帧，保证缓存帧里的 chrome 区域是有效液态输出
-    chromeGlassFrameActive.value = !landscape &&
+    chromeGlassFrameActive.value =
+        !landscape &&
         !hidden &&
-        (ref.watch(settingsProvider.select(
-                (s) => s.valueOrNull?.liquidGlass)) ??
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.liquidGlass),
+            ) ??
             true) &&
-        !ref.watch(settingsProvider.select(
-            (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
+        !ref.watch(
+          settingsProvider.select(
+            (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+          ),
+        );
 
     void select(int i) {
       if (i == widget.navigationShell.currentIndex || i == widget.index) return;
       if (searchOpenRaw) closeLandscapeSearch(ref);
       ref.read(landscapeContentPathProvider.notifier).state = null;
       widget.navigationShell.goBranch(
-          i, initialLocation: i == widget.navigationShell.currentIndex);
+        i,
+        initialLocation: i == widget.navigationShell.currentIndex,
+      );
     }
 
     // 转场中沿用上次构建的顶栏实例（identical → Element 跳过子树 rebuild）：
@@ -661,16 +750,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         actions: [
           if (widget.index == 0) ...[
             IconButton(
-              icon: themeSlotWidget(ref, 'entry.wallpaper',
-                  fallback: const SkinIcon()),
+              icon: themeSlotWidget(
+                ref,
+                'entry.wallpaper',
+                fallback: const SkinIcon(),
+              ),
               tooltip: tr('皮肤'),
               onPressed: () => context.push('/wallpaper'),
             ),
             const SizedBox(width: 16),
           ] else ...[
             IconButton(
-              icon: themeSlotIcon(ref, 'mine.settings',
-                  fallback: Icons.settings_outlined),
+              icon: themeSlotIcon(
+                ref,
+                'mine.settings',
+                fallback: Icons.settings_outlined,
+              ),
               tooltip: tr('设置'),
               onPressed: () => context.push('/settings'),
             ),
@@ -685,25 +780,29 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     }
 
     Widget buildRailDivider() => Positioned(
-          left: _railWidth - 14,
-          top: 0,
-          bottom: 0,
-          width: 28,
-          child: _ShellRailDivider(
-            onDragUpdate: (dx) {
-              final screenW = MediaQuery.sizeOf(context).width;
-              final leftSafe = padding.left;
-              setState(() {
-                _railWidth = (_railWidth + dx)
-                    .clamp(leftSafe + kLandscapeRailIconWidth, screenW * 0.5);
-              });
-            },
-          ),
-        );
+      left: _railWidth - 14,
+      top: 0,
+      bottom: 0,
+      width: 28,
+      child: _ShellRailDivider(
+        onDragUpdate: (dx) {
+          final screenW = MediaQuery.sizeOf(context).width;
+          final leftSafe = padding.left;
+          setState(() {
+            _railWidth = (_railWidth + dx).clamp(
+              leftSafe + kLandscapeRailIconWidth,
+              screenW * 0.5,
+            );
+          });
+        },
+      ),
+    );
 
-    final isSide = landscape ||
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) ==
+    final isSide =
+        landscape ||
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.navBarPosition),
+            ) ==
             NavBarPosition.side);
 
     final expanded = ref.watch(sideBarExpandedProvider);
@@ -713,126 +812,119 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       body: Stack(
         children: [
           Positioned.fill(
-            child: ColoredBox(
-              color: Theme.of(context).scaffoldBackgroundColor,
-            ),
+            child: ColoredBox(color: Theme.of(context).scaffoldBackgroundColor),
           ),
           ValueListenableBuilder<double>(
             valueListenable: orientationContentFade,
             builder: (context, fade, child) =>
                 Opacity(opacity: fade, child: child),
             child: Padding(
-            padding: EdgeInsets.only(
-              left: landscape ? _railWidth : 0,
-              right: (landscape && !useCameraArea) ? padding.right : 0,
-            ),
-            child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: landscape
-                            ? (floatingSearchBar
-                                ? Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: _landscapeFadePanel(
-                                          useCameraArea: useCameraArea,
-                                          padding: padding,
-                                          context: context,
-                                          child: landscapeHome,
-                                        ),
+              padding: EdgeInsets.only(
+                left: landscape ? _railWidth : 0,
+                right: (landscape && !useCameraArea) ? padding.right : 0,
+              ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: landscape
+                        ? (floatingSearchBar
+                              ? Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: _landscapeFadePanel(
+                                        useCameraArea: useCameraArea,
+                                        padding: padding,
+                                        context: context,
+                                        child: landscapeHome,
                                       ),
-                                      Positioned(
-                                        top: 0,
-                                        left: 0,
-                                        right: 0,
-                                        child: IgnorePointer(
-                                          ignoring:
-                                              anyPaneOpen || libPaneActive,
-                                          child: Opacity(
-                                            opacity: anyPaneOpen ||
-                                                    libPaneActive
-                                                ? 0
-                                                : 1,
-                                            child: LandscapeGlobalTopBar(
-                                              currentIndex: widget.index,
-                                              floating: true,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Column(
-                                    children: [
-                                      IgnorePointer(
-                                        ignoring:
-                                            anyPaneOpen || libPaneActive,
+                                    ),
+                                    Positioned(
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      child: IgnorePointer(
+                                        ignoring: anyPaneOpen || libPaneActive,
                                         child: Opacity(
-                                          opacity:
-                                              anyPaneOpen || libPaneActive
-                                                  ? 0
-                                                  : 1,
+                                          opacity: anyPaneOpen || libPaneActive
+                                              ? 0
+                                              : 1,
                                           child: LandscapeGlobalTopBar(
                                             currentIndex: widget.index,
-                                            floating: false,
+                                            floating: true,
                                           ),
                                         ),
                                       ),
-                                      Expanded(
-                                        child: _landscapeFadePanel(
-                                          useCameraArea: useCameraArea,
-                                          padding: padding,
-                                          context: context,
-                                          child: landscapeHome,
+                                    ),
+                                  ],
+                                )
+                              : Column(
+                                  children: [
+                                    IgnorePointer(
+                                      ignoring: anyPaneOpen || libPaneActive,
+                                      child: Opacity(
+                                        opacity: anyPaneOpen || libPaneActive
+                                            ? 0
+                                            : 1,
+                                        child: LandscapeGlobalTopBar(
+                                          currentIndex: widget.index,
+                                          floating: false,
                                         ),
                                       ),
-                                    ],
-                                  ))
-                            : _landscapeFadePanel(
-                                useCameraArea: useCameraArea,
-                                padding: padding,
-                                context: context,
-                                child: landscapeHome,
-                              ),
-                      ),
-                      if (landscape)
-                        Positioned.fill(
-                          child: useCameraArea
-                              ? MediaQuery(
-                                  data: MediaQuery.of(context).copyWith(
-                                    padding:
-                                        padding.copyWith(left: 0, right: 0),
-                                  ),
-                                  child: _landscapeSlide(
-                                    enabled: landscapeFadeEnabled,
-                                    open: anyPaneOpen,
-                                    trigger: landPaneTrigger,
-                                    child: landPane,
-                                  ),
-                                )
-                              : _landscapeSlide(
-                                  enabled: landscapeFadeEnabled,
-                                  open: anyPaneOpen,
-                                  trigger: landPaneTrigger,
-                                  child: landPane,
-                                ),
-                        ),
-                      if (landscape &&
-                          anyPaneOpen &&
-                          !accountOpen &&
-                          contentPath == null)
-                        Positioned(
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          child: LandscapeGlobalTopBar(
-                            currentIndex: widget.index,
-                            floating: floatingSearchBar,
+                                    ),
+                                    Expanded(
+                                      child: _landscapeFadePanel(
+                                        useCameraArea: useCameraArea,
+                                        padding: padding,
+                                        context: context,
+                                        child: landscapeHome,
+                                      ),
+                                    ),
+                                  ],
+                                ))
+                        : _landscapeFadePanel(
+                            useCameraArea: useCameraArea,
+                            padding: padding,
+                            context: context,
+                            child: landscapeHome,
                           ),
-                        ),
-                    ],
                   ),
-                ),
+                  if (landscape)
+                    Positioned.fill(
+                      child: useCameraArea
+                          ? MediaQuery(
+                              data: MediaQuery.of(context).copyWith(
+                                padding: padding.copyWith(left: 0, right: 0),
+                              ),
+                              child: _landscapeSlide(
+                                enabled: landscapeFadeEnabled,
+                                open: anyPaneOpen,
+                                trigger: landPaneTrigger,
+                                child: landPane,
+                              ),
+                            )
+                          : _landscapeSlide(
+                              enabled: landscapeFadeEnabled,
+                              open: anyPaneOpen,
+                              trigger: landPaneTrigger,
+                              child: landPane,
+                            ),
+                    ),
+                  if (landscape &&
+                      anyPaneOpen &&
+                      !accountOpen &&
+                      contentPath == null)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LandscapeGlobalTopBar(
+                        currentIndex: widget.index,
+                        floating: floatingSearchBar,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
 
           if (landscape)
@@ -864,32 +956,41 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
           if (!isSide && floating)
             Positioned(
-                left: 12,
-                right: 12,
-                bottom: 18 + safeBottom,
-                child: AnimatedOpacity(
+              left: 12,
+              right: 12,
+              bottom: 18 + safeBottom,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 240),
+                curve: Curves.easeOutCubic,
+                // 液态 shader 最低 0.01 保温（整树停绘后重显首帧采样
+                // 黑闪）；毛玻璃普通 blur 归零停绘，淡入首绘发生在极低
+                // alpha（不可见），防 saveLayer 内首帧重采样闪白
+                opacity: (hidden || _chromeRecovering)
+                    ? glassHiddenOpacityFloor(ref)
+                    : 1.0,
+                child: AnimatedScale(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
-                  // 液态 shader 最低 0.01 保温（整树停绘后重显首帧采样
-                  // 黑闪）；毛玻璃普通 blur 归零停绘，淡入首绘发生在极低
-                  // alpha（不可见），防 saveLayer 内首帧重采样闪白
-                  opacity: hidden ? glassHiddenOpacityFloor(ref) : 1.0,
-                  child: AnimatedScale(
-                    duration: const Duration(milliseconds: 240),
-                    curve: Curves.easeOutCubic,
-                    scale: hidden ? 0.92 : 1.0,
-                    child: IgnorePointer(
-                      ignoring: hidden,
-                      child: _JellySwitch(
-                        key: _jellyKey,
-                        mode: true,
-                        child:
-                            _LiquidNavBar(index: widget.index, onSelect: select),
-                      ),
-                    ),
+                  scale: (hidden || _chromeRecovering) ? 0.92 : 1.0,
+                  child: IgnorePointer(
+                    ignoring: hidden || _chromeRecovering,
+                    // 淡出结束后整树卸载：Impeller 下 0.01 常绘子树的
+                    // alpha 泄漏会让底栏与选中圆形残留在二级页上
+                    child: _chromeGone
+                        ? const SizedBox.shrink()
+                        : _JellySwitch(
+                            key: _jellyKey,
+                            mode: true,
+                            child: _LiquidNavBar(
+                              index: widget.index,
+                              onSelect: select,
+                              degraded: _chromeFading || _chromeRecovering,
+                            ),
+                          ),
                   ),
                 ),
               ),
+            ),
 
           if (!landscape)
             Positioned(
@@ -901,79 +1002,95 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 curve: Curves.easeOutCubic,
                 // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘，
                 // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
-                opacity: (floatingSearchBar &&
+                opacity:
+                    (floatingSearchBar &&
                         (widget.index == 0 || widget.index == 1) &&
-                        !hidden)
+                        !hidden &&
+                        !_chromeRecovering)
                     ? 1.0
                     : glassHiddenOpacityFloor(ref),
                 child: AnimatedScale(
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
                   // 与悬浮底栏同款缩小退让（0.92），退场不再只是淡出
-                  scale: (floatingSearchBar &&
+                  scale:
+                      (floatingSearchBar &&
                           (widget.index == 0 || widget.index == 1) &&
-                          !hidden)
+                          !hidden &&
+                          !_chromeRecovering)
                       ? 1.0
                       : 0.92,
                   child: IgnorePointer(
-                    ignoring: !(floatingSearchBar &&
-                        (widget.index == 0 || widget.index == 1) &&
-                        !hidden),
-                    child: FloatingTopBar(
-                      chromeFrame: true,
-                      title: widget.index == 1
-                          ? Text(
-                              tr('个人中心'),
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            )
-                          : Text.rich(
-                              TextSpan(
-                                children: [
-                                  TextSpan(text: tr('弦予')),
-                                  TextSpan(
-                                    text: tr('音乐'),
+                    ignoring:
+                        !(floatingSearchBar &&
+                            (widget.index == 0 || widget.index == 1) &&
+                            !hidden &&
+                            !_chromeRecovering),
+                    child: _chromeGone
+                        ? const SizedBox.shrink()
+                        : FloatingTopBar(
+                            chromeFrame: true,
+                            title: widget.index == 1
+                                ? Text(
+                                    tr('个人中心'),
                                     style: const TextStyle(
-                                      color: Color(0xFFEC4141),
+                                      fontSize: 17,
                                       fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  )
+                                : Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(text: tr('弦予')),
+                                        TextSpan(
+                                          text: tr('音乐'),
+                                          style: const TextStyle(
+                                            color: Color(0xFFEC4141),
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
                                     ),
                                   ),
-                                ],
-                              ),
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                      onSearchTap: () => context.push('/search'),
-                      onRecognize: () => context.push('/recognize'),
-                      actions: [
-                        if (widget.index == 0)
-                          BiliPaiIconButton(
-                            iconChild: themeSlotWidget(ref, 'entry.wallpaper',
-                                fallback: const SkinIcon()),
-                            tooltip: tr('皮肤'),
-                            onTap: () => context.push('/wallpaper'),
-                          )
-                        else
-                          BiliPaiIconButton(
-                            iconChild: themeSlotWidget(ref, 'mine.settings',
-                                fallback: const Icon(Icons.settings_outlined)),
-                            tooltip: tr('设置'),
-                            onTap: () => context.push('/settings'),
+                            onSearchTap: () => context.push('/search'),
+                            onRecognize: () => context.push('/recognize'),
+                            actions: [
+                              if (widget.index == 0)
+                                BiliPaiIconButton(
+                                  iconChild: themeSlotWidget(
+                                    ref,
+                                    'entry.wallpaper',
+                                    fallback: const SkinIcon(),
+                                  ),
+                                  tooltip: tr('皮肤'),
+                                  onTap: () => context.push('/wallpaper'),
+                                )
+                              else
+                                BiliPaiIconButton(
+                                  iconChild: themeSlotWidget(
+                                    ref,
+                                    'mine.settings',
+                                    fallback: const Icon(
+                                      Icons.settings_outlined,
+                                    ),
+                                  ),
+                                  tooltip: tr('设置'),
+                                  onTap: () => context.push('/settings'),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
                   ),
                 ),
               ),
             ),
 
-    if (!landscape && !floatingSearchBar)
+          if (!landscape && !floatingSearchBar)
             Positioned(
               top: 0,
               left: 0,
@@ -997,10 +1114,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               key: _jellyKey,
               mode: false,
               child: _FixedChrome(
-                  index: widget.index, hidden: hidden, onSelect: select),
+                index: widget.index,
+                hidden: hidden,
+                onSelect: select,
+              ),
             )
           : null,
       extendBody: !isSide && !floating,
-        );
+    );
   }
 }

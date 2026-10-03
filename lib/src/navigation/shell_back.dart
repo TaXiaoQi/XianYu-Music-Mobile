@@ -5,8 +5,10 @@ extension _ShellBack on _AppShellState {
 
   void _handleBack() {
     final router = GoRouter.of(context);
-    AppLogger.instance.log('back',
-        'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}');
+    AppLogger.instance.log(
+      'back',
+      'onBack tab=${widget.navigationShell.currentIndex} routerCanPop=${router.canPop()}',
+    );
 
     if (router.canPop()) {
       AppLogger.instance.log('back', '手动 pop 二级页面');
@@ -25,8 +27,11 @@ extension _ShellBack on _AppShellState {
         now.difference(_lastBackTime!) > const Duration(seconds: 2)) {
       _lastBackTime = now;
       AppLogger.instance.log('back', '提示再按一次退出');
-      showXianYuToast(context, tr('再按一次退出应用'),
-        duration: const Duration(seconds: 2));
+      showXianYuToast(
+        context,
+        tr('再按一次退出应用'),
+        duration: const Duration(seconds: 2),
+      );
       return;
     }
 

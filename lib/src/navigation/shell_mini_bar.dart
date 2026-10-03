@@ -1,7 +1,6 @@
 part of 'shell.dart';
 
-mixin HidesShellChrome<T extends ConsumerStatefulWidget>
-    on ConsumerState<T> {
+mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   ProviderContainer? _container;
 
   bool _counted = false;
@@ -38,9 +37,11 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget>
   }
 }
 
+
 /// 页面级 mini 播放条黑名单：混入的页面（设置、搜索等）持有期间
 /// miniBarHiddenProvider >0，全局播放条在该页面落定后隐藏、离开后恢复；
 /// 转场期间不生效（条不受切换动画影响，落定后才淡出/淡入）
+
 mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   ProviderContainer? _miniBarContainer;
 
@@ -109,7 +110,6 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     super.dispose();
   }
 }
-
 
 class HideShellChrome extends ConsumerStatefulWidget {
   const HideShellChrome({super.key, required this.child});

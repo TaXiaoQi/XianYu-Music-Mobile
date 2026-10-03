@@ -123,8 +123,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     _dragDistance += details.delta.distance;
     final floatingSearchBar =
         ref.read(settingsProvider).valueOrNull?.floatingSearchBar ?? false;
-    final topBarBottom =
-        floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
+    final topBarBottom = floatingSearchBar
+        ? (padding.top + 60.0)
+        : (padding.top + 122.0);
     final currentTop = _top ?? (topBarBottom + 24.0);
     final currentLeft = _left ?? 12.0;
 
@@ -139,14 +140,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final nextLeft = currentLeft + details.delta.dx;
 
     setState(() {
-      _top = nextTop.clamp(
-        minTop,
-        maxTop > minTop ? maxTop : minTop,
-      );
-      _left = nextLeft.clamp(
-        minLeft,
-        maxLeft > minLeft ? maxLeft : minLeft,
-      );
+      _top = nextTop.clamp(minTop, maxTop > minTop ? maxTop : minTop);
+      _left = nextLeft.clamp(minLeft, maxLeft > minLeft ? maxLeft : minLeft);
     });
   }
 
@@ -176,43 +171,51 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final screenSize = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
 
-    final floatingSearchBar = ref.watch(settingsProvider
-            .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
-    final topBarBottom =
-        floatingSearchBar ? (padding.top + 60.0) : (padding.top + 122.0);
+    final floatingSearchBar = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
+    final topBarBottom = floatingSearchBar
+        ? (padding.top + 60.0)
+        : (padding.top + 122.0);
     final safeMinTop = topBarBottom + 12.0;
-    final currentTop =
-        (_top ?? (topBarBottom + 24.0)).clamp(safeMinTop, double.infinity);
+    final currentTop = (_top ?? (topBarBottom + 24.0)).clamp(
+      safeMinTop,
+      double.infinity,
+    );
     final left = _left ?? 12.0;
 
     final scheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final preferredDir = ref.watch(settingsProvider
-            .select((s) => s.valueOrNull?.sideBarExpandDirection)) ??
+    final preferredDir =
+        ref.watch(
+          settingsProvider.select((s) => s.valueOrNull?.sideBarExpandDirection),
+        ) ??
         SideBarExpandDirection.down;
     final lowPerf = ref.watch(
       settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+        (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+      ),
     );
     final liquid =
         (ref.watch(
-                settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
+              settingsProvider.select((s) => s.valueOrNull?.liquidGlass),
+            ) ??
             true) &&
-            !lowPerf;
+        !lowPerf;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
 
     const double approxExpandedH = 330.0;
 
     final bool canFitDown =
-        (currentTop + approxExpandedH) <= (screenSize.height - padding.bottom - 8.0);
+        (currentTop + approxExpandedH) <=
+        (screenSize.height - padding.bottom - 8.0);
     final bool canFitUp =
         (currentTop + 52.0 - approxExpandedH) >= (topBarBottom + 12.0);
 
     SideBarExpandDirection effectiveDir = preferredDir;
     if (preferredDir == SideBarExpandDirection.down) {
-      if (!canFitDown &&
-          (canFitUp || (currentTop > (screenSize.height / 2)))) {
+      if (!canFitDown && (canFitUp || (currentTop > (screenSize.height / 2)))) {
         effectiveDir = SideBarExpandDirection.up;
       }
     } else {
@@ -345,9 +348,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           panelWidget = Container(
             width: panelWidth,
             decoration: BoxDecoration(
-              color: isDark
-                  ? const Color(0xF02A2A2E)
-                  : const Color(0xF5FFFFFF),
+              color: isDark ? const Color(0xF02A2A2E) : const Color(0xF5FFFFFF),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isDark
@@ -368,8 +369,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           final panelBg = wallpaperGlassActive(ref)
               ? wallpaperGlassFill(context, ref)
               : (isDark
-                  ? Colors.white.withValues(alpha: 0.05)
-                  : Colors.white.withValues(alpha: 0.35));
+                    ? Colors.white.withValues(alpha: 0.05)
+                    : Colors.white.withValues(alpha: 0.35));
           final panelFill = surfaceFillWithBudget(panelBg, budget);
           final panelSigma = wallpaperGlassActive(ref)
               ? wallpaperGlassSigma(context)
@@ -390,8 +391,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black
-                      .withValues(alpha: isDark ? 0.3 : 0.1),
+                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
                   blurRadius: 18,
                   offset: const Offset(0, 6),
                 ),
@@ -407,7 +407,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                     borderRadius: BorderRadius.circular(24),
                     child: BackdropFilter(
                       filter: ImageFilter.blur(
-                          sigmaX: panelSigma, sigmaY: panelSigma),
+                        sigmaX: panelSigma,
+                        sigmaY: panelSigma,
+                      ),
                       child: panelBox,
                     ),
                   ),
@@ -422,8 +424,12 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: isDark
-                        ? Colors.black.withValues(alpha: 0.45 * collapsedHintAlpha)
-                        : Colors.white.withValues(alpha: 0.70 * collapsedHintAlpha),
+                        ? Colors.black.withValues(
+                            alpha: 0.45 * collapsedHintAlpha,
+                          )
+                        : Colors.white.withValues(
+                            alpha: 0.70 * collapsedHintAlpha,
+                          ),
                     borderRadius: BorderRadius.circular(24),
                   ),
                 ),
@@ -480,15 +486,21 @@ class _SideNavTab extends ConsumerWidget {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color:
-                selected ? primary.withValues(alpha: 0.14) : Colors.transparent,
+            color: selected
+                ? primary.withValues(alpha: 0.14)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              themeSlotIcon(ref, item.themeSlot,
-                  fallback: item.icon, size: 22, color: color),
+              themeSlotIcon(
+                ref,
+                item.themeSlot,
+                fallback: item.icon,
+                size: 22,
+                color: color,
+              ),
               const SizedBox(height: 4),
               Text(
                 navTitle(context, item),

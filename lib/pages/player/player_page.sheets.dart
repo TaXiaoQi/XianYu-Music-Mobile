@@ -94,8 +94,9 @@ mixin _QualitySheetProbeState<W extends ConsumerStatefulWidget>
       final sizes = await sheetNotifier.qualitySizes();
       if (!mounted) return;
       if (sizes.isNotEmpty) setState(() => _sizes = sizes);
-      final probing =
-          ref.read(playerProvider.select((s) => s.qualityMenuProbing));
+      final probing = ref.read(
+        playerProvider.select((s) => s.qualityMenuProbing),
+      );
       if (!probing && (sizes.isNotEmpty || i > 0)) return;
       await Future.delayed(const Duration(milliseconds: 600));
     }
@@ -178,8 +179,9 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                 final base = opts.isNotEmpty ? opts : fallbackOpts;
                 final combined = <String>{...base};
                 if (cur != null && cur.isNotEmpty) combined.add(cur);
-                final shown =
-                    kQualityLadder.reversed.where(combined.contains).toList();
+                final shown = kQualityLadder.reversed
+                    .where(combined.contains)
+                    .toList();
                 // 探测中或体积结果未就绪时不过滤
                 final probing = ref.watch(
                   playerProvider.select((s) => s.qualityMenuProbing),
@@ -187,8 +189,9 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                 final sizes = _sizes;
                 final visible = probing || sizes.isEmpty
                     ? shown
-                    : dropFakeQualities(
-                        shown, {if (cur != null && cur.isNotEmpty) cur});
+                    : dropFakeQualities(shown, {
+                        if (cur != null && cur.isNotEmpty) cur,
+                      });
                 if (visible.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 48),
@@ -218,9 +221,7 @@ class _QualitySheetState extends ConsumerState<_QualitySheet>
                                   );
                                   Navigator.of(ctx).pop();
                                   final ok = await widget.notifier
-                                      .switchQuality(
-                                    q,
-                                  );
+                                      .switchQuality(q);
                                   showXianYuToastByOverlay(
                                     overlay,
                                     ok
@@ -415,10 +416,7 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
   ) async {
     final quality = q.key.toUpperCase();
     try {
-      final source = await mvNotifier.resolveDownloadSource(
-        widget.song,
-        q.key,
-      );
+      final source = await mvNotifier.resolveDownloadSource(widget.song, q.key);
       if (source == null || source.url.isEmpty) {
         throw StateError(tr('此歌曲无 MV 或画质不支持'));
       }
@@ -432,10 +430,7 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
         tr('MV 已下载（{quality}），保存到下载目录', {'quality': quality}),
       );
     } catch (e) {
-      showXianYuToastByOverlay(
-        overlay,
-        tr('MV 下载失败：{e}', {'e': e.toString()}),
-      );
+      showXianYuToastByOverlay(overlay, tr('MV 下载失败：{e}', {'e': e.toString()}));
     }
   }
 
@@ -468,9 +463,7 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
             if (qualities.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 48),
-                child: Center(
-                  child: Text(tr('暂无可下载画质')),
-                ),
+                child: Center(child: Text(tr('暂无可下载画质'))),
               )
             else
               Padding(
@@ -485,7 +478,9 @@ class _MvDownloadSheetState extends ConsumerState<_MvDownloadSheet> {
                           value: q.key,
                         ),
                         isSelected: false,
-                        onTap: _downloading ? () {} : () => _download(context, q),
+                        onTap: _downloading
+                            ? () {}
+                            : () => _download(context, q),
                       ),
                       const SizedBox(height: 6),
                     ],
@@ -519,8 +514,7 @@ class _DownloadQualitySheet extends ConsumerStatefulWidget {
       _DownloadQualitySheetState();
 }
 
-class _DownloadQualitySheetState
-    extends ConsumerState<_DownloadQualitySheet>
+class _DownloadQualitySheetState extends ConsumerState<_DownloadQualitySheet>
     with _QualitySheetProbeState<_DownloadQualitySheet> {
   @override
   PlayerNotifier get sheetNotifier => widget.notifier;
@@ -532,11 +526,13 @@ class _DownloadQualitySheetState
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final playingPath =
-        ref.watch(playerProvider.select((s) => s.current?.path));
+    final playingPath = ref.watch(
+      playerProvider.select((s) => s.current?.path),
+    );
     final cur = ref.watch(playerProvider.select((s) => s.currentQuality));
     final settings = ref.watch(settingsProvider.select((s) => s.valueOrNull));
-    final isPlayingSong = widget.song.path.isNotEmpty &&
+    final isPlayingSong =
+        widget.song.path.isNotEmpty &&
         widget.song.path == playingPath &&
         cur != null &&
         cur.isNotEmpty;
@@ -596,68 +592,66 @@ class _DownloadQualitySheetState
                     ? probed
                     : dropFakeQualities(probed, {cur});
                 final sizes = _sizes;
-                final defaultQ =
-                    _nearestAvailable(initial, shown, fallbackBehavior);
-                    final options = shown.isNotEmpty
-                        ? shown
-                        : const <String>[''];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (shown.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Text(
-                                tr('未能探测到可用音质，将以默认音质下载'),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
+                final defaultQ = _nearestAvailable(
+                  initial,
+                  shown,
+                  fallbackBehavior,
+                );
+                final options = shown.isNotEmpty ? shown : const <String>[''];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (shown.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Text(
+                            tr('未能探测到可用音质，将以默认音质下载'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
                             ),
-                          for (final q in options) ...[
-                            ModernOptionTile<String>(
-                              option: ModernChoiceOption(
-                                label: shown.isEmpty
-                                    ? '${_qualityLabel(initial)} · ${tr('默认')}'
-                                    : '${_qualityLabel(q)}${_qualitySizeSuffix(q, sizes)}',
-                                value: shown.isEmpty ? '' : q,
-                              ),
-                              isSelected:
-                                  shown.isEmpty ? true : q == defaultQ,
-                              onTap: () async {
-                                final overlay =
-                                    Overlay.of(ctx, rootOverlay: true);
-                                if (!await ref
-                                    .read(downloadProvider.notifier)
-                                    .requireDownloadDir(ctx)) {
-                                  return;
-                                }
-                                if (!ctx.mounted) return;
-                                Navigator.of(ctx).pop();
-                                ref
-                                    .read(downloadProvider.notifier)
-                                    .download(
+                          ),
+                        ),
+                      for (final q in options) ...[
+                        ModernOptionTile<String>(
+                          option: ModernChoiceOption(
+                            label: shown.isEmpty
+                                ? '${_qualityLabel(initial)} · ${tr('默认')}'
+                                : '${_qualityLabel(q)}${_qualitySizeSuffix(q, sizes)}',
+                            value: shown.isEmpty ? '' : q,
+                          ),
+                          isSelected: shown.isEmpty ? true : q == defaultQ,
+                          onTap: () async {
+                            final overlay = Overlay.of(ctx, rootOverlay: true);
+                            if (!await ref
+                                .read(downloadProvider.notifier)
+                                .requireDownloadDir(ctx)) {
+                              return;
+                            }
+                            if (!ctx.mounted) return;
+                            Navigator.of(ctx).pop();
+                            ref
+                                .read(downloadProvider.notifier)
+                                .download(
                                   widget.song,
                                   quality: q.isEmpty ? null : q,
                                 );
-                                showXianYuToastByOverlay(
-                                  overlay,
-                                  tr('开始下载：{title}（{quality}），请留意通知查看下载进度', {
-                                    'title': widget.song.title,
-                                    'quality': _qualityLabel(
-                                        q.isEmpty ? null : q),
-                                  }),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 6),
-                          ],
-                        ],
-                      ),
-                    );
+                            showXianYuToastByOverlay(
+                              overlay,
+                              tr('开始下载：{title}（{quality}），请留意通知查看下载进度', {
+                                'title': widget.song.title,
+                                'quality': _qualityLabel(q.isEmpty ? null : q),
+                              }),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                    ],
+                  ),
+                );
               },
             ),
           ],
@@ -728,9 +722,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                     ? null
                     : () async {
                         try {
-                          await ref
-                              .read(playerProvider.notifier)
-                              .clearQueue();
+                          await ref.read(playerProvider.notifier).clearQueue();
                         } catch (_) {}
                       },
               ),
@@ -767,7 +759,11 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                   child: ListTile(
                     dense: true,
                     contentPadding: const EdgeInsets.only(
-                        left: 16, top: 0, right: 12, bottom: 0),
+                      left: 16,
+                      top: 0,
+                      right: 12,
+                      bottom: 0,
+                    ),
                     leading: isCurrent
                         ? Icon(
                             Icons.graphic_eq,
@@ -943,8 +939,8 @@ class _SleepTimerRowState extends State<_SleepTimerRow> {
     final remaining = deadline?.difference(DateTime.now());
     final status = active
         ? (remaining == null || remaining.isNegative
-            ? tr('即将暂停…')
-            : tr('剩余 {t}', {'t': _formatSleepRemaining(remaining)}))
+              ? tr('即将暂停…')
+              : tr('剩余 {t}', {'t': _formatSleepRemaining(remaining)}))
         : tr('{n} 分钟', {'n': _value});
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 12, 0),
@@ -953,9 +949,10 @@ class _SleepTimerRowState extends State<_SleepTimerRow> {
         children: [
           Row(
             children: [
-              Text(tr('定时播放'),
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onSurfaceVariant)),
+              Text(
+                tr('定时播放'),
+                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+              ),
               const Spacer(),
               Text(
                 status,
@@ -977,9 +974,10 @@ class _SleepTimerRowState extends State<_SleepTimerRow> {
                     minimumSize: const Size(0, 32),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text(tr('取消'),
-                      style:
-                          TextStyle(fontSize: 12, color: scheme.primary)),
+                  child: Text(
+                    tr('取消'),
+                    style: TextStyle(fontSize: 12, color: scheme.primary),
+                  ),
                 ),
             ],
           ),

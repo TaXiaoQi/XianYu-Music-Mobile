@@ -15,8 +15,7 @@ extension _ShellScaffoldLandscape on _ShellScaffoldState {
   Future<void> _applyLandscapeImmersive(bool landscape) async {
     try {
       if (landscape) {
-        await SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.immersiveSticky);
+        await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
       } else {
         await SystemChrome.setEnabledSystemUIMode(
           SystemUiMode.manual,
@@ -26,8 +25,7 @@ extension _ShellScaffoldLandscape on _ShellScaffoldState {
           const SystemUiOverlayStyle(statusBarColor: Colors.transparent),
         );
       }
-    } catch (_) {
-    }
+    } catch (_) {}
   }
 
   Widget _landscapeFadePanel({
@@ -38,9 +36,9 @@ extension _ShellScaffoldLandscape on _ShellScaffoldState {
   }) {
     return useCameraArea
         ? MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              padding: padding.copyWith(left: 0, right: 0),
-            ),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(padding: padding.copyWith(left: 0, right: 0)),
             child: child,
           )
         : child;
@@ -57,6 +55,7 @@ extension _ShellScaffoldLandscape on _ShellScaffoldState {
     }
     return LandscapePageFade(open: open, trigger: trigger, child: child);
   }
+
 }
 
 class _ShellRailDivider extends StatelessWidget {
@@ -113,58 +112,58 @@ class _LandscapeRail extends ConsumerWidget {
     final libSel = ref.watch(landscapeLibraryProvider);
 
     Widget label(String t) => Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 0, 4),
-          child: Text(
-            t,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
-              letterSpacing: 0.5,
-            ),
-          ),
-        );
+      padding: const EdgeInsets.fromLTRB(14, 10, 0, 4),
+      child: Text(
+        t,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
 
     final content = Column(
       children: [
         SizedBox(height: floating ? 14 : 20),
         if (!collapsed)
           Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
-              themeSlotWidget(
-                ref,
-                'landscape.logo',
-                size: 22,
-                fallback: const SizedBox.shrink(),
-              ),
-              Text.rich(
-                TextSpan(
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                    color: scheme.onSurface,
-                  ),
-                  children: [
-                    TextSpan(text: tr('弦予')),
-                    TextSpan(
-                      text: tr('音乐'),
-                      style: const TextStyle(
-                        color: Color(0xFFEC4141),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
+                themeSlotWidget(
+                  ref,
+                  'landscape.logo',
+                  size: 22,
+                  fallback: const SizedBox.shrink(),
                 ),
-              ),
-            ],
+                Text.rich(
+                  TextSpan(
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.onSurface,
+                    ),
+                    children: [
+                      TextSpan(text: tr('弦予')),
+                      TextSpan(
+                        text: tr('音乐'),
+                        style: const TextStyle(
+                          color: Color(0xFFEC4141),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         Expanded(
           child: ListView(
             padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
@@ -256,10 +255,7 @@ class _LandscapeRail extends ConsumerWidget {
         ? scheme.primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
     return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: collapsed ? 0 : 8,
-        vertical: 2,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 8, vertical: 2),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
@@ -276,11 +272,17 @@ class _LandscapeRail extends ConsumerWidget {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment:
-                collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
+            mainAxisAlignment: collapsed
+                ? MainAxisAlignment.center
+                : MainAxisAlignment.start,
             children: [
-              themeSlotIcon(ref, themeSlot,
-                  fallback: icon, size: 20, color: color),
+              themeSlotIcon(
+                ref,
+                themeSlot,
+                fallback: icon,
+                size: 20,
+                color: color,
+              ),
               if (!collapsed) ...[
                 const SizedBox(width: 9),
                 Text(
@@ -289,8 +291,7 @@ class _LandscapeRail extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight:
-                        selected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                     color: color,
                   ),
                 ),
@@ -377,8 +378,9 @@ class _SearchPane extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final floatingBar = ref.watch(settingsProvider
-        .select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floatingBar = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     if (!showResults) {
       if (floatingBar) {
         return ColoredBox(
@@ -393,8 +395,7 @@ class _SearchPane extends ConsumerWidget {
         color: appScaffoldBackground(context, ref),
         child: Padding(
           padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-          child:
-              SearchIdleView(onSearch: (q) => submitLandscapeSearch(ref, q)),
+          child: SearchIdleView(onSearch: (q) => submitLandscapeSearch(ref, q)),
         ),
       );
     }
@@ -433,4 +434,3 @@ class _ContentPane extends StatelessWidget {
     );
   }
 }
-

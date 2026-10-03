@@ -1,10 +1,7 @@
 part of 'player_page.dart';
 
 class _MessageCircleIcon extends StatelessWidget {
-  const _MessageCircleIcon({
-    this.size = 24,
-    this.color,
-  });
+  const _MessageCircleIcon({this.size = 24, this.color});
 
   final double size;
   final Color? color;
@@ -199,15 +196,18 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
     _loading = true;
     try {
       if (item!.isOnline) {
-        final lines =
-            _lyricLinesToViewItems(await ref.read(lyricsRepositoryProvider).fetchLyrics(item));
+        final lines = _lyricLinesToViewItems(
+          await ref.read(lyricsRepositoryProvider).fetchLyrics(item),
+        );
         if (lines.isNotEmpty) _cacheLyrics(path, lines);
         if (!mounted) return;
         setState(() => _lines = lines);
       } else {
         final dbPath = await ref.read(dbPathProvider.future);
-        final jsonStr =
-            await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+        final jsonStr = await getSongLyricsPayload(
+          dbPath: dbPath,
+          path: item.path,
+        );
         final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
             ? await compute(_parseLyricsJson, jsonStr)
             : const <_LyricLineItem>[];
@@ -306,14 +306,7 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
                   ),
                 );
               }
-              rows.add(
-                Positioned(
-                  top: y,
-                  left: 0,
-                  right: 0,
-                  child: lineChild,
-                ),
-              );
+              rows.add(Positioned(top: y, left: 0, right: 0, child: lineChild));
             }
             return ClipRect(
               clipBehavior: Clip.hardEdge,
@@ -392,7 +385,9 @@ class _MarqueeState extends State<_Marquee>
         final seconds = total / _speed;
         if ((_controller.duration?.inMilliseconds ?? 0) !=
             (seconds * 1000).round()) {
-          _controller.duration = Duration(milliseconds: (seconds * 1000).round());
+          _controller.duration = Duration(
+            milliseconds: (seconds * 1000).round(),
+          );
         }
         if (!_controller.isAnimating) _controller.repeat();
         final dx = -_controller.value * total;
@@ -458,11 +453,13 @@ class _SwitchCoverRecord {
   DateTime? at;
 }
 
+
 const Duration _switchCoverGrace = Duration(seconds: 5);
 final Map<String, _SwitchCoverRecord> _switchCoverRecords = {};
 
 _SwitchCoverRecord _switchCoverRecordOf(String role) =>
     _switchCoverRecords.putIfAbsent(role, () => _SwitchCoverRecord());
+
 
 class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     with SingleTickerProviderStateMixin {
@@ -504,9 +501,7 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     _dir = (_lastIndex < 0 || idx >= _lastIndex) ? 1 : -1;
     _lastIndex = idx;
     _shownPath = next.path;
-    final base = (prev != null && prev.path != next.path)
-        ? prev
-        : _record.item;
+    final base = (prev != null && prev.path != next.path) ? prev : _record.item;
     if (base == null || base.path == next.path) return;
     setState(() {
       _base = base;
@@ -526,8 +521,8 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     }
     final prevItem = _record.item;
     final at = _record.at;
-    final recent = at != null &&
-        DateTime.now().difference(at) < _switchCoverGrace;
+    final recent =
+        at != null && DateTime.now().difference(at) < _switchCoverGrace;
     if (prevItem != null && recent && prevItem.path != cur.path) {
       _dir = _record.index < 0 || _lastIndex >= _record.index ? 1 : -1;
       _base = prevItem;
@@ -677,12 +672,7 @@ class _TraditionalCover extends StatelessWidget {
                 ],
               ),
             if (flash && playing)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: _EqStrip(eq: eq),
-              ),
+              Positioned(left: 0, right: 0, bottom: 0, child: _EqStrip(eq: eq)),
           ],
         ),
       ),
@@ -709,10 +699,7 @@ class _EqStrip extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: 0.45),
-          ],
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.45)],
         ),
       ),
       child: AnimatedBuilder(
@@ -726,13 +713,10 @@ class _EqStrip extends StatelessWidget {
               for (var i = 0; i < 7; i++)
                 Container(
                   width: 3,
-                  height: 12 +
+                  height:
+                      12 +
                       14 *
-                          (0.5 +
-                              0.5 *
-                                  math.sin(
-                                    t * 2 * math.pi * 2 + i * 0.8,
-                                  )),
+                          (0.5 + 0.5 * math.sin(t * 2 * math.pi * 2 + i * 0.8)),
                   margin: const EdgeInsets.symmetric(horizontal: 3),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.85),
@@ -758,9 +742,7 @@ class _BlurredCoverBackground extends ConsumerWidget {
     // 主题包定义了播放页壁纸：整层替换封面模糊背景（静图，含遮罩/缩放参数）
     final themed = ref.watch(themedPageWallpaperProvider);
     if (themed != null) {
-      return RepaintBoundary(
-        child: CustomBackgroundLayer(background: themed),
-      );
+      return RepaintBoundary(child: CustomBackgroundLayer(background: themed));
     }
     final item = current;
     if (item == null) {
@@ -781,22 +763,14 @@ class _BlurredCoverBackground extends ConsumerWidget {
             gradient: LinearGradient(
               begin: Alignment.centerLeft,
               end: Alignment.centerRight,
-              colors: [
-                Color(0x0F000000),
-                Color(0x00000000),
-                Color(0x0F000000),
-              ],
+              colors: [Color(0x0F000000), Color(0x00000000), Color(0x0F000000)],
             ),
           ),
           const _DecoratedGradient(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Color(0x08000000),
-                Color(0x00000000),
-                Color(0x38000000),
-              ],
+              colors: [Color(0x08000000), Color(0x00000000), Color(0x38000000)],
             ),
           ),
         ],
@@ -804,7 +778,11 @@ class _BlurredCoverBackground extends ConsumerWidget {
     );
   }
 
-  Widget _blurCoverLayer(BuildContext context, QueueItem? item, ColorScheme scheme) {
+  Widget _blurCoverLayer(
+    BuildContext context,
+    QueueItem? item,
+    ColorScheme scheme,
+  ) {
     if (item == null) {
       return Container(color: Color.lerp(scheme.surface, Colors.black, 0.6));
     }
@@ -814,10 +792,26 @@ class _BlurredCoverBackground extends ConsumerWidget {
     final smallH = size.height / downscale;
     const sigma = 50.0 / downscale;
     const toneMatrix = <double>[
-      1.2039, -0.2717, -0.0274, 0, -0.08,
-      -0.0809, 1.0131, -0.0274, 0, -0.08,
-      -0.0809, -0.2717, 1.2575, 0, -0.08,
-      0, 0, 0, 1, 0,
+      1.2039,
+      -0.2717,
+      -0.0274,
+      0,
+      -0.08,
+      -0.0809,
+      1.0131,
+      -0.0274,
+      0,
+      -0.08,
+      -0.0809,
+      -0.2717,
+      1.2575,
+      0,
+      -0.08,
+      0,
+      0,
+      0,
+      1,
+      0,
     ];
     final coverChild = CoverImage(
       songPath: item.path,
@@ -825,10 +819,7 @@ class _BlurredCoverBackground extends ConsumerWidget {
       width: smallW,
       height: smallH,
       radius: 0,
-      gradient: [
-        scheme.primary,
-        scheme.primary.withValues(alpha: 0.72),
-      ],
+      gradient: [scheme.primary, scheme.primary.withValues(alpha: 0.72)],
       placeholder: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -857,11 +848,7 @@ class _BlurredCoverBackground extends ConsumerWidget {
 
     return FittedBox(
       fit: BoxFit.cover,
-      child: SizedBox(
-        width: smallW,
-        height: smallH,
-        child: inner,
-      ),
+      child: SizedBox(width: smallW, height: smallH, child: inner),
     );
   }
 }
@@ -873,9 +860,7 @@ class _DecoratedGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(gradient: gradient),
-    );
+    return DecoratedBox(decoration: BoxDecoration(gradient: gradient));
   }
 }
 
@@ -1012,15 +997,15 @@ class _GlassControlCard extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final lowPerf = ref.watch(
       settingsProvider.select(
-          (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
+        (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+      ),
     );
     final playerLiquid =
-        (ref
-            .watch(
+        (ref.watch(
               settingsProvider.select((s) => s.valueOrNull?.playerLiquidGlass),
             ) ??
             true) &&
-            !lowPerf;
+        !lowPerf;
     final frosted = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? false),
     );
@@ -1032,7 +1017,7 @@ class _GlassControlCard extends ConsumerWidget {
           ? const EdgeInsets.fromLTRB(8, 10, 8, 12)
           : const EdgeInsets.fromLTRB(20, 10, 20, 14),
       child: current == null
-          ?   Padding(
+          ? Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: Text(tr('暂无播放'))),
             )
@@ -1041,10 +1026,7 @@ class _GlassControlCard extends ConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 RepaintBoundary(
-                  child: _ProgressBar(
-                    notifier: notifier,
-                    showTime: false,
-                  ),
+                  child: _ProgressBar(notifier: notifier, showTime: false),
                 ),
                 const SizedBox(height: 4),
                 _LandscapeControlsRow(
@@ -1074,9 +1056,7 @@ class _GlassControlCard extends ConsumerWidget {
                   ),
                 ],
                 const SizedBox(height: 4),
-                RepaintBoundary(
-                  child: _ProgressBar(notifier: notifier),
-                ),
+                RepaintBoundary(child: _ProgressBar(notifier: notifier)),
                 const SizedBox(height: 2),
                 _Controls(notifier: notifier),
               ],
@@ -1118,8 +1098,8 @@ class _GlassControlCard extends ConsumerWidget {
     final glassColor = wallpaperGlassActive(ref)
         ? wallpaperGlassFill(context, ref)
         : (isDark
-            ? Colors.white.withValues(alpha: 0.08)
-            : Colors.white.withValues(alpha: 0.6));
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.6));
 
     final sigma = wallpaperGlassActive(ref)
         ? navSurfaceBlurSigma(ref)
@@ -1163,13 +1143,16 @@ class _TitleRow extends ConsumerWidget {
       playerProvider.select((s) => s.currentQuality),
     );
     final lyricsEnabled = ref.watch(
-      settingsProvider.select((s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
+      settingsProvider.select(
+        (s) => s.valueOrNull?.floatingLyricsEnabled ?? false,
+      ),
     );
     final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
     final mvQuality = ref.watch(
       mvProvider.select((s) => s.source?.videoQuality),
     );
-    final mvQualityShown = mvRequested && mvQuality != null && mvQuality.isNotEmpty;
+    final mvQualityShown =
+        mvRequested && mvQuality != null && mvQuality.isNotEmpty;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1214,9 +1197,14 @@ class _TitleRow extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(10),
                   onTap: () => _showQualitySheet(context, ref),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
                     child: Text(
-                      mvQualityShown ? mvQuality : _qualityLabel(currentQuality),
+                      mvQualityShown
+                          ? mvQuality
+                          : _qualityLabel(currentQuality),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
@@ -1224,7 +1212,8 @@ class _TitleRow extends ConsumerWidget {
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.5,
-                        color: (mvQualityShown ||
+                        color:
+                            (mvQualityShown ||
                                 (currentQuality != null &&
                                     isLosslessQuality(currentQuality)))
                             ? scheme.primary
@@ -1244,7 +1233,10 @@ class _TitleRow extends ConsumerWidget {
                     ? null
                     : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
                   child: Container(
                     width: 24,
                     height: 24,
@@ -1263,8 +1255,8 @@ class _TitleRow extends ConsumerWidget {
                         color: mvRequested
                             ? Colors.white.withValues(alpha: 0.32)
                             : lyricsEnabled
-                                ? scheme.primary
-                                : Colors.white.withValues(alpha: 0.72),
+                            ? scheme.primary
+                            : Colors.white.withValues(alpha: 0.72),
                       ),
                     ),
                   ),
@@ -1291,7 +1283,8 @@ class _TitleRow extends ConsumerWidget {
                       : Colors.white.withValues(alpha: 0.85),
                 ),
                 tooltip: tr('收藏'),
-                onPressed: () => ref.read(favoritesProvider.notifier).toggle(current),
+                onPressed: () =>
+                    ref.read(favoritesProvider.notifier).toggle(current),
               ),
               IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
@@ -1308,7 +1301,10 @@ class _TitleRow extends ConsumerWidget {
               ),
               if (current.isOnline)
                 IconButton(
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 36,
+                  ),
                   padding: EdgeInsets.zero,
                   icon: themeSlotIcon(
                     ref,
@@ -1318,11 +1314,15 @@ class _TitleRow extends ConsumerWidget {
                     color: Colors.white.withValues(alpha: 0.85),
                   ),
                   tooltip: tr('下载歌曲'),
-                  onPressed: () => _showDownloadQualitySheet(context, ref, current),
+                  onPressed: () =>
+                      _showDownloadQualitySheet(context, ref, current),
                 ),
               if (current.isOnline)
                 IconButton(
-                  constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
+                  constraints: const BoxConstraints(
+                    minWidth: 40,
+                    minHeight: 36,
+                  ),
                   padding: EdgeInsets.zero,
                   icon: themeSlotIcon(
                     ref,
@@ -1346,7 +1346,10 @@ class _TitleRow extends ConsumerWidget {
 }
 
 Future<void> _shareCurrent(
-    BuildContext context, WidgetRef ref, QueueItem current) async {
+  BuildContext context,
+  WidgetRef ref,
+  QueueItem current,
+) async {
   await showSongShareSheet(context, ref: ref, song: current);
 }
 
@@ -1357,14 +1360,14 @@ void _showQualitySheet(BuildContext context, WidgetRef ref) {
     return;
   }
   final notifier = ref.read(playerProvider.notifier);
-  showSheetDialog<void>(
-  context,
-  (_) => _QualitySheet(notifier: notifier),
-);
+  showSheetDialog<void>(context, (_) => _QualitySheet(notifier: notifier));
 }
 
 void _showDownloadQualitySheet(
-    BuildContext context, WidgetRef ref, QueueItem song) {
+  BuildContext context,
+  WidgetRef ref,
+  QueueItem song,
+) {
   final notifier = ref.read(playerProvider.notifier);
   final mv = ref.read(mvProvider);
   if (mv.requested && mv.ready && mv.source != null) {
@@ -1372,9 +1375,9 @@ void _showDownloadQualitySheet(
     return;
   }
   showSheetDialog<void>(
-  context,
-  (_) => _DownloadQualitySheet(notifier: notifier, song: song),
-);
+    context,
+    (_) => _DownloadQualitySheet(notifier: notifier, song: song),
+  );
 }
 
 String _qualityLabel(String? q) {
@@ -1416,10 +1419,12 @@ String _fmtKhz(int rate) {
   return '${k}kHz';
 }
 
+
 /// 当前播放链路的音频格式快照：源文件格式 + Rust 管线实际输出格式。
 ///
 /// 源格式取自曲库扫描结果（`sample_rate`/`bit_depth`/`codec`），输出格式取自
 /// AAudio 流的真实参数，所以能判断出「有没有被重采样」以及是否 bit-perfect。
+
 class _AudioChain {
   const _AudioChain({
     required this.codecLabel,
@@ -1441,7 +1446,8 @@ class _AudioChain {
   final bool exclusive;
   final bool dspActive;
 
-  bool get known => codecLabel.isNotEmpty || sourceRate > 0 || sourceBits != null;
+  bool get known =>
+      codecLabel.isNotEmpty || sourceRate > 0 || sourceBits != null;
 
   /// 是否走 Rust 管线（USB 独占或共享 DSP），否则是系统播放器。
   bool get rustEngine => exclusive || dspActive;
@@ -1492,21 +1498,22 @@ class _AudioChain {
 /// 组装当前音频链路快照。只在曲目或输出参数变化时触发重建，
 /// 不被 250ms 的进度轮询带着刷。
 _AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
-  final sel = ref.watch(playerProvider.select((s) => (
+  final sel = ref.watch(
+    playerProvider.select(
+      (s) => (
         s.usbExclusive,
         s.dspActive,
         s.outSampleRate,
         s.outChannels,
         s.outBitPerfect,
-      )));
+      ),
+    ),
+  );
   var codec = '';
   var rate = 0;
   int? bits;
   if (item != null) {
-    if (item.isOnline) {
-      final q = (item.onlineQuality ?? '').trim();
-      codec = q.isEmpty ? tr('在线') : '${tr('在线')} ${_qualityLabel(q)}';
-    } else {
+    if (!item.isOnline) {
       final song = ref.watch(songByPathProvider.select((m) => m[item.path]));
       if (song != null) {
         codec = (song.codec ?? song.format).toUpperCase().trim();
@@ -1533,7 +1540,9 @@ _AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
   );
 }
 
+
 /// 紧凑的音频格式徽标：`FLAC 24bit/96kHz · 直出`。
+
 class _AudioFormatBadge extends StatelessWidget {
   const _AudioFormatBadge({required this.chain, this.dense = false});
 
@@ -1547,8 +1556,8 @@ class _AudioFormatBadge extends StatelessWidget {
     final color = chain.bitPerfect
         ? scheme.primary
         : chain.resampled
-            ? Colors.white.withValues(alpha: 0.62)
-            : Colors.white.withValues(alpha: 0.80);
+        ? Colors.white.withValues(alpha: 0.62)
+        : Colors.white.withValues(alpha: 0.80);
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: dense ? 7 : 9,
@@ -1572,7 +1581,9 @@ class _AudioFormatBadge extends StatelessWidget {
   }
 }
 
+
 /// 音质弹层里的「当前音频」只读区块：源 / 输出 / 引擎。
+
 class _AudioChainPanel extends StatelessWidget {
   const _AudioChainPanel({required this.chain});
 
@@ -1585,8 +1596,8 @@ class _AudioChainPanel extends StatelessWidget {
     final engine = chain.exclusive
         ? (chain.bitPerfect ? tr('USB 独占 · bit-perfect 直出') : tr('USB 独占输出'))
         : chain.dspActive
-            ? tr('Rust DSP 共享管线')
-            : tr('系统播放器（未走音效引擎）');
+        ? tr('Rust DSP 共享管线')
+        : tr('系统播放器（未走音效引擎）');
     final rows = <(String, String)>[
       (tr('源格式'), chain.sourceLabel.isEmpty ? tr('未知') : chain.sourceLabel),
       if (chain.rustEngine)
@@ -1676,7 +1687,10 @@ String _qualitySizeSuffix(String q, Map<String, QualitySizeInfo> sizes) {
 }
 
 String _nearestAvailable(
-    String preferred, List<String> available, String behavior) {
+  String preferred,
+  List<String> available,
+  String behavior,
+) {
   if (available.isEmpty || available.contains(preferred)) return preferred;
   int rank(String q) {
     final i = kQualityLadder.indexOf(q);
@@ -1686,11 +1700,15 @@ String _nearestAvailable(
   final prefRank = rank(preferred);
   final sorted = [...available]..sort((a, b) => rank(a).compareTo(rank(b)));
   if (behavior == 'higher') {
-    return sorted
-        .firstWhere((q) => rank(q) > prefRank, orElse: () => sorted.last);
+    return sorted.firstWhere(
+      (q) => rank(q) > prefRank,
+      orElse: () => sorted.last,
+    );
   }
-  return sorted.reversed
-      .firstWhere((q) => rank(q) < prefRank, orElse: () => sorted.first);
+  return sorted.reversed.firstWhere(
+    (q) => rank(q) < prefRank,
+    orElse: () => sorted.first,
+  );
 }
 
 class _ProgressBar extends ConsumerWidget {
@@ -1708,8 +1726,11 @@ class _ProgressBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final mvCtrl = ref.watch(mvProvider
-        .select((s) => (s.audioTakenOver && s.ready) ? s.controller : null));
+    final mvCtrl = ref.watch(
+      mvProvider.select(
+        (s) => (s.audioTakenOver && s.ready) ? s.controller : null,
+      ),
+    );
     if (mvCtrl != null && mvCtrl.value.isInitialized) {
       return ListenableBuilder(
         listenable: mvCtrl,
@@ -1774,12 +1795,16 @@ class _ProgressBar extends ConsumerWidget {
                 Text(
                   _fmt(position),
                   style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant),
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
                 Text(
                   hasDuration ? _fmt(dur) : '--:--',
-                  style:
-                      TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -1803,54 +1828,92 @@ class _Controls extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Expanded(child: Center(child: IconButton(
-            iconSize: 28,
-            icon: themeSlotWidget(
-              ref,
-              'player.mode',
-              size: 28,
-              fallback: _PlayModeIcon(
-                mode: playMode,
-                color: scheme.onSurfaceVariant,
-                size: 28,
+          Expanded(
+            child: Center(
+              child: IconButton(
+                iconSize: 28,
+                icon: themeSlotWidget(
+                  ref,
+                  'player.mode',
+                  size: 28,
+                  fallback: _PlayModeIcon(
+                    mode: playMode,
+                    color: scheme.onSurfaceVariant,
+                    size: 28,
+                  ),
+                ),
+                onPressed: notifier.cyclePlayMode,
               ),
             ),
-            onPressed: notifier.cyclePlayMode,
-          ))),
-          Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_previous), onPressed: notifier.previous))),
-          Expanded(child: Center(child: Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: scheme.primary,
-              boxShadow: [
-                BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.4),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+          ),
+          Expanded(
+            child: Center(
+              child: IconButton(
+                iconSize: 28,
+                icon: const Icon(Icons.skip_previous),
+                onPressed: notifier.previous,
+              ),
             ),
-            child: resolving
-                ? const Padding(
-                    padding: EdgeInsets.all(18),
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
+          ),
+          Expanded(
+            child: Center(
+              child: Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: scheme.primary,
+                  boxShadow: [
+                    BoxShadow(
+                      color: scheme.primary.withValues(alpha: 0.4),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
                     ),
-                  )
-                : IconButton(
-                    icon: Icon(
-                      isPlaying ? Icons.pause : Icons.play_arrow,
-                      color: Colors.white,
-                    ),
-                    iconSize: 34,
-                    onPressed: notifier.toggle,
-                  ),
-          ))),
-          Expanded(child: Center(child: IconButton(iconSize: 28, icon: const Icon(Icons.skip_next), onPressed: notifier.next))),
-          Expanded(child: Center(child: IconButton(iconSize: 28, icon: themeSlotIcon(ref, 'player.queue', fallback: Icons.queue_music, size: 28, color: scheme.onSurfaceVariant), onPressed: () => _showQueueSheet(context, ref)))),
+                  ],
+                ),
+                child: resolving
+                    ? const Padding(
+                        padding: EdgeInsets.all(18),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : IconButton(
+                        icon: Icon(
+                          isPlaying ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                        ),
+                        iconSize: 34,
+                        onPressed: notifier.toggle,
+                      ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: IconButton(
+                iconSize: 28,
+                icon: const Icon(Icons.skip_next),
+                onPressed: notifier.next,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Center(
+              child: IconButton(
+                iconSize: 28,
+                icon: themeSlotIcon(
+                  ref,
+                  'player.queue',
+                  fallback: Icons.queue_music,
+                  size: 28,
+                  color: scheme.onSurfaceVariant,
+                ),
+                onPressed: () => _showQueueSheet(context, ref),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1858,7 +1921,9 @@ class _Controls extends ConsumerWidget {
 
   void _showQueueSheet(BuildContext context, WidgetRef ref) {
     showSheetDialog<void>(
-        context, (_) => _QueueSheet(player: ref.read(playerProvider)));
+      context,
+      (_) => _QueueSheet(player: ref.read(playerProvider)),
+    );
   }
 }
 
@@ -1922,7 +1987,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
     );
     final lyricsEnabled = ref.watch(
       settingsProvider.select(
-          (s) => s.valueOrNull?.floatingLyricsEnabled ?? false),
+        (s) => s.valueOrNull?.floatingLyricsEnabled ?? false,
+      ),
     );
     final mvRequested = ref.watch(mvProvider.select((s) => s.requested));
     final mvQuality = ref.watch(
@@ -1933,14 +1999,19 @@ class _LandscapeControlsRow extends ConsumerWidget {
     final playMode = ref.watch(playerProvider.select((s) => s.playMode));
     final resolving = ref.watch(playerProvider.select((s) => s.resolving));
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
-    final dlActive = item != null &&
-        dl.tasks.any((t) =>
-            t.songPath == item.path &&
-            (t.status == DownloadStatus.waiting ||
-                t.status == DownloadStatus.downloading));
-    final dlDone = item != null &&
+    final dlActive =
+        item != null &&
+        dl.tasks.any(
+          (t) =>
+              t.songPath == item.path &&
+              (t.status == DownloadStatus.waiting ||
+                  t.status == DownloadStatus.downloading),
+        );
+    final dlDone =
+        item != null &&
         (isLocal || dl.history.any((h) => h.songPath == item.path));
-    final isFav = item != null &&
+    final isFav =
+        item != null &&
         ref.watch(favoritesProvider.select((s) => s.contains(item.path)));
     final idle = Colors.white.withValues(alpha: 0.85);
     final position = ref.watch(playerProvider.select((s) => s.position));
@@ -1957,7 +2028,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.only(right: 8),
           child: Text(
-            '${fmtTime(position)} / ${dur <= 0 ? '--:--' : fmtTime(dur)}'.trimRight(),
+            '${fmtTime(position)} / ${dur <= 0 ? '--:--' : fmtTime(dur)}'
+                .trimRight(),
             style: TextStyle(
               fontSize: 12,
               fontFeatures: const [FontFeature.tabularFigures()],
@@ -2094,8 +2166,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
                 color: mvRequested
                     ? Colors.white.withValues(alpha: 0.32)
                     : lyricsEnabled
-                        ? accent
-                        : idle,
+                    ? accent
+                    : idle,
               ),
             ),
           ),
@@ -2152,13 +2224,18 @@ class _LandscapeControlsRow extends ConsumerWidget {
           onPressed: mvRequested
               ? null
               : () => playerNavigatorKey.currentState?.push(
-                    coverPageRoute<void>(context, (_) => const EffectsPage()),
-                  ),
+                  coverPageRoute<void>(context, (_) => const EffectsPage()),
+                ),
         ),
         IconButton(
           iconSize: 28,
-          icon: themeSlotIcon(ref, 'player.queue',
-              fallback: Icons.queue_music, size: 28, color: idle),
+          icon: themeSlotIcon(
+            ref,
+            'player.queue',
+            fallback: Icons.queue_music,
+            size: 28,
+            color: idle,
+          ),
           onPressed: () => showSheetDialog<void>(
             context,
             (_) => _QueueSheet(player: ref.read(playerProvider)),
@@ -2289,10 +2366,7 @@ class _PlayModePainter extends CustomPainter {
       )..layout();
       tp.paint(
         canvas,
-        Offset(
-          (size.width - tp.width) / 2,
-          (size.height - tp.height) / 2,
-        ),
+        Offset((size.width - tp.width) / 2, (size.height - tp.height) / 2),
       );
     }
   }
@@ -2319,17 +2393,16 @@ Future<void> _toggleFloatingLyrics(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('桌面歌词需要悬浮窗权限')),
-        content:   Text(
-            tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
+        title: Text(tr('桌面歌词需要悬浮窗权限')),
+        content: Text(tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
+            child: Text(tr('取消')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('去授权')),
+            child: Text(tr('去授权')),
           ),
         ],
       ),
@@ -2415,9 +2488,7 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
       final text = _cleanLyricText(rawText);
 
       final rawTrans = (item['translation'] as String?);
-      final translation = rawTrans != null
-          ? _cleanLyricText(rawTrans)
-          : null;
+      final translation = rawTrans != null ? _cleanLyricText(rawTrans) : null;
 
       final rawRomaji = (item['romaji'] as String?)?.trim();
       final romaji = (rawRomaji != null && rawRomaji.isNotEmpty)
@@ -2433,9 +2504,7 @@ List<_LyricLineItem> _parseLyricsJson(String jsonStr) {
             final wStart = (w['start'] as num?)?.toDouble() ?? 0.0;
             final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
             if (wText.isNotEmpty) {
-              words.add(
-                _LyricWordItem(text: wText, start: wStart, end: wEnd),
-              );
+              words.add(_LyricWordItem(text: wText, start: wStart, end: wEnd));
             }
           }
         }
@@ -2547,6 +2616,5 @@ class _DislikeStrokePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _DislikeStrokePainter old) =>
-      old.color != color;
+  bool shouldRepaint(covariant _DislikeStrokePainter old) => old.color != color;
 }
