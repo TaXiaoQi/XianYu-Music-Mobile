@@ -18,6 +18,8 @@ import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/player/sleep_timer.dart';
+import '../../src/player/sleep_timer_sheet.dart';
 import '../../src/player/mv_provider.dart';
 import '../../src/player/cast_provider.dart';
 import '../../src/widgets/sheet_dialog.dart';

@@ -41,6 +41,7 @@ import '../navigation/routes.dart';
 import 'mv_auto_sync.dart';
 import 'audio_head_cache.dart';
 import 'mv_provider.dart';
+import 'sleep_timer.dart';
 import 'audio_proxy_server.dart';
 import 'media_url.dart';
 import 'cast_provider.dart';
@@ -562,6 +563,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     WidgetsBinding.instance.addObserver(this);
     activePlayerNotifier = this;
     audioHandler?.bindNotifier(this);
+    _ref.read(sleepTimerProvider.notifier).onFire = (_) => _sleepFadeOutAndPause();
     _subscribePlayerStreams();
     _init();
   }
@@ -1470,6 +1472,37 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await toggle();
   }
 
+  /// 睡眠定时淡出因子（1.0 = 不淡出），睡眠定时到点时在约 1.2s 内降到 0。
+  ///
+  /// 乘进 [_effectiveVolume] 而不去写裸音量：这套栈里音量是**算出来的**
+  /// （用户音量 × 均衡/RG 增益），裸写会被别处多次 `setVolume(_effectiveVolume())`
+  /// 重算覆盖、也会冲掉均衡增益；作为因子进入计算则处处自动生效。
+  double _sleepFade = 1.0;
+  bool _sleepFadeBusy = false;
+
+  Future<void> _sleepFadeOutAndPause() async {
+    if (_sleepFadeBusy) return;
+    _sleepFadeBusy = true;
+    try {
+      // Keep the user's effective volume and all DSP/RG gains intact; only
+      // multiply a temporary fade factor into _effectiveVolume().
+      for (var step = 20; step >= 0; step--) {
+        _sleepFade = step / 20;
+        await _player.setVolume(_effectiveVolume());
+        if (step != 0) {
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+        }
+      }
+      await pauseFromSystem();
+    } finally {
+      _sleepFade = 1.0;
+      try {
+        await _player.setVolume(_effectiveVolume());
+      } catch (_) {}
+      _sleepFadeBusy = false;
+    }
+  }
+
   Future<void> pauseFromSystem() async {
     if (!state.isPlaying) return;
     final st =
@@ -1860,6 +1893,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   @override
   void dispose() {
+    _ref.read(sleepTimerProvider.notifier).onFire = null;
     _listenTimer?.cancel();
     _stallTimer?.cancel();
     _exclusiveTimer?.cancel();

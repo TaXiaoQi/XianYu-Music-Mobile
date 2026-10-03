@@ -34,34 +34,36 @@ class ImportedPlaylist {
       (sourceRaw ?? const {}).isNotEmpty;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'songs': songs.map((s) => s.toJson()).toList(),
-        'importedAt': importedAt,
-        if (cloudId != null) 'cloudId': cloudId,
-        if (isCloud) 'isCloud': true,
-        if (sourcePluginId != null) 'sourcePluginId': sourcePluginId,
-        if (sourceUrl != null) 'sourceUrl': sourceUrl,
-        if (sourceRaw != null) 'sourceRaw': sourceRaw,
-      };
+    'id': id,
+    'name': name,
+    'songs': songs.map((s) => s.toJson()).toList(),
+    'importedAt': importedAt,
+    if (cloudId != null) 'cloudId': cloudId,
+    if (isCloud) 'isCloud': true,
+    if (sourcePluginId != null) 'sourcePluginId': sourcePluginId,
+    if (sourceUrl != null) 'sourceUrl': sourceUrl,
+    if (sourceRaw != null) 'sourceRaw': sourceRaw,
+  };
 
   factory ImportedPlaylist.fromJson(Map<String, dynamic> j) => ImportedPlaylist(
-        id: j['id'] as String? ?? '',
-        name: j['name'] as String? ?? tr('未命名歌单'),
-        songs: (j['songs'] as List? ?? [])
-            .whereType<Map>()
-            .map((e) => ImportedSong.fromJson(e.cast<String, dynamic>()))
-            .toList(),
-        importedAt: (j['importedAt'] as num?)?.toInt() ?? 0,
-        cloudId: j['cloudId'] as String?,
-        isCloud: j['isCloud'] == true,
-        sourcePluginId: j['sourcePluginId'] as String?,
-        sourceUrl: j['sourceUrl'] as String?,
-        sourceRaw:
-            j['sourceRaw'] is Map ? (j['sourceRaw'] as Map).cast<String, dynamic>() : null,
-      );
+    id: j['id'] as String? ?? '',
+    name: j['name'] as String? ?? tr('未命名歌单'),
+    songs: (j['songs'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => ImportedSong.fromJson(e.cast<String, dynamic>()))
+        .toList(),
+    importedAt: (j['importedAt'] as num?)?.toInt() ?? 0,
+    cloudId: j['cloudId'] as String?,
+    isCloud: j['isCloud'] == true,
+    sourcePluginId: j['sourcePluginId'] as String?,
+    sourceUrl: j['sourceUrl'] as String?,
+    sourceRaw: j['sourceRaw'] is Map
+        ? (j['sourceRaw'] as Map).cast<String, dynamic>()
+        : null,
+  );
 
   ImportedPlaylist copyWith({
+    String? id,
     String? name,
     List<ImportedSong>? songs,
     String? cloudId,
@@ -69,22 +71,32 @@ class ImportedPlaylist {
     String? sourcePluginId,
     String? sourceUrl,
     Map<String, dynamic>? sourceRaw,
-  }) =>
-      ImportedPlaylist(
-        id: id,
-        name: name ?? this.name,
-        songs: songs ?? this.songs,
-        importedAt: importedAt,
-        cloudId: cloudId ?? this.cloudId,
-        isCloud: isCloud ?? this.isCloud,
-        sourcePluginId: sourcePluginId ?? this.sourcePluginId,
-        sourceUrl: sourceUrl ?? this.sourceUrl,
-        sourceRaw: sourceRaw ?? this.sourceRaw,
-      );
+  }) => ImportedPlaylist(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    songs: songs ?? this.songs,
+    importedAt: importedAt,
+    cloudId: cloudId ?? this.cloudId,
+    isCloud: isCloud ?? this.isCloud,
+    sourcePluginId: sourcePluginId ?? this.sourcePluginId,
+    sourceUrl: sourceUrl ?? this.sourceUrl,
+    sourceRaw: sourceRaw ?? this.sourceRaw,
+  );
 }
 
 class PlaylistStore {
   static const _key = 'xianyu_imported_playlists_v1';
+
+  String _newId(Set<String> usedIds) {
+    final base = DateTime.now().microsecondsSinceEpoch.toString();
+    var id = base;
+    var suffix = 1;
+    while (usedIds.contains(id)) {
+      id = '$base-${suffix++}';
+    }
+    usedIds.add(id);
+    return id;
+  }
 
   Future<List<ImportedPlaylist>> loadAll() async {
     final prefs = await SharedPreferences.getInstance();
@@ -92,10 +104,19 @@ class PlaylistStore {
     if (raw == null || raw.isEmpty) return const [];
     try {
       final list = jsonDecode(raw) as List;
-      return list
+      final playlists = list
           .whereType<Map>()
           .map((e) => ImportedPlaylist.fromJson(e.cast<String, dynamic>()))
           .toList();
+      final usedIds = <String>{};
+      var repaired = false;
+      final normalized = playlists.map((playlist) {
+        if (playlist.id.isNotEmpty && usedIds.add(playlist.id)) return playlist;
+        repaired = true;
+        return playlist.copyWith(id: _newId(usedIds));
+      }).toList();
+      if (repaired) await saveAll(normalized);
+      return normalized;
     } catch (_) {
       return const [];
     }
@@ -104,7 +125,9 @@ class PlaylistStore {
   Future<void> saveAll(List<ImportedPlaylist> playlists) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
-        _key, jsonEncode(playlists.map((p) => p.toJson()).toList()));
+      _key,
+      jsonEncode(playlists.map((p) => p.toJson()).toList()),
+    );
   }
 
   Future<List<ImportedPlaylist>> addPlaylists(
@@ -112,38 +135,41 @@ class PlaylistStore {
   ) async {
     final all = await loadAll();
     final result = [...all];
+    final usedIds = all.map((playlist) => playlist.id).toSet();
     for (final pl in playlists) {
       if (pl.songs.isEmpty) continue;
       final existingIndex = result.indexWhere((p) => p.name == pl.name);
       if (existingIndex >= 0) {
         final existing = result[existingIndex];
-      final merged = <String, ImportedSong>{};
-      for (final s in existing.songs) {
-        merged[s.path] = s;
-      }
-      for (final s in pl.songs) {
-        merged[s.path] = s;
-      }
-      result[existingIndex] = existing.copyWith(
-        songs: merged.values.toList(),
-        cloudId: existing.cloudId ?? pl.cloudId,
-        isCloud: existing.isCloud || pl.isCloud,
-        sourcePluginId: existing.sourcePluginId ?? pl.sourcePluginId,
-        sourceUrl: existing.sourceUrl ?? pl.sourceUrl,
-        sourceRaw: existing.sourceRaw ?? pl.sourceRaw,
-      );
+        final merged = <String, ImportedSong>{};
+        for (final s in existing.songs) {
+          merged[s.path] = s;
+        }
+        for (final s in pl.songs) {
+          merged[s.path] = s;
+        }
+        result[existingIndex] = existing.copyWith(
+          songs: merged.values.toList(),
+          cloudId: existing.cloudId ?? pl.cloudId,
+          isCloud: existing.isCloud || pl.isCloud,
+          sourcePluginId: existing.sourcePluginId ?? pl.sourcePluginId,
+          sourceUrl: existing.sourceUrl ?? pl.sourceUrl,
+          sourceRaw: existing.sourceRaw ?? pl.sourceRaw,
+        );
       } else {
-        result.add(ImportedPlaylist(
-          id: DateTime.now().microsecondsSinceEpoch.toString(),
-          name: pl.name,
-          songs: pl.songs,
-          importedAt: DateTime.now().millisecondsSinceEpoch,
-          cloudId: pl.cloudId,
-          isCloud: pl.isCloud,
-          sourcePluginId: pl.sourcePluginId,
-          sourceUrl: pl.sourceUrl,
-          sourceRaw: pl.sourceRaw,
-        ));
+        result.add(
+          ImportedPlaylist(
+            id: _newId(usedIds),
+            name: pl.name,
+            songs: pl.songs,
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+            cloudId: pl.cloudId,
+            isCloud: pl.isCloud,
+            sourcePluginId: pl.sourcePluginId,
+            sourceUrl: pl.sourceUrl,
+            sourceRaw: pl.sourceRaw,
+          ),
+        );
       }
     }
     await saveAll(result);
@@ -161,19 +187,21 @@ class PlaylistStore {
     final all = await loadAll();
     final next = cloudId == null || cloudId.isEmpty ? null : cloudId;
     final result = all
-        .map((p) => p.id == id && p.cloudId != next
-            ? ImportedPlaylist(
-                id: p.id,
-                name: p.name,
-                songs: p.songs,
-                importedAt: p.importedAt,
-                cloudId: next,
-                isCloud: p.isCloud,
-                sourcePluginId: p.sourcePluginId,
-                sourceUrl: p.sourceUrl,
-                sourceRaw: p.sourceRaw,
-              )
-            : p)
+        .map(
+          (p) => p.id == id && p.cloudId != next
+              ? ImportedPlaylist(
+                  id: p.id,
+                  name: p.name,
+                  songs: p.songs,
+                  importedAt: p.importedAt,
+                  cloudId: next,
+                  isCloud: p.isCloud,
+                  sourcePluginId: p.sourcePluginId,
+                  sourceUrl: p.sourceUrl,
+                  sourceRaw: p.sourceRaw,
+                )
+              : p,
+        )
         .toList();
     await saveAll(result);
     return result;
@@ -181,10 +209,11 @@ class PlaylistStore {
 
   Future<List<ImportedPlaylist>> createPlaylist(String name) async {
     final all = await loadAll();
+    final usedIds = all.map((playlist) => playlist.id).toSet();
     final result = [
       ...all,
       ImportedPlaylist(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        id: _newId(usedIds),
         name: name,
         songs: const [],
         importedAt: DateTime.now().millisecondsSinceEpoch,
@@ -194,8 +223,7 @@ class PlaylistStore {
     return result;
   }
 
-  Future<List<ImportedPlaylist>> renamePlaylist(
-      String id, String name) async {
+  Future<List<ImportedPlaylist>> renamePlaylist(String id, String name) async {
     final all = await loadAll();
     final result = all
         .map((p) => p.id == id ? p.copyWith(name: name) : p)
@@ -205,7 +233,9 @@ class PlaylistStore {
   }
 
   Future<List<ImportedPlaylist>> addSongsTo(
-      String id, List<ImportedSong> songs) async {
+    String id,
+    List<ImportedSong> songs,
+  ) async {
     if (songs.isEmpty) return loadAll();
     final all = await loadAll();
     final result = all.map((p) {
@@ -223,8 +253,7 @@ class PlaylistStore {
     return result;
   }
 
-  Future<List<ImportedPlaylist>> removeSong(
-      String id, String path) async {
+  Future<List<ImportedPlaylist>> removeSong(String id, String path) async {
     final all = await loadAll();
     final result = all.map((p) {
       if (p.id != id) return p;
@@ -235,7 +264,9 @@ class PlaylistStore {
   }
 
   Future<List<ImportedPlaylist>> reorderSongs(
-      String id, List<String> orderedPaths) async {
+    String id,
+    List<String> orderedPaths,
+  ) async {
     final all = await loadAll();
     final pathSet = orderedPaths.toSet();
     final result = all.map((p) {
@@ -288,8 +319,9 @@ class PlaylistStore {
     if (index < 0) return all;
     final p = all[index];
     final localKeys = p.songs.map((s) => s.path).toSet();
-    final additions =
-        sourceSongs.where((s) => !localKeys.contains(s.path)).toList();
+    final additions = sourceSongs
+        .where((s) => !localKeys.contains(s.path))
+        .toList();
     var nextSongs = [...p.songs, ...additions];
     if (fullSync) {
       final sourceKeys = sourceSongs.map((s) => s.path).toSet();

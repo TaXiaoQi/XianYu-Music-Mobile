@@ -527,7 +527,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
   double _effectiveVolume() =>
       (_ref.read(volumeProvider) *
               _effectiveBalanceGain() *
-              (_mvAudioOverride ? _mvSongGain : 1.0))
+              (_mvAudioOverride ? _mvSongGain : 1.0) *
+              _sleepFade)
           .clamp(0.0, 4.0);
 
   double _effectiveBalanceGain() {

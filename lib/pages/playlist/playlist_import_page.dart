@@ -28,8 +28,7 @@ class PlaylistImportPage extends ConsumerStatefulWidget {
   const PlaylistImportPage({super.key});
 
   @override
-  ConsumerState<PlaylistImportPage> createState() =>
-      _PlaylistImportPageState();
+  ConsumerState<PlaylistImportPage> createState() => _PlaylistImportPageState();
 }
 
 class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
@@ -45,8 +44,9 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
 
   @override
   Widget build(BuildContext context) {
-    final hasPlugin = ref.watch(pluginManagerProvider
-        .select((s) => s.sources.any((p) => p.enabled)));
+    final hasPlugin = ref.watch(
+      pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
+    );
     if (hasPlugin != _cloudTab) {
       _cloudTab = hasPlugin;
       final prev = _tabCtrl.index;
@@ -56,7 +56,7 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
     }
     final tabBar = TabBar(
       controller: _tabCtrl,
-      tabs:   [
+      tabs: [
         Tab(text: tr('备份文件')),
         Tab(text: tr('本地文件')),
         if (hasPlugin) Tab(text: tr('云端导入')),
@@ -67,32 +67,32 @@ class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(
-        children: [
-          Padding(
-            padding: EdgeInsets.only(
-              top: GlassTopBar.height(context, bottom: tabBar),
+          children: [
+            Padding(
+              padding: EdgeInsets.only(
+                top: GlassTopBar.height(context, bottom: tabBar),
+              ),
+              child: TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  const _BackupImportTab(),
+                  const _LocalFolderTab(),
+                  if (hasPlugin) const _CloudImportTab(),
+                ],
+              ),
             ),
-            child: TabBarView(
-              controller: _tabCtrl,
-              children: [
-                const _BackupImportTab(),
-                const _LocalFolderTab(),
-                if (hasPlugin) const _CloudImportTab(),
-              ],
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Text(tr('导入歌单')),
+                bottom: tabBar,
+              ),
             ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title:   Text(tr('导入歌单')),
-              bottom: tabBar,
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -117,7 +117,8 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
     try {
       final bytes = await File(path).readAsBytes();
       final lowerName = name.toLowerCase();
-      final isPlaylist = lowerName.endsWith('.m3u') ||
+      final isPlaylist =
+          lowerName.endsWith('.m3u') ||
           lowerName.endsWith('.m3u8') ||
           lowerName.endsWith('.txt');
 
@@ -134,7 +135,9 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
         } on FormatException {
           if (lowerName.endsWith('.txt')) {
             prepared = preparePluginBackupImport(
-                extractBackupJsonBytes(bytes, name), sources);
+              extractBackupJsonBytes(bytes, name),
+              sources,
+            );
           } else {
             rethrow;
           }
@@ -144,11 +147,15 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
         prepared = preparePluginBackupImport(jsonContent, sources);
       }
 
-      final playlists = await ref
-          .read(playlistManagerProvider.notifier)
-          .addFromBackup(prepared);
+      final manager = ref.read(playlistManagerProvider.notifier);
+      final beforeCount = ref.read(playlistManagerProvider).playlists.length;
+      final playlists = await manager.addFromBackup(prepared);
+      final addedCount = (playlists.length - beforeCount).clamp(
+        0,
+        playlists.length,
+      );
       if (!mounted) return;
-      await _showResult(prepared, playlists.length);
+      await _showResult(prepared, addedCount);
     } on FormatException catch (e) {
       if (!mounted) return;
       _toast(tr('导入失败：{e}', {'e': e.message}));
@@ -163,14 +170,16 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
   List<LocalSongRef> _localSongRefs() {
     final library = ref.read(libraryProvider);
     return library.songs
-        .map((s) => (
-              path: s.path,
-              title: s.title,
-              artist: s.artist,
-              album: s.album,
-              duration: s.duration,
-              coverThumbPath: s.coverThumbPath,
-            ))
+        .map(
+          (s) => (
+            path: s.path,
+            title: s.title,
+            artist: s.artist,
+            album: s.album,
+            duration: s.duration,
+            coverThumbPath: s.coverThumbPath,
+          ),
+        )
         .toList();
   }
 
@@ -179,12 +188,14 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
   }
 
   Future<void> _showResult(
-      PreparedPluginBackupImport prepared, int createdCount) async {
+    PreparedPluginBackupImport prepared,
+    int createdCount,
+  ) async {
     final versionNote = describeBackupVersion(prepared);
     await showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('导入完成')),
+        title: Text(tr('导入完成')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -199,32 +210,45 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
               ),
               if (prepared.missingPlugins.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                Text(tr('缺失插件：'),
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(ctx).colorScheme.error)),
+                Text(
+                  tr('缺失插件：'),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(ctx).colorScheme.error,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 for (final missing in prepared.missingPlugins)
                   Text(
-                    tr('· {platform}（{n} 首）', {'platform': missing.platform, 'n': missing.songCount}),
+                    tr('· {platform}（{n} 首）', {
+                      'platform': missing.platform,
+                      'n': missing.songCount,
+                    }),
                     style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                      fontSize: 12,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
                   ),
               ],
               if (prepared.associations.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                  Text(tr('关联插件：'),
-                    style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  tr('关联插件：'),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 4),
                 for (final assoc in prepared.associations)
                   Text(
-                    tr('· {plugin} → {platform}（{n} 首）', {'plugin': assoc.pluginName, 'platform': assoc.platform, 'n': assoc.songCount}),
+                    tr('· {plugin} → {platform}（{n} 首）', {
+                      'plugin': assoc.pluginName,
+                      'platform': assoc.platform,
+                      'n': assoc.songCount,
+                    }),
                     style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                      fontSize: 12,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    ),
                   ),
               ],
             ],
@@ -233,7 +257,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
         actions: [
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('好的')),
+            child: Text(tr('好的')),
           ),
         ],
       ),
@@ -264,7 +288,9 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Text(
-          tr('支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 M3U/M3U8 播放列表、椒盐音乐 TXT 导出。'),
+          tr(
+            '支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 M3U/M3U8 播放列表、椒盐音乐 TXT 导出。',
+          ),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 24),
@@ -272,7 +298,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
           child: OutlinedButton.icon(
             onPressed: _loading ? null : _pickLocalFile,
             icon: const Icon(Icons.folder_open, size: 24),
-            label:   Padding(
+            label: Padding(
               padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Text(tr('选择本地备份文件'), style: TextStyle(fontSize: 15)),
             ),
@@ -280,9 +306,7 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
         ),
         if (_loading) ...[
           const SizedBox(height: 20),
-          const Center(
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+          const Center(child: CircularProgressIndicator(strokeWidth: 2)),
         ],
       ],
     );
@@ -301,8 +325,19 @@ class _LocalFolderTab extends ConsumerStatefulWidget {
 
 class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
   static const _audioExtensions = [
-    'flac', 'mp3', 'wav', 'aac', 'm4a', 'm4b', 'mp4',
-    'ogg', 'oga', 'aif', 'aiff', 'dsf', 'dff',
+    'flac',
+    'mp3',
+    'wav',
+    'aac',
+    'm4a',
+    'm4b',
+    'mp4',
+    'ogg',
+    'oga',
+    'aif',
+    'aiff',
+    'dsf',
+    'dff',
   ];
 
   final _nameCtrl = TextEditingController();
@@ -334,8 +369,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       _folderName = name;
     });
     if (_nameCtrl.text.trim().isEmpty) {
-      final segments =
-          name.split('/').where((s) => s.trim().isNotEmpty).toList();
+      final segments = name
+          .split('/')
+          .where((s) => s.trim().isNotEmpty)
+          .toList();
       _nameCtrl.text = segments.isNotEmpty ? segments.last : name;
     }
   }
@@ -378,16 +415,18 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           );
           final parsed = jsonDecode(songJson) as Map<String, dynamic>;
           if ((parsed['duration'] as num? ?? 0) > 0) {
-            songs.add(ImportedSong(
-              title: (parsed['title'] as String? ?? '').isNotEmpty
-                  ? parsed['title'] as String
-                  : f.name,
-              artist: parsed['artist'] as String? ?? '',
-              album: parsed['album'] as String? ?? '',
-              duration: (parsed['duration'] as num?)?.toInt() ?? 0,
-              localPath: path,
-              path: path,
-            ));
+            songs.add(
+              ImportedSong(
+                title: (parsed['title'] as String? ?? '').isNotEmpty
+                    ? parsed['title'] as String
+                    : f.name,
+                artist: parsed['artist'] as String? ?? '',
+                album: parsed['album'] as String? ?? '',
+                duration: (parsed['duration'] as num?)?.toInt() ?? 0,
+                localPath: path,
+                path: path,
+              ),
+            );
           }
         } catch (_) {
         } finally {
@@ -412,7 +451,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       }
       await manager.addSongs(created.last.id, songs);
       if (!mounted) return;
-      _finish(true, tr('已创建歌单「{name}」，共导入 {n} 首歌曲', {'name': name, 'n': songs.length}));
+      _finish(
+        true,
+        tr('已创建歌单「{name}」，共导入 {n} 首歌曲', {'name': name, 'n': songs.length}),
+      );
     } catch (e) {
       if (!mounted) return;
       _finish(false, tr('导入失败：{e}', {'e': e}));
@@ -433,7 +475,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         TextField(
           controller: _nameCtrl,
           enabled: !_importing,
-          decoration:   InputDecoration(
+          decoration: InputDecoration(
             labelText: tr('歌单名称 *'),
             hintText: tr('请输入新歌单名称'),
             border: OutlineInputBorder(),
@@ -441,8 +483,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           ),
         ),
         const SizedBox(height: 14),
-        Text(tr('音乐文件夹 *'),
-            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+        Text(
+          tr('音乐文件夹 *'),
+          style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+        ),
         const SizedBox(height: 8),
         InkWell(
           onTap: _importing ? null : _pickFolder,
@@ -463,19 +507,29 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
                 ? Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.folder_open_outlined,
-                          size: 30, color: scheme.outline),
+                      Icon(
+                        Icons.folder_open_outlined,
+                        size: 30,
+                        color: scheme.outline,
+                      ),
                       const SizedBox(height: 6),
-                      Text(tr('点击选择包含音乐的文件夹'),
-                          style: TextStyle(
-                              fontSize: 12.5, color: scheme.onSurfaceVariant)),
+                      Text(
+                        tr('点击选择包含音乐的文件夹'),
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   )
                 : Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.folder_rounded,
-                          size: 30, color: scheme.primary),
+                      Icon(
+                        Icons.folder_rounded,
+                        size: 30,
+                        color: scheme.primary,
+                      ),
                       const SizedBox(height: 6),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -484,7 +538,9 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -498,9 +554,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         ),
         if (_importing) ...[
           const SizedBox(height: 16),
-          LinearProgressIndicator(
-            value: _total > 0 ? _parsed / _total : null,
-          ),
+          LinearProgressIndicator(value: _total > 0 ? _parsed / _total : null),
           const SizedBox(height: 6),
           Text(
             _total > 0 ? '正在解析 $_parsed / $_total …' : tr('正在读取文件夹…'),
@@ -556,10 +610,12 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   List<PluginSource> get _plugins => ref
       .watch(pluginManagerProvider)
       .sources
-      .where((s) =>
-          s.enabled &&
-          (s.format == PluginFormat.musicfree ||
-              s.format == PluginFormat.anime))
+      .where(
+        (s) =>
+            s.enabled &&
+            (s.format == PluginFormat.musicfree ||
+                s.format == PluginFormat.anime),
+      )
       .toList();
 
   PluginSource? get _selected {
@@ -593,7 +649,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   }
 
   PluginSource? _matchPluginByPlatform(
-      String canonical, List<PluginSource> plugins) {
+    String canonical,
+    List<PluginSource> plugins,
+  ) {
     final keywords = _platformKeywords[canonical] ?? const [];
     for (final p in plugins) {
       for (final label in [p.name, ...p.sources]) {
@@ -704,8 +762,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
 
   Future<void> _importSheet(MfSheetItem sheet) async {
     final plugins = _plugins;
-    final sheetPlugin =
-        plugins.where((p) => p.id == sheet.pluginId).firstOrNull;
+    final sheetPlugin = plugins
+        .where((p) => p.id == sheet.pluginId)
+        .firstOrNull;
     final source = sheetPlugin ?? _resolved ?? _selected;
     if (source == null || _importing) return;
     setState(() => _importing = true);
@@ -723,7 +782,10 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       final total = sheet.trackCount ?? 0;
       while (page <= 50) {
         final result = await catalog.getMusicSheetInfoWithEnd(
-            source, sheet.raw, page: page);
+          source,
+          sheet.raw,
+          page: page,
+        );
         final results = result.songs;
         if (results.isEmpty) break;
         final fresh = results.where((r) {
@@ -731,10 +793,15 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           return seen.add(key);
         }).toList();
         if (fresh.isEmpty) break;
-        songs.addAll(fresh
-            .map((r) =>
-                importedSongFromQueueItem(PluginCatalogService.toQueueItem(source, r)))
-            .toList());
+        songs.addAll(
+          fresh
+              .map(
+                (r) => importedSongFromQueueItem(
+                  PluginCatalogService.toQueueItem(source, r),
+                ),
+              )
+              .toList(),
+        );
         if (result.isEnd == true) break;
         if (total > 0 && songs.length >= total) break;
         if (results.length > maxPageSize) maxPageSize = results.length;
@@ -783,7 +850,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   }
 
   Future<void> _importSingleSong(
-      PluginSource source, PluginSearchResult song) async {
+    PluginSource source,
+    PluginSearchResult song,
+  ) async {
     try {
       final rename = _renameCtrl.text.trim();
       final name = rename.isNotEmpty ? rename : song.name;
@@ -797,7 +866,8 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       }
       await manager.addSongs(created.last.id, [
         importedSongFromQueueItem(
-            PluginCatalogService.toQueueItem(source, song)),
+          PluginCatalogService.toQueueItem(source, song),
+        ),
       ]);
       if (!mounted) return;
       _toast(tr('已导入单曲「{name}」', {'name': song.name}));
@@ -827,8 +897,10 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
             children: [
               Icon(Icons.cloud_off_outlined, size: 52, color: scheme.outline),
               const SizedBox(height: 12),
-              Text(tr('暂无可用的音源插件'),
-                  style: TextStyle(color: scheme.onSurfaceVariant)),
+              Text(
+                tr('暂无可用的音源插件'),
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
               const SizedBox(height: 4),
               Text(
                 tr('先在 设置 → 音源 安装并启用插件，再回来导入在线歌单'),
@@ -850,16 +922,15 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        Text(tr('选择音源'),
-            style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+        Text(
+          tr('选择音源'),
+          style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+        ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: selected ?? _autoKey,
           items: [
-              DropdownMenuItem(
-              value: _autoKey,
-              child: Text(tr('自动识别')),
-            ),
+            DropdownMenuItem(value: _autoKey, child: Text(tr('自动识别'))),
             for (final p in plugins)
               DropdownMenuItem(value: p.id, child: Text(p.name)),
           ],
@@ -877,7 +948,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           controller: _keywordCtrl,
           enabled: !_searching && !_importing,
           onSubmitted: (_) => _search(),
-          decoration:   InputDecoration(
+          decoration: InputDecoration(
             labelText: tr('歌单分享链接或歌单 ID'),
             hintText: tr('粘贴歌单分享链接或输入歌单 ID'),
             border: OutlineInputBorder(),
@@ -888,7 +959,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         TextField(
           controller: _renameCtrl,
           enabled: !_importing,
-          decoration:   InputDecoration(
+          decoration: InputDecoration(
             labelText: tr('歌单重命名（可选）'),
             hintText: tr('导入后给歌单起个新名字'),
             border: OutlineInputBorder(),
@@ -897,7 +968,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         ),
         const SizedBox(height: 10),
         Text(
-          tr('选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗/汽水的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。关键词搜索只能搜公开歌单，导入自己的歌单请粘贴分享链接或歌单 ID。'),
+          tr(
+            '选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗/汽水的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。关键词搜索只能搜公开歌单，导入自己的歌单请粘贴分享链接或歌单 ID。',
+          ),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 14),
@@ -910,7 +983,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.search, size: 18),
-          label:   Text(tr('搜索歌单')),
+          label: Text(tr('搜索歌单')),
         ),
         if (_error != null) ...[
           const SizedBox(height: 14),
@@ -920,16 +993,18 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
               color: scheme.errorContainer.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(_error!,
-                style:
-                    TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant)),
+            child: Text(
+              _error!,
+              style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+            ),
           ),
         ],
         if (_sheets.isNotEmpty) ...[
           const SizedBox(height: 18),
-          Text(tr('搜索结果 · {n}', {'n': _sheets.length}),
-              style:
-                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+          Text(
+            tr('搜索结果 · {n}', {'n': _sheets.length}),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 8),
           for (final sheet in _sheets)
             Padding(
@@ -959,8 +1034,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.w600),
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               const SizedBox(height: 3),
                               Text(
@@ -968,8 +1044,9 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                    fontSize: 12,
-                                    color: scheme.onSurfaceVariant),
+                                  fontSize: 12,
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
                             ],
                           ),
@@ -978,12 +1055,14 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
                           const SizedBox(
                             width: 18,
                             height: 18,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         else
-                          Icon(Icons.download_for_offline_outlined,
-                              size: 22, color: scheme.primary),
+                          Icon(
+                            Icons.download_for_offline_outlined,
+                            size: 22,
+                            color: scheme.primary,
+                          ),
                       ],
                     ),
                   ),
