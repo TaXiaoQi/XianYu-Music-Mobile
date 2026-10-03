@@ -161,6 +161,7 @@ class FloatingLyricsController with WidgetsBindingObserver {
         'fontScale': s.floatingLyricsFontScale,
         'secondaryScale': s.floatingLyricsSecondaryScale,
         'showTranslation': s.floatingLyricsShowTranslation,
+        'showNextLine': s.floatingLyricsShowNextLine,
         'showRomanization': s.floatingLyricsShowRomanization,
         'showBackground': s.floatingLyricsShowBackground,
         'hideWhenPaused': s.floatingLyricsHideWhenPaused,
@@ -214,7 +215,7 @@ class FloatingLyricsController with WidgetsBindingObserver {
   Future<dynamic> _onEvent(MethodCall call) async {
     switch (call.method) {
       case 'onTogglePlayback':
-        _container.read(playerProvider.notifier).toggle();
+        _container.read(playerProvider.notifier).toggle(origin: 'lyricsOverlay');
       case 'onPrevious':
         _container.read(playerProvider.notifier).previous();
       case 'onNext':

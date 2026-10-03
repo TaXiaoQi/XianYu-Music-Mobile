@@ -51,6 +51,7 @@ class LyricsOverlayView(context: Context) : View(context) {
     private var opacity = 1f
     private var fontScale = 1f
     private var secondaryScale = 0.88f
+    private var showNextLine = false
     private var showTranslation = true
     private var showRomanization = false
     private var showBackground = true
@@ -93,6 +94,7 @@ class LyricsOverlayView(context: Context) : View(context) {
         showTranslation: Boolean,
         showRomanization: Boolean,
         showBackground: Boolean,
+        showNextLine: Boolean,
     ) {
         textColor = color
         // 0 = 跟随主色：绘制时回退到主色降透明度（历史行为）
@@ -103,6 +105,7 @@ class LyricsOverlayView(context: Context) : View(context) {
         this.showTranslation = showTranslation
         this.showRomanization = showRomanization
         this.showBackground = showBackground
+        this.showNextLine = showNextLine
         invalidate()
     }
 
@@ -146,6 +149,13 @@ class LyricsOverlayView(context: Context) : View(context) {
         val secondarySize = sp(15f) * secondaryScale
         val maxWidth = width - dp(20)
         val originalText = line.text.ifBlank { "\u266a" }
+        // 下一句提前显示。必须在 val lines 声明前取好：那个局部变量会遮蔽同名的类字段。
+        val nextLineText = if (showNextLine) {
+            val i = lines.indexOfFirst { it === line }
+            if (i >= 0 && i + 1 < lines.size) lines[i + 1].text else null
+        } else {
+            null
+        }
 
         val lines = mutableListOf<Pair<String, List<LyricWordData>>>()
         if (showBackground) {
@@ -156,6 +166,10 @@ class LyricsOverlayView(context: Context) : View(context) {
         }
         if (showTranslation && !line.translation.isNullOrBlank()) {
             lines += line.translation.orEmpty() to emptyList()
+        }
+        // 接在副行序列末尾：与翻译/罗马音同开时自然排成三行。
+        if (showNextLine && !nextLineText.isNullOrBlank()) {
+            lines += nextLineText to emptyList()
         }
 
         val lineHeight = mainSize * 1.12f

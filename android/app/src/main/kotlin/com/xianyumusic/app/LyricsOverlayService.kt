@@ -61,6 +61,7 @@ class LyricsOverlayService : Service() {
     private var showTranslation = true
     private var showRomanization = false
     private var showBackground = true
+    private var showNextLine = false
     private var hideWhenPaused = false
     private var hideInLandscape = false
     private var widthPercent = 92
@@ -357,6 +358,7 @@ class LyricsOverlayService : Service() {
             showTranslation = o.optBoolean("showTranslation", true)
             showRomanization = o.optBoolean("showRomanization", false)
             showBackground = o.optBoolean("showBackground", true)
+            showNextLine = o.optBoolean("showNextLine", false)
             hideWhenPaused = o.optBoolean("hideWhenPaused", false)
             hideInLandscape = o.optBoolean("hideInLandscape", false)
             widthPercent = o.optInt("widthPercent", 92).coerceIn(40, 100)
@@ -383,6 +385,7 @@ class LyricsOverlayService : Service() {
             showTranslation,
             showRomanization,
             showBackground,
+            showNextLine,
         )
         lyricView?.applyFont(
             if (useLyricFont) lyricFontPath else ""

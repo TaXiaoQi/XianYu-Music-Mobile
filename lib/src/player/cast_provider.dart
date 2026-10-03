@@ -511,7 +511,7 @@ class CastNotifier extends StateNotifier<CastState> {
             break;
           case 'pause':
           case 'stop':
-            await player.pauseFromSystem();
+            await player.pauseFromSystem(origin: 'castCommand');
             break;
           case 'seek':
             final secs = (cmd['secs'] as num? ?? 0).toDouble();

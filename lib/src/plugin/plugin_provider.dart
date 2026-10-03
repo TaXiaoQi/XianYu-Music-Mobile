@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/db_path.dart';
 import '../core/application_logger.dart';
 import '../core/rust_init.dart';
+import '../core/settings.dart';
 import '../rust/api.dart' as frb;
 import '../sync/plugin_sync_state.dart';
 import 'plugin_engine.dart';
@@ -125,6 +126,19 @@ final pluginEngineProvider = FutureProvider<PluginEngine>((ref) async {
   final engine = PluginEngine(dataDir, store);
   engine.userVarsProvider = (pluginId) =>
       ref.read(pluginUserVarValuesProvider.notifier).valuesOf(pluginId);
+  // 音源自报「不支持某档位」时挑选可用档位要用到用户的降级方向；
+  // 设置变化时同步，避免插件引擎反向依赖设置层
+  void syncFallback() {
+    engine.lxFallbackBehavior = ref.read(settingsProvider).valueOrNull
+            ?.onlineQualityFallbackBehavior ??
+        'lower';
+  }
+
+  syncFallback();
+  ref.listen(
+    settingsProvider.select((s) => s.valueOrNull?.onlineQualityFallbackBehavior),
+    (_, _) => syncFallback(),
+  );
   try {
     await frbPluginEngineInit(dataDir);
   } catch (e) { AppLog.warn('plugin', '插件引擎初始化失败: $e'); }

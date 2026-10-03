@@ -88,6 +88,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         if (playing) {
           await _player.play();
         } else {
+          // 不经 toggle，自行标注来源，否则日志只显示 origin=unknown
+          _pauseOrigin = 'outputDeviceChanged';
           await _player.pause();
         }
         state = state.copyWith(isPlaying: playing);
@@ -142,6 +144,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       if (playing) {
         await _player.play();
       } else {
+        // 不经 toggle，自行标注来源，否则日志只显示 origin=unknown
+        _pauseOrigin = 'outputDeviceChangedShared';
         await _player.pause();
       }
       state = state.copyWith(isPlaying: playing);

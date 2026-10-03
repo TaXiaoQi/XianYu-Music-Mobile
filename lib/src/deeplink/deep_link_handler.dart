@@ -65,7 +65,7 @@ class XianYuDeepLink {
       final notifier = container.read(playerProvider.notifier);
       switch (action) {
         case 'toggle':
-          notifier.toggle();
+          notifier.toggle(origin: 'deeplink');
         case 'previous':
           notifier.previous();
         case 'next':

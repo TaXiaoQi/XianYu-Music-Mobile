@@ -74,7 +74,7 @@ class IosWidgetController {
     final notifier = _container.read(playerProvider.notifier);
     switch (action) {
       case 'toggle':
-        notifier.toggle();
+        notifier.toggle(origin: 'iosWidget');
       case 'previous':
         notifier.previous();
       case 'next':

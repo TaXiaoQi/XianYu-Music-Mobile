@@ -549,6 +549,16 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
           ),
           _switchTile(
             context,
+            icon: Icons.skip_next_outlined,
+            title: tr('显示下一句'),
+            subtitle: tr('在下方提前显示下一句歌词；与「显示翻译」同开时会占三行'),
+            value: s?.floatingLyricsShowNextLine ?? false,
+            onChanged: (s?.floatingLyricsEnabled ?? false)
+                ? (v) => n.setFloatingLyricsShowNextLine(v)
+                : null,
+          ),
+          _switchTile(
+            context,
             icon: Icons.spellcheck_outlined,
             title: tr('显示罗马音'),
             value: s?.floatingLyricsShowRomanization ?? false,

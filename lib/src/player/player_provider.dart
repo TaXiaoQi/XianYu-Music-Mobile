@@ -287,7 +287,9 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
   Future<void> play() => _notifier?.resumeFromSystem() ?? Future.value();
 
   @override
-  Future<void> pause() => _notifier?.pauseFromSystem() ?? Future.value();
+  Future<void> pause() =>
+      _notifier?.pauseFromSystem(origin: 'mediasession.pause') ??
+      Future.value();
 
   @override
   Future<void> skipToNext() => _notifier?.next() ?? Future.value();
@@ -300,11 +302,13 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
       _notifier?.seek(position.inMilliseconds / 1000.0) ?? Future.value();
 
   @override
-  Future<void> stop() => _notifier?.pauseFromSystem() ?? Future.value();
+  Future<void> stop() =>
+      _notifier?.pauseFromSystem(origin: 'mediasession.stop') ??
+      Future.value();
 
   @override
   Future<void> onTaskRemoved() async {
-    await _notifier?.pauseFromSystem();
+    await _notifier?.pauseFromSystem(origin: 'mediasession.taskRemoved');
     await super.stop();
     exit(0);
   }
@@ -735,13 +739,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       if (playing != state.isPlaying) {
         if (!playing) {
-          final st = StackTrace.current
-              .toString()
-              .split('\n')
-              .take(4)
-              .join(' <- ');
           AppLog.warn('playgate',
-              'player PAUSED proc=${ps.processingState} $st');
+              'player PAUSED proc=${ps.processingState} origin=$_pauseOrigin');
         } else {
           AppLog.info('playgate', 'player PLAY proc=${ps.processingState}');
         }
@@ -1521,7 +1520,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           await Future<void>.delayed(const Duration(milliseconds: 60));
         }
       }
-      await pauseFromSystem();
+      await pauseFromSystem(origin: 'sleepTimer');
     } finally {
       _sleepFade = 1.0;
       try {
@@ -1533,11 +1532,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
   }
 
-  Future<void> pauseFromSystem() async {
+  /// 暂停来源标签：release（AOT）下 StackTrace.current 的前几行是崩溃横幅
+  /// （`*** ***` / pid-tid / os 行），取前 3~4 行拿不到任何真实调用帧，
+  /// 诊断形同虚设。改为显式传递来源，日志里直接可读。
+  String _pauseOrigin = 'unknown';
+
+  Future<void> pauseFromSystem({String origin = 'unknown'}) async {
     if (!state.isPlaying) return;
+    _pauseOrigin = origin;
     final st =
         StackTrace.current.toString().split('\n').take(3).join(' <- ');
-    AppLog.warn('playgate', 'pauseFromSystem $st');
+    AppLog.warn('playgate', 'pauseFromSystem[$origin] $st');
     await toggle();
   }
 
@@ -1553,6 +1558,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   Future<void> _pauseForInterruption() async {
     if (_ref.read(dlnaCastProvider).isCasting) return;
+    // 走 _player.pause() 不经 toggle，必须在这里自己标注来源：日志里
+    // 「player PAUSED origin=interruption」即可与其它暂停路径区分
+    _pauseOrigin = 'audioInterruption';
+    AppLog.warn('playgate', 'interruption pause origin=$_pauseOrigin');
     try {
       if (state.usbExclusive || state.dspActive) {
         await pauseUsbExclusive();
@@ -1588,12 +1597,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _persistSession();
   }
 
-  Future<void> toggle() async {
+  Future<void> toggle({String origin = 'unknown'}) async {
     if (state.current == null) return;
-    final st =
-        StackTrace.current.toString().split('\n').take(3).join(' <- ');
+    if (origin != 'unknown') _pauseOrigin = origin;
     AppLog.info('playgate',
-        'toggle cur=${state.isPlaying ? "play->pause" : "pause->play"} $st');
+        'toggle cur=${state.isPlaying ? "play->pause" : "pause->play"} '
+        'origin=$_pauseOrigin');
+    _pauseOrigin = 'unknown';
     if (_ref.read(dlnaCastProvider).isCasting) {
       final cast = _ref.read(dlnaCastProvider.notifier);
       if (state.isPlaying) {
@@ -1917,6 +1927,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     final next = _pickNextIndex();
     if (next < 0) {
+      // 队列播完自动停：不经 toggle，自行标注来源
+      _pauseOrigin = 'queueEnded';
       await _player.pause();
       if (state.current != null) await seek(0);
       return;

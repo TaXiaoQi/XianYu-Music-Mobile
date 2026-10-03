@@ -41,6 +41,11 @@ class PluginEngine {
   }
 
   static const Duration _lxUrlCacheTtl = Duration(minutes: 10);
+
+  /// 用户在线音质的降级方向（'lower'/'higher'/'pause'）。由上层在启动时
+  /// 注入，供「音源自报不支持某档位」时的档位挑选使用，避免插件引擎反向
+  /// 依赖设置层。
+  String lxFallbackBehavior = 'lower';
   final Map<String, ({String url, String type, Map<String, String>? headers, DateTime expiresAt})>
       _lxUrlCache = {};
 
@@ -777,7 +782,42 @@ class PluginEngine {
         lxPlugins.where((p) => !p.sources.contains(source)).toList();
     final candidates = [...preferred, if (preferred.isEmpty) ...fallback];
     for (final plugin in candidates) {
-      final result = await getMusicUrl(plugin, source, songInfo, quality);
+      // 插件自报「不支持该档位」时改用它声明支持的档位重试一次：
+      // 否则固定档位会被逐插件连续拒绝，白白等满每轮网络往返
+      var effectiveQuality = quality;
+      Map<String, dynamic>? result;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        try {
+          result = await getMusicUrl(plugin, source, songInfo, effectiveQuality);
+        } on PluginEngineException catch (e) {
+          if (attempt == 0 && isUnsupportedQualityError(e.message)) {
+            final supported = parseSupportedQualities(e.message);
+            final pick = pickSupportedQuality(
+                quality, lxFallbackBehavior, supported);
+            if (pick != null && pick != effectiveQuality) {
+              AppLog.info('plugin',
+                  '[musicUrl] ${plugin.name} 不支持 $effectiveQuality，改用其声明档位 $pick');
+              effectiveQuality = pick;
+              continue;
+            }
+          }
+          rethrow;
+        } catch (e) {
+          if (attempt == 0 && isUnsupportedQualityError(e.toString())) {
+            final supported = parseSupportedQualities(e.toString());
+            final pick = pickSupportedQuality(
+                quality, lxFallbackBehavior, supported);
+            if (pick != null && pick != effectiveQuality) {
+              AppLog.info('plugin',
+                  '[musicUrl] ${plugin.name} 不支持 $effectiveQuality，改用其声明档位 $pick');
+              effectiveQuality = pick;
+              continue;
+            }
+          }
+          rethrow;
+        }
+        break;
+      }
       final url = result?['url'] as String?;
       if (result == null || url == null || url.isEmpty) continue;
       if (_lxUrlCache.length >= 500) {
@@ -789,7 +829,7 @@ class PluginEngine {
       }
       _lxUrlCache[cacheKey] = (
         url: url,
-        type: (result['type'] as String?) ?? quality,
+        type: (result['type'] as String?) ?? effectiveQuality,
         headers: result['headers'] as Map<String, String>?,
         expiresAt: DateTime.now().add(_lxUrlCacheTtl),
       );
@@ -1022,4 +1062,59 @@ bool isUnsupportedQualityError(String message) {
     r'不支持.*音质|音质.*不支持|quality.*not\s+support|not\s+support.*quality',
     caseSensitive: false,
   ).hasMatch(message);
+}
+
+/// 从「不支持的音质: 192k」这类报错里解析出插件自报**支持的档位**。
+///
+/// 部分音源（HYW、QQ 等）拒绝某个档位时会把可用的档位一并列出，例如：
+/// `不支持的音质: 192k，支持的音质: 128k, 320k, flac, flac24bit, hires, ...`
+/// 拿到这份清单就能直接跳到可用档位，不必再按梯形逐档发起网络往返
+/// （日志中同一首歌被 192k 连续拒绝数次即由此而来）。
+List<String> parseSupportedQualities(String message) {
+  // 必须排除「不支持的音质: 192k」这半句——否则被拒绝的档位也会被当成
+  // 可用档位（曾实测把 192k 解析进清单）。(?<!不) 只匹配肯定表述。
+  final m = RegExp(
+    r'(?<!不)支持(?:的)?音质[:：]?\s*([^\n]*)',
+    caseSensitive: false,
+  ).firstMatch(message);
+  if (m == null) return const [];
+  final raw = m.group(1) ?? '';
+  final found = <String>[];
+  final seen = <String>{};
+  for (final token in raw.split(RegExp(r'[,，、/\s]+'))) {
+    final q = token.trim().toLowerCase();
+    if (q.isEmpty) continue;
+    if (!PluginEngine.qualityLadder.contains(q)) continue;
+    if (seen.add(q)) found.add(q);
+  }
+  return found;
+}
+
+/// 按用户偏好从插件自报的可用档位里挑一个：优先不低于偏好（升档），
+/// 没有更高的则退回其中最高档（降档）。保持用户偏好语义不变，
+/// 只是把「该音源实际能给的档位」映射出来。
+String? pickSupportedQuality(
+  String preferred,
+  String fallback,
+  List<String> supported,
+) {
+  if (supported.isEmpty) return null;
+  final byRank = supported.toSet().toList()
+    ..sort((a, b) =>
+        PluginEngine.qualityLadder.indexOf(a) -
+        PluginEngine.qualityLadder.indexOf(b));
+  final prefRank = PluginEngine.qualityLadder.indexOf(preferred);
+  if (prefRank < 0) return byRank.last;
+  if (fallback == 'higher') {
+    for (final q in byRank) {
+      if (PluginEngine.qualityLadder.indexOf(q) > prefRank) return q;
+    }
+  } else {
+    for (final q in byRank.reversed) {
+      if (PluginEngine.qualityLadder.indexOf(q) < prefRank) return q;
+    }
+  }
+  // 偏好方向没有可用档位（如偏好已是最低档却仍被拒）：退到最高可用档，
+  // 保证能出声优于严格贴合偏好方向
+  return byRank.last;
 }

@@ -529,7 +529,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                 size: 26,
                 color: scheme.primary),
             iconSize: 26,
-            onPressed: () => ref.read(playerProvider.notifier).toggle(),
+            onPressed: () =>
+                ref.read(playerProvider.notifier).toggle(origin: 'miniBar'),
           ),
           IconButton(
             icon: themeSlotIcon(ref, 'player.next',

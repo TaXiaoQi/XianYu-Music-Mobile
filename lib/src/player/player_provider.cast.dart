@@ -5,6 +5,8 @@ extension PlayerNotifierCast on PlayerNotifier {
 
   Future<void> pauseLocalEngine() async {
     _flushPlayStats();
+    // 不经 toggle，需自行标注来源，否则日志只显示 origin=unknown
+    _pauseOrigin = 'castLocalEngine';
     try {
       await _stopExclusive();
     } catch (e) {
