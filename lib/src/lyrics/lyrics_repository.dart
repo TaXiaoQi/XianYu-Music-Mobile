@@ -1,11 +1,10 @@
 import 'dart:convert';
-import 'dart:io' show HttpClient, HttpStatus;
+import 'dart:io' show HttpStatus;
 import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import '../core/application_logger.dart';
+import '../core/app_http.dart';
 import '../core/db_path.dart';
 import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
@@ -154,17 +153,13 @@ class LyricsRepository {
     return getSongLyricsPayload(dbPath: dbPath, path: item.path);
   }
 
-  /// 拉取 DLNA 直传歌词原文（桌面端 httpd 伺服的纯文本）
+  /// 拉取 DLNA 直传歌词原文（桌面端 httpd 伺服的纯文本）。
+  /// 目标是局域网桌面端设备，显式放行私网地址。
   Future<String> _fetchLyricText(String url) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
-    try {
-      final req = await client.getUrl(Uri.parse(url));
-      final res = await req.close().timeout(const Duration(seconds: 8));
-      if (res.statusCode != HttpStatus.ok) return '';
-      return await res.transform(utf8.decoder).join();
-    } finally {
-      client.close();
-    }
+    final res = await appGet(Uri.parse(url), allowPrivateHost: true)
+        .timeout(const Duration(seconds: 8));
+    if (res.statusCode != HttpStatus.ok) return '';
+    return await res.transform(utf8.decoder).join();
   }
 
   Future<QueueItem?> _searchCastLyricSource(QueueItem item) async {

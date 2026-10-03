@@ -1,8 +1,7 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
-
+import '../core/app_http.dart';
 import 'mv_source.dart';
 
 String _firstString(List<dynamic Function()> getters) {
@@ -58,19 +57,14 @@ Future<Map<String, dynamic>?> _httpGetJson(
   String url,
   Map<String, String> headers,
 ) async {
-  HttpClient? client;
   try {
-    client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
-    final req = await client.getUrl(Uri.parse(url));
-    headers.forEach((k, v) => req.headers.set(k, v));
-    final resp = await req.close().timeout(const Duration(seconds: 20));
+    final resp = await appGet(Uri.parse(url), headers: headers)
+        .timeout(const Duration(seconds: 20));
     if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
     final text = await resp.transform(utf8.decoder).join();
     return _strMap(jsonDecode(text));
   } catch (_) {
     return null;
-  } finally {
-    client?.close(force: true);
   }
 }
 

@@ -363,10 +363,7 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       if (_isVideo) await _initPreviewVideo();
       return _localPath!;
     }
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 20);
-    final req = await client.getUrl(Uri.parse(url));
-    final res = await req.close();
+    final res = await appGet(Uri.parse(url));
     if (res.statusCode != 200) {
       throw Exception(tr('下载失败（HTTP {status}）', {'status': res.statusCode}));
     }

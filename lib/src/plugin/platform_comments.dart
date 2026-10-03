@@ -1,8 +1,6 @@
 import 'dart:convert';
-import 'dart:io';
-
 import 'package:crypto/crypto.dart';
-
+import '../core/app_http.dart';
 import 'plugin_comments.dart';
 
 const _pageSize = 20;
@@ -81,24 +79,18 @@ Future<Object?> _httpJson(
   Map<String, String>? headers,
   String? body,
 }) async {
-  final client = HttpClient()..connectionTimeout = const Duration(seconds: 15);
   try {
-    HttpClientRequest req;
-    if (method == 'POST') {
-      req = await client.postUrl(Uri.parse(url));
-      if (body != null) req.write(body);
-    } else {
-      req = await client.getUrl(Uri.parse(url));
-    }
-    headers?.forEach((k, v) => req.headers.set(k, v));
-    final resp = await req.close().timeout(const Duration(seconds: 18));
+    final resp = await appRequest(
+      method,
+      Uri.parse(url),
+      headers: headers,
+      body: method == 'POST' ? body : null,
+    ).timeout(const Duration(seconds: 18));
     if (resp.statusCode < 200 || resp.statusCode >= 400) return null;
     final text = await resp.transform(utf8.decoder).join();
     return jsonDecode(text);
   } catch (_) {
     return null;
-  } finally {
-    client.close();
   }
 }
 

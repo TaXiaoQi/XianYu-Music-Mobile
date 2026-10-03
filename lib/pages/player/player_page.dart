@@ -58,6 +58,8 @@ import 'dart:async';
 part 'player_page.lyrics.dart';
 part 'player_page.sheets.dart';
 part 'player_page.controls.dart';
+part 'player_page.controls.cover.dart';
+part 'player_page.controls.landscape.dart';
 
 final Map<String, List<_LyricLineItem>> _lyricsCache = {};
 const int _lyricsCacheMax = 24;

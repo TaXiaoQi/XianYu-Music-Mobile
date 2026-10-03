@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/application_logger.dart';
+import '../core/app_http.dart';
 import '../core/settings.dart';
 import 'theme_package.dart';
 
@@ -63,11 +64,8 @@ String _sniffImageExt(Uint8List bytes) {
 }
 
 Future<Uint8List?> _downloadBytes(String url) async {
-  final client = HttpClient();
   try {
-    client.connectionTimeout = const Duration(seconds: 15);
-    final req = await client.getUrl(Uri.parse(url));
-    final resp = await req.close().timeout(const Duration(seconds: 60));
+    final resp = await appGet(Uri.parse(url));
     if (resp.statusCode != HttpStatus.ok) return null;
     final builder = BytesBuilder(copy: false);
     await for (final chunk in resp) {
@@ -76,8 +74,6 @@ Future<Uint8List?> _downloadBytes(String url) async {
     return builder.takeBytes();
   } catch (_) {
     return null;
-  } finally {
-    client.close(force: true);
   }
 }
 

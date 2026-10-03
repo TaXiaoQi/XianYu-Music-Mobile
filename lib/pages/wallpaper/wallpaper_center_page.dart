@@ -21,6 +21,7 @@ import 'package:video_player/video_player.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/app_http.dart';
 import '../../src/core/motion_photo.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/routes.dart' show coverPageRoute;

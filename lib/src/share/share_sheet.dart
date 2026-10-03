@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../core/app_http.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -472,19 +474,14 @@ Future<File?> _resizeCoverForShare(File src) async {
 
 Future<File?> _downloadToTemp(String url) async {
   try {
-    final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 8);
-    final req = await client.getUrl(Uri.parse(url));
-    final res = await req.close();
+    final res = await appGet(Uri.parse(url));
     if (res.statusCode != 200) {
-      client.close();
       return null;
     }
     final builder = BytesBuilder(copy: false);
     await for (final chunk in res) {
       builder.add(chunk);
     }
-    client.close();
     final bytes = builder.takeBytes();
     if (bytes.isEmpty) return null;
     final dir = await getTemporaryDirectory();
