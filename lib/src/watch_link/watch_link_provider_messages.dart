@@ -68,7 +68,7 @@ extension WatchLinkControllerMessages on WatchLinkController {
     final notifier = _container.read(playerProvider.notifier);
     switch (msg.action()) {
       case LinkCmdAction.toggle:
-        await notifier.toggle();
+        await notifier.toggle(origin: 'watchLink');
       case LinkCmdAction.next:
         await notifier.next();
       case LinkCmdAction.prev:
