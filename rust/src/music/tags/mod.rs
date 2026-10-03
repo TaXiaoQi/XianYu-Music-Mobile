@@ -1,14 +1,19 @@
-use id3::TagLike;
-use lofty::config::ParseOptions;
-use lofty::file::{FileType, TaggedFile, TaggedFileExt};
-use lofty::picture::{MimeType, Picture, PictureType};
-use lofty::probe::Probe;
-use lofty::properties::FileProperties;
-use lofty::tag::{Accessor, ItemKey, ItemValue, Tag, TagItem, TagType};
-use std::fs::File;
-use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
-use std::path::Path;
+pub(crate) use id3::TagLike;
+pub(crate) use lofty::config::ParseOptions;
+pub(crate) use lofty::file::{FileType, TaggedFile, TaggedFileExt};
+pub(crate) use lofty::picture::{MimeType, Picture, PictureType};
+pub(crate) use lofty::probe::Probe;
+pub(crate) use lofty::properties::FileProperties;
+pub(crate) use lofty::tag::{Accessor, ItemKey, ItemValue, Tag, TagItem, TagType};
+pub(crate) use std::fs::File;
+pub(crate) use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
+pub(crate) use std::path::Path;
 
+mod salvage;
+mod write;
+
+pub use write::*;
+use salvage::*;
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct TagTextMetadata { // TagTextMetadata
 	pub title: Option<String>,
@@ -83,40 +88,6 @@ fn read_tagged_file_from_path_with_cover_mode(
 
 /// 将 QMC 加密文件解密后交给 lofty 读取标签。
 /// 先尝试流式解密读取器（内存效率高），按解密后格式提示文件类型。
-fn read_qmc_tagged_file(path: &Path, options: ParseOptions) -> Option<TaggedFile> {
-	let crypto = crate::player::qmc2::detect_qmc_crypto(path)?;
-	let file = File::open(path).ok()?;
-	let reader = crate::player::qmc2::QmcDecryptReader::new(file, crypto);
-
-	// 推断解密后实际格式（qmcflac→flac、mgg→ogg、qmc0→mp3 等）
-	let inner_ext = path
-		.extension()
-		.and_then(|e| e.to_str())
-		.and_then(crate::player::qmc2::inner_audio_extension);
-	let mut probe = if let Some(ext) = inner_ext {
-		let mut p = Probe::new(reader);
-		if let Ok(ft) = lofty_file_type_from_ext(ext) {
-			p = p.set_file_type(ft);
-		}
-		p
-	} else {
-		Probe::new(reader).guess_file_type().ok()?
-	};
-
-	probe = probe.options(options);
-	probe.read().ok()
-}
-
-/// 将扩展名映射为 lofty FileType（仅支持 QMC 解密后的常见格式）。
-fn lofty_file_type_from_ext(ext: &str) -> Result<FileType, ()> {
-	Ok(match ext {
-		"flac" => FileType::Flac,
-		"mp3" => FileType::Mpeg,
-		"ogg" => FileType::Vorbis,
-		"m4a" | "mp4" => FileType::Mp4,
-		_ => return Err(()),
-	})
-}
 
 pub fn extract_text_metadata<T>(tagged_file: &T) -> TagTextMetadata
 where
@@ -339,6 +310,7 @@ where
 	None
 }
 
+
 pub fn contains_lrc_timestamp(text: &str) -> bool {
 	let bytes = text.as_bytes();
 	let mut index = 0usize;
@@ -386,527 +358,7 @@ pub fn contains_lrc_timestamp(text: &str) -> bool {
 	false
 }
 
-fn is_wav_path(path: &Path) -> bool {
-	path
-		.extension()
-		.and_then(|ext| ext.to_str())
-		.map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "wav" | "wave"))
-		.unwrap_or(false)
-}
-
-fn is_mpeg_path(path: &Path) -> bool {
-	path
-		.extension()
-		.and_then(|ext| ext.to_str())
-		.map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "mp3" | "mpeg" | "mpga"))
-		.unwrap_or(false)
-}
-
-fn is_bad_timestamp_error(error: &lofty::error::LoftyError) -> bool {
-	matches!(error.kind(), lofty::error::ErrorKind::BadTimestamp(_))
-}
-
-fn read_salvaged_id3_tags(path: &Path, read_cover_art: bool) -> Result<TaggedFile, ()> {
-	let file = File::open(path).map_err(|_| ())?;
-	let mut reader = BufReader::new(file);
-	let mut tags = Vec::new();
-
-	if read_leading_id3_tag(&mut reader, &mut tags, read_cover_art)?.is_none() || tags.is_empty() {
-		return Err(());
-	}
-
-	Ok(TaggedFile::new(
-		FileType::from_path(path).unwrap_or(FileType::Mpeg),
-		FileProperties::default(),
-		tags,
-	))
-}
-
-fn read_salvaged_wav_tags(path: &Path, read_cover_art: bool) -> Result<TaggedFile, ()> {
-	let file = File::open(path).map_err(|_| ())?;
-	let mut reader = BufReader::new(file);
-	let mut tags = Vec::new();
-
-	let wav_start = match read_leading_id3_tag(&mut reader, &mut tags, read_cover_art)? {
-		Some(id3_size) => id3_size,
-		None => 0,
-	};
-
-	reader.seek(SeekFrom::Start(wav_start)).map_err(|_| ())?;
-	tags.extend(parse_wav_chunks(&mut reader, read_cover_art)?);
-
-	if tags.is_empty() {
-		return Err(());
-	}
-
-	Ok(TaggedFile::new(
-		FileType::Wav,
-		FileProperties::default(),
-		tags,
-	))
-}
-
-fn read_leading_id3_tag<R>(
-	reader: &mut R,
-	tags: &mut Vec<Tag>,
-	read_cover_art: bool,
-) -> Result<Option<u64>, ()>
-where
-	R: Read + Seek,
-{
-	let mut header = [0u8; 10];
-	match reader.read_exact(&mut header) {
-		Ok(()) => {}
-		Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-			reader.seek(SeekFrom::Start(0)).map_err(|_| ())?;
-			return Ok(None);
-		}
-		Err(_) => return Err(()),
-	}
-
-	let Some(id3_size) = leading_id3v2_size(&header).map(|size| size as u64) else {
-		reader.seek(SeekFrom::Start(0)).map_err(|_| ())?;
-		return Ok(None);
-	};
-
-	reader.seek(SeekFrom::Start(0)).map_err(|_| ())?;
-	if let Some(id3_bytes) = read_chunk(reader, id3_size as usize) {
-		push_id3_tag(tags, &id3_bytes, read_cover_art);
-	}
-
-	Ok(Some(id3_size))
-}
-
-fn leading_id3v2_size(bytes: &[u8]) -> Option<usize> {
-	if bytes.len() < 10 || &bytes[..3] != b"ID3" {
-		return None;
-	}
-
-	let size = ((bytes[6] as usize) << 21)
-		| ((bytes[7] as usize) << 14)
-		| ((bytes[8] as usize) << 7)
-		| (bytes[9] as usize);
-
-	Some(10 + size)
-}
-
-fn parse_wav_chunks<R>(reader: &mut R, read_cover_art: bool) -> Result<Vec<Tag>, ()>
-where
-	R: Read + Seek,
-{
-	if !has_wav_header(reader)? {
-		return Ok(Vec::new());
-	}
-
-	let mut tags = Vec::new();
-	loop {
-		let mut chunk_header = [0u8; 8];
-		match reader.read_exact(&mut chunk_header) {
-			Ok(()) => {}
-			Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => break,
-			Err(_) => return Err(()),
-		}
-
-		let chunk_id = &chunk_header[..4];
-		let chunk_size = u32::from_le_bytes(chunk_header[4..8].try_into().map_err(|_| ())?) as usize;
-
-		match chunk_id {
-			b"id3 " | b"ID3 " => {
-				let Some(chunk_bytes) = read_chunk(reader, chunk_size) else {
-					break;
-				};
-				push_id3_tag(&mut tags, &chunk_bytes, read_cover_art);
-			}
-			b"LIST" => {
-				let Some(chunk_bytes) = read_chunk(reader, chunk_size) else {
-					break;
-				};
-				if let Some(tag) = parse_riff_info_list(&chunk_bytes) {
-					tags.push(tag);
-				}
-			}
-			_ => {
-				if skip_chunk(reader, chunk_size as u64).is_err() {
-					break;
-				}
-			}
-		}
-
-		if chunk_size % 2 == 1 && skip_chunk(reader, 1).is_err() {
-			break;
-		}
-	}
-
-	Ok(tags)
-}
-
-fn read_chunk<R>(reader: &mut R, size: usize) -> Option<Vec<u8>>
-where
-	R: Read,
-{
-	let mut bytes = vec![0u8; size];
-	reader.read_exact(&mut bytes).ok()?;
-	Some(bytes)
-}
-
-fn prefer_leading_id3v2_text(path: &Path, tagged_file: &mut TaggedFile) {
-	if tagged_file.file_type() != FileType::Mpeg {
-		return;
-	}
-
-	let Ok(file) = File::open(path) else {
-		return;
-	};
-	let Some(leading_tag) = read_leading_id3v2_text_tag(&mut BufReader::new(file)) else {
-		return;
-	};
-
-	match tagged_file.tag_mut(TagType::Id3v2) {
-		Some(target_tag) => copy_preferred_id3v2_text(target_tag, &leading_tag),
-		None => {
-			let _ = tagged_file.insert_tag(leading_tag);
-		}
-	}
-}
-
-fn read_leading_id3v2_text_tag<R>(reader: &mut R) -> Option<Tag>
-where
-	R: Read + Seek,
-{
-	let mut header = [0u8; 10];
-	reader.read_exact(&mut header).ok()?;
-	if &header[..3] != b"ID3" {
-		return None;
-	}
-
-	let major = header[3];
-	if !(2..=4).contains(&major) {
-		return None;
-	}
-
-	let mut remaining = leading_id3v2_size(&header)?.saturating_sub(10);
-	if header[5] & 0x40 != 0 {
-		remaining = skip_id3v2_extended_header(reader, major, remaining)?;
-	}
-
-	let mut tag = Tag::new(TagType::Id3v2);
-	let frame_header_size = if major == 2 { 6 } else { 10 };
-
-	while remaining >= frame_header_size {
-		let mut frame_header = vec![0u8; frame_header_size];
-		reader.read_exact(&mut frame_header).ok()?;
-		remaining = remaining.saturating_sub(frame_header_size);
-
-		let (frame_id, frame_size) = if major == 2 {
-			let id = std::str::from_utf8(&frame_header[..3]).ok()?.to_string();
-			let size = ((frame_header[3] as usize) << 16)
-				| ((frame_header[4] as usize) << 8)
-				| frame_header[5] as usize;
-			(id, size)
-		} else {
-			let id = std::str::from_utf8(&frame_header[..4]).ok()?.to_string();
-			let size = if major == 4 {
-				syncsafe_u32(&frame_header[4..8])?
-			} else {
-				u32::from_be_bytes(frame_header[4..8].try_into().ok()?) as usize
-			};
-			(id, size)
-		};
-
-		if frame_id.as_bytes().iter().all(|byte| *byte == 0) || frame_size == 0 {
-			break;
-		}
-		if frame_size > remaining {
-			break;
-		}
-
-		if let Some(key) = id3v2_text_frame_key(&frame_id) {
-			let mut data = vec![0u8; frame_size];
-			reader.read_exact(&mut data).ok()?;
-			if let Some(text) = decode_id3v2_text_frame(&data) {
-				let _ = tag.insert_text(key, text);
-			}
-		} else {
-			reader.seek(SeekFrom::Current(frame_size as i64)).ok()?;
-		}
-
-		remaining = remaining.saturating_sub(frame_size);
-
-		if tag.get_string(&ItemKey::TrackTitle).is_some()
-			&& tag.get_string(&ItemKey::TrackArtist).is_some()
-			&& tag.get_string(&ItemKey::AlbumTitle).is_some()
-			&& tag.get_string(&ItemKey::AlbumArtist).is_some()
-		{
-			break;
-		}
-	}
-
-	let has_items = tag.items().next().is_some();
-	has_items.then_some(tag)
-}
-
-fn skip_id3v2_extended_header<R>(reader: &mut R, major: u8, remaining: usize) -> Option<usize>
-where
-	R: Read + Seek,
-{
-	if remaining < 4 {
-		return None;
-	}
-
-	let mut size_bytes = [0u8; 4];
-	reader.read_exact(&mut size_bytes).ok()?;
-
-	let skip_size = if major == 4 {
-		syncsafe_u32(&size_bytes)?.saturating_sub(4)
-	} else {
-		u32::from_be_bytes(size_bytes) as usize
-	};
-	if skip_size > remaining.saturating_sub(4) {
-		return None;
-	}
-
-	reader.seek(SeekFrom::Current(skip_size as i64)).ok()?;
-	Some(remaining.saturating_sub(4 + skip_size))
-}
-
-fn syncsafe_u32(bytes: &[u8]) -> Option<usize> {
-	if bytes.len() != 4 || bytes.iter().any(|byte| byte & 0x80 != 0) {
-		return None;
-	}
-
-	Some(
-		((bytes[0] as usize) << 21)
-			| ((bytes[1] as usize) << 14)
-			| ((bytes[2] as usize) << 7)
-			| bytes[3] as usize,
-	)
-}
-
-fn id3v2_text_frame_key(frame_id: &str) -> Option<ItemKey> {
-	match frame_id {
-		"TIT2" | "TT2" => Some(ItemKey::TrackTitle),
-		"TPE1" | "TP1" => Some(ItemKey::TrackArtist),
-		"TALB" | "TAL" => Some(ItemKey::AlbumTitle),
-		"TPE2" | "TP2" => Some(ItemKey::AlbumArtist),
-		_ => None,
-	}
-}
-
-fn decode_id3v2_text_frame(data: &[u8]) -> Option<String> {
-	let (encoding, text_bytes) = data.split_first()?;
-	let decoded = match encoding {
-		0 => text_bytes.iter().map(|byte| char::from(*byte)).collect(),
-		1 => decode_utf16_with_bom(text_bytes)?,
-		2 => decode_utf16_be(text_bytes)?,
-		3 => std::str::from_utf8(text_bytes).ok()?.to_string(),
-		_ => return None,
-	};
-
-	clean_text(decoded.trim_matches('\0'))
-}
-
-fn decode_utf16_with_bom(bytes: &[u8]) -> Option<String> {
-	if bytes.starts_with(&[0xFE, 0xFF]) {
-		decode_utf16_be(&bytes[2..])
-	} else if bytes.starts_with(&[0xFF, 0xFE]) {
-		decode_utf16_le(&bytes[2..])
-	} else {
-		decode_utf16_le(bytes)
-	}
-}
-
-fn decode_utf16_le(bytes: &[u8]) -> Option<String> {
-	if bytes.len() % 2 != 0 {
-		return None;
-	}
-
-	let units: Vec<u16> = bytes
-		.chunks_exact(2)
-		.map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-		.collect();
-	String::from_utf16(&units).ok()
-}
-
-fn decode_utf16_be(bytes: &[u8]) -> Option<String> {
-	if bytes.len() % 2 != 0 {
-		return None;
-	}
-
-	let units: Vec<u16> = bytes
-		.chunks_exact(2)
-		.map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
-		.collect();
-	String::from_utf16(&units).ok()
-}
-
-fn copy_preferred_id3v2_text(target_tag: &mut Tag, leading_tag: &Tag) {
-	const KEYS: &[ItemKey] = &[
-		ItemKey::TrackTitle,
-		ItemKey::TrackArtist,
-		ItemKey::AlbumTitle,
-		ItemKey::AlbumArtist,
-	];
-
-	for key in KEYS {
-		if let Some(value) = leading_tag.get_string(key).and_then(clean_text) {
-			let _ = target_tag.insert_text(key.clone(), value);
-		}
-	}
-}
-
-fn skip_chunk<R>(reader: &mut R, size: u64) -> Result<(), ()>
-where
-	R: Seek,
-{
-	reader
-		.seek(SeekFrom::Current(size as i64))
-		.map(|_| ())
-		.map_err(|_| ())
-}
-
-fn has_wav_header<R>(reader: &mut R) -> Result<bool, ()>
-where
-	R: Read,
-{
-	let mut header = [0u8; 12];
-	match reader.read_exact(&mut header) {
-		Ok(()) => Ok(&header[..4] == b"RIFF" && &header[8..12] == b"WAVE"),
-		Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-		Err(_) => Err(()),
-	}
-}
-
-fn push_id3_tag(tags: &mut Vec<Tag>, bytes: &[u8], read_cover_art: bool) {
-	if let Ok(tag) = id3::Tag::read_from2(Cursor::new(bytes)) {
-		tags.push(lofty_tag_from_id3(tag, read_cover_art));
-	}
-}
-
-fn parse_riff_info_list(bytes: &[u8]) -> Option<Tag> {
-	if bytes.len() < 4 || &bytes[..4] != b"INFO" {
-		return None;
-	}
-
-	let mut tag = Tag::new(TagType::RiffInfo);
-	let mut offset = 4usize;
-
-	while offset + 8 <= bytes.len() {
-		let key = &bytes[offset..offset + 4];
-		let item_size = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().ok()?) as usize;
-		let data_start = offset + 8;
-		let data_end = data_start.saturating_add(item_size);
-
-		if data_end > bytes.len() {
-			break;
-		}
-
-		if let Some(value) = decode_riff_info_text(&bytes[data_start..data_end]) {
-			let key = String::from_utf8_lossy(key);
-			let _ = tag.insert(TagItem::new(
-				ItemKey::from_key(TagType::RiffInfo, &key),
-				ItemValue::Text(value),
-			));
-		}
-
-		offset = offset.saturating_add(8 + item_size + (item_size % 2));
-	}
-
-	let has_items = tag.items().next().is_some();
-	has_items.then_some(tag)
-}
-
-fn decode_riff_info_text(raw: &[u8]) -> Option<String> {
-	let raw = raw
-		.split(|byte| *byte == 0)
-		.next()
-		.unwrap_or(raw)
-		.trim_ascii();
-
-	if raw.is_empty() {
-		return None;
-	}
-
-	if raw.len() >= 2 && raw.len() % 2 == 0 {
-		let units: Vec<u16> = raw
-			.chunks_exact(2)
-			.map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
-			.collect();
-
-		if let Ok(decoded) = String::from_utf16(&units) {
-			if let Some(text) = clean_text(&decoded) {
-				return Some(text);
-			}
-		}
-	}
-
-	if let Ok(decoded) = std::str::from_utf8(raw) {
-		if let Some(text) = clean_text(decoded) {
-			return Some(text);
-		}
-	}
-
-	let (decoded, _, _) = encoding_rs::GBK.decode(raw);
-	clean_text(&decoded)
-}
-
-fn lofty_tag_from_id3(id3_tag: id3::Tag, read_cover_art: bool) -> Tag {
-	let mut lofty_tag = Tag::new(TagType::Id3v2);
-
-	insert_optional_text(&mut lofty_tag, ItemKey::TrackTitle, id3_tag.title());
-	insert_optional_text(&mut lofty_tag, ItemKey::TrackArtist, id3_tag.artist());
-	insert_optional_text(&mut lofty_tag, ItemKey::AlbumTitle, id3_tag.album());
-	insert_optional_text(&mut lofty_tag, ItemKey::AlbumArtist, id3_tag.album_artist());
-	insert_optional_text(
-		&mut lofty_tag,
-		ItemKey::RecordingDate,
-		id3_tag.year().map(|value| value.to_string()).as_deref(),
-	);
-	insert_optional_text(
-		&mut lofty_tag,
-		ItemKey::TrackNumber,
-		id3_tag.track().map(|value| value.to_string()).as_deref(),
-	);
-	insert_optional_text(
-		&mut lofty_tag,
-		ItemKey::DiscNumber,
-		id3_tag.disc().map(|value| value.to_string()).as_deref(),
-	);
-
-	for comment in id3_tag.comments() {
-		let Some(text) = clean_text(&comment.text) else {
-			continue;
-		};
-		let _ = lofty_tag.insert(TagItem::new(ItemKey::Comment, ItemValue::Text(text)));
-	}
-
-	for lyrics in id3_tag.lyrics() {
-		let Some(text) = clean_text(&lyrics.text) else {
-			continue;
-		};
-		let _ = lofty_tag.insert(TagItem::new(ItemKey::Lyrics, ItemValue::Text(text)));
-	}
-
-	if read_cover_art {
-		for picture in id3_tag.pictures() {
-			lofty_tag.push_picture(Picture::new_unchecked(
-				PictureType::from_u8(u8::from(picture.picture_type)),
-				Some(MimeType::from_str(&picture.mime_type)),
-				clean_text(&picture.description),
-				picture.data.clone(),
-			));
-		}
-	}
-
-	lofty_tag
-}
-
-fn insert_optional_text(tag: &mut Tag, key: ItemKey, value: Option<&str>) {
-	if let Some(value) = value.and_then(clean_text) {
-		let _ = tag.insert_text(key, value);
-	}
-}
-
-fn ordered_tags<'a, T>(tagged_file: &'a T) -> Vec<&'a Tag>
+pub(crate) fn ordered_tags<'a, T>(tagged_file: &'a T) -> Vec<&'a Tag>
 where
 	T: TaggedFileExt + ?Sized,
 {
@@ -923,7 +375,7 @@ where
 	tags
 }
 
-fn push_unique_tag<'a>(tags: &mut Vec<&'a Tag>, candidate: Option<&'a Tag>) {
+pub(crate) fn push_unique_tag<'a>(tags: &mut Vec<&'a Tag>, candidate: Option<&'a Tag>) {
 	let Some(candidate) = candidate else {
 		return;
 	};
@@ -936,7 +388,7 @@ fn push_unique_tag<'a>(tags: &mut Vec<&'a Tag>, candidate: Option<&'a Tag>) {
 	}
 }
 
-fn read_title(tag: &Tag) -> Option<String> {
+pub(crate) fn read_title(tag: &Tag) -> Option<String> {
 	tag
 		.title()
 		.as_deref()
@@ -944,7 +396,7 @@ fn read_title(tag: &Tag) -> Option<String> {
 		.or_else(|| read_tag_text(tag, &[ItemKey::TrackTitle], &["TITLE", "INAM"]))
 }
 
-fn read_artist(tag: &Tag) -> Option<String> {
+pub(crate) fn read_artist(tag: &Tag) -> Option<String> {
 	tag.artist().as_deref().and_then(clean_text).or_else(|| {
 		read_tag_text(
 			tag,
@@ -959,7 +411,7 @@ fn read_artist(tag: &Tag) -> Option<String> {
 	})
 }
 
-fn read_album(tag: &Tag) -> Option<String> {
+pub(crate) fn read_album(tag: &Tag) -> Option<String> {
 	tag.album().as_deref().and_then(clean_text).or_else(|| {
 		read_tag_text(
 			tag,
@@ -969,7 +421,7 @@ fn read_album(tag: &Tag) -> Option<String> {
 	})
 }
 
-fn read_album_artist(tag: &Tag) -> Option<String> {
+pub(crate) fn read_album_artist(tag: &Tag) -> Option<String> {
 	read_tag_text(
 		tag,
 		&[
@@ -981,7 +433,7 @@ fn read_album_artist(tag: &Tag) -> Option<String> {
 	)
 }
 
-fn read_tag_text(tag: &Tag, keys: &[ItemKey], unknown_keys: &[&str]) -> Option<String> {
+pub(crate) fn read_tag_text(tag: &Tag, keys: &[ItemKey], unknown_keys: &[&str]) -> Option<String> {
 	for key in keys {
 		if let Some(text) = tag.get_string(key).and_then(clean_text) {
 			return Some(text);
@@ -1000,7 +452,7 @@ fn read_tag_text(tag: &Tag, keys: &[ItemKey], unknown_keys: &[&str]) -> Option<S
 	})
 }
 
-fn item_text(item: &TagItem) -> Option<String> {
+pub(crate) fn item_text(item: &TagItem) -> Option<String> {
 	item
 		.value()
 		.text()
@@ -1008,161 +460,25 @@ fn item_text(item: &TagItem) -> Option<String> {
 		.and_then(clean_text)
 }
 
-fn clean_text(value: &str) -> Option<String> {
+pub(crate) fn clean_text(value: &str) -> Option<String> {
 	let trimmed = value.trim_matches('\0').trim();
 	(!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-fn looks_like_lyrics_key(raw_key: &str) -> bool {
+pub(crate) fn looks_like_lyrics_key(raw_key: &str) -> bool {
 	matches!(
 		raw_key.to_ascii_uppercase().as_str(),
 		"LYRICS" | "LYRIC" | "LRC" | "KLYRIC" | "UNSYNCEDLYRICS" | "SYNCEDLYRICS"
 	)
 }
 
-fn looks_like_lyrics_description(description: &str) -> bool {
+pub(crate) fn looks_like_lyrics_description(description: &str) -> bool {
 	let normalized = description.trim().to_ascii_uppercase();
 	!normalized.is_empty() && (normalized.contains("LYRIC") || normalized.contains("LRC"))
 }
 
-fn seems_like_lyrics_text(text: &str) -> bool {
+pub(crate) fn seems_like_lyrics_text(text: &str) -> bool {
 	contains_lrc_timestamp(text) || text.lines().filter(|line| !line.trim().is_empty()).count() >= 2
-}
-
-/// 元数据嵌入请求：将歌曲元数据写入音频文件 tag。
-///
-/// 所有字段均为可选，仅写入提供的非空字段。
-/// `cover_data` 为封面二进制数据，`cover_mime` 标识 MIME 类型（默认 image/jpeg）。
-#[derive(serde::Deserialize, Default, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct EmbedMetadataRequest {
-	pub file_path: String,
-	pub title: Option<String>,
-	pub artist: Option<String>,
-	pub album: Option<String>,
-	pub album_artist: Option<String>,
-	pub year: Option<String>,
-	pub track_number: Option<String>,
-	pub disc_number: Option<String>,
-	pub lyrics: Option<String>,
-	pub cover_data: Option<Vec<u8>>,
-	pub cover_mime: Option<String>,
-}
-
-fn parse_u32_field(value: &Option<String>) -> Option<u32> {
-	value.as_deref().and_then(|s| s.trim().parse::<u32>().ok())
-}
-
-fn guess_tag_type_from_path(path: &Path) -> TagType {
-	match path
-		.extension()
-		.and_then(|ext| ext.to_str())
-		.map(|ext| ext.to_ascii_lowercase())
-		.as_deref()
-	{
-		Some("mp3") | Some("mpeg") | Some("mpga") => TagType::Id3v2,
-		Some("flac") => TagType::VorbisComments,
-		Some("m4a") | Some("mp4") | Some("alac") | Some("aac") => TagType::Mp4Ilst,
-		Some("ogg") | Some("opus") | Some("oga") => TagType::VorbisComments,
-		Some("wav") | Some("wave") => TagType::RiffInfo,
-		_ => TagType::Id3v2,
-	}
-}
-
-/// 将元数据写入音频文件的 tag（ID3v2/Vorbis Comment/MP4 Atom 等）。
-///
-/// 仅写入请求中提供的非空字段；已有的其他字段保持不变。
-/// 若文件无现有 tag，则按扩展名推断 tag 类型后创建。
-pub fn write_metadata_to_file(request: &EmbedMetadataRequest) -> Result<(), String> {
-	use lofty::config::WriteOptions;
-	use lofty::tag::TagExt;
-
-	let path = Path::new(&request.file_path);
-	if !path.exists() {
-		return Err(format!("文件不存在: {}", request.file_path));
-	}
-
-	let mut tagged_file =
-		read_tagged_file_from_path(path).map_err(|e| format!("读取音频文件失败: {e}"))?;
-
-	// 若文件无现有 tag，按扩展名推断 tag 类型后创建
-	if tagged_file.primary_tag().is_none() {
-		let tag_type = guess_tag_type_from_path(path);
-		tagged_file.insert_tag(Tag::new(tag_type));
-	}
-
-	let tag = tagged_file
-		.primary_tag_mut()
-		.ok_or_else(|| "无法获取或创建标签".to_string())?;
-
-	// 文本字段：仅写入非空值
-	if let Some(ref title) = request.title {
-		if !title.trim().is_empty() {
-			tag.set_title(title.clone());
-		}
-	}
-	if let Some(ref artist) = request.artist {
-		if !artist.trim().is_empty() {
-			tag.set_artist(artist.clone());
-		}
-	}
-	if let Some(ref album) = request.album {
-		if !album.trim().is_empty() {
-			tag.set_album(album.clone());
-		}
-	}
-	if let Some(ref album_artist) = request.album_artist {
-		if !album_artist.trim().is_empty() {
-			tag.insert_text(ItemKey::AlbumArtist, album_artist.clone());
-		}
-	}
-	if let Some(year) = parse_u32_field(&request.year) {
-		tag.set_year(year);
-	}
-	if let Some(track) = parse_u32_field(&request.track_number) {
-		tag.set_track(track);
-	}
-	if let Some(disc) = parse_u32_field(&request.disc_number) {
-		tag.set_disk(disc);
-	}
-
-	// 歌词：写入 Lyrics ItemKey
-	if let Some(ref lyrics) = request.lyrics {
-		if !lyrics.trim().is_empty() {
-			tag.insert_text(ItemKey::Lyrics, lyrics.clone());
-		}
-	}
-
-	// 封面：写入 Picture
-	if let Some(ref cover_data) = request.cover_data {
-		if !cover_data.is_empty() {
-			let mime_str = request.cover_mime.as_deref().unwrap_or("image/jpeg");
-			let mime_type = match mime_str {
-				"image/png" => MimeType::Png,
-				"image/jpeg" | "image/jpg" => MimeType::Jpeg,
-				"image/gif" => MimeType::Gif,
-				"image/tiff" => MimeType::Tiff,
-				"image/bmp" => MimeType::Bmp,
-				_ => MimeType::Jpeg,
-			};
-			let picture = Picture::new_unchecked(
-				PictureType::CoverFront,
-				Some(mime_type),
-				None,
-				cover_data.clone(),
-			);
-			// 先移除已有的前置封面，避免重复堆积
-			tag.remove_picture_type(PictureType::CoverFront);
-			tag.push_picture(picture);
-		}
-	}
-
-	// 保存 tag 到文件
-	tag
-		.save_to_path(path, WriteOptions::default())
-		.map_err(|e| format!("保存标签失败: {e}"))?;
-
-	Ok(())
 }
 
 #[cfg(test)] mod tests {
