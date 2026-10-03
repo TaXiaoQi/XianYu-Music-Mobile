@@ -7,8 +7,6 @@ import 'frb_generated.dart';
 import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `derive_cover_cache_dir`, `global_playback_session`, `open_scan_conn`, `open_stats_conn`, `parse_device`, `parse_media`, `parse_remote_source`
-
 /// 解析原始歌词文本（LRC/YRC/QRC/ESLRC/TTML/Lys 等），
 /// 返回 [`StructuredLyricsPayload`] 的 JSON（camelCase）。
 ///
@@ -122,6 +120,20 @@ Future<String> fetchLyricFromSource({
 /// 密文检测命中后直接调本函数解密复用，避免绕行可能被风控的原生歌词接口。
 Future<String> decryptPluginLyric({required String encryptedHex}) =>
     RustLib.instance.api.crateApiDecryptPluginLyric(encryptedHex: encryptedHex);
+
+/// 从指定音源抓取歌单详情（wy/tx/kw/kg/qishui）。
+///
+/// - `raw_id`：歌单 ID / 链接 / 短码原文
+///
+/// 返回 `PlaylistImportResult{source,songs,total,info}`（camelCase）的 JSON；
+/// serde 字段名与桌面端契约冻结一致。
+Future<String> fetchPlaylistFromSource({
+  required String source,
+  required String rawId,
+}) => RustLib.instance.api.crateApiFetchPlaylistFromSource(
+  source: source,
+  rawId: rawId,
+);
 
 /// 测试 WebDAV 连接（列出根目录）。
 Future<void> webdavTestConnection({required String sourceJson}) =>

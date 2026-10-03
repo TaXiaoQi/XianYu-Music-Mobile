@@ -1,0 +1,35 @@
+{
+  "code": 0,
+  "cdlist": [
+    {
+      "dissname": "测试歌单",
+      "logo": "https://y.gtimg.cn/logo.jpg",
+      "desc": "第一行<br>第二行",
+      "nickname": "作者",
+      "visitnum": 456,
+      "songlist": [
+        {
+          "mid": "003MUv3q2XfUvE",
+          "id": 483034299,
+          "title": "晴天",
+          "interval": 269,
+          "singer": [
+            { "name": "周杰伦", "mid": "0025NhlN2yWrP4" },
+            { "name": "合唱团", "mid": "003cLzXa3iIcfm" }
+          ],
+          "album": { "name": "叶惠美", "mid": "001J5QJL1pRQYB" },
+          "file": { "media_mid": "220770519" }
+        },
+        {
+          "mid": "004ZO6R03RZqxC",
+          "id": 104700585,
+          "title": "空专辑之歌",
+          "interval": 60,
+          "singer": [{ "name": "歌手X", "mid": "singerMid001" }],
+          "album": { "name": "空", "mid": "albumMidEmpty" },
+          "file": { "media_mid": "mediaMid002" }
+        }
+      ]
+    }
+  ]
+}

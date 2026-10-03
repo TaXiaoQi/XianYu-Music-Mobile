@@ -1,0 +1,30 @@
+{
+  "code": 200,
+  "playlist": {
+    "name": "测试歌单",
+    "coverImgUrl": "https://p1.example/cover.jpg",
+    "description": "描述 &amp; 实体",
+    "creator": { "nickname": "作者" },
+    "playCount": 123,
+    "trackIds": [{ "id": 101 }, { "id": 102 }, { "id": 103 }],
+    "tracks": [
+      {
+        "id": 101,
+        "name": "晴天 &amp; 彩虹",
+        "ar": [
+          { "id": 1, "name": "周杰伦" },
+          { "id": 2, "name": "费玉清" }
+        ],
+        "al": { "id": 11, "name": "叶惠美", "picUrl": "https://p1.example/101.jpg" },
+        "dt": 269000
+      },
+      {
+        "id": 102,
+        "name": "吻别",
+        "artists": [{ "id": 3, "name": "张学友" }],
+        "album": { "id": 12, "name": "吻别专辑", "picUrl": "https://p1.example/102.jpg" },
+        "duration": 253000
+      }
+    ]
+  }
+}

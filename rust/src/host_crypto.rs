@@ -75,6 +75,11 @@ pub fn kugou_sign(params: &str, platform: &str, body: &str) -> String {
     format!("{:x}", md5::compute(sign_input.as_bytes()))
 }
 
+/// 酷狗 gateway 请求密钥（对齐桌面端 host_kugou_request_key）
+pub fn host_kugou_request_key() -> String {
+    KG_SALT_ANDROID.to_string()
+}
+
 // ===== 咪咕签名 =====
 
 const MG_DEVICE_ID: &str = "963B7AA0D21511ED807EE5846EC87D20";

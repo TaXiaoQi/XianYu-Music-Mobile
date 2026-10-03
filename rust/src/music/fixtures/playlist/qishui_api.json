@@ -1,0 +1,49 @@
+{
+  "media_resources": [
+    {
+      "id": 7001,
+      "name": "晴天",
+      "artists": [
+        { "user_info": { "id": 101, "name": "周杰伦", "avatar": "https://example.com/jay.png" } },
+        { "user_info": { "id": 102, "nickname": "合作歌手", "url_avatar": { "uri": "feat/ava", "template_prefix": "tpl100" } } }
+      ],
+      "album": { "id": "alb_1", "name": "叶惠美", "url_cover": { "uri": "album/yeuimei", "template_prefix": "tpl960" } },
+      "duration": 269000,
+      "bit_rates": [
+        { "quality": "medium", "br": 128000, "size": 4300000 },
+        { "quality": "highest", "br": 320000, "size": 10700000 },
+        { "quality": "spatial", "size": 19000000 },
+        { "quality": "unknown_x", "br": 999999 },
+        { "quality": "medium", "br": 64000 }
+      ],
+      "cover_url": { "uri": "cover/qingtian", "template_prefix": "tplCover" },
+      "label_info": { "only_vip_playable": false }
+    },
+    {
+      "entity": {
+        "track_wrapper": {
+          "track": {
+            "id": 8002,
+            "name": "某个视频",
+            "video_id": "v_999",
+            "videoName": "某个视频",
+            "artists": [],
+            "author_info": { "id": 202, "nickname": "视频作者", "avatar": "https://example.com/vauthor.png" },
+            "album": null,
+            "duration": 45000,
+            "bit_rates": [],
+            "coverURL": "https://example.com/frame.jpg"
+          }
+        }
+      },
+      "type": "video"
+    }
+  ],
+  "playlist": {
+    "title": "测试歌单",
+    "owner": { "nickname": "作者" },
+    "url_cover": { "uri": "abc", "template_prefix": "tpl" },
+    "count_tracks": 2
+  },
+  "has_more": 0
+}

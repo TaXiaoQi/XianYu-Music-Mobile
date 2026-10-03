@@ -129,6 +129,22 @@ pub fn decrypt_plugin_lyric(encrypted_hex: String) -> Result<String, String> {
 }
 
 // =========================================================================
+// 歌单导入（下沉自桌面端 playlist_fetcher，对齐前端 playlistImport*.ts）
+// =========================================================================
+
+/// 从指定音源抓取歌单详情（wy/tx/kw/kg/qishui）。
+///
+/// - `raw_id`：歌单 ID / 链接 / 短码原文
+///
+/// 返回 `PlaylistImportResult{source,songs,total,info}`（camelCase）的 JSON；
+/// serde 字段名与桌面端契约冻结一致。
+pub async fn fetch_playlist_from_source(source: String, raw_id: String) -> Result<String, String> {
+    let result =
+        crate::music::playlist_fetcher::fetch_playlist_from_source(source, raw_id).await?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+// =========================================================================
 // WebDAV 云盘（第四批）
 // =========================================================================
 

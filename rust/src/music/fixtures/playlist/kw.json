@@ -1,0 +1,31 @@
+{
+  "result": "ok",
+  "title": "测试歌单",
+  "pic": "https://img4.kuwo.cn/star/albumcover/p.jpg",
+  "info": "描述",
+  "uname": "作者",
+  "playnum": 789,
+  "total": 2,
+  "musiclist": [
+    {
+      "id": "231057911",
+      "name": "测试歌曲一",
+      "artist": "测试歌手甲",
+      "artistid": 111,
+      "album": "测试专辑一",
+      "albumid": 222,
+      "albumpic": "https://img4.kuwo.cn/star/albumcover/a1.jpg",
+      "duration": "245"
+    },
+    {
+      "id": "87654321",
+      "name": "测试歌曲二",
+      "artist": "测试歌手乙",
+      "artistid": 333,
+      "album": "测试专辑二",
+      "albumid": 444,
+      "albumpic": "https://img4.kuwo.cn/star/albumcover/a2.jpg",
+      "duration": "183"
+    }
+  ]
+}

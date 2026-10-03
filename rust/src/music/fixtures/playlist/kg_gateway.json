@@ -1,0 +1,39 @@
+{
+  "status": 1,
+  "error_code": 0,
+  "data": {
+    "count": 2,
+    "list_info": {
+      "name": "热门精选歌单",
+      "pic": "https://img.kugou.com/list/{size}.jpg",
+      "list_create_username": "创建者甲"
+    },
+    "songs": [
+      {
+        "hash": "GWHASH000111",
+        "audio_id": 200001,
+        "name": "歌手甲 - 歌曲一",
+        "singername": "歌手甲",
+        "songname": "歌曲一",
+        "timelen": 245000,
+        "cover": "https://img.kugou.com/c1/{size}.jpg",
+        "albuminfo": {
+          "name": "专辑甲"
+        }
+      },
+      {
+        "hash": "GWHASH000222",
+        "audio_id": "",
+        "album_audio_id": 200002,
+        "name": "无名组合 - 未拆分歌名",
+        "singername": "",
+        "songname": "songname兜底",
+        "timelen": 200000,
+        "trans_param": {
+          "union_cover": "https://img.kugou.com/c2/{size}.jpg"
+        },
+        "remark": "备注专辑"
+      }
+    ]
+  }
+}

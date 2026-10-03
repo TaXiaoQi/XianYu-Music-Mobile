@@ -9,6 +9,7 @@ pub mod lyric_fetcher;
 pub mod lyric_formats;
 pub mod lyrics; // 实现
 pub mod palette;
+pub mod playlist_fetcher;
 pub mod scanner; // 实现
 pub mod tags; // 实现
 pub mod types; // 实现
