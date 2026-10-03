@@ -11,6 +11,10 @@ import 'plugin_store.dart';
 import 'baka_plugin_manager.dart';
 import 'plugin_backup_import.dart' show lxSourceKeyForPlatform;
 
+part 'plugin_engine_auth_ban.dart';
+part 'plugin_engine_quality.dart';
+part 'plugin_engine_exceptions.dart';
+
 class PluginEngine {
   final String dataDir;
   final PluginStore store;
@@ -302,55 +306,16 @@ class PluginEngine {
   }
 
   // ==================== 鉴权失效熔断 ====================
-  static final Map<String, DateTime> _authBannedUntil = {};
-  static final Map<String, int> _authFailStreak = {};
-  static const Duration _authBanTtlBase = Duration(seconds: 30);
-  static const Duration _authBanTtlMax = Duration(minutes: 5);
-  static const int _authBanThreshold = 5;
-
-  static Duration _banTtlFor(int streak) {
-    final doublings = (streak - _authBanThreshold).clamp(0, 8);
-    final secs = _authBanTtlBase.inSeconds << doublings;
-    return secs >= _authBanTtlMax.inSeconds
-        ? _authBanTtlMax
-        : Duration(seconds: secs);
-  }
-
-  static String _banWaitLabel(DateTime until) {
-    final secs = until.difference(DateTime.now()).inSeconds.clamp(1, 3600);
-    if (secs < 60) return '$secs 秒';
-    return '${(secs / 60).ceil()} 分钟';
-  }
-
+  // 实现见 plugin_engine_auth_ban.dart（顶层），薄别名维持原调用面；Map 与顶层共享同一对象。
+  static final Map<String, DateTime> _authBannedUntil = pluginAuthBannedUntil;
+  static final Map<String, int> _authFailStreak = pluginAuthFailStreak;
   static bool isAuthFailureMessage(String msg) =>
-      RegExp(r'API密钥|API\s*key|api[_\s-]?secret|卡密|\b40[13]\b|鉴权失效已临时熔断',
-              caseSensitive: false)
-          .hasMatch(msg);
-
+      _pluginIsAuthFailureMessage(msg);
   static bool _isAuthError(String msg) => isAuthFailureMessage(msg);
-
-  static bool isAuthBanned(String pluginId) {
-    final until = _authBannedUntil[pluginId];
-    if (until == null) return false;
-    if (DateTime.now().isAfter(until)) {
-      _authBannedUntil.remove(pluginId);
-      _authFailStreak[pluginId] = 0;
-      return false;
-    }
-    return true;
-  }
-
-  static void _markAuthFailure(String pluginId, String msg) {
-    if (isAuthBanned(pluginId)) return;
-    final streak = (_authFailStreak[pluginId] ?? 0) + 1;
-    _authFailStreak[pluginId] = streak;
-    if (streak >= _authBanThreshold) {
-      final ttl = _banTtlFor(streak);
-      _authBannedUntil[pluginId] = DateTime.now().add(ttl);
-      AppLog.warn('plugin',
-          '[$pluginId] 鉴权连续失败 $streak 次，熔断 ${_banWaitLabel(_authBannedUntil[pluginId]!)}: $msg');
-    }
-  }
+  static bool isAuthBanned(String pluginId) => _pluginIsAuthBanned(pluginId);
+  static String _banWaitLabel(DateTime until) => _pluginBanWaitLabel(until);
+  static void _markAuthFailure(String pluginId, String msg) =>
+      _pluginMarkAuthFailure(pluginId, msg);
 
   // ==================== LX 请求协议 ====================
 
@@ -407,121 +372,28 @@ class PluginEngine {
 
   // ==================== MusicFree 播放直链 ====================
 
-  static const List<String> _qualityLadder = [
-    'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
-    'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
-  ];
-
-  static const Map<String, String> _qualityAliases = {
-    '96k': 'mgg', 'ogg96': 'mgg', 'mgg': 'mgg',
-    '128': '128k', '128k': '128k',
-    '192': '192k', '192k': '192k', 'ogg192': '192k',
-    '320': '320k', '320k': '320k', 'ogg320': '320k', 'exhigh': '320k',
-    'flac': 'flac', 'sq': 'flac', 'super': 'flac', 'lossless': 'flac',
-    'flac24': 'flac24bit', '24bit': 'flac24bit', '24bits': 'flac24bit',
-    '24_bit': 'flac24bit', 'flac24bit': 'flac24bit',
-    'hires': 'hires', 'hi-res': 'hires', 'hi_res': 'hires', 'hr': 'hires',
-    'vinyl': 'vinyl', 'dolby': 'dolby', 'atmos': 'atmos',
-    'galaxy': 'atmos', 'atmosplus': 'atmos_plus', 'atmos_plus': 'atmos_plus',
-    'atmos+': 'atmos_plus', 'galaxy51': 'atmos_plus', 'master': 'master',
-  };
-
-  static String? _normalizeQualityKey(dynamic raw) {
-    if (raw is! String) return null;
-    final normalized =
-        raw.trim().toLowerCase().replaceAll(RegExp(r'\s+'), '').replaceAll('-', '_');
-    if (normalized.isEmpty) return null;
-    return _qualityLadder.contains(normalized) ? normalized : _qualityAliases[normalized];
-  }
-
-  static String? normalizeQualityKey(dynamic raw) => _normalizeQualityKey(raw);
-
-  static String _qualityKeyToPluginString(String q) => q == 'mgg' ? '96k' : q;
-
-  static const List<String> qualityLadder = _qualityLadder;
-
+  // 音质档位映射：实现见 plugin_engine_quality.dart（顶层），薄别名维持原调用面。
+  static const List<String> qualityLadder = pluginQualityLadder;
+  static String? _normalizeQualityKey(dynamic raw) =>
+      _pluginNormalizeQualityKey(raw);
+  static String? normalizeQualityKey(dynamic raw) =>
+      _pluginNormalizeQualityKey(raw);
   static String qualityKeyToPluginString(String q) =>
-      _qualityKeyToPluginString(q);
-
-  static bool _isLossless(String q) =>
-      _qualityLadder.indexOf(q) >= _qualityLadder.indexOf('flac');
-
-  static String _qualityKeyToMfQuality(String q) {
-    final rank = _qualityLadder.indexOf(q);
-    if (rank < 0) return 'standard';
-    if (rank >= 5) return 'super';
-    if (rank >= 4) return 'high';
-    if (rank >= 3) return 'standard';
-    return 'low';
-  }
-
-  static String qualityKeyToMfQuality(String q) => _qualityKeyToMfQuality(q);
-
-  static const List<String> _mfQualityOrder = ['low', 'standard', 'high', 'super'];
-
+      _pluginQualityKeyToPluginString(q);
+  static String qualityKeyToMfQuality(String q) =>
+      _pluginQualityKeyToMfQuality(q);
   static List<String> _musicFreeQualityCandidates(
     String preferred,
     String fallback,
     Set<String> declaredKeys,
-  ) {
-    final baseMf = _qualityKeyToMfQuality(preferred);
-    if (fallback == 'pause') return [baseMf];
-    final baseIdx = _mfQualityOrder.indexOf(baseMf);
-    final order = <String>[baseMf];
-    for (var i = baseIdx + 1; i < _mfQualityOrder.length; i++) {
-      order.add(_mfQualityOrder[i]);
-    }
-    for (var i = baseIdx - 1; i >= 0; i--) {
-      order.add(_mfQualityOrder[i]);
-    }
-    return order;
-  }
-
+  ) =>
+      _pluginMusicFreeQualityCandidates(preferred, fallback, declaredKeys);
   static List<String> _musicFreeNativeCandidates(
     String preferred,
     String fallback,
     Set<String> declaredKeys,
-  ) {
-    final ladderDesc = _qualityLadder.reversed.toList();
-    final candidates = <String>[];
-    final seen = <String>{};
-    void add(String qk) {
-      final pluginQ = _qualityKeyToPluginString(qk);
-      if (seen.add(pluginQ)) candidates.add(pluginQ);
-      if (_isLossless(qk) && seen.add('super')) candidates.add('super');
-    }
-
-    if (fallback == 'pause') {
-      add(preferred);
-    } else if (fallback == 'higher') {
-      final start = _qualityLadder.indexOf(preferred);
-      if (start >= 0) {
-        for (var i = start; i < _qualityLadder.length; i++) {
-          add(_qualityLadder[i]);
-        }
-      } else {
-        add(preferred);
-      }
-    } else {
-      final start = ladderDesc.indexOf(preferred);
-      if (start >= 0) {
-        for (var i = start; i < ladderDesc.length; i++) {
-          add(ladderDesc[i]);
-        }
-      } else {
-        add(preferred);
-      }
-    }
-
-    if (declaredKeys.isNotEmpty) {
-      final filtered = candidates.where((c) {
-        final norm = _normalizeQualityKey(c);
-        return norm != null && declaredKeys.contains(norm);
-      }).toList();
-      if (filtered.isNotEmpty) return filtered;
-    }
-    return candidates.take(1).toList();
-  }
+  ) =>
+      _pluginMusicFreeNativeCandidates(preferred, fallback, declaredKeys);
 
   bool isBakaPlugin(String pluginId) => bakaManager.isBakaPlugin(pluginId);
 
@@ -1022,99 +894,4 @@ class PluginEngine {
     }
     return '';
   }
-}
-
-class PluginEngineException implements Exception {
-  final String message;
-  PluginEngineException(this.message);
-
-  @override
-  String toString() => message;
-}
-
-class LxSongLevelError extends PluginEngineException {
-  LxSongLevelError(super.message);
-}
-
-bool isSongLevelError(String message) {
-  const patterns = [
-    r'歌曲不存在',
-    r'歌曲已下架',
-    r'已?下架',
-    r'版权.{0,4}(限制|保护|原因)',
-    r'需要?登录',
-    r'地区限制',
-    r'需要?\s*(VIP|会员|付费)',
-    r'VIP歌曲',
-    r'会员歌曲',
-    r'付费歌曲',
-    r'无版权',
-    r'暂无版权',
-  ];
-  for (final pattern in patterns) {
-    if (RegExp(pattern, caseSensitive: false).hasMatch(message)) return true;
-  }
-  return false;
-}
-
-bool isUnsupportedQualityError(String message) {
-  return RegExp(
-    r'不支持.*音质|音质.*不支持|quality.*not\s+support|not\s+support.*quality',
-    caseSensitive: false,
-  ).hasMatch(message);
-}
-
-/// 从「不支持的音质: 192k」这类报错里解析出插件自报**支持的档位**。
-///
-/// 部分音源（HYW、QQ 等）拒绝某个档位时会把可用的档位一并列出，例如：
-/// `不支持的音质: 192k，支持的音质: 128k, 320k, flac, flac24bit, hires, ...`
-/// 拿到这份清单就能直接跳到可用档位，不必再按梯形逐档发起网络往返
-/// （日志中同一首歌被 192k 连续拒绝数次即由此而来）。
-List<String> parseSupportedQualities(String message) {
-  // 必须排除「不支持的音质: 192k」这半句——否则被拒绝的档位也会被当成
-  // 可用档位（曾实测把 192k 解析进清单）。(?<!不) 只匹配肯定表述。
-  final m = RegExp(
-    r'(?<!不)支持(?:的)?音质[:：]?\s*([^\n]*)',
-    caseSensitive: false,
-  ).firstMatch(message);
-  if (m == null) return const [];
-  final raw = m.group(1) ?? '';
-  final found = <String>[];
-  final seen = <String>{};
-  for (final token in raw.split(RegExp(r'[,，、/\s]+'))) {
-    final q = token.trim().toLowerCase();
-    if (q.isEmpty) continue;
-    if (!PluginEngine.qualityLadder.contains(q)) continue;
-    if (seen.add(q)) found.add(q);
-  }
-  return found;
-}
-
-/// 按用户偏好从插件自报的可用档位里挑一个：优先不低于偏好（升档），
-/// 没有更高的则退回其中最高档（降档）。保持用户偏好语义不变，
-/// 只是把「该音源实际能给的档位」映射出来。
-String? pickSupportedQuality(
-  String preferred,
-  String fallback,
-  List<String> supported,
-) {
-  if (supported.isEmpty) return null;
-  final byRank = supported.toSet().toList()
-    ..sort((a, b) =>
-        PluginEngine.qualityLadder.indexOf(a) -
-        PluginEngine.qualityLadder.indexOf(b));
-  final prefRank = PluginEngine.qualityLadder.indexOf(preferred);
-  if (prefRank < 0) return byRank.last;
-  if (fallback == 'higher') {
-    for (final q in byRank) {
-      if (PluginEngine.qualityLadder.indexOf(q) > prefRank) return q;
-    }
-  } else {
-    for (final q in byRank.reversed) {
-      if (PluginEngine.qualityLadder.indexOf(q) < prefRank) return q;
-    }
-  }
-  // 偏好方向没有可用档位（如偏好已是最低档却仍被拒）：退到最高可用档，
-  // 保证能出声优于严格贴合偏好方向
-  return byRank.last;
 }
