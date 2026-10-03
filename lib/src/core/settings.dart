@@ -280,6 +280,7 @@ class AppSettings {
     this.floatingLyricsFontScale = 100,
     this.floatingLyricsSecondaryScale = 88,
     this.floatingLyricsShowTranslation = true,
+    this.floatingLyricsShowNextLine = false,
     this.floatingLyricsShowRomanization = false,
     this.floatingLyricsShowBackground = true,
     this.floatingLyricsHideWhenPaused = false,
@@ -465,6 +466,7 @@ class AppSettings {
   final int floatingLyricsSecondaryScale;
 
   final bool floatingLyricsShowTranslation;
+  final bool floatingLyricsShowNextLine;
 
   final bool floatingLyricsShowRomanization;
 
@@ -596,6 +598,7 @@ class AppSettings {
     int? floatingLyricsFontScale,
     int? floatingLyricsSecondaryScale,
     bool? floatingLyricsShowTranslation,
+    bool? floatingLyricsShowNextLine,
     bool? floatingLyricsShowRomanization,
     bool? floatingLyricsShowBackground,
     bool? floatingLyricsHideWhenPaused,
@@ -736,6 +739,8 @@ class AppSettings {
           floatingLyricsSecondaryScale ?? this.floatingLyricsSecondaryScale,
       floatingLyricsShowTranslation:
           floatingLyricsShowTranslation ?? this.floatingLyricsShowTranslation,
+          floatingLyricsShowNextLine:
+              floatingLyricsShowNextLine ?? this.floatingLyricsShowNextLine,
       floatingLyricsShowRomanization:
           floatingLyricsShowRomanization ?? this.floatingLyricsShowRomanization,
       floatingLyricsShowBackground:
@@ -923,6 +928,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getInt('floatingLyricsSecondaryScale') ?? 88,
       floatingLyricsShowTranslation:
           prefs.getBool('floatingLyricsShowTranslation') ?? true,
+      floatingLyricsShowNextLine:
+          prefs.getBool('floatingLyricsShowNextLine') ?? false,
       floatingLyricsShowRomanization:
           prefs.getBool('floatingLyricsShowRomanization') ?? false,
       floatingLyricsShowBackground:

@@ -131,6 +131,8 @@ class SettingsStore {
       prefs.setBool(
           'floatingLyricsShowTranslation', next.floatingLyricsShowTranslation),
       prefs.setBool(
+          'floatingLyricsShowNextLine', next.floatingLyricsShowNextLine),
+      prefs.setBool(
           'floatingLyricsShowRomanization', next.floatingLyricsShowRomanization),
       prefs.setBool(
           'floatingLyricsShowBackground', next.floatingLyricsShowBackground),
@@ -348,6 +350,7 @@ extension SettingsNotifierMethods on SettingsNotifier {
   Future<void> setFloatingLyricsFontScale(int v) => _settingsStore.update((s) => s.copyWith(floatingLyricsFontScale: v));
   Future<void> setFloatingLyricsSecondaryScale(int v) => _settingsStore.update((s) => s.copyWith(floatingLyricsSecondaryScale: v));
   Future<void> setFloatingLyricsShowTranslation(bool v) => _settingsStore.update((s) => s.copyWith(floatingLyricsShowTranslation: v));
+  Future<void> setFloatingLyricsShowNextLine(bool v) => _settingsStore.update((s) => s.copyWith(floatingLyricsShowNextLine: v));
   Future<void> setFloatingLyricsShowRomanization(bool v) => _settingsStore.update((s) => s.copyWith(floatingLyricsShowRomanization: v));
   Future<void> setFloatingLyricsShowBackground(bool v) => _settingsStore.update((s) => s.copyWith(floatingLyricsShowBackground: v));
   Future<void> setFloatingLyricsHideWhenPaused(bool v) => _settingsStore.update((s) => s.copyWith(floatingLyricsHideWhenPaused: v));
