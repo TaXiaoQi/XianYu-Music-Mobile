@@ -1894,6 +1894,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     }
     final next = _pickNextIndex();
     if (next < 0) {
+      // 队列播完自动停：不经 toggle，自行标注来源
+      _pauseOrigin = 'queueEnded';
       await _player.pause();
       if (state.current != null) await seek(0);
       return;
