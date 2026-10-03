@@ -111,3 +111,9 @@ pub(crate) struct RemoteCacheUsage {
 	pub files: usize,
 	pub limit_bytes: u64,
 }
+/// 解析远程源 JSON 为凭据结构。
+pub(crate) fn parse_remote_source(
+    json: &str,
+) -> Result<RemoteSourceCredentials, String> {
+    serde_json::from_str(json).map_err(|e| format!("WebDAV 源 JSON 无效: {e}"))
+}

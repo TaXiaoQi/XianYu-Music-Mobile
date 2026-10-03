@@ -9,7 +9,7 @@
 // url_resolver 按音源解析），与桌面端行为一致。
 
 use crate::music::lx_search::{
-    decode_name, format_play_time, format_singer_name, http_get_json, http_post_json,
+    decode_name, format_play_time, format_singer_name, http_client, http_get_json, http_post_json,
     kg_filter_data, mg_create_signature, random_5_digits, random_tx_guid, tx_handle_result,
     zzc_sign, LxSearchItem,
 };
@@ -253,19 +253,7 @@ async fn http_get_loose_json(
 
 /// GET 原始文本（仅宽松解析兜底用）。
 async fn http_get_text(url: &str, headers: &[(&str, &str)]) -> Result<String, String> {
-    use std::sync::OnceLock;
-    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
-    let client = CLIENT
-        .get_or_init(|| {
-            reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(15))
-                // DNS pinning：连接复用校验时刻已钉住的公网 IP，杜绝 rebinding TOCTOU
-                .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
-                .build()
-                .map_err(|e| e.to_string())
-        })
-        .as_ref()
-        .map_err(|e| e.clone())?;
+    let client = http_client().as_ref().map_err(|e| e.clone())?;
     let mut req = client.get(url);
     for (k, v) in headers {
         req = req.header(*k, *v);

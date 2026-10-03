@@ -63,7 +63,7 @@ pub(crate) fn decode_http_body(body_bytes: &[u8], content_type: Option<&str>) ->
             return text;
         }
     }
-    crate::music::files::decode_lyrics_file_bytes(body_bytes)
+    crate::music::lyrics::decode_lyrics_file_bytes(body_bytes)
 }
 
 pub(crate) async fn http_fetch_text(

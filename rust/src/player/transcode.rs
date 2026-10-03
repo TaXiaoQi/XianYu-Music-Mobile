@@ -53,7 +53,7 @@ pub async fn transcode_to_wav(
     // 1) 解析出本地源文件：remote:// 先下载进远程缓存
     let local_path: String = if crate::remote::cache::is_remote_uri(src_path) {
         let conn = std::sync::Arc::new(std::sync::Mutex::new(
-            crate::api::open_scan_conn(db_path)?,
+            crate::database::open_conn(db_path)?,
         ));
         crate::remote::cache::ensure_cached_path(cache_root, conn, src_path).await?
     } else {

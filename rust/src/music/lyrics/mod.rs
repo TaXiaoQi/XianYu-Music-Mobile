@@ -7,12 +7,18 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::OnceLock;
 
+mod io;
 mod lx_convert;
 mod parse;
 mod semantic;
 mod tracks;
 mod types;
 
+pub use io::{
+    get_song_lyrics, get_song_lyrics_for_edit, get_song_lyrics_payload, read_lyrics_file,
+    save_song_lyrics,
+};
+pub(crate) use io::decode_lyrics_file_bytes;
 pub(crate) use lx_convert::*;
 pub(crate) use parse::*;
 pub(crate) use semantic::*;

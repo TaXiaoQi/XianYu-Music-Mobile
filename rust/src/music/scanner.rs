@@ -277,6 +277,18 @@ pub(super) fn fill_text_fields_from_tags(
 	}
 }
 
+
+/// 由数据库路径推导封面缓存目录（`{db_dir}/cover_cache/covers`）。
+///
+/// 与前端 `coverCacheRootProvider`（`{appDataDir}/cover_cache`）保持同构，
+/// 供常规扫描在扫描期同步提取缩略图回写 `cover_thumb_path`，避免列表滚动时
+/// 前端逐行懒提取（FFI + 解码 + 写盘）造成卡顿。
+pub(crate) fn derive_cover_cache_dir(db_path: &str) -> Option<std::path::PathBuf> {
+    let db = std::path::Path::new(db_path);
+    let cache_root = db.parent()?.join("cover_cache");
+    Some(crate::music::covers::get_cover_cache_dir(&cache_root))
+}
+
 #[cfg(test)] mod tests {
 	use super::diff::{collect_scan_diff, DbSongSnapshot};
 	use super::parser::{

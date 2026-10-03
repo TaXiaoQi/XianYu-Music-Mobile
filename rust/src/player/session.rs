@@ -158,6 +158,12 @@ impl Default for PlaybackSessionState {
     }
 }
 
+/// 进程级共享会话单例（FFI 门面各入口共用同一份内存状态）。
+pub(crate) fn global_playback_session() -> &'static PlaybackSessionState {
+    static SESSION: std::sync::OnceLock<PlaybackSessionState> = std::sync::OnceLock::new();
+    SESSION.get_or_init(PlaybackSessionState::new)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

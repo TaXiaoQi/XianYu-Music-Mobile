@@ -300,7 +300,7 @@ fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
 /// 保持默认 TLS 证书校验，避免搜索和解析链路被中间人篡改。
 static HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
 
-fn http_client() -> &'static Result<reqwest::Client, String> {
+pub(crate) fn http_client() -> &'static Result<reqwest::Client, String> {
     HTTP_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
