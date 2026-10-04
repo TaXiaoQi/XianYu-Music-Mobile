@@ -86,9 +86,10 @@ class MainActivity : AudioServiceActivity() {
     // 预测返回诊断：系统导航观察者回调（onDestroy 注销）。
     private var backGestureObserver: OnBackInvokedCallback? = null
 
-    // 旧安卓（API ≤ S）三键区底色：Dart 侧按底栏色块下发等效不透明色
-    // （null=透明，横屏沉浸用）。引擎迁移会在首帧/聚焦改写系统栏，涂色
-    // 存 override 随 applyLegacyEdgeToEdgeLayout 一并重申顶回
+    // 三键区底色 override：Dart 侧按底栏色块下发等效不透明色（null=透明，
+    // 横屏沉浸/壁纸模式用）。API ≤ S 涂色随布局 flag 重申顶回；API ≥ 33
+    // 由 applyModernSystemBars 维护（35+ 涂色被系统忽略，底色由 Flutter
+    // 侧实色垫呈现，override 仅余图标亮度依据）
     private var navBarColorOverride: Int? = null
 
     /** 获取组播锁（引用计数为 0 时真正加锁，幂等）。 */
@@ -250,7 +251,10 @@ class MainActivity : AudioServiceActivity() {
      * Theme.Light/Black 决定图标色的策略一致。
      */
     private fun applyLegacyEdgeToEdgeLayout() {
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) return
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) {
+            applyModernSystemBars()
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.setDecorFitsSystemWindows(false)
         }
@@ -287,6 +291,34 @@ class MainActivity : AudioServiceActivity() {
             decor.systemUiVisibility and
                 View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
         }
+    }
+
+    /**
+     * 新安卓（API ≥ 33/T）三键区维护：窗口满铺由引擎/系统强制接管，布局
+     * flag 不再由本层管辖，只维护三键区观感——
+     *  1. 关对比度 scrim：targetSdk 35+ 强制 edge-to-edge 后导航栏恒透明，
+     *     系统默认叠加的对比度 scrim 即三键区灰带（实测 Android 17）；
+     *  2. 涂底色 override：33/34 涂色仍生效；35+ 涂色 API 被系统忽略，
+     *     底色由 Flutter 侧实色垫（app.dart，API 35+ 启用）呈现；
+     *  3. 三键图标亮度随涂色，浅底深键/深底浅键。
+     * 与旧路径同节奏重申（onCreate/聚焦/首帧/600ms/通道），防 ROM 打回。
+     */
+    private fun applyModernSystemBars() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = navBarColorOverride ?: Color.TRANSPARENT
+        window.isNavigationBarContrastEnforced = false
+        val override = navBarColorOverride
+        val lightBar = if (override != null) {
+            (Color.red(override) * 0.2126 + Color.green(override) * 0.7152 +
+                Color.blue(override) * 0.0722) / 255.0 > 0.5
+        } else {
+            (resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        WindowCompat.getInsetsController(window, window.decorView)
+            .isAppearanceLightNavigationBars = lightBar
     }
 
     /**
@@ -712,6 +744,8 @@ class MainActivity : AudioServiceActivity() {
                         applyLegacyEdgeToEdgeLayout()
                         result.success(null)
                     }
+                    // 新安卓判定用：Flutter 侧 API 35+ 切实色垫
+                    "getSdkInt" -> result.success(Build.VERSION.SDK_INT)
                     else -> result.notImplemented()
                 }
             }

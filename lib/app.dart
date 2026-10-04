@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/core/app_colors.dart';
+import 'src/core/system_ui.dart' show androidSdkIntProvider;
 import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
 import 'src/navigation/mini_player_overlay.dart';
@@ -18,6 +19,7 @@ import 'src/navigation/routes.dart';
 import 'src/navigation/shell.dart'
     show
         NavDropletOverlay,
+        fixedNavBarSurfaceFill,
         isLandscapeProvider,
         navBarHiddenProvider,
         navOnRootPathProvider;
@@ -403,10 +405,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   ),
                 );
               }
-              // 壁纸模式系统三键区磨砂垫：全局挂在路由之上——二级页等
-              // push 路由会盖住 shell，shell 内的垫子够不着三键区，必须
-              // 在最上层补材质；播放页（独立 Navigator 在垫之上）保持沉
-              // 浸不垫。固定底栏可见时其玻璃已覆盖三键区，不叠垫
               final navPadSafeBottom = baseMq.padding.bottom;
               final navPadFloating =
                   ref.watch(settingsProvider.select(
@@ -415,14 +413,51 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   true;
               final navPadHidden = ref.watch(navBarHiddenProvider) > 0 ||
                   !ref.watch(navOnRootPathProvider);
-              final navPadShow = wallpaperGlassActive(ref) &&
+              final navPadSdk =
+                  ref.watch(androidSdkIntProvider).valueOrNull ?? 0;
+              final navPadSide = ref.watch(settingsProvider.select(
+                    (s) => s.valueOrNull?.navBarPosition,
+                  )) ==
+                  NavBarPosition.side;
+              final navPadWallpaper = wallpaperGlassActive(ref);
+              // 壁纸模式系统三键区磨砂垫：全局挂在路由之上——二级页等
+              // push 路由会盖住 shell，shell 内的垫子够不着三键区，必须
+              // 在最上层补材质；播放页（独立 Navigator 在垫之上）保持沉
+              // 浸不垫。旧安卓（API<35）固定底栏可见时不叠垫（其玻璃延
+              // 伸已覆盖三键区）；新安卓（35+）实测固定底栏玻璃并不延伸
+              // 进三键区、条带透出页面内容，且 hidden 信号不覆盖全部隐
+              // 藏路径——改为恒垫，与底栏同材质衔接
+              final navPadShow = navPadWallpaper &&
                   !ref.watch(isLandscapeProvider) &&
-                  !(ref.watch(settingsProvider.select(
-                            (s) => s.valueOrNull?.navBarPosition,
-                          )) ==
-                          NavBarPosition.side) &&
-                  (navPadFloating || navPadHidden) &&
+                  !navPadSide &&
+                  (navPadSdk >= 35 || navPadFloating || navPadHidden) &&
                   navPadSafeBottom > 0;
+              // 新安卓（API 35+）三键区条带：恒实色块，与旧安卓原生涂
+              // 色同公式。系统条带无法做真模糊（原生涂色 35+ 被忽略；
+              // Flutter 侧玻璃垫在该层级 blur 采样不可靠，半透明读作直
+              // 接透明，已实测证伪），壁纸模式的真玻璃走上方磨砂垫。
+              // 注意 scaffoldBackgroundColor 是 transparent（页面背景由
+              // appSurfaceBg 层渲染）——悬浮分支必须垫 appSurfaceBg，
+              // 垫 scaffoldBackgroundColor 等于垫透明（悬浮直接透底的
+              // 事故根因）；壁纸模式恒 null 走磨砂垫
+              final stripSdkNew = navPadSdk >= 35 &&
+                  !ref.watch(isLandscapeProvider) &&
+                  navPadSafeBottom > 0;
+              final (barFill, _) =
+                  fixedNavBarSurfaceFill(context, ref);
+              final Color? navBlockColor;
+              if (!stripSdkNew) {
+                navBlockColor = null;
+              } else if (navPadWallpaper) {
+                navBlockColor = null;
+              } else if (navPadFloating && !navPadSide) {
+                navBlockColor = appSurfaceBg(context);
+              } else {
+                navBlockColor = Color.alphaBlend(
+                  barFill,
+                  Theme.of(context).scaffoldBackgroundColor,
+                );
+              }
               return MediaQuery(
                 data: baseMq.copyWith(textScaler: textScaler),
                 child: NotificationListener<NavigationNotification>(
@@ -478,6 +513,16 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                     // 播放页独立 Navigator（五级模型第二级）：位于播放条
                     // 之上、飞行封面之下——播放页转场物理盖过播放条
                     const PlayerNavigatorHost(),
+                    // 新安卓（API 35+）三键区实色条带：z 序对齐旧安卓的
+                    // 原生涂色（系统窗口覆盖一切应用内容，含播放页）
+                    if (navBlockColor != null)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: navPadSafeBottom,
+                        child: ColoredBox(color: navBlockColor),
+                      ),
                     // 飞行封面顶层宿主（第一级）：高于播放条与一切路由，
                     // 预测性返回的页面缩放不再牵连封面飞行
                     Overlay(
