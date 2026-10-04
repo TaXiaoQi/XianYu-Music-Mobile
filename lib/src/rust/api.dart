@@ -1669,37 +1669,6 @@ Future<String> updateLoudnessSettings({
   preventClipping: preventClipping,
 );
 
-/// 将云端累计总听歌时长合并进本地（取较大值），返回 [`CloudMergeResult`] JSON。
-Future<String> mergeCloudListenDuration({
-  required String dbPath,
-  required PlatformInt64 totalSeconds,
-}) => RustLib.instance.api.crateApiMergeCloudListenDuration(
-  dbPath: dbPath,
-  totalSeconds: totalSeconds,
-);
-
-/// 导出全局 + 每日听歌统计快照（JSON），用于上传服务端跨设备同步。
-Future<String> statsExportListenSnapshot({required String dbPath}) =>
-    RustLib.instance.api.crateApiStatsExportListenSnapshot(dbPath: dbPath);
-
-/// 导入（MAX 合并）服务端听歌统计快照（JSON），返回 [`ListenStatsSyncResult`] JSON。
-Future<String> statsImportListenSnapshot({
-  required String dbPath,
-  required String snapshotJson,
-}) => RustLib.instance.api.crateApiStatsImportListenSnapshot(
-  dbPath: dbPath,
-  snapshotJson: snapshotJson,
-);
-
-/// 导入（累加合并）服务端听歌统计快照（JSON），返回 [`ListenStatsSyncResult`] JSON。
-Future<String> statsImportListenSnapshotAdd({
-  required String dbPath,
-  required String snapshotJson,
-}) => RustLib.instance.api.crateApiStatsImportListenSnapshotAdd(
-  dbPath: dbPath,
-  snapshotJson: snapshotJson,
-);
-
 /// 清零本地累计 + 每日听歌统计（服务端后台清零后下发）。
 Future<void> statsClearListenStats({required String dbPath}) =>
     RustLib.instance.api.crateApiStatsClearListenStats(dbPath: dbPath);

@@ -2136,8 +2136,7 @@ pub fn analyze_mv_sync_local(
 }
 
 // =========================================================================
-// 响度目标设置 + 云端时长合并（对齐桌面端 update_loudness_settings /
-// merge_cloud_listen_duration）
+// 响度目标设置（对齐桌面端 update_loudness_settings）
 // =========================================================================
 
 /// 在播放前评估/更新响度元数据并计算目标线性增益。
@@ -2166,44 +2165,6 @@ pub fn update_loudness_settings(
         1.0
     };
     Ok(serde_json::json!({ "enabled": enabled, "targetGain": gain }).to_string())
-}
-
-/// 将云端累计总听歌时长合并进本地（取较大值），返回 [`CloudMergeResult`] JSON。
-pub fn merge_cloud_listen_duration(db_path: String, total_seconds: i64) -> Result<String, String> {
-    let conn = open_conn(&db_path)?;
-    let result = crate::statistics::merge_cloud_listen_duration(&conn, total_seconds)?;
-    serde_json::to_string(&result).map_err(|e| e.to_string())
-}
-
-/// 导出全局 + 每日听歌统计快照（JSON），用于上传服务端跨设备同步。
-pub fn stats_export_listen_snapshot(db_path: String) -> Result<String, String> {
-    let conn = open_conn(&db_path)?;
-    let v = crate::statistics::export_listen_stats_snapshot(&conn)?;
-    serde_json::to_string(&v).map_err(|e| e.to_string())
-}
-
-/// 导入（MAX 合并）服务端听歌统计快照（JSON），返回 [`ListenStatsSyncResult`] JSON。
-pub fn stats_import_listen_snapshot(
-    db_path: String,
-    snapshot_json: String,
-) -> Result<String, String> {
-    let snapshot: crate::statistics::ListenStatsSnapshot =
-        serde_json::from_str(&snapshot_json).map_err(|e| e.to_string())?;
-    let mut conn = open_conn(&db_path)?;
-    let result = crate::statistics::import_listen_stats_snapshot(&mut conn, &snapshot)?;
-    serde_json::to_string(&result).map_err(|e| e.to_string())
-}
-
-/// 导入（累加合并）服务端听歌统计快照（JSON），返回 [`ListenStatsSyncResult`] JSON。
-pub fn stats_import_listen_snapshot_add(
-    db_path: String,
-    snapshot_json: String,
-) -> Result<String, String> {
-    let snapshot: crate::statistics::ListenStatsSnapshot =
-        serde_json::from_str(&snapshot_json).map_err(|e| e.to_string())?;
-    let mut conn = open_conn(&db_path)?;
-    let result = crate::statistics::import_listen_stats_snapshot_add(&mut conn, &snapshot)?;
-    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 /// 清零本地累计 + 每日听歌统计（服务端后台清零后下发）。
