@@ -42,7 +42,7 @@ Future<HostSheetImportResult?> _importViaRust(
     // 先走服务端热修模块（getListDetail{Platform}），未加载/失败回退 Rust 内置实现
     final decoded = await dispatchFallbackModule<Map<String, dynamic>?>(
       kFallbackModulePlaylistImport,
-      'getListDetail$_methodSuffix(platform)',
+      'getListDetail${_methodSuffix(platform)}',
       {'rawId': t},
       () async {
         final raw = await frb.fetchPlaylistFromSource(source: platform, rawId: t);
