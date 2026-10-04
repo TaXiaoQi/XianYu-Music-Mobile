@@ -3,7 +3,7 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
-const int kLinkProtocolVersion = 1;
+const int kLinkProtocolVersion = 2;
 
 const String kWatchLinkServiceUuid =
     'f7a24b6c-9d3e-4f8a-b1c2-2e5d8a7f6b3a';
@@ -19,6 +19,12 @@ class LinkMsgType {
   static const int bye = 0x02;
   static const int ping = 0x03;
   static const int pong = 0x04;
+
+  /// 鉴权质询：{nonce, grant?}；grant 仅在配对授予时随新质询下发。
+  static const int authChallenge = 0x05;
+
+  /// 鉴权应答：{proof}；无密钥时回 {proof:'', request:true} 请求授予。
+  static const int authProof = 0x06;
 
   static const int state = 0x10;
   static const int nowPlaying = 0x11;
@@ -47,6 +53,8 @@ class LinkMsgType {
       t == bye ||
       t == ping ||
       t == pong ||
+      t == authChallenge ||
+      t == authProof ||
       t == state ||
       t == nowPlaying ||
       t == position ||
@@ -119,6 +127,18 @@ class LinkMessage {
 
   static LinkMessage hello({required int ver, required String role, String name = ''}) =>
       LinkMessage(LinkMsgType.hello, {'ver': ver, 'role': role, 'name': name});
+
+  static LinkMessage authChallenge({required String nonce, String? grant}) =>
+      LinkMessage(LinkMsgType.authChallenge, {
+        'nonce': nonce,
+        'grant': ?grant,
+      });
+
+  static LinkMessage authProof({required String proof, bool request = false}) =>
+      LinkMessage(LinkMsgType.authProof, {
+        'proof': proof,
+        if (request) 'request': true,
+      });
 
   static LinkMessage state({
     required bool isPlaying,

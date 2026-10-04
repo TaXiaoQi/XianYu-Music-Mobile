@@ -1,4 +1,4 @@
-﻿part of 'watch_link_provider.dart';
+part of 'watch_link_provider.dart';
 
 extension WatchLinkControllerConnection on WatchLinkController {
   // ---- 开关与权限 ----
@@ -110,6 +110,7 @@ extension WatchLinkControllerConnection on WatchLinkController {
     _songKey = null;
     _precachedPaths.clear();
     _decoder = FrameDecoder();
+    _resetAuth();
     _resetTxPump();
   }
 

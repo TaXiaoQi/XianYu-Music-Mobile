@@ -30,6 +30,7 @@ import '../widgets/app_toast.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
 import 'cloud_channel.dart';
+import 'link_auth.dart';
 import 'protocol.dart';
 import 'watch_link_channel.dart';
 
@@ -80,6 +81,13 @@ class WatchLinkController {
   bool _sessionDenied = false;
 
   Future<void>? _askInFlight;
+
+  // ---- 链路鉴权（HMAC 挑战-应答；手表为密钥授予方，手机只采纳） ----
+
+  bool _peerAuthed = false;
+  String? _myAuthNonce;
+  String? _pairSecret;
+  Timer? _authTimer;
 
   bool _backupDialogActive = false;
 
@@ -157,6 +165,7 @@ class WatchLinkController {
     beforePlayGate = null;
     _fxPushTimer?.cancel();
     _mvPushTimer?.cancel();
+    _authTimer?.cancel();
     for (final s in _subs) {
       s.cancel();
     }
