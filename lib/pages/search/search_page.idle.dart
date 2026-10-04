@@ -72,7 +72,9 @@ class _SuggestionView extends StatelessWidget {
 
 // ==================== 默认页 ====================
 
-final _hotSearchProvider = FutureProvider<List<HotSearchItem>>((ref) {
+// autoDispose：每次进搜索空闲页重新拉取，避免未登录/未配服务器时的失败结果被永久缓存
+final _hotSearchProvider =
+    FutureProvider.autoDispose<List<HotSearchItem>>((ref) {
   return ref.read(accountApiProvider).fetchHotSearch(limit: 10);
 });
 
@@ -91,12 +93,7 @@ class SearchIdleView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final history = ref.watch(searchHistoryProvider);
-    final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
-    final hasEnabledPlugin = ref.watch(
-        pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)));
-    final hotAsync = loggedIn && hasEnabledPlugin
-        ? ref.watch(_hotSearchProvider)
-        : const AsyncValue<List<HotSearchItem>>.data([]);
+    final hotAsync = ref.watch(_hotSearchProvider);
     final bottomInset = MediaQuery.of(context).padding.bottom + 24;
 
     return ListView(
@@ -157,49 +154,54 @@ class SearchIdleView extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
 
-        if (loggedIn) ...[
-          Row(
-            children: [
-              Icon(Icons.local_fire_department_outlined,
-                  size: 18, color: scheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                tr('大家都在搜'),
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          hotAsync.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 2.4),
-                ),
+        Row(
+          children: [
+            Icon(Icons.local_fire_department_outlined,
+                size: 18, color: scheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              tr('大家都在搜'),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurfaceVariant,
               ),
             ),
-            error: (_, _) => _EmptyHotHint(scheme),
-            data: (list) => list.isEmpty
-                ? _EmptyHotHint(scheme)
-                : Column(
-                    children: [
-                      for (var i = 0; i < list.length; i++)
-                        _HotTile(
+          ],
+        ),
+        const SizedBox(height: 12),
+        hotAsync.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+            ),
+          ),
+          error: (_, _) => _EmptyHotHint(scheme),
+          data: (list) => list.isEmpty
+              ? _EmptyHotHint(scheme)
+              : Column(
+                  children: [
+                    // 桌面端热搜同款逐条揭示：140ms 起始、每条 50ms、自上方 4px 淡入
+                    for (var i = 0; i < list.length; i++)
+                      StaggerIn(
+                        delay: Duration(milliseconds: 140 + i * 50),
+                        duration: const Duration(milliseconds: 200),
+                        offsetY: -4,
+                        scaleFrom: 1,
+                        child: _HotTile(
                           index: i,
                           item: list[i],
                           onTap: onSearch,
                         ),
-                    ],
-                  ),
-          ),
-        ],
+                      ),
+                  ],
+                ),
+        ),
       ],
     );
   }

@@ -3,9 +3,9 @@
 use super::*;
 
 pub(crate) struct ExclusiveProgress {
-    samples_played: AtomicU64,
-    sample_rate: AtomicU32,
-    channels: AtomicU32,
+    pub(crate) samples_played: AtomicU64,
+    pub(crate) sample_rate: AtomicU32,
+    pub(crate) channels: AtomicU32,
     /// 源总时长（毫秒），供 Flutter 侧在 DSP 管线播放时更新进度条。
     duration_ms: AtomicU64,
     /// 跳过静音累计丢弃的交错样本数（与 SilenceSkipProducer 共享同一计数器）。

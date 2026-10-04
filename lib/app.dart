@@ -15,7 +15,12 @@ import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
 import 'src/navigation/mini_player_overlay.dart';
 import 'src/navigation/routes.dart';
-import 'src/navigation/shell.dart' show NavDropletOverlay;
+import 'src/navigation/shell.dart'
+    show
+        NavDropletOverlay,
+        isLandscapeProvider,
+        navBarHiddenProvider,
+        navOnRootPathProvider;
 import 'src/plugin/lx_update_alerts.dart';
 import 'src/update/app_update.dart';
 import 'src/widgets/flying_cover.dart';
@@ -398,6 +403,26 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   ),
                 );
               }
+              // 壁纸模式系统三键区磨砂垫：全局挂在路由之上——二级页等
+              // push 路由会盖住 shell，shell 内的垫子够不着三键区，必须
+              // 在最上层补材质；播放页（独立 Navigator 在垫之上）保持沉
+              // 浸不垫。固定底栏可见时其玻璃已覆盖三键区，不叠垫
+              final navPadSafeBottom = baseMq.padding.bottom;
+              final navPadFloating =
+                  ref.watch(settingsProvider.select(
+                    (s) => s.valueOrNull?.floatingNavBar,
+                  )) ??
+                  true;
+              final navPadHidden = ref.watch(navBarHiddenProvider) > 0 ||
+                  !ref.watch(navOnRootPathProvider);
+              final navPadShow = wallpaperGlassActive(ref) &&
+                  !ref.watch(isLandscapeProvider) &&
+                  !(ref.watch(settingsProvider.select(
+                            (s) => s.valueOrNull?.navBarPosition,
+                          )) ==
+                          NavBarPosition.side) &&
+                  (navPadFloating || navPadHidden) &&
+                  navPadSafeBottom > 0;
               return MediaQuery(
                 data: baseMq.copyWith(textScaler: textScaler),
                 child: NotificationListener<NavigationNotification>(
@@ -434,6 +459,16 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                         ],
                       ),
                     ),
+                    // 壁纸模式三键区磨砂垫：三键区恒定存在，垫在路由
+                    // 与 mini 播放条之间（播放页 Navigator 在其上，不垫）
+                    if (navPadShow)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: navPadSafeBottom,
+                        child: const SystemNavGlassPad(),
+                      ),
                     // mini 播放条顶层宿主：位于 Navigator 之上，
                     // 所有页面（含播放页）转场都从播放条背后滑过
                     const MiniPlayerOverlay(),

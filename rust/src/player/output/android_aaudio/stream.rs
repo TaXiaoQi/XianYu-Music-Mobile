@@ -160,7 +160,7 @@ pub(crate) fn probe_source_bit_depth(path: &str) -> Option<u8> {
     None
 }
 
-unsafe fn try_open_stream(
+pub(crate) unsafe fn try_open_stream(
     lib: &AAudioLib,
     device_id: i32,
     sample_rate: u32,

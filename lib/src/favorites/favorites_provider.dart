@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/auth_provider.dart';
 import '../home/daily_recommend.dart';
 import '../player/player_provider.dart';
+import '../plugin/sheet_cache.dart';
 
 class FavoriteEntry {
   final String path;
@@ -348,9 +349,15 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     final key = '$kind:$pluginId:$title';
     final current = state.collections;
     if (current.any((c) => c.key == key)) {
+      final removed = current.firstWhere((c) => c.key == key);
       final next = current.where((c) => c.key != key).toList();
       await _collectionStore.saveAll(next);
       state = state.copyWith(collections: next);
+      // 取消收藏歌单时同步清理详情页缓存
+      if (kind == 'playlist') {
+        await SheetCache.deleteFor(
+            pluginId: removed.pluginId, title: removed.title, raw: removed.raw);
+      }
       return;
     }
     final item = FavoriteCollection(

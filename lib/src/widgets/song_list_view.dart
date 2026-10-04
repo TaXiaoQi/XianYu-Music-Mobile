@@ -12,6 +12,7 @@ import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
 import 'song_list_scroll_fabs.dart';
+import 'stagger_in.dart';
 import '../i18n/i18n.dart';
 
 class SongRowPlay {
@@ -125,6 +126,9 @@ class SongsListView extends ConsumerStatefulWidget {
   /// 主题色块槽位 id。该列表被多页共用（竖屏本地库/歌单页等），
   /// 只有横屏音乐库三页需要叠色，故由调用方显式传入。
   final String? themeSlot;
+
+  /// 进入页面时行自下而上错峰浮入（桌面端同款入场）。
+  final bool staggerEnter;
   const SongsListView({
     super.key,
     required this.songs,
@@ -137,6 +141,7 @@ class SongsListView extends ConsumerStatefulWidget {
     this.enableScrollFabs = false,
     this.batch,
     this.themeSlot,
+    this.staggerEnter = false,
   });
 
   @override
@@ -147,16 +152,21 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
   late final ScrollController _controller;
   bool _ownsController = false;
   final ScrollController _batchController = ScrollController();
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
 
   @override
   void initState() {
     super.initState();
     _ownsController = widget.controller == null;
     _controller = widget.controller ?? ScrollController();
+    if (widget.staggerEnter) _stagger.start();
   }
 
   @override
   void dispose() {
+    _stagger.dispose();
     if (_ownsController) _controller.dispose();
     _batchController.dispose();
     super.dispose();
@@ -212,84 +222,108 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
           onToggle: () => batch.toggle(s.path),
         );
       }
-      return Builder(
-        builder: (rowContext) {
-          BuildContext? coverCtx;
-          final play = onPlay != null
-              ? () async {
-                  final ok = await launchFlyCover(
-                    rowContext,
-                    coverContext: coverCtx,
-                    coverSize: m.songCover,
-                    vPad: m.vPad,
-                    songPath: s.path,
-                    thumbPath: s.coverThumbPath,
-                    radius: m.songRadius,
-                  );
-                  if (ok) onPlay(songs, i);
-                }
-              : null;
-          final openActions = enableActions
-              ? () => showSongActionsSheet(
-                    rowContext,
-                    ref: ref,
-                    item: s.toQueueItem(),
-                    onPlay: play,
-                  )
-              : null;
-          final row = CoverRow(
-            background: rowBackground,
-            cover: Builder(
-              builder: (c) {
-                coverCtx = c;
-                return SongCover(song: s, size: m.songCover);
+      // 行首槽位：序号/播放标识；可排序列表按住把手拖拽（桌面端同款）
+      return Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 44),
+            child: Builder(
+              builder: (rowContext) {
+                BuildContext? coverCtx;
+                final play = onPlay != null
+                    ? () async {
+                        final ok = await launchFlyCover(
+                          rowContext,
+                          coverContext: coverCtx,
+                          coverSize: m.songCover,
+                          vPad: m.vPad,
+                          songPath: s.path,
+                          thumbPath: s.coverThumbPath,
+                          radius: m.songRadius,
+                        );
+                        if (ok) onPlay(songs, i);
+                      }
+                    : null;
+                final openActions = enableActions
+                    ? () => showSongActionsSheet(
+                          rowContext,
+                          ref: ref,
+                          item: s.toQueueItem(),
+                          onPlay: play,
+                        )
+                    : null;
+                final row = CoverRow(
+                  background: rowBackground,
+                  cover: Builder(
+                    builder: (c) {
+                      coverCtx = c;
+                      return SongCover(song: s, size: m.songCover);
+                    },
+                  ),
+                  title: highlightedText(
+                    s.title,
+                    highlight,
+                    hlColor,
+                    style: TextStyle(
+                        fontSize: m.titleSize, fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                  ),
+                  subtitle: highlightedText(
+                    '${s.artist} · ${s.album}',
+                    highlight,
+                    hlColor,
+                    style: TextStyle(
+                      fontSize: m.subtitleSize,
+                      color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                  ),
+                  verticalPadding: m.vPad,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _fmt(s.duration),
+                        style: TextStyle(
+                            fontSize: m.subtitleSize,
+                            color: Theme.of(rowContext)
+                                .colorScheme
+                                .onSurfaceVariant),
+                      ),
+                      if (openActions != null)
+                        IconButton(
+                          icon: const Icon(Icons.more_horiz, size: 22),
+                          color: Theme.of(rowContext)
+                              .colorScheme
+                              .onSurfaceVariant,
+                          tooltip: tr('更多'),
+                          onPressed: openActions,
+                        ),
+                    ],
+                  ),
+                  onTap: play == null ? null : (single ? play : () {}),
+                  onLongPress: openActions,
+                );
+                return !single && play != null
+                    ? GestureDetector(onDoubleTap: play, child: row)
+                    : row;
               },
             ),
-            title: highlightedText(
-              s.title,
-              highlight,
-              hlColor,
-              style: TextStyle(
-                  fontSize: m.titleSize, fontWeight: FontWeight.w600),
-              maxLines: 1,
-            ),
-            subtitle: highlightedText(
-              '${s.artist} · ${s.album}',
-              highlight,
-              hlColor,
-              style: TextStyle(
-                fontSize: m.subtitleSize,
-                color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
+          ),
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            width: 36,
+            child: Center(
+              child: SongRowLeading(
+                index: i,
+                songPath: s.path,
+                draggable: widget.onReorder != null,
               ),
-              maxLines: 1,
             ),
-            verticalPadding: m.vPad,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _fmt(s.duration),
-                  style: TextStyle(
-                      fontSize: m.subtitleSize,
-                      color:
-                          Theme.of(rowContext).colorScheme.onSurfaceVariant),
-                ),
-                if (openActions != null)
-                  IconButton(
-                    icon: const Icon(Icons.more_horiz, size: 22),
-                    color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
-                    tooltip: tr('更多'),
-                    onPressed: openActions,
-                  ),
-              ],
-            ),
-            onTap: play == null ? null : (single ? play : () {}),
-            onLongPress: openActions,
-          );
-          return !single && play != null
-              ? GestureDetector(onDoubleTap: play, child: row)
-              : row;
-        },
+          ),
+        ],
       );
     }
 
@@ -309,7 +343,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
           itemCount: songs.length,
           itemBuilder: (context, i) => RepaintBoundary(
             key: ValueKey('${songs[i].path}_$i'),
-            child: buildRow(i, inBatch),
+            child: _stagger.wrap(i, buildRow(i, inBatch)),
           ),
         );
       } else {
@@ -325,21 +359,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
           itemBuilder: (context, i) {
             return RepaintBoundary(
               key: ValueKey('${songs[i].path}_$i'),
-              child: Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 44),
-                    child: buildRow(i, false),
-                  ),
-                  Positioned(
-                    left: 8,
-                    top: 0,
-                    bottom: 0,
-                    width: 36,
-                    child: Center(child: DragHandle(index: i)),
-                  ),
-                ],
-              ),
+              child: _stagger.wrap(i, buildRow(i, false)),
             );
           },
         );

@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
-import '../../src/auth/auth_provider.dart';
 import '../../src/theme/theme_tint.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/app_logger.dart';
@@ -28,8 +27,10 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/rust/api.dart';
 import '../../src/search/search_history_store.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/list_metrics.dart';

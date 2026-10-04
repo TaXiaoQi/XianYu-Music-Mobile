@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +9,7 @@ import '../../src/auth/server_models.dart';
 import 'leaderboard_prefetch.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/i18n/i18n.dart';
@@ -169,16 +168,14 @@ class _PeriodBoard extends ConsumerStatefulWidget {
   ConsumerState<_PeriodBoard> createState() => _PeriodBoardState();
 }
 
-class _PeriodBoardState extends ConsumerState<_PeriodBoard>
-    with SingleTickerProviderStateMixin {
+class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
   List<LeaderboardEntry> _entries = [];
   bool _loading = true;
   bool _error = false;
   int _requestId = 0;
-
-  AnimationController? _enterC;
-  AnimationController get _enter => _enterC ??= AnimationController(
-      vsync: this, duration: const Duration(milliseconds: _StaggerIn.totalMs));
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
 
   @override
   void initState() {
@@ -188,20 +185,8 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
 
   @override
   void dispose() {
-    _enterC?.dispose();
+    _stagger.dispose();
     super.dispose();
-  }
-
-  Animation<double> _popFor(int index) {
-    final t0 = (index * _StaggerIn.staggerMs + 200) / _StaggerIn.totalMs;
-    return CurvedAnimation(
-      parent: _enter,
-      curve: Interval(
-        t0,
-        (t0 * _StaggerIn.totalMs + 400) / _StaggerIn.totalMs,
-        curve: const Cubic(0.34, 1.15, 0.64, 1),
-      ),
-    );
   }
 
   Future<void> _load() async {
@@ -212,10 +197,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
     // 预热命中：先用缓存内容顶上，转场那几百毫秒里就不是一屏空骨架了
     final cached = hadEntries ? null : readCachedLeaderboard(ref, widget.period);
     setState(() {
-      if (cached != null) {
-        _entries = cached;
-        _enter.value = 1;
-      }
+      if (cached != null) _entries = cached;
       _loading = cached == null;
       _error = false;
     });
@@ -229,17 +211,14 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
       if (data.me != null && !list.any((e) => e.isMe)) {
         list.add(data.me!);
       }
+      // 首次无缓存加载才播放入场动画；缓存顶上/已有内容刷新不重播
+      if (!hadEntries && cached == null) _stagger.start();
       setState(() {
         _entries = list;
         _loading = false;
       });
       // 回写缓存：下次进入直接命中
       storeCachedLeaderboard(ref, widget.period, list);
-      if (hadEntries || cached != null) {
-        _enter.value = 1;
-      } else {
-        _enter.forward(from: 0);
-      }
     } catch (_) {
       if (!mounted || requestId != _requestId) return;
       setState(() {
@@ -304,14 +283,12 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             children: [
               for (final (i, e) in top.indexed)
-                _StaggerIn(
-                  controller: _enter,
-                  index: i,
-                  child: _LeaderboardRow(
+                _stagger.wrap(
+                  i,
+                  _LeaderboardRow(
                     entry: e,
                     isMe: e.isMe,
                     highlight: e.rank <= 3,
-                    rankPop: _popFor(i),
                   ),
                 ),
             ],
@@ -328,14 +305,12 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: _StaggerIn(
-              controller: _enter,
-              index: top.length,
-              child: _LeaderboardRow(
+            child: _stagger.wrap(
+              top.length,
+              _LeaderboardRow(
                 entry: me,
                 isMe: true,
                 highlight: me.rank <= 3,
-                rankPop: _popFor(top.length),
               ),
             ),
           ),
@@ -350,10 +325,9 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            child: _StaggerIn(
-              controller: _enter,
-              index: top.length,
-              child: _LoginRow(onTap: () => context.push('/account')),
+            child: _stagger.wrap(
+              top.length,
+              _LoginRow(onTap: () => context.push('/account')),
             ),
           ),
         ],
@@ -416,61 +390,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard>
   }
 }
 
-class _StaggerIn extends StatelessWidget {
-  const _StaggerIn({
-    required this.controller,
-    required this.index,
-    required this.child,
-  });
-
-  static const int staggerMs = 60;
-
-  static const int rowMs = 600;
-
-  static const int totalMs = 2000;
-
-  final Animation<double> controller;
-  final int index;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final start = (index * staggerMs).clamp(0, totalMs - rowMs);
-    final anim = CurvedAnimation(
-      parent: controller,
-      curve: Interval(
-        start / totalMs,
-        (start + rowMs) / totalMs,
-        curve: Curves.easeOutExpo,
-      ),
-    );
-    return AnimatedBuilder(
-      animation: anim,
-      builder: (context, child) {
-        final t = anim.value;
-        if (t <= 0) return const SizedBox.shrink();
-        Widget content = Opacity(
-          opacity: t,
-          child: Transform.translate(
-            offset: Offset(0, 20 * (1 - t)),
-            child: child,
-          ),
-        );
-        if (t < 1) {
-          final sigma = 4 * (1 - t);
-          content = ImageFiltered(
-            imageFilter:
-                ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-            child: content,
-          );
-        }
-        return content;
-      },
-      child: child,
-    );
-  }
-}
-
 class _PeriodTab extends StatelessWidget {
   const _PeriodTab({
     required this.label,
@@ -520,13 +439,10 @@ class _LeaderboardRow extends ConsumerWidget {
     required this.entry,
     required this.isMe,
     required this.highlight,
-    this.rankPop,
   });
   final LeaderboardEntry entry;
   final bool isMe;
   final bool highlight;
-
-  final Animation<double>? rankPop;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -606,15 +522,7 @@ class _LeaderboardRow extends ConsumerWidget {
     );
   }
 
-  Widget _rankBadge() {
-    final badge = _RankBadge(rank: entry.rank);
-    final pop = rankPop;
-    if (pop == null) return badge;
-    return ScaleTransition(
-      scale: Tween<double>(begin: 0.4, end: 1.0).animate(pop),
-      child: badge,
-    );
-  }
+  Widget _rankBadge() => _RankBadge(rank: entry.rank);
 
   static String _formatDuration(int seconds) {
     final h = seconds ~/ 3600;

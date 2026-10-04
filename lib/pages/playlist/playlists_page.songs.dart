@@ -353,7 +353,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
           );
         }
 
-        Widget songRow(int display) {
+        Widget songRow(int display, {bool draggable = false}) {
           final orig = indices[display];
           final song = songs[orig];
           return RepaintBoundary(
@@ -439,7 +439,13 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                       top: 0,
                       bottom: 0,
                       width: 36,
-                      child: Center(child: DragHandle(index: orig)),
+                      child: Center(
+                        child: SongRowLeading(
+                          index: display,
+                          songPath: song.path,
+                          draggable: draggable,
+                        ),
+                      ),
                     ),
                   ],
                 );
@@ -481,7 +487,8 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                     Material(type: MaterialType.transparency, child: child),
                 itemCount: songs.length,
                 onReorderItem: onReorder,
-                itemBuilder: (context, index) => songRow(index),
+                itemBuilder: (context, index) =>
+                    songRow(index, draggable: true),
               ),
             if (inBatch)
               Positioned(

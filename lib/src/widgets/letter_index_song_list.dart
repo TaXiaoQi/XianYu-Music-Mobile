@@ -6,11 +6,13 @@ import 'package:pinyin/pinyin.dart';
 import '../core/settings.dart';
 import '../library/library_provider.dart';
 import 'batch_action_bar.dart';
+import 'drag_handle.dart';
 import 'flying_cover.dart';
 import 'list_metrics.dart';
 import 'song_actions_sheet.dart';
 import 'song_list_scroll_fabs.dart';
 import 'song_list_view.dart';
+import 'stagger_in.dart';
 import '../i18n/i18n.dart';
 
 class _IndexGroup {
@@ -65,6 +67,9 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
   final bool enableActions;
   final bool enableScrollFabs;
   final SongBatchController? batch;
+
+  /// 进入页面时行自下而上错峰浮入（桌面端同款入场）。
+  final bool staggerEnter;
   const LetterIndexSongList({
     super.key,
     required this.songs,
@@ -75,6 +80,7 @@ class LetterIndexSongList extends ConsumerStatefulWidget {
     this.enableActions = true,
     this.enableScrollFabs = false,
     this.batch,
+    this.staggerEnter = false,
   });
 
   @override
@@ -91,15 +97,20 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
   List<_IndexGroup>? _groups;
   double _rowExtent = 0;
   double _padTop = 0;
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onScrolled);
+    if (widget.staggerEnter) _stagger.start();
   }
 
   @override
   void dispose() {
+    _stagger.dispose();
     _controller.dispose();
     _active.dispose();
     super.dispose();
@@ -184,13 +195,17 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
     final total = songs.length + groups.length;
     final songAt = List<int>.filled(total, -1);
     final flatGroup = List<int>.filled(total, -1);
+    // 行首序号按显示顺序连续编号（跨分组），对齐桌面端
+    final rankAt = List<int>.filled(total, -1);
     var cursor = 0;
+    var songCursor = 0;
     for (var gi = 0; gi < groups.length; gi++) {
       final g = groups[gi];
       flatGroup[cursor] = gi;
       cursor++;
       for (var k = 0; k < g.cou; k++) {
         songAt[cursor] = g.startIndex + k;
+        rankAt[cursor] = songCursor++;
         cursor++;
       }
     }
@@ -211,23 +226,30 @@ class _LetterIndexSongListState extends ConsumerState<LetterIndexSongList> {
               final gIdx = flatGroup[i];
               if (gIdx >= 0) {
                 return RepaintBoundary(
-                  child: _HeaderTile(
-                      letter: groups[gIdx].letter, cou: groups[gIdx].cou),
+                  child: _stagger.wrap(
+                    i,
+                    _HeaderTile(
+                        letter: groups[gIdx].letter, cou: groups[gIdx].cou),
+                  ),
                 );
               }
               final si = songAt[i];
               return RepaintBoundary(
                 key: ValueKey('${si}_$gIdx'),
-                child: _SongRowItem(
-                  song: songs[si],
-                  originalIndex: si,
-                  songs: songs,
-                  single: single,
-                  onPlay: widget.onPlay,
-                  highlight: widget.highlight,
-                  enableActions: widget.enableActions,
-                  inBatch: inBatch,
-                  batch: batch,
+                child: _stagger.wrap(
+                  i,
+                  _SongRowItem(
+                    song: songs[si],
+                    originalIndex: si,
+                    displayRank: rankAt[i],
+                    songs: songs,
+                    single: single,
+                    onPlay: widget.onPlay,
+                    highlight: widget.highlight,
+                    enableActions: widget.enableActions,
+                    inBatch: inBatch,
+                    batch: batch,
+                  ),
                 ),
               );
             },
@@ -298,6 +320,9 @@ class _HeaderTile extends StatelessWidget {
 class _SongRowItem extends ConsumerWidget {
   final Song song;
   final int originalIndex;
+
+  /// 行首序号（显示顺序，跨分组连续编号）
+  final int displayRank;
   final List<Song> songs;
   final bool single;
   final Future<void> Function(List<Song> songs, int index)? onPlay;
@@ -308,6 +333,7 @@ class _SongRowItem extends ConsumerWidget {
   const _SongRowItem({
     required this.song,
     required this.originalIndex,
+    required this.displayRank,
     required this.songs,
     required this.single,
     required this.onPlay,
@@ -351,7 +377,7 @@ class _SongRowItem extends ConsumerWidget {
         onToggle: () => batch.toggle(s.path),
       );
     }
-    return Builder(
+    final core = Builder(
       builder: (rowContext) {
         BuildContext? coverCtx;
         final play = onPlay != null
@@ -427,6 +453,24 @@ class _SongRowItem extends ConsumerWidget {
             ? GestureDetector(onDoubleTap: play, child: row)
             : row;
       },
+    );
+    // 行首槽位：序号/播放标识（桌面端同款）
+    return Stack(
+      children: [
+        Padding(padding: const EdgeInsets.only(left: 44), child: core),
+        Positioned(
+          left: 8,
+          top: 0,
+          bottom: 0,
+          width: 36,
+          child: Center(
+            child: SongRowLeading(
+              index: displayRank,
+              songPath: s.path,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

@@ -257,7 +257,8 @@ class AppSettings {
     this.volumeBalanceGainOffsetDb = 0,
     this.volumeBalancePreventClipping = true,
     this.autoResumeAfterInterruption = true,
-    this.onlineFailureBehavior = 'pause',
+    this.showRealQualitySizes = false,
+    this.onlineFailureBehavior = 'stop',
     this.onlineQualityFallbackBehavior = 'lower',
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
@@ -421,6 +422,10 @@ class AppSettings {
 
   final bool autoResumeAfterInterruption;
 
+  /// 音质菜单真实体积探测+全档位预解析开关（默认关：仅按需解析，
+  /// 避免每首歌对音源多发 5~8 次请求）
+  final bool showRealQualitySizes;
+
   final String onlineFailureBehavior;
 
   final String onlineQualityFallbackBehavior;
@@ -576,6 +581,7 @@ class AppSettings {
     double? volumeBalanceGainOffsetDb,
     bool? volumeBalancePreventClipping,
     bool? autoResumeAfterInterruption,
+    bool? showRealQualitySizes,
     String? onlineFailureBehavior,
     String? onlineQualityFallbackBehavior,
     int? usbExclusiveDeviceId,
@@ -705,6 +711,8 @@ class AppSettings {
           volumeBalancePreventClipping ?? this.volumeBalancePreventClipping,
       autoResumeAfterInterruption:
           autoResumeAfterInterruption ?? this.autoResumeAfterInterruption,
+      showRealQualitySizes:
+          showRealQualitySizes ?? this.showRealQualitySizes,
       onlineFailureBehavior:
           onlineFailureBehavior ?? this.onlineFailureBehavior,
       onlineQualityFallbackBehavior:
@@ -889,12 +897,14 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('volumeBalancePreventClipping') ?? true,
       autoResumeAfterInterruption:
           prefs.getBool('autoResumeAfterInterruption') ?? true,
+      showRealQualitySizes:
+          prefs.getBool('showRealQualitySizes') ?? false,
       onlineFailureBehavior:
           prefs.getString('onlineFailureBehavior') == 'autoswitch'
               ? 'autoswitch'
               : prefs.getString('onlineFailureBehavior') == 'skip'
                   ? 'skip'
-                  : 'pause',
+                  : 'stop',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,

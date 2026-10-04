@@ -710,6 +710,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                 ? SongsListView(
                     themeSlot: 'ls-lib.row',
                     songs: songs,
+                    staggerEnter: true,
                     enableScrollFabs: true,
                     batch: widget.batch,
                     padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
@@ -731,6 +732,7 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   )
                 : LetterIndexSongList(
                     songs: songs,
+                    staggerEnter: true,
                     indexField: switch (widget.sort) {
                       _SongSort.title => (Song s) => s.title,
                       _SongSort.artist => (Song s) => s.artist,

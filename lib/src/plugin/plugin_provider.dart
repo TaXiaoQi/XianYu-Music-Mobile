@@ -81,25 +81,6 @@ Future<String?> fetchPluginScriptWithRetry(
           'plugin',
           'fetch script http ${resp.statusCode} $url body=${snippet.isEmpty ? '(empty)' : snippet}',
         );
-        // 403 可能是 Key 限制 UA（服务端响应体明说「User-Agent 已被限制」）。
-        // 只在这一种情况下用 LX 客户端 UA 重试一次，且不替换全局默认 UA：
-        // 多数源站依赖浏览器 UA，全局改会悄悄弄坏它们。
-        if (resp.statusCode == 403) {
-          try {
-            final retryReq = await client.getUrl(parsed);
-            retryReq.headers.set('User-Agent', 'lx-music-desktop/2.0.0');
-            retryReq.headers.set('Accept', '*/*');
-            final retryResp = await retryReq.close().timeout(responseTimeout);
-            if (retryResp.statusCode >= 200 && retryResp.statusCode < 300) {
-              AppLog.info('plugin', 'fetch script 403 后改用 LX UA 重试成功 $url');
-              return await retryResp.transform(utf8.decoder).join().timeout(bodyTimeout);
-            }
-            AppLog.warn('plugin',
-                'fetch script 403 后改用 LX UA 重试仍失败 ${retryResp.statusCode} $url');
-          } catch (e) {
-            AppLog.warn('plugin', 'fetch script 403 后改用 LX UA 重试异常: $e');
-          }
-        }
         return null;
       }
       return await resp.transform(utf8.decoder).join().timeout(bodyTimeout);

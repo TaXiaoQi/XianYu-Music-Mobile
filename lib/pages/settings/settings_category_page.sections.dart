@@ -697,6 +697,14 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             trailing: Text(s?.onlineDefaultQuality ?? '320k'),
             onTap: () => _pickQuality(context, ref, s, isOnline: true),
           ),
+          _switchTile(
+            context,
+            icon: Icons.straighten_outlined,
+            title: tr('显示真实音质体积'),
+            subtitle: tr('开启后每首在线歌会向音源多请求约 5~8 次（预解析全部档位并探测真实体积），可能触发音源限流；关闭时仅按需解析，体积显示插件自报值'),
+            value: s?.showRealQualitySizes ?? false,
+            onChanged: (v) => n.setShowRealQualitySizes(v),
+          ),
           _tile(
             context,
             icon: Icons.vertical_align_bottom_outlined,
@@ -716,7 +724,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             subtitle: tr('在线音源完全无法播放时的处理方式'),
             trailing: Text(
               _failureBehaviorLabel(
-                  s?.onlineFailureBehavior ?? 'pause'),
+                  s?.onlineFailureBehavior ?? 'stop'),
             ),
             onTap: () => _pickFailureBehavior(context, ref, s),
           ),
@@ -926,23 +934,45 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.movie_outlined,
             title: tr('MV 默认画质'),
-            trailing: Text(s?.onlineDefaultMvQuality ?? '720p'),
+            trailing: Text(_mvQualityKeyLabel(s?.onlineDefaultMvQuality ?? '720p')),
             onTap: () => _pickMvQuality(context, ref, s),
           ),
           _tile(
             context,
             icon: Icons.movie_creation_outlined,
             title: tr('MV 下载画质'),
-            trailing: Text(s?.downloadMvQuality ?? '720p'),
+            trailing: Text(_mvQualityKeyLabel(s?.downloadMvQuality ?? '720p')),
             onTap: () => _pickDownloadMvQuality(context, ref, s),
           ),
           _switchTile(
             context,
             icon: Icons.lyrics_outlined,
             title: tr('下载独立歌词'),
-            subtitle: tr('额外保存一份 .lrc 文件，歌词默认已嵌入音频'),
+            subtitle: tr('额外保存一份歌词文件，歌词默认已嵌入音频'),
             value: s?.downloadLyrics ?? false,
             onChanged: (v) => n.setDownloadLyrics(v),
+          ),
+          if (s?.downloadLyrics ?? false)
+            _tile(
+              context,
+              icon: Icons.format_align_left,
+              title: tr('歌词格式'),
+              trailing: Text(
+                (s?.downloadLyricsFormat ?? 'lrc') == 'txt' ? 'TXT' : 'LRC',
+              ),
+              onTap: () => _pickLyricsFormat(context, ref, s),
+            ),
+          _tile(
+            context,
+            icon: Icons.graphic_eq,
+            title: tr('歌词风格'),
+            subtitle: tr('同时影响独立歌词与内嵌歌词'),
+            trailing: Text(
+              (s?.downloadLyricsStyle ?? 'word-by-word') == 'line-by-line'
+                  ? tr('逐行')
+                  : tr('内置逐字'),
+            ),
+            onTap: () => _pickLyricsStyle(context, ref, s),
           ),
           _tile(
             context,

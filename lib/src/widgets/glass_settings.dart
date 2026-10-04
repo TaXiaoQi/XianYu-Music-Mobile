@@ -96,6 +96,29 @@ final BackdropKey cardGlassKey = BackdropKey();
 double navSurfaceBlurSigma(WidgetRef ref) =>
     kNavSurfaceBlurSigma * frostedBlurScaleOf(frostedGlassLevelSetting(ref));
 
+/// 壁纸模式系统三键区磨砂垫：原生侧三键区涂透明（壁纸模式），材质由
+/// Flutter 侧补齐——复刻固定底栏同款玻璃（同 fill、同 sigma、共享
+/// backdrop 回读组）。全局挂在路由最上层：二级页等 push 路由盖住
+/// shell 后仍生效；固定底栏可见时其玻璃已覆盖三键区，不叠垫
+class SystemNavGlassPad extends ConsumerWidget {
+  const SystemNavGlassPad({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fill = wallpaperGlassFill(context, ref);
+    final sigma = navSurfaceBlurSigma(ref);
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          backdropGroupKey: navGlassKey,
+          child: ColoredBox(color: fill),
+        ),
+      ),
+    );
+  }
+}
+
 double frostedBlurSigma(WidgetRef ref) => 16 * frostedBlurScale(ref);
 
 double frostedBlurScale(WidgetRef ref) =>

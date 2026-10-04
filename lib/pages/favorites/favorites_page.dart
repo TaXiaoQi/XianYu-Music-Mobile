@@ -26,6 +26,7 @@ import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/mini_player_bar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -230,9 +231,19 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
 class _SongsTabState extends ConsumerState<_SongsTab> {
   final ScrollController _controller = ScrollController();
   final ScrollController _batchController = ScrollController();
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _stagger.start();
+  }
 
   @override
   void dispose() {
+    _stagger.dispose();
     _controller.dispose();
     _batchController.dispose();
     super.dispose();
@@ -404,10 +415,32 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                 itemBuilder: (context, i) {
                   final entry = visible[i];
                   final orig = entries.indexOf(entry);
-                  return _FavoriteTile(
-                    entry: entry,
-                    onPlay: () => widget.notifier.play(orig),
-                    onRemove: () => widget.notifier.remove(entry.path),
+                  return _stagger.wrap(
+                    i,
+                    Stack(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(left: 44),
+                          child: _FavoriteTile(
+                            entry: entry,
+                            onPlay: () => widget.notifier.play(orig),
+                            onRemove: () => widget.notifier.remove(entry.path),
+                          ),
+                        ),
+                        Positioned(
+                          left: 8,
+                          top: 0,
+                          bottom: 0,
+                          width: 36,
+                          child: Center(
+                            child: SongRowLeading(
+                              index: i,
+                              songPath: entry.path,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   );
                 },
               ),
@@ -500,10 +533,32 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                   itemBuilder: (context, i) {
                     final entry = visible[i];
                     final orig = entries.indexOf(entry);
-                    return _FavoriteTile(
-                      entry: entry,
-                      onPlay: () => widget.notifier.play(orig),
-                      onRemove: () => widget.notifier.remove(entry.path),
+                    return _stagger.wrap(
+                      i,
+                      Stack(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 44),
+                            child: _FavoriteTile(
+                              entry: entry,
+                              onPlay: () => widget.notifier.play(orig),
+                              onRemove: () => widget.notifier.remove(entry.path),
+                            ),
+                          ),
+                          Positioned(
+                            left: 8,
+                            top: 0,
+                            bottom: 0,
+                            width: 36,
+                            child: Center(
+                              child: SongRowLeading(
+                                index: i,
+                                songPath: entry.path,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -558,25 +613,34 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                   final entry = entries[i];
                   return RepaintBoundary(
                     key: ValueKey(entry.path),
-                    child: Stack(
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 44),
-                          child: _FavoriteTile(
-                            entry: entry,
-                            onPlay: () => widget.notifier.play(i),
-                            onRemove: () =>
-                                widget.notifier.remove(entry.path),
+                    child: _stagger.wrap(
+                      i,
+                      Stack(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 44),
+                            child: _FavoriteTile(
+                              entry: entry,
+                              onPlay: () => widget.notifier.play(i),
+                              onRemove: () =>
+                                  widget.notifier.remove(entry.path),
+                            ),
                           ),
-                        ),
-                        Positioned(
-                          left: 8,
-                          top: 0,
-                          bottom: 0,
-                          width: 36,
-                          child: Center(child: DragHandle(index: i)),
-                        ),
-                      ],
+                          Positioned(
+                            left: 8,
+                            top: 0,
+                            bottom: 0,
+                            width: 36,
+                            child: Center(
+                              child: SongRowLeading(
+                                index: i,
+                                songPath: entry.path,
+                                draggable: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },

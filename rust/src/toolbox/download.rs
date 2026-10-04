@@ -160,6 +160,8 @@ pub struct FinalizeDownloadExtrasRequest {
 	pub lyrics_text: Option<String>,
 	pub lyrics_path: Option<String>,
 	pub cover_url: Option<String>,
+	/// 主封面 URL 拉取失败时的回退（如高清升级 URL 404 时回退原图 URL）。
+	pub cover_fallback_url: Option<String>,
 	pub cover_path: Option<String>,
 	pub metadata: Option<EmbedMetadataRequest>,
 	pub embed_cover: bool,
@@ -194,39 +196,53 @@ pub async fn finalize_download_extras(
 		}
 	}
 
-	if let Some(url) = &request.cover_url {
-		if !url.is_empty() && (url.starts_with("http://") || url.starts_with("https://")) {
-			match fetch_image_bytes(url.clone()).await {
-				Ok(img) => {
-					if let Some(path) = &request.cover_path {
-						let actual_ext = if img.mime.contains("png") {
-							".png"
-						} else {
-							".jpg"
-						};
-						let final_path = if path.ends_with(".jpg") && actual_ext == ".png" {
-							format!("{}.png", &path[..path.len() - 4])
-						} else if path.ends_with(".png") && actual_ext == ".jpg" {
-							format!("{}.jpg", &path[..path.len() - 4])
-						} else {
-							path.clone()
-						};
-						let dest = PathBuf::from(&final_path);
-						if let Some(parent) = dest.parent() {
-							let _ = tokio::fs::create_dir_all(parent).await;
-						}
-						match tokio::fs::write(&dest, &img.data).await {
-							Ok(_) => {
-								result.cover_saved = true;
-							}
-							Err(_) => {}
-						}
-					}
-					result.cover_data = Some(img.data);
-					result.cover_mime = img.mime;
-				}
-				Err(_) => {}
+	// 封面候选按优先级去重：主 URL 失败自动回退（高清升级 URL 404 → 原图）
+	let cover_candidates: Vec<String> = {
+		let mut v: Vec<String> = Vec::new();
+		for u in [request.cover_url.as_deref(), request.cover_fallback_url.as_deref()]
+			.into_iter()
+			.flatten()
+		{
+			let valid = !u.is_empty()
+				&& (u.starts_with("http://") || u.starts_with("https://"))
+				&& !v.iter().any(|e| e == u);
+			if valid {
+				v.push(u.to_string());
 			}
+		}
+		v
+	};
+	for url in cover_candidates {
+		match fetch_image_bytes(url).await {
+			Ok(img) => {
+				if let Some(path) = &request.cover_path {
+					let actual_ext = if img.mime.contains("png") {
+						".png"
+					} else {
+						".jpg"
+					};
+					let final_path = if path.ends_with(".jpg") && actual_ext == ".png" {
+						format!("{}.png", &path[..path.len() - 4])
+					} else if path.ends_with(".png") && actual_ext == ".jpg" {
+						format!("{}.jpg", &path[..path.len() - 4])
+					} else {
+						path.clone()
+					};
+					let dest = PathBuf::from(&final_path);
+					if let Some(parent) = dest.parent() {
+						let _ = tokio::fs::create_dir_all(parent).await;
+					}
+					match tokio::fs::write(&dest, &img.data).await {
+						Ok(_) => {
+							result.cover_saved = true;
+						}
+						Err(_) => {}
+					}
+				}
+				result.cover_data = Some(img.data);
+				result.cover_mime = img.mime;
+			}
+			Err(_) => {}
 		}
 	}
 

@@ -1003,6 +1003,7 @@ const Map<String, String> enDictManual = {
   '暂停时隐藏': 'Hide when paused',
   '暂无版权': 'Not licensed',
   '暂无壁纸': 'No wallpapers',
+  '音源不可用': 'Source unavailable',
   '暂无播放': 'Nothing playing',
   '暂无播放记录': 'No play history',
   '暂无歌词': 'No lyrics',

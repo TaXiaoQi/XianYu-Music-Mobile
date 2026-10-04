@@ -242,7 +242,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
     }
     _lastAutoSwitchAt = now;
     _lastAutoSwitchPath = item.path;
-    if ((settings?.onlineFailureBehavior ?? 'pause') != 'autoswitch' &&
+    if ((settings?.onlineFailureBehavior ?? 'stop') != 'autoswitch' &&
         !force) {
       return false;
     }

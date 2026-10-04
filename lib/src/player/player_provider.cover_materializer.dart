@@ -86,6 +86,12 @@ class CoverMaterializer {
           .replaceFirst(RegExp(r'/[Ww]\d+[Hh]\d+/'), '/');
       return cleaned == url ? null : cleaned;
     }
+    // 酷狗：stdmusic/{size}/ 换成 480 大图规格
+    if (host.endsWith('kugou.com') || host.endsWith('kgimg.com')) {
+      final cleaned =
+          url.replaceFirst(RegExp(r'/stdmusic/\d+/'), '/stdmusic/480/');
+      return cleaned == url ? null : cleaned;
+    }
     return null;
   }
 

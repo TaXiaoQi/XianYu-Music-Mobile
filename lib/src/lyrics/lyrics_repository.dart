@@ -77,12 +77,12 @@ class LyricsRepository {
         AppLog.debug('lyric',
             '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}');
         if (encrypted) {
-          final decrypted = await _decryptEncryptedLyric(mainText);
+          final decrypted = await decryptEncryptedLyric(mainText);
           if (decrypted != null && decrypted.trim().isNotEmpty) {
             AppLog.debug('lyric', '插件歌词: 密文解密成功 len=${decrypted.length}');
             var combined = decrypted;
             if (tlyric.isNotEmpty && pluginLyricLooksEncrypted(tlyric)) {
-              final dt = await _decryptEncryptedLyric(tlyric);
+              final dt = await decryptEncryptedLyric(tlyric);
               if (dt != null && dt.trim().isNotEmpty) {
                 combined = composePluginLyricsRaw(combined, alignTranslationToMainLyric(combined, dt));
               }
@@ -99,7 +99,7 @@ class LyricsRepository {
                 rawLyrics: composePluginLyricsRaw(mainText, alignTranslationToMainLyric(mainText, tlyric)));
           }
           if (tlyric.isEmpty) {
-            final native = await _fetchNativeLyricResult(item);
+            final native = await fetchNativeLyricResult(item);
             final nTrans = native?['tlyric']?.trim() ?? '';
             if (nTrans.isNotEmpty && !mainText.contains('tlyric')) {
               return parseLyrics(
@@ -111,7 +111,7 @@ class LyricsRepository {
       } else {
         AppLog.debug('lyric', '插件歌词: 无结果');
       }
-      final native = await _fetchNativeLyricResult(item);
+      final native = await fetchNativeLyricResult(item);
       if (native != null) {
         final lx = (native['lxlyric'] ?? '').trim();
         if (lx.isNotEmpty) return parseLyrics(rawLyrics: lx);
@@ -192,7 +192,7 @@ class LyricsRepository {
     return null;
   }
 
-  Future<String?> _decryptEncryptedLyric(String hex) async {
+  Future<String?> decryptEncryptedLyric(String hex) async {
     try {
       final out = await decryptPluginLyric(
           encryptedHex: hex.replaceAll(RegExp(r'\s'), ''));
@@ -206,7 +206,7 @@ class LyricsRepository {
 
   static const _nativeLyricSources = {'tx', 'wy', 'kw', 'kg', 'mg'};
 
-  Future<Map<String, String>?> _fetchNativeLyricResult(QueueItem item) async {
+  Future<Map<String, String>?> fetchNativeLyricResult(QueueItem item) async {
     Map<String, dynamic>? songInfo;
     String? pluginId;
     final online = item.onlineSongJson;

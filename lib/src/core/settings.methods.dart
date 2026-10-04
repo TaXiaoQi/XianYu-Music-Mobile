@@ -103,6 +103,7 @@ class SettingsStore {
       prefs.setDouble('volumeBalanceGainOffsetDb', next.volumeBalanceGainOffsetDb),
       prefs.setBool('volumeBalancePreventClipping', next.volumeBalancePreventClipping),
       prefs.setBool('autoResumeAfterInterruption', next.autoResumeAfterInterruption),
+      prefs.setBool('showRealQualitySizes', next.showRealQualitySizes),
       prefs.setString('onlineFailureBehavior', next.onlineFailureBehavior),
       prefs.setString('onlineQualityFallbackBehavior', next.onlineQualityFallbackBehavior),
       prefs.setInt('usbExclusiveDeviceId', next.usbExclusiveDeviceId),
@@ -306,6 +307,7 @@ extension SettingsNotifierMethods on SettingsNotifier {
   Future<void> setUsbExclusiveOutput(bool v) => _settingsStore.update((s) => s.copyWith(usbExclusiveOutput: v));
 
   Future<void> setAutoResumeAfterInterruption(bool v) => _settingsStore.update((s) => s.copyWith(autoResumeAfterInterruption: v));
+  Future<void> setShowRealQualitySizes(bool v) => _settingsStore.update((s) => s.copyWith(showRealQualitySizes: v));
   Future<void> setBitPerfectOutput(bool v) => _settingsStore.update((s) => s.copyWith(bitPerfectOutput: v));
   Future<void> setSkipSilenceEnabled(bool v) => _settingsStore.update((s) => s.copyWith(skipSilenceEnabled: v));
   Future<void> setSkipSilenceThresholdDb(double v) => _settingsStore.update((s) => s.copyWith(skipSilenceThresholdDb: v));

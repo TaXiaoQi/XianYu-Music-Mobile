@@ -9,9 +9,9 @@ pub(crate) struct SymphoniaDecoder {
     format_reader: Box<dyn symphonia::core::formats::FormatReader>,
     decoder: Box<dyn symphonia::core::codecs::Decoder>,
     track_id: u32,
-    sample_rate: u32,
-    channels: u16,
-    total_duration: Option<Duration>,
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u16,
+    pub(crate) total_duration: Option<Duration>,
     sample_buf: Option<symphonia::core::audio::SampleBuffer<f32>>,
     sample_buf_frames: usize,
     leftover: Vec<f32>,
@@ -26,14 +26,14 @@ pub(crate) struct SymphoniaDecoder {
 /// 流缓存下载状态快照：Seek 诊断与死亡消息用，用于区分「symphonia 层失败」
 /// 与「下载线程已死/断流」（真机 DLNA 实测 seek 失败后即 EOF，需看到下载态）。
 pub(crate) struct CacheDiag {
-    downloaded_bytes: Arc<std::sync::atomic::AtomicU64>,
-    download_complete: Arc<AtomicBool>,
-    download_failed: Arc<AtomicBool>,
-    download_error: Arc<std::sync::Mutex<Option<String>>>,
+    pub(crate) downloaded_bytes: Arc<std::sync::atomic::AtomicU64>,
+    pub(crate) download_complete: Arc<AtomicBool>,
+    pub(crate) download_failed: Arc<AtomicBool>,
+    pub(crate) download_error: Arc<std::sync::Mutex<Option<String>>>,
 }
 
 impl CacheDiag {
-    fn snapshot(&self) -> String {
+    pub(crate) fn snapshot(&self) -> String {
         let err = self
             .download_error
             .lock()
@@ -95,7 +95,7 @@ impl SymphoniaDecoder {
     /// `stream_reader`：预构建的流缓存 Reader（在线直读，对齐桌面端
     /// StreamingTempFile 模型）。Some 时跳过文件/HTTP 源构造，`path` 仅用于
     /// 扩展名探测提示（应为流缓存直链 URL）。
-    fn open(
+    pub(crate) fn open(
         path: &str,
         stream_reader: Option<Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>>,
         stream_state: Option<crate::player::stream_cache::StreamingTempFileState>,

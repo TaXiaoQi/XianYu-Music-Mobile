@@ -2,6 +2,11 @@ part of 'player_provider.dart';
 
 extension PlayerNotifierQuality on PlayerNotifier {
   Future<void> _prewarmOnlineSizes(QueueItem item) async {
+    // 真实体积探测关闭时零预热：起播仅解析当前档，弹层打开再按需补
+    if (!(_ref.read(settingsProvider).valueOrNull?.showRealQualitySizes ??
+        false)) {
+      return;
+    }
     final json = item.onlineSongJson ?? item.onlineInfoJson;
     if (json == null || json.isEmpty) return;
     String key;
@@ -268,12 +273,23 @@ extension PlayerNotifierQuality on PlayerNotifier {
           if (r.requested != null && !shown.contains(r.requested!))
             r.requested!,
       ];
+      // 真实体积探测关闭时跳过 Range 请求，仅元数据自报值兜底
+      final realSizes =
+          _ref.read(settingsProvider).valueOrNull?.showRealQualitySizes ??
+          false;
       for (final q in keys) {
         final entry = _entryForShown(entries, q);
         if (entry != null) {
           final cached = _qualitySizeByUrl[entry.url];
           if (cached != null) {
             out[q] = QualitySizeInfo(url: entry.url, bytes: cached);
+            continue;
+          }
+          if (!realSizes) {
+            final meta = metaSizes[q];
+            if (meta != null) {
+              out[q] = QualitySizeInfo(url: entry.url, bytes: meta);
+            }
             continue;
           }
           try {

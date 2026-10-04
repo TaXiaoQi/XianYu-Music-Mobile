@@ -16,10 +16,12 @@ import '../../src/theme/theme_tint.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/recent/recent_provider.dart';
 import '../../src/widgets/cover_image.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
@@ -365,9 +367,19 @@ class _RecentList extends ConsumerStatefulWidget {
 
 class _RecentListState extends ConsumerState<_RecentList> {
   final ScrollController _controller = ScrollController();
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _stagger.start();
+  }
 
   @override
   void dispose() {
+    _stagger.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -439,10 +451,32 @@ class _RecentListState extends ConsumerState<_RecentList> {
           itemBuilder: (context, i) {
             final entry = visible[i];
             final orig = all.indexOf(entry);
-            return _RecentTile(
-              entry: entry,
-              onPlay: () => widget.notifier.play(orig),
-              onRemove: () => widget.notifier.remove(entry.songPath),
+            return _stagger.wrap(
+              i,
+              Stack(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 44),
+                    child: _RecentTile(
+                      entry: entry,
+                      onPlay: () => widget.notifier.play(orig),
+                      onRemove: () => widget.notifier.remove(entry.songPath),
+                    ),
+                  ),
+                  Positioned(
+                    left: 8,
+                    top: 0,
+                    bottom: 0,
+                    width: 36,
+                    child: Center(
+                      child: SongRowLeading(
+                        index: i,
+                        songPath: entry.songPath,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             );
           },
         ),

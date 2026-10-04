@@ -40,6 +40,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   List<String> _paths = const [];
   final ScrollController _scroll = ScrollController();
   String _searchError = '';
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
 
   @override
   bool get wantKeepAlive => true;
@@ -64,6 +67,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
 
   @override
   void dispose() {
+    _stagger.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -113,10 +117,13 @@ class _TrackTabState extends ConsumerState<_TrackTab>
         final e = _results[i];
         if (e.isLocal) {
           final s = e.localSong!;
-          return Builder(
-            builder: (rowContext) {
-              BuildContext? coverCtx;
-              return CoverRow(
+          return _stagger.wrap(
+            i,
+            _rowShell(i, s.path,
+            Builder(
+              builder: (rowContext) {
+                BuildContext? coverCtx;
+                return CoverRow(
                 background: themeTintOrNull(ref, 'sr.item'),
                 cover: Builder(
                   builder: (c) {
@@ -150,17 +157,22 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     radius: m.songRadius,
                   );
                 },
-              );
-            },
+                );
+              },
+            ),
+            ),
           );
         }
         final r = e.pluginResult!;
         final item = _queueItem(i);
         final isFav = item != null && favorites.contains(item.path);
-        return Builder(
-          builder: (rowContext) {
-            BuildContext? coverCtx;
-            return CoverRow(
+        return _stagger.wrap(
+          i,
+          _rowShell(i, item?.path ?? '',
+          Builder(
+            builder: (rowContext) {
+              BuildContext? coverCtx;
+              return CoverRow(
               background: themeTintOrNull(ref, 'sr.item'),
               cover: Builder(
                 builder: (c) {
@@ -225,7 +237,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                 }
               },
             );
-          },
+            },
+          ),
+          ),
         );
       },
         ),
@@ -240,6 +254,22 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       ],
     );
   }
+
+  /// 行首槽位：序号/播放标识（桌面端同款），搜索结果不可拖拽
+  Widget _rowShell(int i, String songPath, Widget row) => Stack(
+        children: [
+          Padding(padding: const EdgeInsets.only(left: 44), child: row),
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            width: 36,
+            child: Center(
+              child: SongRowLeading(index: i, songPath: songPath),
+            ),
+          ),
+        ],
+      );
 }
 
 extension _TrackTabActions on _TrackTabState {
@@ -298,6 +328,8 @@ extension _TrackTabActions on _TrackTabState {
       _results = out;
       _paths = _buildPaths(out);
       _loading = false;
+      // 结果就位时开窗重播入场（换音源/换关键词等同理）
+      _stagger.start();
     });
   }
 

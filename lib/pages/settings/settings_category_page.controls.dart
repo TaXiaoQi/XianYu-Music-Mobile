@@ -540,7 +540,7 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
 
   String _failureBehaviorLabel(String v) => switch (v) {
     'autoswitch' => tr('自动换源'),
-    'pause' => tr('暂停播放'),
+    'stop' => tr('停止播放'),
     _ => tr('跳到下一首'),
   };
 
@@ -580,6 +580,19 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
     'title-artist' => tr('标题 - 歌手'),
     'title-artist-album' => tr('标题 - 歌手 - 专辑'),
     _ => tr('歌手 - 标题'),
+  };
+
+  // MV 画质档位展示（存储键保持小写旧值，仅展示层映射；对齐桌面端 META 文案）
+  String _mvQualityKeyLabel(String v) => switch (v) {
+    'uhd' => tr('超高清'),
+    _ => v.toUpperCase(),
+  };
+
+  String _mvQualityDescLabel(String v) => switch (v) {
+    '480p' => tr('清晰'),
+    '720p' => tr('高清'),
+    '1080p' => tr('全高清'),
+    _ => tr('4K 规格'),
   };
 
   String _uiScaleLabel(int index) => switch (index) {

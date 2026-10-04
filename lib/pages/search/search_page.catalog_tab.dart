@@ -27,6 +27,9 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   int _page = 1;
   bool _hasMore = false;
   bool _loadingMore = false;
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
 
   @override
   bool get wantKeepAlive => true;
@@ -47,6 +50,12 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     if (q.isEmpty) return;
     final hash = '${widget.source.id}|${widget.kind.name}|$q';
     if (hash != _searchedHash) _search(q, hash);
+  }
+
+  @override
+  void dispose() {
+    _stagger.dispose();
+    super.dispose();
   }
 
   @override
@@ -101,25 +110,28 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
           }
           final item = _items[i];
           final isArtist = item.kind == 'artist';
-          return CoverRow(
-            cover: _catalogLeading(item, isArtist, m, scheme),
-            title: highlightedText(item.title, q, scheme.primary,
+          return _stagger.wrap(
+            i,
+            CoverRow(
+              cover: _catalogLeading(item, isArtist, m, scheme),
+              title: highlightedText(item.title, q, scheme.primary,
+                  maxLines: 1,
+                  style: TextStyle(
+                      fontSize: m.titleSize, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                [item.subtitle, item.sourceTag]
+                    .where((x) => x.isNotEmpty)
+                    .join(' · '),
                 maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                    fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-            subtitle: Text(
-              [item.subtitle, item.sourceTag]
-                  .where((x) => x.isNotEmpty)
-                  .join(' · '),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+                    fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+              ),
+              verticalPadding: m.vPad,
+              trailing:
+                  Icon(Icons.chevron_right, color: scheme.outline, size: 22),
+              onTap: () => _open(item),
             ),
-            verticalPadding: m.vPad,
-            trailing:
-                Icon(Icons.chevron_right, color: scheme.outline, size: 22),
-            onTap: () => _open(item),
           );
         },
       ),
@@ -181,6 +193,7 @@ extension _CatalogTabSearch on _CatalogTabState {
     }
     if (!mounted) return;
     if (_searchedHash != hash) return;
+    _stagger.start();
     setState(() {
       _items = out;
       _searchedKind = widget.kind;

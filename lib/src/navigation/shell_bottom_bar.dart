@@ -24,6 +24,39 @@ class _FixedChrome extends StatelessWidget {
   }
 }
 
+/// 固定底栏表面填充（_FixedNavBar 与系统导航栏三键涂色共用同一份色值）。
+/// 返回 (fill, solid)：solid=true 时 fill 全不透明，无需磨砂。
+(Color fill, bool solid) fixedNavBarSurfaceFill(
+    BuildContext context, WidgetRef ref) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final lowPerf = ref.watch(
+    settingsProvider.select(
+      (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
+    ),
+  );
+  final wallpaper = wallpaperGlassActive(ref);
+  // 壁纸模式同步顶栏材质：不实底，恒走组件色块+导航面档位模糊
+  final solid = !wallpaper && glassShouldUseSolid(ref, lowPerf: lowPerf);
+  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+  // 实底兜底与顶栏/scaffold 同色全不透明，避免停靠栏透出页面内容
+  final fill = solid
+      ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
+      : (wallpaper
+            ? wallpaperGlassFill(context, ref)
+            : (isDark
+                  ? Colors.white.withValues(alpha: 0.10)
+                  : Colors.white.withValues(alpha: 0.52)));
+  // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
+  final glassFill = wallpaper
+      ? fill
+      : themeTint(
+          ref,
+          'nav.bar',
+          (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget),
+        );
+  return (glassFill, solid);
+}
+
 class _FixedNavBar extends ConsumerWidget {
   const _FixedNavBar({required this.index, required this.onSelect});
 
@@ -32,12 +65,6 @@ class _FixedNavBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final lowPerf = ref.watch(
-      settingsProvider.select(
-        (s) => performancePriority(s.valueOrNull ?? const AppSettings()),
-      ),
-    );
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
@@ -56,26 +83,7 @@ class _FixedNavBar extends ConsumerWidget {
       ),
     );
 
-    final wallpaper = wallpaperGlassActive(ref);
-    // 壁纸模式同步顶栏材质：不实底，恒走组件色块+导航面档位模糊
-    final solid = !wallpaper && glassShouldUseSolid(ref, lowPerf: lowPerf);
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
-    // 实底兜底与顶栏/scaffold 同色全不透明，避免停靠栏透出页面内容
-    final fill = solid
-        ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
-        : (wallpaper
-              ? wallpaperGlassFill(context, ref)
-              : (isDark
-                    ? Colors.white.withValues(alpha: 0.10)
-                    : Colors.white.withValues(alpha: 0.52)));
-    // 壁纸模式同步顶栏材质：顶栏无主题槽位，组件色块不被主题覆盖
-    final glassFill = wallpaper
-        ? fill
-        : themeTint(
-            ref,
-            'nav.bar',
-            (solid || wallpaper) ? fill : surfaceFillWithBudget(fill, budget),
-          );
+    final (glassFill, solid) = fixedNavBarSurfaceFill(context, ref);
     final barBox = Container(color: glassFill, child: bar);
     if (solid) {
       return barBox;

@@ -13,6 +13,7 @@ import '../core/application_logger.dart';
 import '../core/app_colors.dart';
 import '../core/haptics.dart';
 import '../core/settings.dart';
+import '../core/system_ui.dart';
 import '../theme/theme_icon.dart';
 import '../theme/theme_tint.dart';
 import '../auth/auth_provider.dart';
@@ -567,6 +568,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   bool _lastImmersive = false;
 
+  (bool, bool, bool, Color?)? _lastNavBarSent;
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -693,6 +696,45 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final hidden = hiddenCount > 0 || !_isRootPath;
 
+    // 旧安卓三键区底色：三大键恒定存在，底色恒定涂底栏色块的等效不
+    // 透明色（固定底栏=fill 合成到页面背景；悬浮=页面背景色；横屏
+    // 沉浸=透明），不随底栏显隐分叉——二级页同样有底色保证三键可读。
+    // 签名变化才发送（hidden 只参与触发重申）——通道里原生会顺带重申
+    // 布局 flag，堵住悬浮↔固定切换、进出二级页、横竖屏时引擎改写
+    // 系统栏的空档
+    // 壁纸模式（竖屏且底栏导航）：原生涂透明，三键区材质交给 Flutter
+    // 侧磨砂垫/固定底栏玻璃延伸呈现，与顶栏底栏同一份毛玻璃链，避免
+    // 死色块色差；侧边栏/横屏沉浸不在此列，维持涂色
+    final wallpaperGlass = wallpaperGlassActive(ref);
+    final navSide =
+        landscape ||
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.navBarPosition),
+            ) ==
+            NavBarPosition.side);
+    final Color? navBarColor;
+    if (!navSide && wallpaperGlass) {
+      navBarColor = null;
+    } else if (landscape) {
+      navBarColor = null;
+    } else if (floating) {
+      navBarColor = Theme.of(context).scaffoldBackgroundColor;
+    } else {
+      final (fill, _) = fixedNavBarSurfaceFill(context, ref);
+      navBarColor = Color.alphaBlend(
+        fill,
+        Theme.of(context).scaffoldBackgroundColor,
+      );
+    }
+    final navBarSent = (landscape, floating, hidden, navBarColor);
+    if (navBarSent != _lastNavBarSent) {
+      _lastNavBarSent = navBarSent;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        SystemUiChannel.setNavigationBarColor(navBarColor);
+      });
+    }
+
     // chrome 缓存帧抓取门控：竖屏悬浮 chrome（底栏/悬浮顶栏）可见且为
     // 液态材质时才允许抓帧，保证缓存帧里的 chrome 区域是有效液态输出
     chromeGlassFrameActive.value =
@@ -799,12 +841,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       ),
     );
 
-    final isSide =
-        landscape ||
-        (ref.watch(
-              settingsProvider.select((s) => s.valueOrNull?.navBarPosition),
-            ) ==
-            NavBarPosition.side);
+    // navSide 已在上方三键区底色决策处算好（含横屏判定），此处复用
+    final isSide = navSide;
 
     final expanded = ref.watch(sideBarExpandedProvider);
 

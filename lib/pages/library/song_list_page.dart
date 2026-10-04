@@ -65,6 +65,7 @@ class SongListPage extends ConsumerWidget {
         final songs = snap.data ?? const <Song>[];
         return SongsListView(
           songs: songs,
+          staggerEnter: true,
           enableScrollFabs: true,
           padding: contentTop == null
               ? null

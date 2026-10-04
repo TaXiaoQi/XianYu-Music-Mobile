@@ -58,6 +58,7 @@ class MainActivity : AudioServiceActivity() {
     private val DEEP_LINK_CHANNEL = "xianyu/deeplink"
     private val ROTATION_EVENT_CHANNEL = "xianyu/rotation/events"
     private val DEVICE_INFO_CHANNEL = "xianyu/device_info"
+    private val SYSTEM_UI_CHANNEL = "xianyu/system_ui"
     private val REQ_CHOOSE_TREE = 1001
 
     // 横竖屏旋转事件：旋转一开始系统即回调 onConfigurationChanged，把当前屏幕
@@ -84,6 +85,11 @@ class MainActivity : AudioServiceActivity() {
 
     // 预测返回诊断：系统导航观察者回调（onDestroy 注销）。
     private var backGestureObserver: OnBackInvokedCallback? = null
+
+    // 旧安卓（API ≤ S）三键区底色：Dart 侧按底栏色块下发等效不透明色
+    // （null=透明，横屏沉浸用）。引擎迁移会在首帧/聚焦改写系统栏，涂色
+    // 存 override 随 applyLegacyEdgeToEdgeLayout 一并重申顶回
+    private var navBarColorOverride: Int? = null
 
     /** 获取组播锁（引用计数为 0 时真正加锁，幂等）。 */
     private fun dlnaMulticastLock() {
@@ -256,22 +262,30 @@ class MainActivity : AudioServiceActivity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION)
         window.setStatusBarColor(Color.TRANSPARENT)
-        window.navigationBarColor = Color.TRANSPARENT
+        window.navigationBarColor = navBarColorOverride ?: Color.TRANSPARENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             // 部分 ROM（含华为兼容层）对透明导航栏强制叠加对比度 scrim，
             // 表现为透明声明无效、三键区域回填纯黑
             window.isNavigationBarContrastEnforced = false
         }
-        val darkMode = (resources.configuration.uiMode and
-            android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        @Suppress("DEPRECATION")
-        decor.systemUiVisibility = if (darkMode) {
-            decor.systemUiVisibility and
-                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        // 三键图标亮度随涂色：浅色底需深色图标（LIGHT_NAVIGATION_BAR），
+        // 手算 luminance 避免 API 门槛；未涂色维持系统深浅模式逻辑
+        val override = navBarColorOverride
+        val lightBar = if (override != null) {
+            (Color.red(override) * 0.2126 + Color.green(override) * 0.7152 +
+                Color.blue(override) * 0.0722) / 255.0 > 0.5
         } else {
+            (resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        @Suppress("DEPRECATION")
+        decor.systemUiVisibility = if (lightBar) {
             decor.systemUiVisibility or
                 View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        } else {
+            decor.systemUiVisibility and
+                View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
         }
     }
 
@@ -683,6 +697,21 @@ class MainActivity : AudioServiceActivity() {
                     // 平台级稳定设备 ID：Widevine DRM 设备 ID（硬件派生，恢复出厂
                     // 一般不变）优先，退回 ANDROID_ID（免权限，重装不变）
                     "getStableDeviceId" -> result.success(stableDeviceId())
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_UI_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // 三键区底色随底栏色块走（null=透明）；顺带重申布局
+                    // flag——引擎迁移会改写系统栏，纯 Dart 重建无法自愈
+                    "setNavigationBarColor" -> {
+                        // ARGB32 超出 Int32 时标准编解码落地为 Long，统一收窄
+                        navBarColorOverride =
+                            call.argument<Number>("color")?.toInt()
+                        applyLegacyEdgeToEdgeLayout()
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }

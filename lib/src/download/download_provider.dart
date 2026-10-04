@@ -675,6 +675,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
       if (saveLyricsFile || embedLyrics) {
         if (parsed.containsKey('pluginId')) {
           lyricsText = await _fetchPluginLyric(parsed, wordByWord: wordByWord);
+          // 插件不支持 lyric action 时回退原生歌词抓取（与播放链路兜底同源）
+          lyricsText ??= await _fetchNativeLyricsForDownload(item,
+              wordByWord: wordByWord);
         } else {
           final source = item.source ?? parsed['source'] ?? '';
           if (source.isNotEmpty) {
@@ -689,6 +692,16 @@ class DownloadManager extends StateNotifier<DownloadState> {
       final base = dot == -1 ? filePath : filePath.substring(0, dot);
       final lyricsFormat = settings?.downloadLyricsFormat ?? 'lrc';
       final convertedLyrics = _convertLyricsFormat(lyricsText ?? '', lyricsFormat);
+      // 封面仅在内存中用于嵌入，不单独写 .cover 文件。
+      // 嵌入用高清升级 URL（与通知封面同一套规则），原 URL 留作回退。
+      String? coverUrl;
+      String? coverFallbackUrl;
+      final originalCover = item.coverUrl;
+      if (embedCover && originalCover != null && originalCover.isNotEmpty) {
+        final hd = CoverMaterializer().hdCoverUrl(originalCover);
+        coverUrl = hd ?? originalCover;
+        coverFallbackUrl = hd != null ? originalCover : null;
+      }
       final request = jsonEncode({
         // 独立歌词文件仅在该开关开启时落盘，否则传 null（对齐桌面端口径）
         'lyricsText':
@@ -696,8 +709,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
                 ? convertedLyrics
                 : null,
         'lyricsPath': saveLyricsFile ? '$base.$lyricsFormat' : null,
-        // 封面仅在内存中用于嵌入，不单独写 .cover 文件
-        'coverUrl': embedCover ? item.coverUrl : null,
+        'coverUrl': coverUrl,
+        'coverFallbackUrl': coverFallbackUrl,
         'coverPath': null,
         'metadata': embedMetadata
             ? {
@@ -825,6 +838,33 @@ class DownloadManager extends StateNotifier<DownloadState> {
         : ((lyric['lyric'] ?? lyric['rawLrc']) as String?) ?? '';
     if (text.isEmpty || pluginLyricLooksEncrypted(text)) return null;
     return text;
+  }
+
+  /// 插件歌词为空时的原生歌词兜底（与播放链路 fetchNativeLyricResult 同源），
+  /// 返回 null 表示无可用歌词。
+  Future<String?> _fetchNativeLyricsForDownload(QueueItem item,
+      {required bool wordByWord}) async {
+    try {
+      final repo = _ref.read(lyricsRepositoryProvider);
+      final native = await repo.fetchNativeLyricResult(item);
+      if (native == null) return null;
+      final text = wordByWord
+          ? (native['lxlyric'] ??
+                  native['yrc'] ??
+                  native['qrc'] ??
+                  native['eslrc'] ??
+                  native['lyric'] ??
+                  native['rawLrc']) ??
+              ''
+          : (native['lyric'] ?? native['rawLrc']) ?? '';
+      if (text.isEmpty) return null;
+      if (!pluginLyricLooksEncrypted(text)) return text;
+      final decrypted = await repo.decryptEncryptedLyric(text);
+      return (decrypted != null && decrypted.trim().isNotEmpty) ? decrypted : null;
+    } catch (e) {
+      AppLog.warn('download', '原生歌词兜底失败: $e');
+      return null;
+    }
   }
 
   static String _convertLyricsFormat(String text, String format) {

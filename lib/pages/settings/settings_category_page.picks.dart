@@ -381,21 +381,18 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
   ) async {
     const options = ['480p', '720p', '1080p', 'uhd'];
     final cur = s?.onlineDefaultMvQuality ?? '720p';
-    final pick = await showSheetDialog<String>(
-      context,
-      (d) => SimpleDialog(
-        title: Text(tr('MV 默认画质')),
-        children: options
-            .map((q) => ListTile(
-                  title: Text(q),
-                  trailing: q == cur
-                      ? Icon(Icons.check,
-                          color: Theme.of(d).colorScheme.primary)
-                      : null,
-                  onTap: () => Navigator.pop(d, q),
-                ))
-            .toList(),
-      ),
+    final pick = await showModernChoiceSheet<String>(
+      context: context,
+      title: tr('MV 默认画质'),
+      options: [
+        for (final q in options)
+          ModernChoiceOption(
+            label: _mvQualityKeyLabel(q),
+            subtitle: _mvQualityDescLabel(q),
+            value: q,
+          ),
+      ],
+      currentValue: cur,
     );
     if (pick != null) {
       await ref
@@ -411,21 +408,18 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
   ) async {
     const options = ['480p', '720p', '1080p', 'uhd'];
     final cur = s?.downloadMvQuality ?? '720p';
-    final pick = await showSheetDialog<String>(
-      context,
-      (d) => SimpleDialog(
-        title: Text(tr('MV 下载画质')),
-        children: options
-            .map((q) => ListTile(
-                  title: Text(q),
-                  trailing: q == cur
-                      ? Icon(Icons.check,
-                          color: Theme.of(d).colorScheme.primary)
-                      : null,
-                  onTap: () => Navigator.pop(d, q),
-                ))
-            .toList(),
-      ),
+    final pick = await showModernChoiceSheet<String>(
+      context: context,
+      title: tr('MV 下载画质'),
+      options: [
+        for (final q in options)
+          ModernChoiceOption(
+            label: _mvQualityKeyLabel(q),
+            subtitle: _mvQualityDescLabel(q),
+            value: q,
+          ),
+      ],
+      currentValue: cur,
     );
     if (pick != null) {
       await ref
@@ -498,14 +492,14 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
     WidgetRef ref,
     AppSettings? s,
   ) async {
-    final cur = s?.onlineFailureBehavior ?? 'pause';
+    final cur = s?.onlineFailureBehavior ?? 'stop';
     final choice = await showSheetDialog<_Choice>(
       context,
       (_) => _choiceSheet(
         context,
           [
           _Choice(tr('自动换源'), 'autoswitch'),
-          _Choice(tr('暂停播放'), 'pause'),
+          _Choice(tr('停止播放'), 'stop'),
           _Choice(tr('跳到下一首'), 'skip'),
         ],
         cur,
@@ -780,6 +774,62 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       await ref
           .read(settingsProvider.notifier)
           .setDownloadFileNameStyle(choice.value as String);
+    }
+  }
+
+  Future<void> _pickLyricsFormat(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.downloadLyricsFormat ?? 'lrc';
+    final choice = await showModernChoiceSheet<String>(
+      context: context,
+      title: tr('歌词格式'),
+      options: [
+        ModernChoiceOption(
+          label: 'LRC',
+          value: 'lrc',
+          subtitle: tr('带时间标签的歌词文件，支持同步显示'),
+        ),
+        ModernChoiceOption(
+          label: 'TXT',
+          value: 'txt',
+          subtitle: tr('纯文本歌词，不带时间标签'),
+        ),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref.read(settingsProvider.notifier).setDownloadLyricsFormat(choice);
+    }
+  }
+
+  Future<void> _pickLyricsStyle(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.downloadLyricsStyle ?? 'word-by-word';
+    final choice = await showModernChoiceSheet<String>(
+      context: context,
+      title: tr('歌词风格'),
+      options: [
+        ModernChoiceOption(
+          label: tr('内置逐字'),
+          value: 'word-by-word',
+          subtitle: tr('优先下载逐字歌词（无逐字时回退到逐行）'),
+        ),
+        ModernChoiceOption(
+          label: tr('逐行'),
+          value: 'line-by-line',
+          subtitle: tr('仅下载标准逐行歌词'),
+        ),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref.read(settingsProvider.notifier).setDownloadLyricsStyle(choice);
     }
   }
 

@@ -15,14 +15,17 @@ import '../../src/plugin/plugin_host_fallback.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
+import '../../src/plugin/sheet_cache.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -69,10 +72,15 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   PluginSearchService? _searchService;
   PluginSource? _source;
   String? _lxSource;
+  bool _sourceMissing = false;
+  String _cacheKey = '';
   late final TabController? _tab;
   int _activeTab = 0;
   final ScrollController _songScroll = ScrollController();
   int _coverFetchVersion = 0;
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
 
   @override
   void initState() {
@@ -96,18 +104,51 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
 
   @override
   void dispose() {
+    _stagger.dispose();
     _tab?.dispose();
     _songScroll.dispose();
     super.dispose();
   }
 
   Future<void> _init() async {
+    // 缓存优先（不依赖引擎/网络）：收藏歌单先展示上次结果再后台刷新
+    if (widget.args.type == OnlineDetailType.playlist) {
+      _cacheKey = SheetCache.keyFor(
+          pluginId: widget.args.pluginId,
+          title: widget.args.title,
+          raw: widget.args.raw);
+      final cached = await SheetCache.load(_cacheKey);
+      if (cached != null && cached.isNotEmpty && mounted) {
+        setState(() {
+          _songs = cached;
+          _loading = false;
+          _stagger.start();
+        });
+      }
+    }
     final engine = await ref.read(pluginEngineProvider.future);
     final sources = ref.read(pluginManagerProvider).sources;
-    final source =
-        sources.where((s) => s.id == widget.args.pluginId).toList();
+    var source = sources.where((s) => s.id == widget.args.pluginId).toList();
+    // 收藏歌单绑定的插件可能已被删除/换 id；LX host 取数只依赖 lxKey，
+    // 回退到任一启用的同源 LX 插件
+    if (source.isEmpty) {
+      final lxKey = widget.args.raw['_lxSource'];
+      if (lxKey is String && lxKey.isNotEmpty) {
+        source = sources
+            .where((s) =>
+                s.enabled &&
+                s.format == PluginFormat.lx &&
+                s.sources.contains(lxKey))
+            .toList();
+      }
+    }
     if (source.isEmpty || !mounted) {
-      setState(() => _loading = false);
+      if (_songs.isEmpty) {
+        setState(() {
+          _loading = false;
+          _sourceMissing = true;
+        });
+      }
       return;
     }
     _source = source.first;
@@ -116,22 +157,59 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     _lxSource = widget.args.raw['_lxSource'] is String
         ? widget.args.raw['_lxSource'] as String
         : null;
-    await _loadSongs(reset: true);
+    await _loadSongs(reset: true, silent: _songs.isNotEmpty);
     if (widget.args.type == OnlineDetailType.artist) {
       await _loadAlbums();
     }
   }
 
-  Future<void> _loadSongs({bool reset = false}) async {
+  /// reset+silent（缓存命中后的后台刷新）：以最新第一页覆盖头部，
+  /// 保留缓存中已翻到的后续内容；非 silent 的 reset 直接用最新结果。
+  void _applySongs(List<PluginSearchResult> list,
+      {required int page,
+      required bool reset,
+      bool silent = false,
+      bool? pluginIsEnd}) {
+    final before = _songs.length;
+    final merged = reset
+        ? (silent && _songs.isNotEmpty
+            ? [...list, ..._songs.skip(list.length)]
+            : list)
+        : () {
+            final seen = _songs.map((s) => '${s.source}:${s.songmid}').toSet();
+            return [
+              ..._songs,
+              ...list.where((s) => seen.add('${s.source}:${s.songmid}'))
+            ];
+          }();
+    setState(() {
+      _songs = merged;
+      if (reset) {
+        if (!silent) _loading = false;
+        if (!silent) _stagger.start();
+      }
+      if (widget.args.type != OnlineDetailType.playlist && reset) {
+        _isEnd = true;
+      }
+      if (pluginIsEnd ?? list.length < 30) _isEnd = true;
+      // 加载更多零新增（重复数据）说明已到底，防止触底反复拉取
+      if (!reset && merged.length == before) _isEnd = true;
+      _page = page;
+      _loadingMore = false;
+    });
+    if (_cacheKey.isNotEmpty) {
+      SheetCache.save(_cacheKey, _songs);
+    }
+  }
+
+  Future<void> _loadSongs({bool reset = false, bool silent = false}) async {
     final catalog = _catalog;
     final source = _source;
     if (catalog == null || source == null) return;
     if (reset) {
-      setState(() {
-        _loading = true;
-        _page = 1;
-        _isEnd = false;
-      });
+      if (!silent) _loading = true;
+      _page = 1;
+      _isEnd = false;
     } else {
       if (_isEnd || _loadingMore) return;
       setState(() => _loadingMore = true);
@@ -143,18 +221,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     if (_lxSource != null) {
       list = await _loadLxSongs(raw, page: page, reset: reset);
       if (!mounted) return;
-      setState(() {
-        if (reset) {
-          _songs = list;
-          _loading = false;
-        } else {
-          _songs = [..._songs, ...list];
-        }
-        if (widget.args.type != OnlineDetailType.playlist) _isEnd = true;
-        if (list.length < 30) _isEnd = true;
-        _page = page;
-        _loadingMore = false;
-      });
+      _applySongs(list, page: page, reset: reset, silent: silent);
       _backfillCovers();
       return;
     }
@@ -182,17 +249,8 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         }
     }
     if (!mounted) return;
-    setState(() {
-      if (reset) {
-        _songs = list;
-        _loading = false;
-      } else {
-        _songs = [..._songs, ...list];
-      }
-      if (pluginIsEnd ?? list.length < 30) _isEnd = true;
-      _page = page;
-      _loadingMore = false;
-    });
+    _applySongs(list,
+        page: page, reset: reset, silent: silent, pluginIsEnd: pluginIsEnd);
     _backfillCovers();
   }
 
@@ -521,7 +579,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     }
     if (_songs.isEmpty) {
       return Center(
-        child: Text(tr('暂无歌曲'), style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(
+          _sourceMissing ? tr('音源不可用') : tr('暂无歌曲'),
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
       );
     }
     return Stack(
@@ -564,8 +625,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
           final r = _songs[i];
           final item = _queueItem(i);
           final isFav = item != null && favorites.contains(item.path);
-          return Builder(
-            builder: (rowContext) {
+          return _stagger.wrap(
+            i,
+            _rowShell(i, _queueItemOf(r).path,
+            Builder(
+              builder: (rowContext) {
               BuildContext? coverCtx;
               final g = songRowPlay(ref, onPlay: () async {
                 final ok = await launchFlyCover(
@@ -635,7 +699,9 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                 ),
               );
             },
-          );
+          ),
+          ),
+        );
         },
         ),
         ),
@@ -650,6 +716,22 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       ],
     );
   }
+
+  /// 行首槽位：序号/播放标识（桌面端同款），在线详情不可拖拽
+  Widget _rowShell(int i, String songPath, Widget row) => Stack(
+        children: [
+          Padding(padding: const EdgeInsets.only(left: 44), child: row),
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            width: 36,
+            child: Center(
+              child: SongRowLeading(index: i, songPath: songPath),
+            ),
+          ),
+        ],
+      );
 
   Widget _buildAlbumList(ColorScheme scheme) {
     if (_albums.isEmpty) {
