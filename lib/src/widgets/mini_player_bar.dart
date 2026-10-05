@@ -38,12 +38,11 @@ Widget playbarGlassSurface(
   );
   final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
   final wallpaper = wallpaperGlassActive(ref);
-  // 壁纸模式同步顶栏材质：播放条不上液态，走组件色块+导航面档位模糊
+  // 壁纸模式与悬浮顶栏同轨：液态开即上液态（顶栏液态判断无壁纸排除）
   final liquid =
       (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
           true) &&
-          !lowPerf &&
-          !wallpaper;
+          !lowPerf;
 
   if (liquid) {
     final quality = liquidGlassQualitySetting(ref);
@@ -57,22 +56,24 @@ Widget playbarGlassSurface(
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+      backgroundColor: themeTint(
+        ref,
+        'mini.bar',
+        bilipaiSurfaceTint(context, ref, quality),
+      ),
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
-      alwaysLive: true,
+      // 不用 alwaysLive：恒每帧重建 shader backdrop 层在新安卓真机
+      // （Impeller）上采样读暗（均匀发灰）；idle 静帧、滚动/拖拽恢复
+      // 波动，与底栏/条带垫同构（彼等保留层复用采样正常，互为对照）
       child: child,
     );
-    // 液态材质保留悬浮投影：影子画在玻璃层之前（被 shader 白 tint 提亮，
-    // 观感与毛玻璃原有投影一致）；壁纸模式 navFloatShadows 本身返回空
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: navFloatShadows(context, ref),
-      ),
-      child: liquidGlassShell(context, child: glass, radius: radius),
-    );
+    // 不画悬浮投影：投影在 shader backdrop 采样范围内，新安卓真机
+    // （Impeller）折射把投影环拉进采样区整条读暗（拖到屏幕顶部依旧黑，
+    // 位置无关=自含型采样；旧设备无此现象）；液态底栏/条带垫均无投影
+    // 且正常，互为对照
+    return liquidGlassShell(context, child: glass, radius: radius);
   }
 
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -121,8 +122,9 @@ Widget playbarGlassSurface(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        // 与顶栏/底栏共享一次 backdrop 回读（同 sigma、区域不重叠）
-        backdropGroupKey: navGlassKey,
+        // 不并入 navGlassKey 共享回读组：新安卓真机（Impeller）组捕获
+        // 对紧邻堆叠的成员行为异常（悬浮底栏整条读黑）；独立回读
+        // 换取正确性
         child: surface,
       ),
     ),
@@ -439,13 +441,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    // 壁纸模式同步顶栏材质：播放条不上液态，走组件色块+导航面档位模糊
-    final wallpaper = wallpaperGlassActive(ref);
+    // 壁纸模式与悬浮顶栏同轨：液态开即上液态（顶栏液态判断无壁纸排除）
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
-            !lowPerf &&
-            !wallpaper;
+            !lowPerf;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
     final cover = _RotatingDisc(
@@ -621,16 +621,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                   )
                 : const SizedBox.shrink(),
           ),
-          // 液态材质保留悬浮投影（同主 mini 液态分支）：影子画在玻璃层之前
-          DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(999),
-              boxShadow: navFloatShadows(context, ref),
-            ),
-            child: liquidGlassShell(
-              context,
-              radius: 999,
-              child: LiveLiquidSurface(
+          // 不画悬浮投影：黑影子直接垫在 shader backdrop 采样区背后，新
+          // 安卓真机（Impeller）把影子读进采样整条均匀发灰（比无投影的
+          // 液态顶栏/底栏都黑一点；拖到屏幕顶部依旧黑=影子随条走，位置
+          // 无关）；描边由 liquidGlassShell 的 rim 承担，与顶栏/底栏同源
+          liquidGlassShell(
+            context,
+            radius: 999,
+            child: LiveLiquidSurface(
               radius: 29,
               refract: bilipaiRefractOf(quality),
               chroma: bilipaiChromaOf(quality),
@@ -645,7 +643,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               saturation: bilipaiSaturationOf(quality),
               degraded: widget.degraded,
               child: content,
-            ),
             ),
           ),
         ],

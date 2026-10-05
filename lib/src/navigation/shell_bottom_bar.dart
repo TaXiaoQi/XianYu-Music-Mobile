@@ -244,12 +244,10 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
             ) ??
             true) &&
         !lowPerf;
-    // 壁纸模式同步顶栏材质：栏面不上液态，走组件色块+导航面档位模糊；
+    // 壁纸模式与悬浮顶栏同轨：液态开即上液态（顶栏液态判断无壁纸排除）；
     // lens 水滴是交互折射效果，与栏面材质无关，保留
-    final wallpaper = wallpaperGlassActive(ref);
     final liquid =
         liquidGlassOn &&
-        !wallpaper &&
         !widget.degraded &&
         ImageFilter.isShaderFilterSupported;
     final haptic = hapticStrengthFromInt(

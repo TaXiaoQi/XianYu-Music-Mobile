@@ -457,18 +457,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   )) ==
                   NavBarPosition.side;
               final navPadWallpaper = wallpaperGlassActive(ref);
-              // 壁纸模式系统三键区磨砂垫：全局挂在路由之上——二级页等
-              // push 路由会盖住 shell，shell 内的垫子够不着三键区，必须
-              // 在最上层补材质；播放页（独立 Navigator 在垫之上）保持沉
-              // 浸不垫。旧安卓（API<35）固定底栏可见时不叠垫（其玻璃延
-              // 伸已覆盖三键区）；新安卓（35+）实测固定底栏玻璃并不延伸
-              // 进三键区、条带透出页面内容，且 hidden 信号不覆盖全部隐
-              // 藏路径——改为恒垫，与底栏同材质衔接
-              final navPadShow = navPadWallpaper &&
-                  !ref.watch(isLandscapeProvider) &&
-                  !navPadSide &&
-                  (navPadSdk >= 35 || navPadFloating || navPadHidden) &&
-                  navPadSafeBottom > 0;
               // 新安卓（API 35+）三键区条带双轨：
               // 玻璃垫（PlayerNavigatorHost 之前槽位）——毛玻璃开时与
               // 底栏同一份 fill/sigma/共享 backdrop 组，材质随底栏，固
@@ -490,10 +478,27 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               // 同款。侧边栏无底栏玻璃衔接语境，恒色块
               final frostStripShow = stripSdkNew &&
                   !navPadSide &&
-                  !navPadWallpaper &&
                   glassMaterialActive(ref);
               final (stripFill, stripLiquid) =
                   systemNavStripGlassStyle(context, ref, barFill);
+              // 液态条带垫接管三键区（含壁纸模式）：液态开即全导航面
+              // 液态，与悬浮顶栏同轨（顶栏液态判断无壁纸排除）；壁纸
+              // 毛玻璃垫让位防双垫叠 blur。旧安卓（API<35）无液态垫，
+              // 壁纸垫恒在
+              final stripLiquidShow = frostStripShow && stripLiquid;
+              // 壁纸模式系统三键区磨砂垫：全局挂在路由之上——二级页等
+              // push 路由会盖住 shell，shell 内的垫子够不着三键区，必须
+              // 在最上层补材质；播放页（独立 Navigator 在垫之上）保持沉
+              // 浸不垫。旧安卓（API<35）固定底栏可见时不叠垫（其玻璃延
+              // 伸已覆盖三键区）；新安卓（35+）实测固定底栏玻璃并不延伸
+              // 进三键区、条带透出页面内容，且 hidden 信号不覆盖全部隐
+              // 藏路径——改为恒垫，与底栏同材质衔接
+              final navPadShow = navPadWallpaper &&
+                  !stripLiquidShow &&
+                  !ref.watch(isLandscapeProvider) &&
+                  !navPadSide &&
+                  (navPadSdk >= 35 || navPadFloating || navPadHidden) &&
+                  navPadSafeBottom > 0;
               final Color? navBlockColor;
               if (!stripSdkNew || navPadWallpaper || frostStripShow) {
                 navBlockColor = null;
@@ -541,25 +546,28 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                         ],
                       ),
                     ),
-                    // 壁纸模式磨砂垫 + 材质档玻璃垫：垫在路由与 mini
-                    // 播放条之间（播放页 Navigator 在其上，不垫）
+                    // 壁纸模式三键区磨砂垫 + 材质档毛玻璃垫：垫在路由与
+                    // mini 播放条之间（播放页 Navigator 在其上，不垫）。
+                    // 毛玻璃垫不并入 navGlassKey 共享回读组（壁纸垫保留
+                    // 既有构成），组捕获在新安卓真机（Impeller）对紧邻
+                    // 堆叠成员会读黑——悬浮底栏整条发灰的根因
                     if (navPadShow)
                       Positioned(
                         left: 0,
                         right: 0,
                         bottom: 0,
                         height: navPadSafeBottom,
-                        child: const SystemNavGlassPad(),
+                        child: SystemNavGlassPad(groupKey: navGlassKey),
                       ),
-                    if (frostStripShow)
+                    // 毛玻璃条带垫：壁纸模式不挂（毛玻璃档由壁纸垫覆盖，
+                    // 双垫叠 blur 会比底栏更实）
+                    if (frostStripShow && !stripLiquid && !navPadWallpaper)
                       Positioned(
                         left: 0,
                         right: 0,
                         bottom: 0,
                         height: navPadSafeBottom,
-                        child: stripLiquid
-                            ? _SystemNavLiquidPad(fill: stripFill)
-                            : SystemNavGlassPad(fill: stripFill),
+                        child: SystemNavGlassPad(fill: stripFill),
                       ),
                     // mini 播放条顶层宿主：位于 Navigator 之上，
                     // 所有页面（含播放页）转场都从播放条背后滑过
@@ -567,6 +575,20 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                     // 底栏水滴顶层宿主：位于播放条之上——水滴独立于底栏
                     // 树，长按放大鼓出栏缘、覆盖并折射上方内容
                     const NavDropletOverlay(),
+                    // 材质档液态三键区垫（含壁纸模式）：必须垫在 mini
+                    // 播放条/底栏水滴之上——垫内 BiliPaiGlass 的 shader
+                    // backdrop 层位于 mini（LiveLiquidSurface 实时窗口
+                    // 内每帧重建）之下时，新安卓真机 mini 采样 backdrop
+                    // 读黑（整条发灰）；矩形互不重叠，上移不改观感，
+                    // 播放页仍物理盖过条带保持沉浸
+                    if (stripLiquidShow)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: navPadSafeBottom,
+                        child: _SystemNavLiquidPad(fill: stripFill),
+                      ),
                     // 播放页独立 Navigator（五级模型第二级）：位于播放条
                     // 之上、飞行封面之下——播放页转场物理盖过播放条
                     const PlayerNavigatorHost(),

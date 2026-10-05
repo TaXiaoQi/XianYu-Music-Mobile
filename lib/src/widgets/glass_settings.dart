@@ -100,11 +100,16 @@ double navSurfaceBlurSigma(WidgetRef ref) =>
 /// 复刻固定底栏同款玻璃（同 fill、同 sigma、共享 backdrop 回读组）。
 /// 全局挂在路由最上层：二级页等 push 路由盖住 shell 后仍生效
 class SystemNavGlassPad extends ConsumerWidget {
-  const SystemNavGlassPad({super.key, this.fill});
+  const SystemNavGlassPad({super.key, this.fill, this.groupKey});
 
   /// 覆盖填充色：缺省取壁纸玻璃填充（壁纸模式磨砂垫）；非壁纸毛玻璃
   /// 条带传入底栏同源 fill，与底栏保持同一份材质
   final Color? fill;
+
+  /// 共享回读组：壁纸磨砂垫传 navGlassKey（4498a69 起既有构成）；毛
+  /// 玻璃条带垫不传——新安卓真机（Impeller）组捕获对与悬浮底栏紧邻
+  /// 堆叠的新成员行为异常（底栏整条读黑），独立回读换取正确性
+  final BackdropKey? groupKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -113,7 +118,7 @@ class SystemNavGlassPad extends ConsumerWidget {
       child: ClipRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          backdropGroupKey: navGlassKey,
+          backdropGroupKey: groupKey,
           child: ColoredBox(color: fill ?? wallpaperGlassFill(context, ref)),
         ),
       ),
