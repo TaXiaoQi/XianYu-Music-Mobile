@@ -422,25 +422,36 @@ class _RouteDeferredBody extends StatefulWidget {
 }
 
 class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
-  late bool _settled =
-      widget.animation.status == AnimationStatus.completed;
-  AnimationStatusListener? _listener;
+  late bool _settled = widget.animation.value >= 1.0;
+  late final Stopwatch _sinceInit = Stopwatch()..start();
+  VoidCallback? _listener;
 
   @override
   void initState() {
     super.initState();
+    AppLog.debug(
+      'nav',
+      'defer init status=${widget.animation.status} '
+      'value=${widget.animation.value.toStringAsFixed(2)}',
+    );
     if (_settled) return;
-    _listener = (status) {
-      if (status != AnimationStatus.completed) return;
-      _cleanup();
-      if (mounted) setState(() => _settled = true);
-    };
-    widget.animation.addStatusListener(_listener!);
+    _listener = _onTick;
+    widget.animation.addListener(_listener!);
+  }
+
+  // 值监听而非 status 监听：转场中页面却已全量构建的实测案例指向
+  // status 事件存在丢失边角；value>=1 是落定的唯一真值，逐帧比较
+  // 只是一次 double 判断，零成本
+  void _onTick() {
+    if (widget.animation.value < 1.0) return;
+    _cleanup();
+    AppLog.debug('nav', 'defer settled +${_sinceInit.elapsedMilliseconds}ms');
+    if (mounted) setState(() => _settled = true);
   }
 
   void _cleanup() {
     final listener = _listener;
-    if (listener != null) widget.animation.removeStatusListener(listener);
+    if (listener != null) widget.animation.removeListener(listener);
     _listener = null;
   }
 
