@@ -1,0 +1,164 @@
+{
+    "version":  1,
+    "groups":  [
+                   {
+                       "name":  "playlist_fetcher_core",
+                       "files":  [
+                                     {
+                                         "rel":  "music/playlist_fetcher/mod.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "1C2F0ACD008A"
+                                     },
+                                     {
+                                         "rel":  "music/playlist_fetcher/common.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "B27B256216DD"
+                                     },
+                                     {
+                                         "rel":  "music/playlist_fetcher/kg.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "23F8174D2A51"
+                                     },
+                                     {
+                                         "rel":  "music/playlist_fetcher/wy.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "93CAEE1C37B3"
+                                     },
+                                     {
+                                         "rel":  "music/playlist_fetcher/tx.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "6FA6A6A8C415"
+                                     },
+                                     {
+                                         "rel":  "music/playlist_fetcher/kw.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "CB5A4FD5C5AC"
+                                     },
+                                     {
+                                         "rel":  "music/playlist_fetcher/qishui.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch",
+                                                       "desktop"
+                                                   ],
+                                         "hash":  "64DDB5ACB4BB"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "playlist_fetcher_orchestrator",
+                       "files":  [
+                                     {
+                                         "rel":  "music/playlist_fetcher/orchestrator.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "FDE8D856092F"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "lyric_formats",
+                       "files":  [
+                                     {
+                                         "rel":  "music/lyric_formats.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "83126C8EA5F0"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "lyrics_tracks",
+                       "files":  [
+                                     {
+                                         "rel":  "music/lyrics/tracks.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "7F649D255344"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "player_channel_downmix",
+                       "files":  [
+                                     {
+                                         "rel":  "player/channel_downmix.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "33B9C9B5EEC8"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "player_silence_skip",
+                       "files":  [
+                                     {
+                                         "rel":  "player/silence_skip.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "1A1BCDA977BF"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "remote_scanner",
+                       "files":  [
+                                     {
+                                         "rel":  "remote/scanner.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "058EC9570454"
+                                     }
+                                 ]
+                   },
+                   {
+                       "name":  "lyric_fetcher_source_migu",
+                       "files":  [
+                                     {
+                                         "rel":  "music/lyric_fetcher/source_migu.rs",
+                                         "repos":  [
+                                                       "mobile",
+                                                       "watch"
+                                                   ],
+                                         "hash":  "440299AB1A1E"
+                                     }
+                                 ]
+                   }
+               ]
+}
