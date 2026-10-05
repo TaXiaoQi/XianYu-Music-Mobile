@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,7 +67,7 @@ class AppLogEntry {
   }
 }
 
-const int kMaxAppLogEntries = 300;
+const int kMaxAppLogEntries = 3000;
 
 class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   ApplicationLogManager._() : super(const []);
@@ -93,6 +94,19 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       category: category,
       message: message,
     );
+    // 构建期（persistentCallbacks 含 build/layout/paint）同步写 state 会
+    // 触发 Riverpod「widget tree 构建中修改 provider」断言红屏——三键导航
+    // 的预测返回链路在构建/导航同步段经 didPush/didPop 等打点即命中。
+    // 推迟到帧末补记：条目时序不变，仅落盘与通知延后半帧。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      debugPrint('[AppLog:${level.value}] [$category] $message (deferred)');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        state = _appendAndTrim(state, entry);
+        _schedulePersist();
+      });
+      return;
+    }
     state = _appendAndTrim(state, entry);
     debugPrint('[AppLog:${level.value}] [$category] $message');
     _schedulePersist();

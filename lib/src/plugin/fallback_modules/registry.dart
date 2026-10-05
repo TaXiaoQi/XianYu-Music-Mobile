@@ -187,13 +187,19 @@ void _printModuleLogs(String key, Object? logs) {
 }
 
 Future<_LoadedModule?> _loadModuleFromCache(String key) async {
-  final cached = (await _readCache()).modules[key];
+  final cache = await _readCache();
+  final cached = cache.modules[key];
+  AppLog.info('plugin',
+      '[FallbackModule] load $key: cacheModules=${cache.modules.length} cached=${cached != null}');
   if (cached == null || cached.code.isEmpty || cached.signature.isEmpty) {
+    AppLog.info('plugin', '[FallbackModule] load $key: 无有效缓存');
     return null;
   }
-  final dataDir = _dataDirResolver == null ? null : await _dataDirResolver!();
-  if (dataDir == null || dataDir.isEmpty) return null;
   try {
+    final dataDir =
+        _dataDirResolver == null ? null : await _dataDirResolver!();
+    if (dataDir == null || dataDir.isEmpty) return null;
+    // Dart 层超时兜底：Rust 内部有 7s 上界，但桥传输层挂起时 await 永不返回
     final raw = await frb.fallbackModuleLoad(
       dataDir: dataDir,
       moduleKey: key,
@@ -201,7 +207,8 @@ Future<_LoadedModule?> _loadModuleFromCache(String key) async {
       code: cached.code,
       signature: cached.signature,
       appVersion: appVersion,
-    );
+    ).timeout(const Duration(seconds: 10));
+    AppLog.info('plugin', '[FallbackModule] load $key: bridge returned');
     final res = jsonDecode(raw);
     if (res is Map && res['ok'] == true) {
       _printModuleLogs(key, res['logs']);
@@ -260,6 +267,13 @@ void _reportModuleError(String key, String method, Object? error) {
   }
 }
 
+/// 是否存在可用的下发模块缓存。调用方在无模块时可直接走 builtin，
+/// 跳过 dispatch 的加载/熔断链路（无模块时该链路纯属开销）。
+Future<bool> fallbackModuleCached(String key) async {
+  final m = (await _readCache()).modules[key];
+  return m != null && m.code.isNotEmpty && m.signature.isNotEmpty;
+}
+
 /// 分发到热修模块执行；模块未加载/被熔断/执行失败时回退 [builtin] 内置实现。
 /// [builtin] 与模块返回同构数据（模块侧经 JSON 还原）。
 Future<T> dispatchFallbackModule<T>(
@@ -268,17 +282,30 @@ Future<T> dispatchFallbackModule<T>(
   Map<String, dynamic> args,
   FutureOr<T> Function() builtin,
 ) async {
+  AppLog.info('plugin', '[FallbackModule] dispatch $key.$method 进入');
+  // 无下发模块时直接走内置实现：跳过桥加载/调用链路（无模块时该链路
+  // 纯属开销，load 超时窗口还会让歌词等首调场景白转 10s+）
+  if (!await fallbackModuleCached(key)) {
+    return await builtin();
+  }
   final loaded = await _ensureModuleLoaded(key);
+  AppLog.info('plugin',
+      '[FallbackModule] dispatch $key.$method: loaded=${loaded != null} disabled=${loaded?.disabled ?? false}');
   if (loaded != null && !loaded.disabled) {
-    final dataDir = _dataDirResolver == null ? null : await _dataDirResolver!();
-    if (dataDir != null && dataDir.isNotEmpty) {
-      try {
+    try {
+      final dataDir =
+          _dataDirResolver == null ? null : await _dataDirResolver!();
+      if (dataDir != null && dataDir.isNotEmpty) {
+        // Dart 层超时兜底：Rust 内部有 15s 上界，但桥传输层挂起时
+        // await 永不返回，上层会永久停留在加载态
         final raw = await frb.fallbackModuleCall(
           dataDir: dataDir,
           moduleKey: key,
           method: method,
           argsJson: jsonEncode(args),
-        );
+        ).timeout(const Duration(seconds: 20));
+        AppLog.info('plugin',
+            '[FallbackModule] call $key.$method: bridge returned');
         final res = jsonDecode(raw);
         _printModuleLogs(key, res is Map ? res['logs'] : null);
         if (res is Map && res['ok'] == true) {
@@ -292,9 +319,9 @@ Future<T> dispatchFallbackModule<T>(
         }
         _reportModuleError(
             key, method, res is Map ? (res['error'] ?? '模块调用失败') : '模块调用失败');
-      } catch (e) {
-        _reportModuleError(key, method, e);
       }
+    } catch (e) {
+      _reportModuleError(key, method, e);
     }
   }
   return await builtin();
