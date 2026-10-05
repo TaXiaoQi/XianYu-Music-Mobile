@@ -221,6 +221,31 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   void _onOwnerScrollTick() {
     if (!mounted) return;
+    // 换页滑动（PageView 整段 320ms）：chrome 面只在首拍切入缓存帧裁剪
+    // 模式（无 backdrop 采样），随后整段静默——滚动帧模式依赖的抓帧侧
+    // 已被换页门控停掉，逐帧 setState/重建只剩纯开销；其余实例保留
+    // retained 层由合成器继续采样，玻璃观感跟随滑动
+    if (globalIsTabSwitching.value) {
+      if (widget.useChromeFrame &&
+          !_routeTransition &&
+          (_frozen == null || !_frozenIsChromeFrame)) {
+        final frame = chromeGlassFrame.value;
+        if (frame != null) {
+          final old = _frozen;
+          _frozen = frame.image.clone();
+          _frozenIsChromeFrame = true;
+          _fade.stop();
+          _fade.value = 1;
+          _onFadeTicked();
+          setState(() {});
+          if (old != null) {
+            SchedulerBinding.instance
+                .addPostFrameCallback((_) => old.dispose());
+          }
+        }
+      }
+      return;
+    }
     // 转场中保图：IME 弹起等视口变化会在转场中产生滚动信号，此时炸图
     // 会让玻璃从烘焙图突变为兜底 blur+tint（跳变）；转场落定后由 resume 接管
     if (!_routeTransition) {
@@ -286,6 +311,17 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
 
   void _onRippleTick() {
     if (!mounted) return;
+    // 换页滑动中液态波动静默：波动 tick 每帧 markNeedsPaint 会让全部
+    // 实例在换页动画期间逐帧重建 shader 层，与转场同口径冻结（落定后
+    // 由 idle 信号恢复波动）
+    if (globalIsTabSwitching.value) return;
+    // 路由转场中波动静默：转场中新挂载的实例（如设置页悬浮态首屏的
+    // 返回钮/标题/搜索条液态胶囊）initState 即 ripple.repeat，此前每帧
+    // markNeedsPaint 击穿「转场静态帧」机制——RepaintBoundary 被强推
+    // 重绘，兜底 blur backdrop 逐帧重采样（我的→设置 push 卡顿残留源；
+    // 二级页首屏无液态实例故一直正常）。老实例转场沿已 _ripple.stop()
+    // 不受影响；落定沿 _onTransitionChanged 按 !_idle 恢复波动相位
+    if (globalIsTransitioning.value) return;
     final ro = _backingKey.currentContext?.findRenderObject();
     if (ro is RenderLiquidBacking) {
       ro.uiTime = _ripple.value * 8.0;
@@ -366,6 +402,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         _hasCaptured) {
       return;
     }
+    // 换页滑动中不做首烘：上一次 idle 安排的去抖可能落在动画中途，
+    // toImage 读回型离屏渲染会加重换页掉帧；落定后 idle 归位沿会重排
+    if (globalIsTabSwitching.value) return;
     if (DateTime.now().isBefore(_captureCooldownUntil)) {
       // 冷却结束后自动重试首烘（独立 Timer，不受滚动信号 cancel 影响）；
       // 否则首烘被冷却吞掉后要等下一次滚动/轮播事件才有机会
@@ -399,7 +438,8 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         return;
       }
       if (!mounted ||
-          globalIsTransitioning.value) {
+          globalIsTransitioning.value ||
+          globalIsTabSwitching.value) {
         image.dispose();
         return;
       }

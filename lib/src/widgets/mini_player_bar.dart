@@ -923,7 +923,14 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     if (globalIsDragging.value) _nudgeLive();
   }
 
-  void _onScrollTick() => _nudgeLive();
+  void _onScrollTick() {
+    // 换页滑动（PageView）：mini 条位于路由之上，背后整段内容在滑，
+    // 逐帧 live 重建（setState+uniforms+双层 backdrop）是换页卡顿主源
+    // 之一——转场口径静默，retained 层由合成器继续采样 backdrop，
+    // 折射内容跟随滑动，仅液态波动相位冻结 320ms
+    if (globalIsTabSwitching.value) return;
+    _nudgeLive();
+  }
 
   void _onTick() {
     if (!mounted) return;

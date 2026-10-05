@@ -369,15 +369,19 @@ class RenderLiquidBacking extends RenderBox {
   void _onScrollChanged() {
     // 转场中完全静默：滚动信号（含转场动画/IME 视口变化驱动）持续到来
     // 时若每帧 markNeedsPaint，静态帧被反复重绘、兜底 blur+tint 每帧生效，
-    // 玻璃条整段失去静态帧——静默才能让旧 layer 静态帧真正保留
-    if (globalIsTransitioning.value) return;
+    // 玻璃条整段失去静态帧——静默才能让旧 layer 静态帧真正保留。
+    // 换页滑动（PageView）同口径：retained 层由合成器持续采样 backdrop
+    if (globalIsTransitioning.value || globalIsTabSwitching.value) return;
     if (_frozen == null) markNeedsPaint();
   }
 
   void _onScrollTick() {
     // 转场中保帧（同上）：滚动信号来自 IME 弹起等视口变化，
     // 炸图/重绘都会破坏静态帧
-    if (globalIsTransitioning.value) return;
+    // 换页滑动同口径静默：chrome 面的帧模式切换由 State 层首拍处理，
+    // 这里不再逐帧 markNeedsPaint（每帧重建 blur+shader 两层 backdrop
+    // 是换页卡顿主源）
+    if (globalIsTransitioning.value || globalIsTabSwitching.value) return;
     // chrome 缓存帧保留：滚动中玻璃改画帧裁剪（帧由抓帧侧低频刷新），
     // 只有普通烘焙图才需要炸图切实时渲染
     if (_frozen != null && !_frozenIsChromeFrame) {

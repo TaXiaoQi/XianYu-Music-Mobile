@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/blur_budget.dart' show setTabSwitching;
+
 class PageSwitchTabView extends StatefulWidget {
   const PageSwitchTabView({
     super.key,
@@ -21,6 +23,10 @@ class PageSwitchTabView extends StatefulWidget {
 class _PageSwitchTabViewState extends State<PageSwitchTabView> {
   late final PageController _controller;
 
+  // 换页动画代数：连续快速点按会中断上一个动画，旧 future 的
+  // whenComplete 不得把新动画的 tabSwitching 提前清掉
+  int _switchGen = 0;
+
   @override
   void initState() {
     super.initState();
@@ -33,16 +39,24 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
     if (widget.currentIndex == old.currentIndex) return;
     if (_controller.hasClients &&
         _controller.page?.round() != widget.currentIndex) {
+      // 换页滑动广播 tabSwitching：玻璃侧按转场口径静默（mini 条不逐帧
+      // live、backing 不逐帧重绘、缓存帧不滚动抓帧），retained 层由合成器
+      // 继续采样 backdrop，液态观感跟随滑动手势
+      final gen = ++_switchGen;
+      setTabSwitching(true);
       _controller.animateToPage(
         widget.currentIndex,
         duration: widget.duration,
         curve: Curves.easeOutCubic,
-      );
+      ).whenComplete(() {
+        if (gen == _switchGen) setTabSwitching(false);
+      });
     }
   }
 
   @override
   void dispose() {
+    if (_switchGen > 0) setTabSwitching(false);
     _controller.dispose();
     super.dispose();
   }

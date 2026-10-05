@@ -94,9 +94,13 @@ class _ChromeGlassFrameBoundaryState extends State<ChromeGlassFrameBoundary>
       }
     });
     // 滚动中低频刷新帧：玻璃滚动中改画缓存帧裁剪（无 backdrop 采样），
-    // 帧必须跟手刷新才不会有「透底内容冻结」感——50ms 节流驱动
+    // 帧必须跟手刷新才不会有「透底内容冻结」感——50ms 节流驱动。
+    // 换页滑动（PageView）例外：整屏 toImageSync 全场景重渲染×每次换页
+    // 6+ 次是卡顿主源，且玻璃面在换页段已按转场口径静默（不追帧），
+    // 落定后由 scrolling 归零沿的 schedule(100ms) 补抓落定帧
     globalScrollTick.addListener(() {
       if (!globalIsScrolling.value) return;
+      if (globalIsTabSwitching.value) return;
       final now = DateTime.now();
       if (now.isBefore(_nextRollingCaptureAt)) return;
       _nextRollingCaptureAt = now.add(const Duration(milliseconds: 50));
@@ -209,9 +213,12 @@ ui.Image? _captureSync(RenderRepaintBoundary box, double dpr) {
 Future<void> _capture() async {
   if (_capturing) return;
   // 滚动中放行（由 scrollTick 的 50ms 节流控制频率）：帧刷新供玻璃画
-  // 裁剪，滚动中玻璃不再实时采样 backdrop。转场/拖拽中仍挡——转场要
-  // 保护静态帧，拖拽中面在动会污染 origin 登记表
-  if (globalIsTransitioning.value || globalIsDragging.value) {
+  // 裁剪，滚动中玻璃不再实时采样 backdrop。转场/换页/拖拽中仍挡——
+  // 转场要保护静态帧，换页段玻璃面已静默不需要追帧，拖拽中面在动会
+  // 污染 origin 登记表
+  if (globalIsTransitioning.value ||
+      globalIsTabSwitching.value ||
+      globalIsDragging.value) {
     _retry();
     return;
   }

@@ -298,16 +298,19 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       _chromeGoneTimer?.cancel();
       _chromeGoneTimer = Timer(const Duration(milliseconds: 320), () {
         if (mounted) setState(() => _chromeGone = true);
+        // 缓存帧失效推迟到整树卸载此刻：root→sub push 的退出动画（240ms
+        // 淡出+缩放）与路由转场重叠，此间 useChromeFrame 玻璃面靠缓存帧
+        // 裁剪（无 backdrop 采样）呈现——立即失效会让整个退出窗口回落到
+        // 实时 blur backdrop 逐帧采样（root→sub 转场卡顿主源）。卸载后
+        // 无消费方面（useChromeFrame 面全部随树卸载），此刻失效无残影
+        final stale = chromeGlassFrame.value;
+        if (stale != null) {
+          chromeGlassFrame.value = null;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => stale.image.dispose(),
+          );
+        }
       });
-      // 缓存帧里含旧底栏与圆形：隐藏后它不再刷新，留着会被其它
-      // useChromeFrame 玻璃面裁出残影——立即失效（宁缺勿错）
-      final stale = chromeGlassFrame.value;
-      if (stale != null) {
-        chromeGlassFrame.value = null;
-        WidgetsBinding.instance.addPostFrameCallback(
-          (_) => stale.image.dispose(),
-        );
-      }
     } else {
       _chromeGoneTimer?.cancel();
       if (_chromeGone) {
