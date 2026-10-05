@@ -367,7 +367,14 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         color: fill,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: border),
-        boxShadow: navFloatShadows(context, ref),
+        // 投影按材质区分（同 mini/_frostedSurface）：毛玻璃/液态降级不
+        // 画——BoxShadow 是整块模糊黑影（无内孔），外圈被 ClipRRect
+        // 裁掉不可见，内圈透过半透 fill 致灰；进 navGlassKey 组后合成
+        // 含底栏自身输出，投影黑晕还会被组捕获二次采样放大。实底（玻
+        // 璃全关）无 backdrop 采样，保留投影做层级分离
+        boxShadow: solid && !keepFilterAlive
+            ? navFloatShadows(context, ref)
+            : const [],
       ),
       child: tabs,
     );
@@ -380,8 +387,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         borderRadius: BorderRadius.circular(999),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          // 液态降档胶囊用液态档 sigma，不并入导航面共享回读组
-          backdropGroupKey: degradedLiquid && !wallpaper ? null : navGlassKey,
+          // 并入 navGlassKey 共享回读组：组捕获的模糊输入是捕获点之下
+          // 的合成内容——壁纸模式含壁纸磨砂垫的提亮输出；独立回读只
+          // 取路由原始内容（垫在底栏之上够不着），壁纸模式下胶囊整条
+          // 读暗。mini(_frostedSurface)/固定底栏/壁纸垫同组均正常互证；
+          // 第三轮的读黑源自条带垫进组扰动捕获点，该成员已退组
+          backdropGroupKey: navGlassKey,
           child: capsule,
         ),
       ),

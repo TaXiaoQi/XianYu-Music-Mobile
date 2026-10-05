@@ -489,15 +489,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               // 壁纸模式系统三键区磨砂垫：全局挂在路由之上——二级页等
               // push 路由会盖住 shell，shell 内的垫子够不着三键区，必须
               // 在最上层补材质；播放页（独立 Navigator 在垫之上）保持沉
-              // 浸不垫。旧安卓（API<35）固定底栏可见时不叠垫（其玻璃延
-              // 伸已覆盖三键区）；新安卓（35+）实测固定底栏玻璃并不延伸
-              // 进三键区、条带透出页面内容，且 hidden 信号不覆盖全部隐
-              // 藏路径——改为恒垫，与底栏同材质衔接
+              // 浸不垫。固定底栏可见时不叠垫：其玻璃 backdrop 区域含
+              // SafeArea、原生涂透明后延伸覆盖三键区，垫再叠一层即双重
+              // 玻璃（双 blur+双色块）——与栏面色差断阶（新安卓毛玻璃
+              // 档真机实测）；悬浮胶囊/底栏隐藏时玻璃不进三键区才垫
               final navPadShow = navPadWallpaper &&
                   !stripLiquidShow &&
                   !ref.watch(isLandscapeProvider) &&
                   !navPadSide &&
-                  (navPadSdk >= 35 || navPadFloating || navPadHidden) &&
+                  (navPadFloating || navPadHidden) &&
                   navPadSafeBottom > 0;
               final Color? navBlockColor;
               if (!stripSdkNew || navPadWallpaper || frostStripShow) {
@@ -559,9 +559,14 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                         height: navPadSafeBottom,
                         child: SystemNavGlassPad(groupKey: navGlassKey),
                       ),
-                    // 毛玻璃条带垫：壁纸模式不挂（毛玻璃档由壁纸垫覆盖，
-                    // 双垫叠 blur 会比底栏更实）
-                    if (frostStripShow && !stripLiquid && !navPadWallpaper)
+                    // 毛玻璃条带垫：壁纸模式不挂（壁纸垫覆盖）；固定底
+                    // 栏可见时不挂——其玻璃 backdrop 区域含 SafeArea、
+                    // 延伸覆盖三键区，垫再叠一层即双重玻璃色差断阶；悬
+                    // 浮胶囊/底栏隐藏时玻璃不进三键区才垫
+                    if (frostStripShow &&
+                        !stripLiquid &&
+                        !navPadWallpaper &&
+                        (navPadFloating || navPadHidden))
                       Positioned(
                         left: 0,
                         right: 0,
