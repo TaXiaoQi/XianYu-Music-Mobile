@@ -166,7 +166,8 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    return AppPageBackground(child: builder(context));
+    return AppPageBackground(
+        child: _RouteDeferredBody(builder: builder, animation: animation));
   }
 
   @override
@@ -309,7 +310,8 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    return AppPageBackground(child: builder(context));
+    return AppPageBackground(
+        child: _RouteDeferredBody(builder: builder, animation: animation));
   }
 
   @override
@@ -397,5 +399,60 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         return transition;
       },
     );
+  }
+}
+
+/// cover 覆盖路由页体延迟构建：转场动画落定前只渲染背景空壳，落定后才
+/// 调 builder 构建页面。本地页数据同步可读，此前挂载即全量构建+布局+
+/// 封面解码与 250ms 转场逐帧叠加，是列表页（本地歌曲/喜欢/最近/歌单）
+/// 与设置页 push 掉帧源；在线页网络异步天然错峰，本组件把本地页拉齐
+/// 同构观感（转场滑入背景、落定内容浮现）。落定后挂载的列表 StaggerIn
+/// 逐行入场（此时 route animation 已 completed、零延迟）无缝衔接。
+/// push 后立即 pop 的路径动画走 reverse 永不 completed，listener 随
+/// route.dispose 回收，页面从未构建无副作用。
+class _RouteDeferredBody extends StatefulWidget {
+  const _RouteDeferredBody({required this.builder, required this.animation});
+
+  final WidgetBuilder builder;
+
+  final Animation<double> animation;
+
+  @override
+  State<_RouteDeferredBody> createState() => _RouteDeferredBodyState();
+}
+
+class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
+  late bool _settled =
+      widget.animation.status == AnimationStatus.completed;
+  AnimationStatusListener? _listener;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_settled) return;
+    _listener = (status) {
+      if (status != AnimationStatus.completed) return;
+      _cleanup();
+      if (mounted) setState(() => _settled = true);
+    };
+    widget.animation.addStatusListener(_listener!);
+  }
+
+  void _cleanup() {
+    final listener = _listener;
+    if (listener != null) widget.animation.removeStatusListener(listener);
+    _listener = null;
+  }
+
+  @override
+  void dispose() {
+    _cleanup();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_settled) return widget.builder(context);
+    return const SizedBox.expand();
   }
 }

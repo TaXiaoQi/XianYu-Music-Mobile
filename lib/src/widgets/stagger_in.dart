@@ -37,13 +37,12 @@ class _StaggerInState extends State<StaggerIn>
     duration: widget.duration,
   );
   Timer? _delayTimer;
+  AnimationStatusListener? _routeAnimListener;
+  Animation<double>? _routeAnim;
 
   @override
   void initState() {
     super.initState();
-    _delayTimer = Timer(widget.delay, () {
-      if (mounted) _ctrl.forward();
-    });
     // 播完直接还原为普通子树：去掉动画包装，无障碍语义完整暴露，
     // 且不再逐帧 rebuild。还原时子树是全新 element/render object，
     // 语义节点从零构建，不会撞语义重建断言。
@@ -52,8 +51,50 @@ class _StaggerInState extends State<StaggerIn>
     });
   }
 
+  // 转场中挂载的列表（push 落定前首屏 build）错峰计时推迟到本路由
+  // 转场动画落定：此前延迟从列表挂载起算，push 转场 250ms 内前几行的
+  // 逐帧 rebuild+重绘与整页平移逐帧叠加，是列表页（本地歌曲/喜欢/最近/
+  // 歌单等）push 掉帧主源。落定前行动画停在 t=0（Opacity 0 跳过绘制，
+  // 子树保持挂载，封面仍并行加载）；无转场场景（根页签首挂/
+  // maintainState 复挂）animation 已 completed，零延迟保持原行为
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_delayTimer != null || _routeAnim != null) return;
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim == null ||
+        anim.status == AnimationStatus.completed ||
+        anim.status == AnimationStatus.dismissed) {
+      _arm();
+      return;
+    }
+    _routeAnim = anim;
+    _routeAnimListener = (status) {
+      if (status == AnimationStatus.completed ||
+          status == AnimationStatus.dismissed) {
+        _disarmRoute();
+        if (mounted) _arm();
+      }
+    };
+    anim.addStatusListener(_routeAnimListener!);
+  }
+
+  void _disarmRoute() {
+    final listener = _routeAnimListener;
+    if (listener != null) _routeAnim?.removeStatusListener(listener);
+    _routeAnimListener = null;
+    _routeAnim = null;
+  }
+
+  void _arm() {
+    _delayTimer = Timer(widget.delay, () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
   @override
   void dispose() {
+    _disarmRoute();
     _delayTimer?.cancel();
     _ctrl.dispose();
     super.dispose();

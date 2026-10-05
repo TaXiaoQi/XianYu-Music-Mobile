@@ -33,7 +33,8 @@ import 'src/widgets/chrome_glass_frame.dart';
 import 'src/widgets/liquid_wave.dart';
 import 'src/widgets/bilipai_glass.dart';
 import 'src/widgets/blur_budget.dart'
-    show BlurSurfaceType, blurBudgetProvider, surfaceBlurSigma;
+    show BlurSurfaceType, blurBudgetProvider, surfaceBlurSigma,
+        globalIsTransitioning, globalIsTabSwitching;
 import 'l10n/gen/app_localizations.dart';
 
 const SnackBarThemeData _toastTheme = SnackBarThemeData(
@@ -54,34 +55,72 @@ const SnackBarThemeData _toastTheme = SnackBarThemeData(
 );
 
 /// 新安卓（API 35+）三键区液态玻璃垫：液态底栏同款 BiliPaiGlass shader
-/// （同 refract/specular/edge/blur 档位），radius 0 全宽矩形
-class _SystemNavLiquidPad extends ConsumerWidget {
+/// （同 refract/specular/edge/blur 档位），radius 0 全宽矩形。
+/// 转场/换页窗口降级纯色块：垫是三大键适配新增的液态采样面（此前液态
+/// 导航优化时不存在），路由转场中页面在它身后滑动，合成器每帧对其
+/// shader backdrop 重采样——retained 层不受任何信号静默管（合成期成本），
+/// 我的→设置 push 掉帧残留源；色块 fill 与 shader 的 backgroundColor
+/// 同源（48px 条带上折射本就弱），窗口两端跳变不可感
+class _SystemNavLiquidPad extends ConsumerStatefulWidget {
   const _SystemNavLiquidPad({required this.fill});
 
   final Color fill;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SystemNavLiquidPad> createState() =>
+      _SystemNavLiquidPadState();
+}
+
+class _SystemNavLiquidPadState extends ConsumerState<_SystemNavLiquidPad> {
+  bool _degraded = false;
+
+  void _syncDegraded() {
+    final degraded =
+        globalIsTransitioning.value || globalIsTabSwitching.value;
+    if (degraded == _degraded) return;
+    setState(() => _degraded = degraded);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _degraded =
+        globalIsTransitioning.value || globalIsTabSwitching.value;
+    globalIsTransitioning.addListener(_syncDegraded);
+    globalIsTabSwitching.addListener(_syncDegraded);
+  }
+
+  @override
+  void dispose() {
+    globalIsTransitioning.removeListener(_syncDegraded);
+    globalIsTabSwitching.removeListener(_syncDegraded);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
     return RepaintBoundary(
       child: ClipRect(
-        child: BiliPaiGlass(
-          radius: 0,
-          refract: bilipaiRefractOf(quality),
-          chroma: bilipaiChromaOf(quality),
-          blurSigma: surfaceBlurSigma(
-            base: bilipaiBackdropBlurOf(quality),
-            budget: budget,
-            type: BlurSurfaceType.bottomBar,
-            crispAtRest: true,
-          ),
-          backgroundColor: fill,
-          specular: bilipaiSpecularOf(quality),
-          edgeAmount: bilipaiEdgeOf(quality),
-          saturation: bilipaiSaturationOf(quality),
-          child: const SizedBox.expand(),
-        ),
+        child: _degraded
+            ? ColoredBox(color: widget.fill)
+            : BiliPaiGlass(
+                radius: 0,
+                refract: bilipaiRefractOf(quality),
+                chroma: bilipaiChromaOf(quality),
+                blurSigma: surfaceBlurSigma(
+                  base: bilipaiBackdropBlurOf(quality),
+                  budget: budget,
+                  type: BlurSurfaceType.bottomBar,
+                  crispAtRest: true,
+                ),
+                backgroundColor: widget.fill,
+                specular: bilipaiSpecularOf(quality),
+                edgeAmount: bilipaiEdgeOf(quality),
+                saturation: bilipaiSaturationOf(quality),
+                child: const SizedBox.expand(),
+              ),
       ),
     );
   }
