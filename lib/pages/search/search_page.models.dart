@@ -23,13 +23,8 @@ class _SourceItem {
 }
 
 const _validLxSources = {'kw', 'kg', 'tx', 'wy', 'mg'};
-Map<String, String> get _lxSourceNames => <String, String>{
-  'kw': tr('小蜗音乐'),
-  'kg': tr('小枸音乐'),
-  'tx': tr('小秋音乐'),
-  'wy': tr('小芸音乐'),
-  'mg': tr('小蜜音乐'),
-};
+// 平台显示名与榜单页共用（lxPlatformDisplayNames），tr() 每次求值保运行时切语言
+Map<String, String> get _lxSourceNames => lxPlatformDisplayNames();
 
 // ==================== 结果模型 ====================
 

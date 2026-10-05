@@ -372,6 +372,19 @@ String? lxPlatformCodeOf(PluginSource source) {
   return null;
 }
 
+/// LX 内部平台显示名（榜单页与搜索页共用）。
+/// tr() 每次调用求值，支持运行时切换语言。
+Map<String, String> lxPlatformDisplayNames() => <String, String>{
+      'kw': tr('小蜗音乐'),
+      'kg': tr('小枸音乐'),
+      'tx': tr('小秋音乐'),
+      'wy': tr('小芸音乐'),
+      'mg': tr('小蜜音乐'),
+    };
+
+String lxPlatformDisplayName(String key) =>
+    lxPlatformDisplayNames()[key] ?? key;
+
 String? _decodeLxCoverResult(String raw) {
   if (raw.isEmpty || raw == 'null') return null;
   try {

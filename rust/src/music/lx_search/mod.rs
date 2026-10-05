@@ -195,7 +195,7 @@ fn wy_cover_url(album: &serde_json::Value) -> Option<String> {
     ))
 }
 
-fn size_formate(bytes: f64) -> String {
+pub(crate) fn size_formate(bytes: f64) -> String {
     if bytes <= 0.0 {
         return "0B".to_string();
     }
@@ -285,7 +285,7 @@ fn build_kuwo_cover_url(web_albumpic_short: &str, size: u32) -> Option<String> {
 }
 
 /// 构造酷狗封面 URL（替换 {size} 占位符并升级为 HTTPS）
-fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
+pub(crate) fn build_kugou_cover_url(url: &str, size: u32) -> Option<String> {
     let u = url.trim();
     if u.is_empty() {
         return None;
@@ -312,6 +312,12 @@ pub(crate) fn http_client() -> &'static Result<reqwest::Client, String> {
 }
 
 pub(crate) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+    let body = http_get_text(url, headers).await?;
+    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))
+}
+
+/// GET 请求返回原始响应文本（酷我 rid_pic 封面接口为纯文本响应）
+pub(crate) async fn http_get_text(url: &str, headers: &[(&str, &str)]) -> Result<String, String> {
     let client = http_client().as_ref().map_err(|e| e.clone())?;
     let mut req = client.get(url);
     for (key, value) in headers {
@@ -325,8 +331,7 @@ pub(crate) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result
     if status != 200 {
         return Err(format!("HTTP {} for {}", status, url));
     }
-
-    serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))
+    Ok(body)
 }
 
 pub(crate) async fn http_post_json(

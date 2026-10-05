@@ -3,7 +3,8 @@ import 'dart:convert';
 import '../core/application_logger.dart';
 import '../rust/api.dart' as frb;
 import 'fallback_modules/registry.dart';
-import 'fallback_modules/types.dart' show kFallbackModulePluginFallback;
+import 'fallback_modules/types.dart'
+    show kFallbackModuleLxToplist, kFallbackModulePluginFallback;
 import 'plugin_models.dart';
 
 final RegExp _qqPattern = RegExp(r'qq', caseSensitive: false);
@@ -477,4 +478,73 @@ Future<List<PluginSearchResult>> lxHostPlaylistTracksFallback(
         '[lxHostPlaylistTracks] source=$sourceKey EXCEPTION: $e\n$st');
     return const [];
   }
+}
+
+/// LX 榜单分组兜底（lx_toplist 模块，服务端下发 JS 优先、Rust builtin 兜底）。
+/// 返回单分组 `[{ title, data: [board] }]`，与 JS 模块返回形状一致。
+Future<List<dynamic>> lxToplistBoardsFallback(List<String> sourceKeys) async {
+  if (sourceKeys.isEmpty) return const [];
+  Future<List<dynamic>> builtin() async {
+    // Dart 层超时兜底：Rust 各平台请求有 6-8s 上界，但桥传输层挂起时 await
+    // 永不返回，列表页会永久转圈；异常上抛，由页面 catch 转「失败点击重试」态
+    AppLog.info('plugin',
+        '[lxToplistBoards] builtin 开始: sources=$sourceKeys');
+    final json = await frb.lxToplistBoards(sources: sourceKeys)
+        .timeout(const Duration(seconds: 12));
+    AppLog.info(
+        'plugin', '[lxToplistBoards] builtin 返回 ${json.length} 字节');
+    final boards = jsonDecode(json);
+    if (boards is! List) return const [];
+    return [
+      {'title': '音源榜单', 'data': boards},
+    ];
+  }
+
+  return dispatchFallbackModule<List<dynamic>>(
+    kFallbackModuleLxToplist,
+    'getTopLists',
+    {'sources': sourceKeys},
+    builtin,
+  );
+}
+
+/// LX 榜单歌曲页兜底：模块/builtin 均返回 `{ list, isEnd }`，
+/// 统一取 list 过滤 songmid 非空；失败返回 const []。
+Future<List<Map<String, dynamic>>> lxToplistBoardSongsFallback(
+  String sourceKey,
+  String boardId, {
+  int page = 1,
+  int limit = 30,
+}) async {
+  Future<Map<String, dynamic>?> builtin() async {
+    try {
+      // Dart 层超时兜底：Rust 内部有 8s+5s 封面上界，桥传输层挂起时 await 永不返回
+      final json = await frb.lxToplistBoardSongs(
+        source: sourceKey,
+        boardId: boardId,
+        page: page,
+        limit: limit,
+      ).timeout(const Duration(seconds: 15));
+      final result = jsonDecode(json);
+      return result is Map ? result.cast<String, dynamic>() : null;
+    } catch (e, st) {
+      AppLog.warn('plugin',
+          '[lxToplistBoardSongs] source=$sourceKey board=$boardId EXCEPTION: $e\n$st');
+      return null;
+    }
+  }
+
+  final result = await dispatchFallbackModule<Map<String, dynamic>?>(
+    kFallbackModuleLxToplist,
+    'getTopListDetail',
+    {'source': sourceKey, 'id': boardId, 'page': page, 'limit': limit},
+    builtin,
+  );
+  final list = result?['list'];
+  if (list is! List) return const [];
+  return list
+      .whereType<Map>()
+      .map((e) => e.cast<String, dynamic>())
+      .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
+      .toList();
 }

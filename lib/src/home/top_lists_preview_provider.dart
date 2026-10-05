@@ -54,24 +54,45 @@ class TopListsPreviewNotifier extends StateNotifier<TopListsPreview> {
         }
       }
       final catalog = PluginCatalogService(engine, sources);
-      final mfSources = catalog.musicFreeSources;
-      if (mfSources.isEmpty) {
+      // MF 源需过插件方法检测，LX 源由 lx_toplist 兜底模块保证能力
+      final mfCandidates = catalog.musicFreeSources;
+      final lxSources = catalog.lxToplistSources;
+      if (mfCandidates.isEmpty && lxSources.isEmpty) {
         state = const TopListsPreview(loaded: true, checking: false);
         return;
       }
 
-      final supported = <PluginSource>[];
+      final basePlugins = <PluginSource>[];
       await Future.wait(
-        mfSources.map((s) async {
-          if (await catalog.supportsTopLists(s)) supported.add(s);
+        mfCandidates.map((s) async {
+          if (await catalog.supportsTopLists(s)) basePlugins.add(s);
         }),
       );
-      if (supported.isEmpty) {
+      basePlugins.addAll(lxSources);
+      if (basePlugins.isEmpty) {
         state = const TopListsPreview(loaded: true, checking: false, boards: []);
         return;
       }
 
-      final ordered = sortPluginSources(supported);
+      // 基础源先排序，LX 源再按内部平台拆分（与搜索结果页同款）
+      const lxKeys = {'wy', 'kg', 'kw', 'tx'};
+      final ordered = <({PluginSource plugin, String? lxKey, String name})>[];
+      for (final p in sortPluginSources(basePlugins)) {
+        if (p.format != PluginFormat.lx) {
+          ordered.add((plugin: p, lxKey: null, name: p.name));
+          continue;
+        }
+        final keys = p.sources.where(lxKeys.contains).toSet();
+        if (keys.length <= 1) {
+          final key = keys.isEmpty ? null : keys.first;
+          ordered.add((plugin: p, lxKey: key, name: p.name));
+        } else {
+          for (final key in keys) {
+            ordered.add((plugin: p, lxKey: key, name: lxPlatformDisplayName(key)));
+          }
+        }
+      }
+
       state = TopListsPreview(
         checking: false,
         loading: true,
@@ -81,10 +102,10 @@ class TopListsPreviewNotifier extends StateNotifier<TopListsPreview> {
       );
       var chosen = ordered.first;
       var boards = const <MfSheetItem>[];
-      for (final s in ordered) {
-        final b = await catalog.getTopLists(s);
+      for (final c in ordered) {
+        final b = await catalog.getTopLists(c.plugin, lxKey: c.lxKey);
         if (b.isNotEmpty) {
-          chosen = s;
+          chosen = c;
           boards = b;
           break;
         }

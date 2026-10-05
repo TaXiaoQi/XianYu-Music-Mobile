@@ -23,9 +23,10 @@ use crate::plugin_host::HttpBridge;
 
 pub const FALLBACK_SHIM_JS: &str = include_str!("shim.js");
 
-/// 已注册的模块 key 与期望导出方法（移动端接入歌词、插件宿主兜底与歌单导入三条链路）。
+/// 已注册的模块 key 与期望导出方法（移动端接入歌词、插件宿主兜底、歌单导入与音源榜单四条链路）。
 pub(crate) const FALLBACK_MODULE_METHODS: &[(&str, &[&str])] = &[
     ("lx_lyric", &["fetchLyric"]),
+    ("lx_toplist", &["getTopLists", "getTopListDetail"]),
     (
         "plugin_fallback",
         &[

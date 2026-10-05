@@ -4,6 +4,18 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   List<PluginSource> get musicFreeSources =>
       sources.where((s) => s.enabled && s.format.isMfCompatible).toList();
 
+  /// 已启用且覆盖榜单平台（wy/kg/kw/tx）的 LX 音源，
+  /// 榜单能力由 lx_toplist 兜底模块保证，无需探测插件方法
+  List<PluginSource> get lxToplistSources => sources
+      .where((s) =>
+          s.enabled &&
+          s.format == PluginFormat.lx &&
+          s.sources
+              .toSet()
+              .intersection(const {'wy', 'kg', 'kw', 'tx'})
+              .isNotEmpty)
+      .toList();
+
   Future<Set<String>> _availableMethods(PluginSource source) async {
     await engine.ensureLoaded(source);
     final meta = engine.metadataOf(source.id);
@@ -12,8 +24,12 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     return const {};
   }
 
-  Future<bool> supportsTopLists(PluginSource source) async =>
-      (await _availableMethods(source)).contains('getTopLists');
+  Future<bool> supportsTopLists(PluginSource source) async {
+    if (source.format == PluginFormat.lx) {
+      return lxToplistSources.contains(source);
+    }
+    return (await _availableMethods(source)).contains('getTopLists');
+  }
 
   // ==================== 基础调用 ====================
 
@@ -27,7 +43,11 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
 
   // ==================== 榜单 ====================
 
-  Future<List<MfSheetItem>> getTopLists(PluginSource source) async {
+  Future<List<MfSheetItem>> getTopLists(PluginSource source,
+      {String? lxKey}) async {
+    if (source.format == PluginFormat.lx) {
+      return _getLxTopLists(source, lxKey: lxKey);
+    }
     try {
       final result = await _call(source, 'getTopLists', []);
       if (result is! List) return const [];
@@ -52,6 +72,39 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     } catch (_) {
       return const [];
     }
+  }
+
+  /// LX 音源榜单：走 lx_toplist 兜底模块（服务端下发 JS 优先、Rust builtin 兜底），
+  /// 各平台分组扁平进单组。subtitle 取榜单 description（MfSheetItem.subtitle
+  /// 首段为 artist，分组标题在榜单页无独立展示位，故不传 categoryTitle）。
+  Future<List<MfSheetItem>> _getLxTopLists(PluginSource source,
+      {String? lxKey}) async {
+    final keys = source.sources
+        .where((k) => const {'wy', 'kg', 'kw', 'tx'}.contains(k))
+        .where((k) => lxKey == null || k == lxKey)
+        .toList();
+    final groups = await lxToplistBoardsFallback(keys);
+    final items = <MfSheetItem>[];
+    for (final category in groups) {
+      if (category is! Map) continue;
+      final cat = category.cast<String, dynamic>();
+      final data = cat['data'];
+      if (data is! List) continue;
+      for (final e in data) {
+        if (e is! Map) continue;
+        final m = Map<String, dynamic>.from(e);
+        m['_isTopList'] = true;
+        // chip 即平台：条目缺 source（下发 JS 模块形状差异）时回退 chip 的 lxKey
+        final src = (m['source'] ?? '').toString();
+        m['_lxSource'] = src.isNotEmpty
+            ? src
+            : (lxKey ?? (keys.length == 1 ? keys.first : ''));
+        final desc = (m['description'] ?? '').toString();
+        if (desc.isNotEmpty) m['artist'] = desc;
+        items.add(_toSheet(m, source));
+      }
+    }
+    return items;
   }
 
   Future<List<PluginSearchResult>> getTopListDetail(

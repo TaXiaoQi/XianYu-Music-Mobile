@@ -97,6 +97,38 @@ pub async fn lx_album_songs(
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
+/// LX 榜单分组（兜底模块 lx_toplist 的 builtin 后端）。
+/// `sources` 为 wy/kg/kw/tx 子集；返回单分组
+/// `[{ "title": "音源榜单", "data": [board] }]` 的 JSON（board 含
+/// id/title/coverImg/description/source），失败平台跳过。
+pub async fn lx_toplist_boards(sources: Vec<String>) -> Result<String, String> {
+    let boards = crate::music::lx_toplist::lx_toplist_boards(&sources).await;
+    serde_json::to_string(&boards).map_err(|e| e.to_string())
+}
+
+/// LX 榜单歌曲页。返回 `{ "list": [LxSearchItem], "isEnd": bool }` 的 JSON
+/// （isEnd=list.len()<limit）。
+pub async fn lx_toplist_board_songs(
+    source: String,
+    board_id: String,
+    page: u32,
+    limit: u32,
+) -> Result<String, String> {
+    // 与内部 clamp 规则一致：0 视为默认 30，上限 100，isEnd 按实际 limit 计算
+    let limit = if limit == 0 { 30 } else { limit.clamp(1, 100) };
+    let list =
+        crate::music::lx_toplist::lx_toplist_board_songs(&source, &board_id, page, limit).await?;
+    let is_end = (list.len() as u32) < limit;
+    serde_json::to_string(&LxToplistDetailResult { list, is_end }).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LxToplistDetailResult {
+    list: Vec<crate::music::lx_search::LxSearchItem>,
+    is_end: bool,
+}
+
 // =========================================================================
 // 歌词在线抓取（第三批）
 // =========================================================================

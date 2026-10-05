@@ -5,6 +5,7 @@ pub mod files; // 实现
 pub mod library; // 实现
 pub mod lx_catalog;
 pub mod lx_search;
+pub mod lx_toplist;
 pub mod lyric_fetcher;
 pub mod lyric_formats;
 pub mod lyrics; // 实现

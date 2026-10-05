@@ -7,6 +7,8 @@ import 'frb_generated.dart';
 import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LxToplistDetailResult`
+
 /// 解析原始歌词文本（LRC/YRC/QRC/ESLRC/TTML/Lys 等），
 /// 返回 [`StructuredLyricsPayload`] 的 JSON（camelCase）。
 ///
@@ -96,6 +98,27 @@ Future<String> lxAlbumSongs({
 }) => RustLib.instance.api.crateApiLxAlbumSongs(
   source: source,
   albumId: albumId,
+  page: page,
+  limit: limit,
+);
+
+/// LX 榜单分组（兜底模块 lx_toplist 的 builtin 后端）。
+/// `sources` 为 wy/kg/kw/tx 子集；返回单分组
+/// `[{ "title": "音源榜单", "data": [board] }]` 的 JSON（board 含
+/// id/title/coverImg/description/source），失败平台跳过。
+Future<String> lxToplistBoards({required List<String> sources}) =>
+    RustLib.instance.api.crateApiLxToplistBoards(sources: sources);
+
+/// LX 榜单歌曲页。返回 `{ "list": [LxSearchItem], "isEnd": bool }` 的 JSON
+/// （isEnd=list.len()<limit）。
+Future<String> lxToplistBoardSongs({
+  required String source,
+  required String boardId,
+  required int page,
+  required int limit,
+}) => RustLib.instance.api.crateApiLxToplistBoardSongs(
+  source: source,
+  boardId: boardId,
   page: page,
   limit: limit,
 );

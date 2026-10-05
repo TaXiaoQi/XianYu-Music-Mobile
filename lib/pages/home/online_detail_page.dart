@@ -310,7 +310,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         return lxHostPlaylistTracksFallback(source, lxKey, playlistId,
             page: page);
       case OnlineDetailType.toplist:
-        return const [];
+        final boardId = (raw['id'] ?? '').toString();
+        final songs =
+            await lxToplistBoardSongsFallback(lxKey, boardId, page: page);
+        return songs.map((m) => lxSearchItemToResult(lxKey, m)).toList();
     }
   }
 

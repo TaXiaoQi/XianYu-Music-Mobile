@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_catalog.dart';
@@ -11,6 +12,7 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/stagger_in.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -23,6 +25,18 @@ class TopListsPage extends ConsumerStatefulWidget {
   ConsumerState<TopListsPage> createState() => _TopListsPageState();
 }
 
+/// 榜单来源条目：LX 源按内部平台拆分（与搜索结果页同款模式），
+/// lxKey 为空表示 MF 源或单平台 LX 源
+class _TopSource {
+  final PluginSource plugin;
+  final String? lxKey;
+  final String name;
+
+  const _TopSource(this.plugin, this.lxKey, this.name);
+
+  String get id => lxKey == null ? plugin.id : '${plugin.id}__$lxKey';
+}
+
 class _TopListsPageState extends ConsumerState<TopListsPage>
     with HidesShellChrome, HideMiniBar {
   // 进入榜单详细页（online-detail）时恢复播放条：
@@ -30,13 +44,26 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   @override
   bool get hideMiniBarWhenCovered => false;
 
-  List<PluginSource> _sources = const [];
+  List<_TopSource> _sources = const [];
   String? _selectedId;
   PageController? _pageCtrl;
   final Map<String, List<MfSheetItem>> _boardsCache = {};
   final Set<String> _loadingIds = {};
+  final Set<String> _failedIds = {};
   bool _checking = true;
   final Map<String, GlobalKey> _chipKeys = {};
+
+  /// 桌面端榜单页同款卡片按行入场（base 200ms / 行 140ms / 600ms）
+  late final StaggerWindow _stagger = StaggerWindow(
+    baseDelayMs: 200,
+    staggerMs: 140,
+    rowMs: 600,
+    durationMs: 600,
+    maxRows: 7,
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   void initState() {
@@ -47,6 +74,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
   @override
   void dispose() {
     _pageCtrl?.dispose();
+    _stagger.dispose();
     super.dispose();
   }
 
@@ -56,9 +84,25 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     final sources =
         sortPluginSources(ref.read(pluginManagerProvider).sources.where((s) => s.enabled).toList());
     final catalog = PluginCatalogService(engine, sources);
-    final supported = <PluginSource>[];
+    final supported = <_TopSource>[];
     for (final s in catalog.musicFreeSources) {
-      if (await catalog.supportsTopLists(s)) supported.add(s);
+      if (await catalog.supportsTopLists(s)) {
+        supported.add(_TopSource(s, null, s.name));
+      }
+    }
+    // LX 音源榜单由 lx_toplist 兜底模块保证能力，
+    // 按内部平台拆分为多个来源（与搜索结果页同款）
+    const lxKeys = {'wy', 'kg', 'kw', 'tx'};
+    for (final s in catalog.lxToplistSources) {
+      final keys = s.sources.where(lxKeys.contains).toSet();
+      if (keys.length <= 1) {
+        final key = keys.isEmpty ? null : keys.first;
+        supported.add(_TopSource(s, key, s.name));
+      } else {
+        for (final key in keys) {
+          supported.add(_TopSource(s, key, lxPlatformDisplayName(key)));
+        }
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -77,21 +121,41 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     }
   }
 
-  Future<void> _loadBoards(PluginSource source) async {
+  Future<void> _loadBoards(_TopSource source) async {
     if (_boardsCache.containsKey(source.id) ||
         _loadingIds.contains(source.id)) {
       return;
     }
     setState(() => _loadingIds.add(source.id));
-    final engine = await ref.read(pluginEngineProvider.future);
-    final catalog = PluginCatalogService(engine,
-        ref.read(pluginManagerProvider).sources);
-    final boards = await catalog.getTopLists(source);
-    if (!mounted) return;
-    setState(() {
-      _boardsCache[source.id] = boards;
-      _loadingIds.remove(source.id);
-    });
+    AppLog.info('plugin',
+        '[TopLists] ${source.name} 开始加载 (lxKey=${source.lxKey ?? "-"})');
+    try {
+      final engine = await ref.read(pluginEngineProvider.future);
+      final catalog = PluginCatalogService(engine,
+          ref.read(pluginManagerProvider).sources);
+      final boards =
+          await catalog.getTopLists(source.plugin, lxKey: source.lxKey);
+      AppLog.info('plugin', '[TopLists] ${source.name} 返回 ${boards.length} 条');
+      if (!mounted) return;
+      setState(() {
+        _boardsCache[source.id] = boards;
+        _loadingIds.remove(source.id);
+      });
+      if (boards.isNotEmpty) _stagger.start();
+    } catch (e, st) {
+      // 任何一次加载异常都不能让转圈态永久卡死：标记失败，切 chip/点击可重试
+      AppLog.warn('plugin', '[TopLists] ${source.name} 榜单加载失败: $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _failedIds.add(source.id);
+        _loadingIds.remove(source.id);
+      });
+    }
+  }
+
+  void _retryBoards(_TopSource source) {
+    setState(() => _failedIds.remove(source.id));
+    _loadBoards(source);
   }
 
   void _selectSource(int index) {
@@ -255,11 +319,19 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
 
   Widget _buildSourcePage(
     ColorScheme scheme,
-    PluginSource source, {
+    _TopSource source, {
     double? contentTop,
   }) {
     final boards = _boardsCache[source.id];
     if (boards == null) {
+      if (_failedIds.contains(source.id)) {
+        return _empty(
+          scheme,
+          Icons.error_outline,
+          tr('榜单加载失败\n点击重试'),
+          onTap: () => _retryBoards(source),
+        );
+      }
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -278,67 +350,87 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
       return _empty(scheme, Icons.library_music_outlined, tr('该音源暂无榜单\n试试切换其他音源'));
     }
     final isEmbedded = widget.embedded;
-    return GridView.builder(
-      padding: EdgeInsets.fromLTRB(
-        14,
-        contentTop ?? 8,
-        14,
-        MediaQuery.of(context).padding.bottom + 24,
-      ),
-      gridDelegate: isEmbedded
-          ? const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 92,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 10,
-              childAspectRatio: 0.7,
-            )
-          : const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.72,
+    // 滚动立即停掉入场动画（桌面端同款），避免滚动中段的卡片带着大延迟闪现
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n.depth == 0) _stagger.stop();
+        return false;
+      },
+      child: LayoutBuilder(
+        builder: (context, cons) {
+          // 竖屏固定 3 列（与桌面端断点同款节奏按行错峰）；
+          // 横屏嵌入网格列数动态，按 maxCrossAxisExtent 92 估算
+          final cols = isEmbedded
+              ? (cons.maxWidth / 92).ceil().clamp(1, 8)
+              : 3;
+          return GridView.builder(
+            padding: EdgeInsets.fromLTRB(
+              14,
+              contentTop ?? 8,
+              14,
+              MediaQuery.of(context).padding.bottom + 24,
             ),
-      itemCount: boards.length,
-      itemBuilder: (context, i) {
-        final b = boards[i];
-        return InkWell(
-          borderRadius: BorderRadius.circular(isEmbedded ? 10 : 12),
-          onTap: () => _openBoard(b),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ClipRRect(
+            gridDelegate: isEmbedded
+                ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 92,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 10,
+                    childAspectRatio: 0.7,
+                  )
+                : const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.72,
+                  ),
+            itemCount: boards.length,
+            itemBuilder: (context, i) {
+              final b = boards[i];
+              return _stagger.wrap(
+                i ~/ cols,
+                InkWell(
                   borderRadius: BorderRadius.circular(isEmbedded ? 10 : 12),
-                  child: OnlineCover(
-                    url: b.coverUrl,
-                    size: isEmbedded ? 92 : 200,
-                    radius: isEmbedded ? 10 : 12,
+                  onTap: () => _openBoard(b),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius:
+                              BorderRadius.circular(isEmbedded ? 10 : 12),
+                          child: OnlineCover(
+                            url: b.coverUrl,
+                            size: isEmbedded ? 92 : 200,
+                            radius: isEmbedded ? 10 : 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        b.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: isEmbedded ? 12 : 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (b.subtitle.isNotEmpty)
+                        Text(
+                          b.subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 11, color: scheme.onSurfaceVariant),
+                        ),
+                    ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                b.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: isEmbedded ? 12 : 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (b.subtitle.isNotEmpty)
-                Text(
-                  b.subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant),
-                ),
-            ],
-          ),
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -354,21 +446,29 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
         ));
   }
 
-  Widget _empty(ColorScheme scheme, IconData icon, String message) {
+  Widget _empty(ColorScheme scheme, IconData icon, String message,
+      {VoidCallback? onTap}) {
+    final child = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 52, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+        const SizedBox(height: 12),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontSize: 13, height: 1.6, color: scheme.onSurfaceVariant),
+        ),
+      ],
+    );
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 52, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
-          const SizedBox(height: 12),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 13, height: 1.6, color: scheme.onSurfaceVariant),
-          ),
-        ],
-      ),
+      child: onTap == null
+          ? child
+          : InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: child,
+            ),
     );
   }
 }
