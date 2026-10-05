@@ -44,6 +44,12 @@ class _StaggerInState extends State<StaggerIn>
     _delayTimer = Timer(widget.delay, () {
       if (mounted) _ctrl.forward();
     });
+    // 播完直接还原为普通子树：去掉动画包装，无障碍语义完整暴露，
+    // 且不再逐帧 rebuild。还原时子树是全新 element/render object，
+    // 语义节点从零构建，不会撞语义重建断言。
+    _ctrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) setState(() {});
+    });
   }
 
   @override
@@ -56,19 +62,33 @@ class _StaggerInState extends State<StaggerIn>
   @override
   Widget build(BuildContext context) {
     // 系统关闭动画（无障碍「移除动画」）时直接呈现最终状态
-    if (MediaQuery.of(context).disableAnimations) return widget.child;
+    if (MediaQuery.of(context).disableAnimations || _ctrl.isCompleted) {
+      return widget.child;
+    }
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, child) {
         final t = _ease.transform(_ctrl.value);
-        if (t <= 0) return const SizedBox.shrink();
-        return Opacity(
-          opacity: t,
-          child: Transform.translate(
-            offset: Offset(0, widget.offsetY * (1 - t)),
-            child: Transform.scale(
-              scale: widget.scaleFrom + (1 - widget.scaleFrom) * t,
-              child: child,
+        // 延迟期（t=0）不能用 SizedBox.shrink 卸载子树：那样封面 widget
+        // 不在树上、图片请求被拖到该行动画开始才发起，表现为封面跟着
+        // 动画逐行批量替换。Opacity 0 时 RenderOpacity 跳过绘制（视觉
+        // 不可见）但子树保持挂载，封面在错峰等待期即并行加载——与桌面
+        // 端卡片挂载即拉图的行为对齐。
+        //
+        // 动画期整个子树 ExcludeSemantics 且恒定不变：RenderOpacity 会
+        // 在 alpha=0 时把子树剔出语义树、alpha>0 又加回来，语义结构
+        // 逐帧翻转会在 flushSemantics 撞 '!child.attached' 断言（debug
+        // 下每帧 fatal，错误上报跟着刷爆服务端限流，登录后所有请求
+        // 连带 429）。入场动画本就无需暴露无障碍节点，播完即还原。
+        return ExcludeSemantics(
+          child: Opacity(
+            opacity: t,
+            child: Transform.translate(
+              offset: Offset(0, widget.offsetY * (1 - t)),
+              child: Transform.scale(
+                scale: widget.scaleFrom + (1 - widget.scaleFrom) * t,
+                child: child,
+              ),
             ),
           ),
         );
@@ -88,6 +108,7 @@ class StaggerWindow {
     this.rowMs = 400,
     this.maxRows = 14,
     this.marginMs = 120,
+    this.durationMs = 400,
     required this.onClosed,
   });
 
@@ -100,6 +121,9 @@ class StaggerWindow {
   final int maxRows;
 
   final int marginMs;
+
+  /// 单行入场时长（桌面端榜单/搜索网格为 600ms）
+  final int durationMs;
 
   /// 关窗回调：宿主在里面做 mounted 检查后 setState。
   final VoidCallback onClosed;
@@ -129,6 +153,15 @@ class StaggerWindow {
     _timer?.cancel();
   }
 
+  /// 提前关窗（如用户开始滚动）：窗口内已构建的行继续播完，
+  /// 之后构建的行原样呈现，避免滚动中段的行带着大延迟空白闪现。
+  void stop() {
+    if (!_active) return;
+    _timer?.cancel();
+    _active = false;
+    onClosed();
+  }
+
   /// 行构建时包裹：窗口未开启原样返回；窗口内按窗口内行序给延迟，
   /// 超过 maxRows 的行同时入场（缓存预构建行不拖长整体节奏）。
   Widget wrap(int index, Widget child) {
@@ -137,6 +170,7 @@ class StaggerWindow {
     final order = (index - _firstIndex!).clamp(0, maxRows);
     return StaggerIn(
       delay: Duration(milliseconds: baseDelayMs + order * staggerMs),
+      duration: Duration(milliseconds: durationMs),
       child: child,
     );
   }

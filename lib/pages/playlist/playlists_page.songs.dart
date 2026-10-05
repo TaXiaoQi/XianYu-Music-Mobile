@@ -159,8 +159,20 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
   final ScrollController _controller = ScrollController();
   final ScrollController _batchController = ScrollController();
 
+  /// 与本地音乐列表同款入场错峰动画（40ms/行，最多 14 行）
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _stagger.start();
+  }
+
   @override
   void dispose() {
+    _stagger.dispose();
     _controller.dispose();
     _batchController.dispose();
     super.dispose();
@@ -358,8 +370,10 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
           final song = songs[orig];
           return RepaintBoundary(
             key: ValueKey('${song.path}_$orig'),
-            child: Builder(
-              builder: (rowContext) {
+            child: _stagger.wrap(
+              display,
+              Builder(
+                builder: (rowContext) {
                 BuildContext? coverCtx;
                 final g = songRowPlay(ref, onPlay: () async {
                   final ok = await launchFlyCover(
@@ -450,6 +464,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                   ],
                 );
               },
+              ),
             ),
           );
         }
@@ -466,7 +481,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                 itemBuilder: (context, display) => RepaintBoundary(
                   key: ValueKey(
                       'batch_${songs[indices[display]].path}_${indices[display]}'),
-                  child: batchRow(display),
+                  child: _stagger.wrap(display, batchRow(display)),
                 ),
               )
             else if (filtered != null)

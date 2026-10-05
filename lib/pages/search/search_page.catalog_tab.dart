@@ -27,9 +27,18 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   int _page = 1;
   bool _hasMore = false;
   bool _loadingMore = false;
-  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
-    if (mounted) setState(() {});
-  });
+
+  /// 歌手/专辑/歌单网格：桌面端搜索目录网格同款按行入场（base 200ms / 行 140ms / 600ms）
+  late final StaggerWindow _gridStagger = StaggerWindow(
+    baseDelayMs: 200,
+    staggerMs: 140,
+    rowMs: 600,
+    durationMs: 600,
+    maxRows: 7,
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   bool get wantKeepAlive => true;
@@ -54,7 +63,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
 
   @override
   void dispose() {
-    _stagger.dispose();
+    _gridStagger.dispose();
     super.dispose();
   }
 
@@ -63,7 +72,6 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     super.build(context);
     final scheme = Theme.of(context).colorScheme;
     final q = widget.keyword.trim();
-    final m = ListMetrics.ofRef(ref);
     final name = _kindName(widget.kind);
 
     if (q.isEmpty) {
@@ -82,60 +90,214 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
           source: widget.source.name);
     }
 
-    final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
-    final showMore = _isLxPlaylist && _loadingMore;
+    // 歌手/专辑/歌单统一网格（与桌面端搜索目录网格对齐）：歌手圆形头像居中，
+    // 专辑/歌单方形封面卡片，与音源榜单页同款
+    return _buildCatalogGrid(
+      scheme,
+      bottomInset: 92.0 + MediaQuery.of(context).padding.bottom,
+      showMore: _isLxPlaylist && _loadingMore,
+    );
+  }
+
+  /// 搜索目录网格：歌手圆形头像居中，专辑/歌单方形封面卡片，与音源榜单页同款
+  Widget _buildCatalogGrid(
+    ColorScheme scheme, {
+    required double bottomInset,
+    required bool showMore,
+  }) {
+    final isArtist = widget.kind == _CatalogKind.artist;
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
-        if (n.metrics.axis == Axis.vertical) _maybeLoadMore(n.metrics);
+        if (n.depth == 0) {
+          // 滚动立即关掉入场窗口（桌面端同款），避免滚动中段的卡片带延迟闪现
+          _gridStagger.stop();
+          if (n.metrics.axis == Axis.vertical) _maybeLoadMore(n.metrics);
+        }
         return false;
       },
-      child: ListView.builder(
-        padding: EdgeInsets.only(
-          top: _ContentTopInsetScope.of(context),
-          bottom: bottomInset,
-        ),
-        itemCount: _items.length + (showMore ? 1 : 0),
-        itemBuilder: (context, i) {
-          if (i >= _items.length) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            );
-          }
-          final item = _items[i];
-          final isArtist = item.kind == 'artist';
-          return _stagger.wrap(
-            i,
-            CoverRow(
-              cover: _catalogLeading(item, isArtist, m, scheme),
-              title: highlightedText(item.title, q, scheme.primary,
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                [item.subtitle, item.sourceTag]
-                    .where((x) => x.isNotEmpty)
-                    .join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-              ),
-              verticalPadding: m.vPad,
-              trailing:
-                  Icon(Icons.chevron_right, color: scheme.outline, size: 22),
-              onTap: () => _open(item),
+      child: LayoutBuilder(
+        builder: (context, cons) {
+          // 竖屏固定 3 列；横屏列数动态（与榜单页嵌入模式同款 92 上限）
+          final landscape =
+              MediaQuery.of(context).orientation == Orientation.landscape;
+          final cols =
+              landscape ? (cons.maxWidth / 92).ceil().clamp(1, 8) : 3;
+          return GridView.builder(
+            // 水平 14 的页边距与音源榜单页一致，保证 3 列下卡片宽度和间距相同
+            padding: EdgeInsets.fromLTRB(
+              14,
+              _ContentTopInsetScope.of(context),
+              14,
+              bottomInset,
             ),
+            gridDelegate: landscape
+                ? (isArtist
+                    ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 92,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 0.8,
+                      )
+                    : const SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: 92,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: 0.7,
+                      ))
+                : (isArtist
+                    ? const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.8,
+                      )
+                    : const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.72,
+                      )),
+            itemCount: _items.length + (showMore ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i >= _items.length) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+              final item = _items[i];
+              return _gridStagger.wrap(
+                i ~/ cols,
+                isArtist
+                    ? _artistGridCard(item, compact: landscape)
+                    : _catalogGridCard(item, compact: landscape),
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  Widget _catalogGridCard(_CatalogItem item, {required bool compact}) {
+    final scheme = Theme.of(context).colorScheme;
+    final subtitle = [item.subtitle, item.sourceTag]
+        .where((x) => x.isNotEmpty)
+        .join(' · ');
+    return InkWell(
+      borderRadius: BorderRadius.circular(compact ? 10 : 12),
+      onTap: () => _open(item),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(compact ? 10 : 12),
+              child: _catalogGridCover(item, compact: compact),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            item.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: compact ? 12 : 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (subtitle.isNotEmpty)
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _catalogGridCover(_CatalogItem item, {required bool compact}) {
+    final scheme = Theme.of(context).colorScheme;
+    final size = compact ? 92.0 : 200.0;
+    final radius = compact ? 10.0 : 12.0;
+    if (item.localAlbum != null) {
+      return CoverImage(
+        songPath: item.localAlbum!.firstSongPath,
+        width: size,
+        height: size,
+        radius: radius,
+        icon: Icons.album,
+      );
+    }
+    if (item.localPlaylist != null) {
+      return Container(
+        color: scheme.secondaryContainer,
+        alignment: Alignment.center,
+        child: Icon(Icons.queue_music, size: size * 0.4, color: scheme.primary),
+      );
+    }
+    return OnlineCover(url: item.coverUrl, size: size, radius: radius);
+  }
+
+  /// 歌手网格卡片：圆形头像 + 居中标题/副标题（桌面端搜索目录网格同款）
+  Widget _artistGridCard(_CatalogItem item, {required bool compact}) {
+    final scheme = Theme.of(context).colorScheme;
+    final subtitle = [item.subtitle, item.sourceTag]
+        .where((x) => x.isNotEmpty)
+        .join(' · ');
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => _open(item),
+      child: Column(
+        children: [
+          SizedBox(
+            width: compact ? 72 : 88,
+            height: compact ? 72 : 88,
+            child: _artistGridAvatar(item),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            item.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          if (subtitle.isNotEmpty)
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _artistGridAvatar(_CatalogItem item) {
+    const size = 88.0;
+    final a = item.localArtist;
+    if (a != null) {
+      return CoverImage(
+        songPath: a.firstSongPath,
+        width: size,
+        height: size,
+        radius: size / 2,
+        icon: Icons.person,
+        placeholder: _letterLeading(a.name, Theme.of(context).colorScheme),
+      );
+    }
+    return OnlineCover(url: item.coverUrl, size: size, radius: size / 2);
   }
 }
 
@@ -193,7 +355,7 @@ extension _CatalogTabSearch on _CatalogTabState {
     }
     if (!mounted) return;
     if (_searchedHash != hash) return;
-    _stagger.start();
+    _gridStagger.start();
     setState(() {
       _items = out;
       _searchedKind = widget.kind;
@@ -470,45 +632,5 @@ extension _CatalogTabSearch on _CatalogTabState {
         raw: item.onlineRaw ?? const {},
       ),
     );
-  }
-
-  Widget _catalogLeading(
-      _CatalogItem item, bool isArtist, ListMetrics m, ColorScheme scheme) {
-    final size = isArtist ? m.artistCover : m.songCover;
-    final radius = isArtist ? m.artistCover / 2 : m.songRadius;
-    if (item.localArtist != null) {
-      final a = item.localArtist!;
-      return CoverImage(
-        songPath: a.firstSongPath,
-        width: size,
-        height: size,
-        radius: m.artistCover / 2,
-        icon: Icons.person,
-        placeholder: _letterLeading(a.name, scheme),
-      );
-    }
-    if (item.localAlbum != null) {
-      final a = item.localAlbum!;
-      return CoverImage(
-        songPath: a.firstSongPath,
-        width: size,
-        height: size,
-        radius: m.songRadius,
-        icon: Icons.album,
-      );
-    }
-    if (item.localPlaylist != null) {
-      return Container(
-        width: m.playCover,
-        height: m.playCover,
-        decoration: BoxDecoration(
-          color: scheme.secondaryContainer,
-          borderRadius: BorderRadius.circular(m.songRadius),
-        ),
-        alignment: Alignment.center,
-        child: Icon(Icons.queue_music, size: m.playCover * 0.45),
-      );
-    }
-    return OnlineCover(url: item.coverUrl, size: size, radius: radius);
   }
 }
