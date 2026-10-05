@@ -96,12 +96,15 @@ final BackdropKey cardGlassKey = BackdropKey();
 double navSurfaceBlurSigma(WidgetRef ref) =>
     kNavSurfaceBlurSigma * frostedBlurScaleOf(frostedGlassLevelSetting(ref));
 
-/// 壁纸模式系统三键区磨砂垫：原生侧三键区涂透明（壁纸模式），材质由
-/// Flutter 侧补齐——复刻固定底栏同款玻璃（同 fill、同 sigma、共享
-/// backdrop 回读组）。全局挂在路由最上层：二级页等 push 路由盖住
-/// shell 后仍生效
+/// 系统三键区磨砂垫：壁纸模式原生涂透明，材质由 Flutter 侧补齐——
+/// 复刻固定底栏同款玻璃（同 fill、同 sigma、共享 backdrop 回读组）。
+/// 全局挂在路由最上层：二级页等 push 路由盖住 shell 后仍生效
 class SystemNavGlassPad extends ConsumerWidget {
-  const SystemNavGlassPad({super.key});
+  const SystemNavGlassPad({super.key, this.fill});
+
+  /// 覆盖填充色：缺省取壁纸玻璃填充（壁纸模式磨砂垫）；非壁纸毛玻璃
+  /// 条带传入底栏同源 fill，与底栏保持同一份材质
+  final Color? fill;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -111,11 +114,33 @@ class SystemNavGlassPad extends ConsumerWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
           backdropGroupKey: navGlassKey,
-          child: ColoredBox(color: wallpaperGlassFill(context, ref)),
+          child: ColoredBox(color: fill ?? wallpaperGlassFill(context, ref)),
         ),
       ),
     );
   }
+}
+
+/// 系统三键区条带玻璃垫样式：毛玻璃档=底栏同源 fill（fixedNavBarSurface
+/// Fill 在 shell 库内，由调用方传入）+ 导航面档位 sigma；液态档（毛玻璃
+/// 关）=液态底栏同款 tint，垫体由调用方换用 BiliPaiGlass 呈现折射
+(Color fill, bool liquid) systemNavStripGlassStyle(
+    BuildContext context, WidgetRef ref, Color frostedFill) {
+  final frostedOn = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? false));
+  if (frostedOn) return (frostedFill, false);
+  return (
+    themeTint(
+      ref,
+      'nav.bar',
+      bilipaiSurfaceTint(
+        context,
+        ref,
+        liquidGlassQualitySetting(ref),
+      ),
+    ),
+    true,
+  );
 }
 
 double frostedBlurSigma(WidgetRef ref) => 16 * frostedBlurScale(ref);
