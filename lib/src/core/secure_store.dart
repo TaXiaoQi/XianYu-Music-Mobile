@@ -21,25 +21,43 @@ class SecureStore {
   /// [legacyPrefsKey] 非空时执行一次性迁移：读取旧键值写入安全存储后
   /// 删除旧键（仅安全存储可用时执行）。
   static Future<String?> read(String key, {String? legacyPrefsKey}) async {
+    var secureBroken = false;
     try {
       final value = await _storage.read(key: key);
       if (value != null) return value;
     } catch (_) {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(key);
+      secureBroken = true;
     }
-    if (legacyPrefsKey != null) {
-      final prefs = await SharedPreferences.getInstance();
-      final legacy = prefs.getString(legacyPrefsKey);
-      if (legacy != null && legacy.isNotEmpty) {
+    // 安全存储无值或不可用：读回退键。此前 write 失败可能已把值落到
+    // prefs（如 Keystore 偶发故障），读取侧必须同样回退，否则该值
+    // 永远读不出来——表现为密钥每次启动重新生成、加密凭据解不开。
+    final prefs = await SharedPreferences.getInstance();
+    final fallback = prefs.getString(key);
+    if (fallback != null && fallback.isNotEmpty) {
+      if (!secureBroken) {
+        // 安全存储可用：迁回安全存储后清掉明文回退键
         try {
-          await _storage.write(key: key, value: legacy);
-          await prefs.remove(legacyPrefsKey);
+          await _storage.write(key: key, value: fallback);
+          await prefs.remove(key);
         } catch (_) {
-          return legacy;
+          return fallback;
         }
       }
-      return legacy;
+      return fallback;
+    }
+    if (legacyPrefsKey != null) {
+      final legacy = prefs.getString(legacyPrefsKey);
+      if (legacy != null && legacy.isNotEmpty) {
+        if (!secureBroken) {
+          try {
+            await _storage.write(key: key, value: legacy);
+            await prefs.remove(legacyPrefsKey);
+          } catch (_) {
+            return legacy;
+          }
+        }
+        return legacy;
+      }
     }
     return null;
   }
