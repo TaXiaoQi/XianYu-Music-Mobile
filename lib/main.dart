@@ -110,6 +110,18 @@ Future<void> main() async {
 
 void _installErrorReporting(ProviderContainer container) {
   var reportingError = false;
+  // 同一异常逐帧重复时（如语义树断言循环）会把 error 上报打满，
+  // 触发服务端「请求过于频繁」全局限流——登录后所有 authed 请求
+  // （含排行榜）跟着 429。本地日志照记，上报按最小间隔限速。
+  var lastReportAt = DateTime.fromMillisecondsSinceEpoch(0);
+  const reportMinInterval = Duration(seconds: 30);
+  bool shouldReport() {
+    final now = DateTime.now();
+    if (now.difference(lastReportAt) < reportMinInterval) return false;
+    lastReportAt = now;
+    return true;
+  }
+
   FlutterError.onError = (details) {
     if (reportingError) return;
     reportingError = true;
@@ -120,6 +132,7 @@ void _installErrorReporting(ProviderContainer container) {
         .log('fatal', '未捕获异常: $msg\n$stack');
     AppLog.fatal('flutter', '$msg\n$stack');
     FlutterError.presentError(details);
+    if (!shouldReport()) return;
     try {
       container.read(accountApiProvider).reportError(
             errorType: 'flutter',
@@ -138,6 +151,7 @@ void _installErrorReporting(ProviderContainer container) {
     AppLogger.instance
         .log('fatal', '平台异常: $error\n$stack');
     AppLog.fatal('platform', '$error\n$stack');
+    if (!shouldReport()) return true;
     try {
       container.read(accountApiProvider).reportError(
             errorType: 'platform',
