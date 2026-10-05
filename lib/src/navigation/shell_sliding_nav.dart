@@ -280,8 +280,13 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   @override
   void dispose() {
-    // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影
-    navDropletSnapshot.value = null;
+    // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影。
+    // 推迟到帧末：dispose 可能发生在 finalizeTree 的锁定窗口（chrome
+    // 整树卸载帧），同步写 ValueNotifier 会通知 NavDropletOverlay 在
+    // 锁定树中 setState 抛「widget tree was locked」异常
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navDropletSnapshot.value = null;
+    });
     _coverAnim?.removeStatusListener(_onCoverAnimStatus);
     _moveC?.dispose();
     _springTickerC?.dispose();
@@ -513,6 +518,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // push 覆盖转场中静默：底栏正让位淡出、顶层水滴不渲染快照
+      //（chromeHidden），追帧链每帧 localToGlobal+写快照+通知 overlay
+      // rebuild 是纯开销（root→sub 转场掉帧源之一）；pop（reverse）的
+      // 视差追帧保留
+      if (_coverAnim?.status == AnimationStatus.forward) return;
       final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
       if (b == null || !b.attached || !b.hasSize) return;
       // 逻辑中心点过同一 paint 变换（显隐动画 scale 参与矩阵），
