@@ -88,9 +88,21 @@ const double kNavSurfaceBlurSigma = 16.0;
 /// 合并后每帧 N 次回读降为 1 次
 final BackdropKey navGlassKey = BackdropKey();
 
-/// 卡片级毛玻璃共享组（frostedCardSurface 非壁纸档恒 8*档位，
-/// 列表卡片互不重叠）
-final BackdropKey cardGlassKey = BackdropKey();
+/// 卡片级毛玻璃共享组按路由实例分组（Expando：路由销毁条目随之回收，
+/// 无泄漏）。同路由内列表卡片互不重叠，共享一次回读——每帧 N 次制备
+/// 降为 1 次；跨路由绝不共享：cover 覆盖路由转场中下层页
+/// （maintainState）仍同屏绘制，跨路由同组时上层页卡片复用下层页卡片
+/// 绘制时制备的纹理，读到下层页内容而非自己正下方的页面背景（设置页
+/// 账号卡片透出「我的」页红色，Impeller 新真机暴露，时间线与三大键
+/// 适配/新真机切机重合）——组内成员恒单页后，制备时机无论早晚，各
+/// 成员裁自己区域的采样均正确
+final Expando<BackdropKey> _cardGroupByRoute = Expando<BackdropKey>();
+
+BackdropKey? _cardGroupFor(BuildContext context) {
+  final route = ModalRoute.of(context);
+  if (route == null) return null;
+  return _cardGroupByRoute[route] ??= BackdropKey();
+}
 
 /// 导航面（悬浮导航/mini 播放条/appbar 等）随档位缩放的模糊强度
 double navSurfaceBlurSigma(WidgetRef ref) =>
@@ -204,12 +216,15 @@ Widget frostedCardSurface({
   // （滚动中模糊失效读作变透明），且毛玻璃 sigma 小、模糊开销∝σ²，
   // 恒用与静置一致的普通 blur 保证观感稳定
   // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
+  // 按路由实例分组的共享回读（_cardGroupFor）：同页卡片共享一次制备
+  // （性能，恢复 cardGlassKey 组的既有效果），跨路由各自独立组（正确性，
+  // 修账号卡片透下层页内容）；无路由场景退独立回读
   return RepaintBoundary(
     child: ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        backdropGroupKey: cardGlassKey,
+        backdropGroupKey: _cardGroupFor(context),
         child: surface,
       ),
     ),
