@@ -1057,11 +1057,30 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('预测返回手势'),
             subtitle: tr('开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）'),
             value: s?.enablePredictiveBack ?? false,
-            onChanged: (v) => n.setEnablePredictiveBack(v),
+            onChanged: (v) => _togglePredictiveBack(context, v, n),
           ),
         ],
       ),
     ];
+  }
+
+  /// 预测返回开关兜底：安卓 13 以下系统无 OnBackInvokedCallback 链路，
+  /// 不给开并提示原因。
+  Future<void> _togglePredictiveBack(
+    BuildContext context,
+    bool v,
+    SettingsNotifier n,
+  ) async {
+    if (!v) {
+      await n.setEnablePredictiveBack(false);
+      return;
+    }
+    if (PlatformCaps.isAndroid &&
+        await SystemUiChannel.androidSdkInt() < 33) {
+      if (context.mounted) showXianYuToast(context, tr('需要 Android 13+'));
+      return;
+    }
+    await n.setEnablePredictiveBack(true);
   }
 
   List<Widget> _tools(BuildContext context) {

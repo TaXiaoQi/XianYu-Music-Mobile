@@ -228,7 +228,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             24, portraitFloating ? GlassTopBar.height(context) + 6 : 24, 24, 24),
         children: [
           Center(
-            child: const AppLogo(size: 72),
+            child: const AppLogo(size: 96, radius: 24),
           ),
           const SizedBox(height: 14),
             Center(

@@ -10,7 +10,7 @@ extension _AccountPageAuthForms on _AccountPageState {
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
           child: Column(
             children: [
-              const AppLogo(size: 64, radius: 16),
+              const AppLogo(size: 96, radius: 24),
               const SizedBox(height: 12),
                 Text(tr('弦予音乐'),
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),

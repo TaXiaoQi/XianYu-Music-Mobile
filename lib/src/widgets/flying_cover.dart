@@ -296,9 +296,13 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     final bottom = MediaQuery.of(context).padding.bottom;
     _fallbackRect = Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
 
-    _cacheWidth =
-        (widget.fromRect.width * MediaQuery.of(context).devicePixelRatio)
-            .round();
+    // 飞行副本解码宽度按目的地大封面（播放页竖屏 coverSize = 屏宽×0.68）
+    // 计算，并与真封面一样走 highQuality 全图：与播放页同文件同解码宽度
+    // → FileImage 缓存命中同一条目，飞行全程清晰且落地无二次解码跳变
+    _cacheWidth = ((size.shortestSide * 0.68) *
+            MediaQuery.of(context).devicePixelRatio)
+        .round()
+        .clamp(1, 1600);
 
     _p0 = widget.fromRect.center;
 
@@ -383,6 +387,7 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                     width: w,
                     height: h,
                     radius: radius,
+                    highQuality: true,
                     cacheWidth: _cacheWidth,
                   ),
                 ),

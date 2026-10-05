@@ -16,6 +16,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
+import '../../src/core/system_ui.dart';
 import '../../src/core/settings.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/player/sleep_timer.dart';

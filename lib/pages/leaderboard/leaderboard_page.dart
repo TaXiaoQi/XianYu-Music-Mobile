@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/auth/server_models.dart';
 import 'leaderboard_prefetch.dart';
@@ -219,7 +220,8 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
       });
       // 回写缓存：下次进入直接命中
       storeCachedLeaderboard(ref, widget.period, list);
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('leaderboard', '加载失败: $e');
       if (!mounted || requestId != _requestId) return;
       setState(() {
         _entries = [];
