@@ -129,7 +129,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 return Column(children: _buildSearchResults(context));
               }
               final (header, entries) = groups[i];
+              // stretch 对齐原 ListView children 的 tight 全宽口径：
+              // 默认 center 会把分组头（红色标题）按内容宽度收缩居中
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _sectionHeader(context, header),
                   _CardGroup(
@@ -181,7 +184,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                 return Column(children: _buildSearchResults(context));
               }
               final (header, entries) = groups[i];
+              // stretch 同普通态：分组头保持原 tight 全宽左对齐口径
               return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _sectionHeader(context, header),
                   _CardGroup(
