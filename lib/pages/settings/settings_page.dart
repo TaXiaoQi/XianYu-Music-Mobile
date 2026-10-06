@@ -112,19 +112,34 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          ListView(
+          // builder 按分组懒构建：push 转场首帧只 build 视口内分组，
+          // 几十个设置项的全量 widget 构建是转场起步 build 卡顿主源
+          // （children: 模式首帧全部构建，屏外项纯属浪费）；滑动到
+          // 哪构建到哪，内容完整性不变
+          ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
               GlassTopBar.height(context, bottom: searchBox),
               16,
               92 + MediaQuery.of(context).padding.bottom,
             ),
-            children: [
-              if (_query.trim().isEmpty)
-                ..._buildCategorySections(context, groups)
-              else
-                ..._buildSearchResults(context),
-            ],
+            itemCount: _query.trim().isEmpty ? groups.length : 1,
+            itemBuilder: (context, i) {
+              if (_query.trim().isNotEmpty) {
+                return Column(children: _buildSearchResults(context));
+              }
+              final (header, entries) = groups[i];
+              return Column(
+                children: [
+                  _sectionHeader(context, header),
+                  _CardGroup(
+                    children: [
+                      for (final entry in entries) _CategoryTile(entry: entry),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
           Positioned(
             top: 0,
@@ -152,19 +167,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          ListView(
+          // 悬浮态同普通态：按分组懒构建压转场首帧 build（见普通态注释）
+          ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
               statusBar + 8 + 44 + 12,
               16,
               92 + MediaQuery.of(context).padding.bottom,
             ),
-            children: [
-              if (_query.trim().isEmpty)
-                ..._buildCategorySections(context, groups)
-              else
-                ..._buildSearchResults(context),
-            ],
+            itemCount: _query.trim().isEmpty ? groups.length : 1,
+            itemBuilder: (context, i) {
+              if (_query.trim().isNotEmpty) {
+                return Column(children: _buildSearchResults(context));
+              }
+              final (header, entries) = groups[i];
+              return Column(
+                children: [
+                  _sectionHeader(context, header),
+                  _CardGroup(
+                    children: [
+                      for (final entry in entries) _CategoryTile(entry: entry),
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
           Positioned(
             top: statusBar + 8,
@@ -217,21 +244,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         ],
       ),
     );
-  }
-
-  List<Widget> _buildCategorySections(
-      BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
-    return [
-      for (final (header, entries) in groups) ...[
-        _sectionHeader(context, header),
-        _CardGroup(
-          children: [
-            for (var i = 0; i < entries.length; i++)
-              _CategoryTile(entry: entries[i]),
-          ],
-        ),
-      ],
-    ];
   }
 
   Widget _buildSearchBox(BuildContext context) {
