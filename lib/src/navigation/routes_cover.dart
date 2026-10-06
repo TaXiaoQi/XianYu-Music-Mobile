@@ -132,9 +132,10 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
-  // 实证 defer 失效链路：didPush（动画 forward 起点）与 defer init
-  // （buildPage 首帧）的时间差与各自动画状态——若 init 时已 completed，
-  // 说明首帧 build 被 push 前/后的主线程重活阻塞 250ms+，转场被跳过
+  // 时间戳打点：didPush（动画 forward 起点）与 defer init（buildPage
+  // 首帧）的时间差与各自状态。实测 gap≈9ms 且 init 已 completed
+  // value=1.00——非首帧阻塞，而是 ModalRoute 入场首帧 offstage 代理
+  // 指向 kAlwaysCompleteAnimation（详见 buildPage 注释）
   @override
   TickerFuture didPush() {
     final c = controller;
@@ -180,8 +181,13 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    // defer 必须监听真控制器而非 buildPage 的 animation 参数：ModalRoute
+    // 在入场首帧把路由置 offstage，animation 代理临时指向
+    // kAlwaysCompleteAnimation（供 Hero 测量终位），initState 恒读到
+    // completed value=1.00，defer 从未生效。controller.view 才是转场真值。
     return AppPageBackground(
-        child: _RouteDeferredBody(builder: builder, animation: animation));
+        child: _RouteDeferredBody(
+            builder: builder, animation: controller!.view));
   }
 
   @override
@@ -296,7 +302,7 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
-  // 实证 defer 失效链路（同 _CoverRoute）
+  // 时间戳打点（同 _CoverRoute）：实测确认 offstage 代理机制，非首帧阻塞
   @override
   TickerFuture didPush() {
     final c = controller;
@@ -336,8 +342,10 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    // 同 _CoverRoute：监听 controller.view 而非 offstage 代理
     return AppPageBackground(
-        child: _RouteDeferredBody(builder: builder, animation: animation));
+        child: _RouteDeferredBody(
+            builder: builder, animation: controller!.view));
   }
 
   @override
@@ -449,7 +457,9 @@ class _RouteDeferredBody extends StatefulWidget {
 
 class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
   late bool _settled = widget.animation.value >= 1.0;
-  late final Stopwatch _sinceInit = Stopwatch()..start();
+  // 勿改回 late：late 字段首次访问才初始化，唯一访问点在 settled 打点处，
+  // 那时才 start() 导致 elapsed 恒 0ms，日志会误导为「转场瞬跳 1.0」
+  final Stopwatch _sinceInit = Stopwatch()..start();
   VoidCallback? _listener;
 
   @override
@@ -466,9 +476,7 @@ class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
     widget.animation.addListener(_listener!);
   }
 
-  // 值监听而非 status 监听：转场中页面却已全量构建的实测案例指向
-  // status 事件存在丢失边角；value>=1 是落定的唯一真值，逐帧比较
-  // 只是一次 double 判断，零成本
+  // 值监听即落定真值，不依赖 status 语义边角；逐帧比较只是一次 double 判断
   void _onTick() {
     if (widget.animation.value < 1.0) return;
     _cleanup();
