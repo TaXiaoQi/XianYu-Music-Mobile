@@ -48,6 +48,11 @@ Widget playbarGlassSurface(
     final quality = liquidGlassQualitySetting(ref);
     final glass = BiliPaiGlass(
       radius: radius,
+      // chrome 缓存帧：mini 条是 shell 常驻 chrome 条之一，与底栏/悬浮
+      // 顶栏同轨。push 二级页（如设置）时条在跑隐藏动画，逐帧 opacity
+      // 变化会让液态 shader backdrop 层每帧重采样（我的⇄设置转场 raster
+      // 三连卡主源）；缓存帧裁剪无采样，落定后交叉淡回实时渲染
+      useChromeFrame: true,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
       blurSigma: surfaceBlurSigma(
