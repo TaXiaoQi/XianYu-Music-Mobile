@@ -283,6 +283,7 @@ class PerfFrameMonitor {
       _frames++;
       if (build > _maxBuild) _maxBuild = build;
       if (raster > _maxRaster) _maxRaster = raster;
+      // 超标帧单独打点；分布级排查时可临时改为全帧打点（f 前缀）
       if (total > _jankTotalMs) {
         _jank++;
         AppLog.debug(
