@@ -181,13 +181,11 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    // defer 必须监听真控制器而非 buildPage 的 animation 参数：ModalRoute
-    // 在入场首帧把路由置 offstage，animation 代理临时指向
-    // kAlwaysCompleteAnimation（供 Hero 测量终位），initState 恒读到
-    // completed value=1.00，defer 从未生效。controller.view 才是转场真值。
+    // 转场期间维持内容渲染（用户否决空壳方案：离屏缓存+渲显分离架构下
+    // 页面观感完整，性能由 stagger 推迟/液态垫降级/信号静默承担）。
+    // _RouteDeferredBody 恒即时落定，仅保留时间戳打点作诊断。
     return AppPageBackground(
-        child: _RouteDeferredBody(
-            builder: builder, animation: controller!.view));
+        child: _RouteDeferredBody(builder: builder, animation: animation));
   }
 
   @override
@@ -342,10 +340,9 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
-    // 同 _CoverRoute：监听 controller.view 而非 offstage 代理
+    // 同 _CoverRoute：转场期间维持内容渲染，_RouteDeferredBody 仅作诊断
     return AppPageBackground(
-        child: _RouteDeferredBody(
-            builder: builder, animation: controller!.view));
+        child: _RouteDeferredBody(builder: builder, animation: animation));
   }
 
   @override
@@ -436,14 +433,12 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   }
 }
 
-/// cover 覆盖路由页体延迟构建：转场动画落定前只渲染背景空壳，落定后才
-/// 调 builder 构建页面。本地页数据同步可读，此前挂载即全量构建+布局+
-/// 封面解码与 250ms 转场逐帧叠加，是列表页（本地歌曲/喜欢/最近/歌单）
-/// 与设置页 push 掉帧源；在线页网络异步天然错峰，本组件把本地页拉齐
-/// 同构观感（转场滑入背景、落定内容浮现）。落定后挂载的列表 StaggerIn
-/// 逐行入场（此时 route animation 已 completed、零延迟）无缝衔接。
-/// push 后立即 pop 的路径动画走 reverse 永不 completed，listener 随
-/// route.dispose 回收，页面从未构建无副作用。
+/// cover 覆盖路由页体诊断壳：入转场时打 defer init/settled 时间戳。
+/// 空壳延迟构建方案已否决（转场中纯背景滑入，下一页内容缺失）——页面
+/// 性能由离屏缓存+渲显分离架构承担（RepaintBoundary retained 帧、
+/// StaggerIn 转场后错峰、液态垫/信号静默）。buildPage 传入的 animation
+/// 是 ModalRoute 的 offstage 代理（入场首帧指向 kAlwaysCompleteAnimation），
+/// initState 恒读到 completed value=1.00 即时落定，内容恒直接构建渲染。
 class _RouteDeferredBody extends StatefulWidget {
   const _RouteDeferredBody({required this.builder, required this.animation});
 
