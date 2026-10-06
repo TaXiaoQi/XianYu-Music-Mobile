@@ -543,6 +543,16 @@ class RenderLiquidBacking extends RenderBox {
 
     final bg = _backgroundColor;
 
+    // 转场窗口 blur 层静默：BackdropFilter 采样在合成期逐帧重执行，
+    // 转场动画每帧 backdrop 变化 = 每帧全量 blur（设置页 3 个新液态
+    // 实例的兜底 blur+chrome 条兜底不可用面，是「我的→设置」push 转
+    // 场中段 raster 卡主源；毛玻璃链路有 blurBudget 转场降级而此处
+    // 恒全量，同场景毛玻璃流畅液态掉帧即此差异）。动画中 blur+tint
+    // 与半透明 tint 平涂不可分辨，降级为纯 tint；落定沿
+    // _onTransitionBlurSync 重绘自动恢复。chromeFrame 实例已在 paint
+    // 入口走缓存帧裁剪，不进此路径
+    final skipBlur = !_liveUseShader;
+
     final forceFresh = _freshBackdrop || globalIsDragging.value;
     final targetSigma = _blurSigma;
     _cachedBlurFilter = forceFresh
@@ -551,9 +561,15 @@ class RenderLiquidBacking extends RenderBox {
             ? _cachedBlurFilter!
             : cheapBackdropBlur(targetSigma));
     _cachedBlurSigma = targetSigma;
-    final liveBlurFilter = _cachedBlurFilter!;
-    final blurLayer = _blurHandle.layer = BackdropFilterLayer();
-    blurLayer.filter = liveBlurFilter;
+    final BackdropFilterLayer? blurLayer;
+    if (skipBlur) {
+      _blurHandle.layer = null;
+      blurLayer = null;
+    } else {
+      final layer = _blurHandle.layer = BackdropFilterLayer();
+      layer.filter = _cachedBlurFilter!;
+      blurLayer = layer;
+    }
 
     final clipPath = Path()
       ..addRRect(RRect.fromRectAndRadius(
@@ -628,12 +644,14 @@ class RenderLiquidBacking extends RenderBox {
                   .withValues(alpha: 1 / 255),
           );
         }
-        context.pushLayer(blurLayer, (context, offset) {
+        void paintFlatTint(PaintingContext context, Offset offset) {
           // 兜底面 tint：未验证实例全强度（shader 关闭，boot 不参与）；
           // 首烘渐显期以 (1-boot) 反向退场，与 shader 内 tint 接力使
-          // 总 tint 恒定；已烘焙实例的非渐显态不画（与原行为一致）
-          final flatTint =
-              _solidOnly ? 1.0 : (useShader ? 1.0 - boot : 0.0);
+          // 总 tint 恒定；已烘焙实例的非渐显态不画（与原行为一致）。
+          // 转场静默窗口 blur 层已摘除，全强度 tint 平涂补位
+          final flatTint = skipBlur
+              ? 1.0
+              : (_solidOnly ? 1.0 : (useShader ? 1.0 - boot : 0.0));
           if (flatTint > 0.001) {
             context.canvas.drawRect(
               offset & size,
@@ -642,7 +660,13 @@ class RenderLiquidBacking extends RenderBox {
                     .withValues(alpha: _backgroundColor.a * flatTint),
             );
           }
-        }, offset);
+        }
+
+        if (blurLayer != null) {
+          context.pushLayer(blurLayer, paintFlatTint, offset);
+        } else {
+          paintFlatTint(context, offset);
+        }
         if (shaderLayer != null) {
           context.pushLayer(shaderLayer, (context, offset) {}, offset);
         }
