@@ -242,6 +242,72 @@ final applicationLogsProvider =
       (ref) => ApplicationLogManager.instance,
     );
 
+/// 转场窗口帧耗时监测：push/pop 开始时开启一段采样窗口，逐帧收集
+/// FrameTiming（build/raster 毫秒），超标帧单独打点，窗口结束打汇总——
+/// 用于对比「我的→设置」与「设置→详情」两类转场的掉帧幅度与时刻
+class PerfFrameMonitor {
+  static const int _windowMs = 1600;
+  static const double _jankTotalMs = 20;
+
+  static String? _scene;
+  static int _frames = 0;
+  static int _jank = 0;
+  static double _maxBuild = 0;
+  static double _maxRaster = 0;
+  static bool _installed = false;
+
+  static void _ensureInstalled() {
+    if (_installed) return;
+    _installed = true;
+    SchedulerBinding.instance.addTimingsCallback(_onTimings);
+  }
+
+  static void begin(String scene) {
+    _ensureInstalled();
+    _scene = scene;
+    _frames = 0;
+    _jank = 0;
+    _maxBuild = 0;
+    _maxRaster = 0;
+    // 窗口结束由 Timer 定界：页面完全静止时无帧回调，靠这里兜底打汇总
+    Timer(const Duration(milliseconds: _windowMs + 60), () => _flush(scene));
+  }
+
+  static void _onTimings(List<FrameTiming> timings) {
+    final scene = _scene;
+    if (scene == null) return;
+    for (final t in timings) {
+      final build = t.buildDuration.inMicroseconds / 1000.0;
+      final raster = t.rasterDuration.inMicroseconds / 1000.0;
+      final total = t.totalSpan.inMilliseconds;
+      _frames++;
+      if (build > _maxBuild) _maxBuild = build;
+      if (raster > _maxRaster) _maxRaster = raster;
+      if (total > _jankTotalMs) {
+        _jank++;
+        AppLog.debug(
+          'perf',
+          '[$scene] jank total=${total}ms '
+          'build=${build.toStringAsFixed(1)} '
+          'raster=${raster.toStringAsFixed(1)}',
+        );
+      }
+    }
+  }
+
+  static void _flush(String scene) {
+    // 已被新窗口接管（连续 push/pop）时让位，不打陈旧汇总
+    if (_scene != scene) return;
+    AppLog.debug(
+      'perf',
+      '[$scene] window=${_windowMs}ms frames=$_frames jank=$_jank '
+      'maxBuild=${_maxBuild.toStringAsFixed(1)}ms '
+      'maxRaster=${_maxRaster.toStringAsFixed(1)}ms',
+    );
+    _scene = null;
+  }
+}
+
 class AppLogRouteObserver extends NavigatorObserver {
   String _name(Route<dynamic>? route) =>
       route?.settings.name ?? route.runtimeType.toString();
@@ -249,11 +315,13 @@ class AppLogRouteObserver extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     AppLog.debug('route', 'push ${_name(route)}');
+    PerfFrameMonitor.begin('push:${_name(route)}');
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     AppLog.debug('route', 'pop ${_name(route)}');
+    PerfFrameMonitor.begin('pop:${_name(route)}');
   }
 
   @override
