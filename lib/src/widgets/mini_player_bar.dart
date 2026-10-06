@@ -988,7 +988,11 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     if (widget.degraded ||
         shader == null ||
         !ui.ImageFilter.isShaderFilterSupported) {
-      if (!_kCapabilityWarned && shader != null) {
+      // warn 仅限能力位真的缺失：degraded 淡入淡出窗口的降级是预期设计，
+      // 此前文案把 degraded 误报成「引擎不支持」，液态实际一直生效
+      if (!_kCapabilityWarned &&
+          shader != null &&
+          !ui.ImageFilter.isShaderFilterSupported) {
         _kCapabilityWarned = true;
         AppLog.warn('glass',
             '液态玻璃降级：isShaderFilterSupported=false（引擎不支持 ImageFilter.shader）');
