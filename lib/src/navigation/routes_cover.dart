@@ -132,6 +132,20 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
+  // 实证 defer 失效链路：didPush（动画 forward 起点）与 defer init
+  // （buildPage 首帧）的时间差与各自动画状态——若 init 时已 completed，
+  // 说明首帧 build 被 push 前/后的主线程重活阻塞 250ms+，转场被跳过
+  @override
+  TickerFuture didPush() {
+    final c = controller;
+    AppLog.debug(
+      'nav',
+      'cover didPush t=${DateTime.now().millisecondsSinceEpoch % 1000000} '
+      'status=${c?.status} v=${c?.value.toStringAsFixed(2)}',
+    );
+    return super.didPush();
+  }
+
   @override
   void install() {
     super.install();
@@ -282,6 +296,18 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
+  // 实证 defer 失效链路（同 _CoverRoute）
+  @override
+  TickerFuture didPush() {
+    final c = controller;
+    AppLog.debug(
+      'nav',
+      'coverBack didPush t=${DateTime.now().millisecondsSinceEpoch % 1000000} '
+      'status=${c?.status} v=${c?.value.toStringAsFixed(2)}',
+    );
+    return super.didPush();
+  }
+
   @override
   bool get opaque => true;
 
@@ -431,7 +457,8 @@ class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
     super.initState();
     AppLog.debug(
       'nav',
-      'defer init status=${widget.animation.status} '
+      'defer init t=${DateTime.now().millisecondsSinceEpoch % 1000000} '
+      'status=${widget.animation.status} '
       'value=${widget.animation.value.toStringAsFixed(2)}',
     );
     if (_settled) return;
