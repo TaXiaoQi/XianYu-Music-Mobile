@@ -218,7 +218,6 @@ extension PlayerNotifierSession on PlayerNotifier {
       final Map rawMeta = data['queueSongMeta'] as Map? ?? {};
       final int mode = (data['playMode'] as num?)?.toInt() ?? 0;
       final double pos = (data['currentPositionSecs'] as num?)?.toDouble() ?? 0;
-      final bool wasPlaying = data['isPlaying'] as bool? ?? false;
 
       if (rawQueue.isEmpty || curPath.isEmpty) {
         AppLog.info('session',
@@ -258,6 +257,10 @@ extension PlayerNotifierSession on PlayerNotifier {
       final curIdx = queue.indexWhere((q) => q.path == curPath);
       final currentItem = curIdx >= 0 ? queue[curIdx] : queue.first;
 
+      // 恒为暂停态恢复：持久化的 isPlaying 不可信（播放中每 5 秒防抖写 true，
+      // 退出收尾写库与进程退出存在竞态、后台被杀不落盘暂停态），信任它会导致
+      // 重启概率性自动出声。首次点播放经 _restoredLocalPending/_restoredOnlinePending
+      // 从原进度续播。
       state = PlaybackState(
         queue: queue,
         queueIndex: curIdx >= 0 ? curIdx : 0,
@@ -286,17 +289,8 @@ extension PlayerNotifierSession on PlayerNotifier {
           await _updateRgGain(cached);
           await seek(pos);
           await _player.setVolume(_effectiveVolume());
-          if (wasPlaying) unawaited(_player.play());
         } else if (SafChannel.isSafPath(currentItem.path)) {
           _restoredLocalPending = pos;
-          if (wasPlaying) {
-            unawaited(Future.delayed(const Duration(milliseconds: 800), () {
-              final idx = state.queueIndex;
-              if (idx >= 0 && idx < state.queue.length) {
-                _playAt(idx, startAtSecs: pos);
-              }
-            }));
-          }
         } else {
           await _updateRgGain(currentItem.path);
           final useExclusive =
@@ -304,7 +298,7 @@ extension PlayerNotifierSession on PlayerNotifier {
           var restored = false;
           if (useExclusive) {
             restored = await _tryStartExclusive(currentItem.path,
-                startAtSecs: pos, isPlaying: wasPlaying);
+                startAtSecs: pos, isPlaying: false);
           }
           if (!restored) {
             var path = currentItem.path;
@@ -321,13 +315,12 @@ extension PlayerNotifierSession on PlayerNotifier {
             }
             if (!isHttpSource) {
               restored = await _tryStartDspPipeline(path,
-                  startAtSecs: pos, isPlaying: wasPlaying);
+                  startAtSecs: pos, isPlaying: false);
             }
             if (!restored) {
               try {
                 await _setLocalSource(path);
                 await seek(pos);
-                if (wasPlaying) unawaited(_player.play());
               } catch (e) {
                 AppLogger.instance.log('session', '本地曲目预加载失败: $e');
               }
@@ -337,17 +330,6 @@ extension PlayerNotifierSession on PlayerNotifier {
         }
       } else {
         _restoredOnlinePending = pos;
-        if (wasPlaying) {
-          _restoredOnlinePending = null;
-          unawaited(Future.delayed(const Duration(milliseconds: 800), () {
-            final idx = state.queueIndex;
-            if (idx >= 0 && idx < state.queue.length) {
-              _playAt(idx, startAtSecs: pos, skipOnFailure: false)
-                  .catchError((Object e) {
-              });
-            }
-          }));
-        }
       }
       AppLog.info('session',
           'restored queue=${queue.length} cur="${currentItem.title}" '
