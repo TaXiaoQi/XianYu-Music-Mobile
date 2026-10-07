@@ -274,7 +274,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
               title: tr('毛玻璃效果'),
               subtitle: tr('调整毛玻璃模糊强度'),
               trailing: Text(switch (s?.frostedGlassLevel ??
-                  FrostedGlassLevel.strongest) {
+                  FrostedGlassLevel.medium) {
                 FrostedGlassLevel.strongest => tr('最强'),
                 FrostedGlassLevel.medium => tr('中等'),
                 FrostedGlassLevel.light => tr('轻度'),

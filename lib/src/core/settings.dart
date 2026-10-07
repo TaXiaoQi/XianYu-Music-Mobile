@@ -231,7 +231,7 @@ class AppSettings {
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
     this.frostedGlass = false,
-    this.frostedGlassLevel = FrostedGlassLevel.light,
+    this.frostedGlassLevel = FrostedGlassLevel.medium,
     this.liquidGlassQuality = LiquidGlassQuality.medium,
     this.performanceMode = PerformanceMode.auto,
     this.hapticStrength = 1,
@@ -854,7 +854,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       lyricAlignment: prefs.getString('lyricAlignment') ?? 'center',
       liquidGlass: liquidGlass,
       frostedGlass: frostedGlass,
-      frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'light'),
+      frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'medium'),
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
       liquidGlassQuality:
           _lgqFromString(prefs.getString('liquidGlassQuality') ?? 'medium'),

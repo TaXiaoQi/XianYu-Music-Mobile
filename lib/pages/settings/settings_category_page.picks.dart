@@ -271,7 +271,7 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
     WidgetRef ref,
     AppSettings? s,
   ) async {
-    final cur = s?.frostedGlassLevel ?? FrostedGlassLevel.strongest;
+    final cur = s?.frostedGlassLevel ?? FrostedGlassLevel.medium;
     final choice = await showModernChoiceSheet<FrostedGlassLevel>(
       context: context,
       title: tr('毛玻璃效果'),

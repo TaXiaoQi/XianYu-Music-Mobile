@@ -9,7 +9,7 @@ import 'blur_budget.dart';
 
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
-        FrostedGlassLevel.light));
+        FrostedGlassLevel.medium));
 
 bool wallpaperGlassActive(WidgetRef ref) =>
     ref.watch(settingsProvider.select(
@@ -75,10 +75,11 @@ List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
 double wallpaperGlassSigma(BuildContext context) => 0.0;
 
 double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
-      // 旧档位（1.0/0.6/0.4）整体偏重，以原轻档 0.4 为新重档下压
-      FrostedGlassLevel.strongest => 0.4,
-      FrostedGlassLevel.medium => 0.28,
-      FrostedGlassLevel.light => 0.18,
+      // 档位整体上移一档（0.18 观感偏淡砍除）：原中 0.28→轻、原重
+      // 0.4→中（新默认档）；新重档 0.6 为初版中档值，仅手动重档启用
+      FrostedGlassLevel.strongest => 0.6,
+      FrostedGlassLevel.medium => 0.4,
+      FrostedGlassLevel.light => 0.28,
     };
 
 /// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
