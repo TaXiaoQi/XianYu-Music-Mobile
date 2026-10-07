@@ -276,6 +276,10 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     return mt == 'video';
   }
 
+  /// 动态壁纸（含视频文件），展示形态由 mediaType 决定，可在编辑器内切换
+  bool get _hasVideo =>
+      ((widget.wallpaper['videoUrl'] as String?) ?? '').isNotEmpty;
+
   bool get _hasLocal => _localPath != null && File(_localPath!).existsSync();
 
   Future<void> _initPreviewVideo() async {
@@ -334,9 +338,11 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     super.dispose();
   }
 
-  Future<String> _ensureLocal() async {
-    if (_hasLocal) return _localPath!;
-    final isVideo = _isVideo;
+  /// 确保主文件在本地。preferVideo=true 时拉取视频文件（用于静帧模式补齐动态层）；
+  /// silent=true 时不更新下载记录/预览（供编辑器补拉副文件使用）。
+  Future<String> _ensureLocal({bool preferVideo = false, bool silent = false}) async {
+    if (!preferVideo && _hasLocal) return _localPath!;
+    final isVideo = preferVideo || _isVideo;
     final url = isVideo
         ? ((widget.wallpaper['videoUrl'] as String?) ?? '')
         : ((widget.wallpaper['imageUrl'] as String?) ?? '');
@@ -357,11 +363,13 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
     if (file.existsSync() &&
         file.lengthSync() > 0 &&
         (isVideo ? cacheKey.isNotEmpty : true)) {
-      await _recordDownload(widget.wallpaper, file.path);
-      _downloadsRevision.value++;
-      setState(() => _localPath = file.path);
-      if (_isVideo) await _initPreviewVideo();
-      return _localPath!;
+      if (!silent) {
+        await _recordDownload(widget.wallpaper, file.path);
+        _downloadsRevision.value++;
+        setState(() => _localPath = file.path);
+        if (_isVideo) await _initPreviewVideo();
+      }
+      return file.path;
     }
     final res = await appGet(Uri.parse(url));
     if (res.statusCode != 200) {
@@ -375,14 +383,40 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
       }
     }
     await file.writeAsBytes(bytes);
-    await _recordDownload(widget.wallpaper, file.path);
-    await _evictWallpaperCache(dir);
-    _downloadsRevision.value++;
-    setState(() => _localPath = file.path);
-    if (_isVideo) {
-      await _initPreviewVideo();
+    if (!silent) {
+      await _recordDownload(widget.wallpaper, file.path);
+      await _evictWallpaperCache(dir);
+      _downloadsRevision.value++;
+      setState(() => _localPath = file.path);
+      if (_isVideo) await _initPreviewVideo();
     }
-    return _localPath!;
+    return file.path;
+  }
+
+  /// 确保视频壁纸的静帧封面在本地，供编辑器内切换「展示图片」；失败不阻塞
+  Future<String?> _ensurePosterLocal() async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'XianYuWallpapers'));
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final id = widget.wallpaper['id'];
+      final posterFile = File(p.join(dir.path, 'wallpaper_${id}_poster.jpg'));
+      if (posterFile.existsSync() && posterFile.lengthSync() > 0) {
+        return posterFile.path;
+      }
+      var url = (widget.wallpaper['videoPoster'] as String?) ?? '';
+      if (url.isEmpty) url = (widget.wallpaper['imageUrl'] as String?) ?? '';
+      if (url.isEmpty) return null;
+      final res = await appGet(Uri.parse(url));
+      if (res.statusCode != 200) return null;
+      final bytes = await consolidateBytes(res);
+      if (bytes.isEmpty) return null;
+      await posterFile.writeAsBytes(bytes);
+      return posterFile.path;
+    } catch (e) {
+      AppLog.debug('wallpaper', '下载壁纸封面失败: $e');
+      return null;
+    }
   }
 
   String _safeName(Map<String, dynamic> w) {
@@ -475,10 +509,38 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
 
   Future<void> _openCustomEditor(String path) async {
     if (!mounted) return;
+    // 动态壁纸：静帧封面与视频双保留，编辑器内可像本地动态图一样切换展示形态
+    var imagePath = path;
+    String? videoPath;
+    if (_hasVideo) {
+      setState(() => _busy = true);
+      try {
+        final poster = await _ensurePosterLocal();
+        if (_isVideo) {
+          if (poster != null) {
+            imagePath = poster;
+            videoPath = path;
+          }
+          // 封面拉取失败：退回纯视频模式（与旧行为一致）
+        } else {
+          // 默认展示图片：主文件是静帧，进入编辑器前补拉视频
+          videoPath = await _ensureLocal(preferVideo: true, silent: true);
+        }
+      } catch (_) {
+        videoPath = null;
+      } finally {
+        if (mounted) setState(() => _busy = false);
+      }
+    }
+    if (!mounted) return;
     final applied = await Navigator.of(context).push<bool?>(
       coverPageRoute<bool>(
         context,
-        (_) => WallpaperCustomApplyPage(imagePath: path, mediaType: _isVideo),
+        (_) => WallpaperCustomApplyPage(
+          imagePath: imagePath,
+          mediaType: _isVideo,
+          videoPath: videoPath,
+        ),
       ),
     );
     if (!mounted) return;
