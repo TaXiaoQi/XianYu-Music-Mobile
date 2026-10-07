@@ -581,7 +581,6 @@ class _ManualSyncCard extends ConsumerWidget {
           state: sync.$4,
           onUpload: notifier.syncSettingsUpload,
           onDownload: notifier.syncSettingsDownload,
-          onSync: () => notifier.syncSettings(context),
         ),
       ],
     );
@@ -670,15 +669,12 @@ class _SyncActionTile extends StatelessWidget {
     required this.state,
     required this.onUpload,
     required this.onDownload,
-    this.onSync,
   });
 
   final String title;
   final SyncItemState state;
   final VoidCallback onUpload;
   final VoidCallback onDownload;
-
-  final VoidCallback? onSync;
 
   @override
   Widget build(BuildContext context) {
@@ -701,17 +697,6 @@ class _SyncActionTile extends StatelessWidget {
               ),
               Row(
                 children: [
-                  if (onSync != null) ...[
-                    FilledButton(
-                      onPressed: state.syncing ? null : onSync,
-                      style: FilledButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                      ),
-                      child:   Text(tr('同步'), style: TextStyle(fontSize: 12)),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
                   FilledButton.tonal(
                     onPressed: state.syncing ? null : onUpload,
                     style: FilledButton.styleFrom(

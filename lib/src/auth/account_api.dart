@@ -11,7 +11,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.3-beta2';
+const appVersion = '1.0.3-beta4';
 
 /// 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。
 const _betaAccessCacheKey = 'beta_access_signed_payload_v1';
@@ -601,6 +601,7 @@ class AccountApi {
             w['image'] ??
             '') as String,
         'videoUrl': (w['videoUrl'] ?? w['video_url'] ?? '') as String,
+        'videoPoster': (w['videoPoster'] ?? w['video_poster'] ?? '') as String,
         'videoSha256': (w['videoSha256'] ?? w['video_sha256'] ?? '') as String,
         'videoDuration':
             ((w['videoDuration'] ?? w['video_duration'] ?? 0) as dynamic) is num
@@ -657,6 +658,7 @@ class AccountApi {
     required String imageData,
     String? videoData,
     int videoDuration = 0,
+    String mediaType = 'video',
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -673,6 +675,7 @@ class AccountApi {
       'image_data': imageData,
       if (isVideo) 'video_data': videoData,
       if (isVideo) 'video_duration': videoDuration,
+      if (isVideo) 'media_type': mediaType,
     }, fetchTimeoutMs: isVideo ? 600000 : 90000);
   }
 

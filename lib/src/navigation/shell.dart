@@ -176,7 +176,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     // 启动即静默预热排行榜：进个人中心点统计卡时直接命中缓存，
     // 不再先闪一屏空骨架（预热失败/未完成时页面行为与以前一致）
     unawaited(prefetchLeaderboard(ref));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 等凭据恢复落定再判登录态：恢复完成前 user 尚未就绪，提前触发会漏同步
+      await ref.read(authProvider.notifier).whenRestored;
+      if (!mounted) return;
       if (ref.read(authProvider).user != null) {
         ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
       }

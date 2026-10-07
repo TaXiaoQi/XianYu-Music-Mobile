@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -191,6 +192,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
   final Ref _ref;
   final Random _rand = Random();
 
+  /// 凭据恢复（init）完成信号。恢复是异步的（含安全存储解密），
+  /// 若登录态在 token 就绪前对外可见，启动期请求会无 token 外发，
+  /// 服务端 401 后本地凭据被误清——表现为重启丢登录。
+  final Completer<void> _restoreDone = Completer<void>();
+
+  /// 凭据恢复完成信号（恢复异常也会触发，不超时）
+  Future<void> get whenRestored => _restoreDone.future;
+
+  /// 请求闸门：恢复落定前不发任何账号请求。超时兜底防止极端挂起
+  /// 把所有请求卡死。
+  Future<void> _ensureRestored() {
+    return _restoreDone.future.timeout(
+      const Duration(seconds: 6),
+      onTimeout: () {
+        AppLog.warn('auth', '凭据恢复超时，请求以无 token 状态继续');
+      },
+    );
+  }
+
   static (HumanCaptchaConfig, DateTime)? _captchaConfigCache;
 
   String? _token;
@@ -240,18 +260,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
         AuthUser? user;
         if (userJson is Map<String, dynamic>) {
           user = AuthUser.fromJson(userJson);
-          state = AuthState(user: user);
         }
         if (stored.isNotEmpty) {
           final token = await unsealToken(stored);
           if (token == null || token.isEmpty) {
-            // 加密密钥丢失/密文损坏：会话不可恢复，按未登录处理并清理
-            _token = null;
-            try {
-              await authClearCredentials(dataDir: dir);
-            } catch (e) {
-              AppLog.warn('auth', '失效凭据清理失败: $e');
-            }
+            // 密钥暂不可用/密文损坏：本次按未登录展示，但保留加密凭据——
+            // Keystore 偶发故障恢复后，下次启动仍可解密救回；删盘会把
+            // 瞬时故障放大成永久登出
+            AppLog.warn('auth', 'token 解密失败，保留凭据待下次恢复');
           } else {
             _token = token;
             if (!stored.startsWith(kTokenSealPrefix)) {
@@ -262,21 +278,31 @@ class AuthNotifier extends StateNotifier<AuthState> {
                 userJson: jsonEncode(user?.toJson()),
               );
             }
+            // state 必须等 _token 就绪后再置：壳层首帧会触发云同步/启动
+            // 通知等带 ciyuanxi_id 的 USER_BOUND 请求，先置 state 会让
+            // 它们无 token 外发 → 服务端 401 → 误清登录态
+            if (user != null) {
+              state = AuthState(user: user);
+            }
           }
         }
       }
     } catch (e) {
       AppLog.warn('auth', '凭据恢复失败: $e');
+    } finally {
+      _restoreDone.complete();
     }
   }
 
   Future<Map<String, dynamic>> requestAction(
       String action, Map<String, dynamic> body,
       {int? fetchTimeoutMs}) async {
+    await _ensureRestored();
     final dir = await _dataDir();
     final finalBody = Map<String, dynamic>.from(body);
     final token = _token;
-    if (token != null && token.isNotEmpty && !finalBody.containsKey('token')) {
+    final hasToken = token != null && token.isNotEmpty;
+    if (hasToken && !finalBody.containsKey('token')) {
       finalBody['token'] = token;
     }
     final res = await authAuthedRequest(
@@ -288,7 +314,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final j = jsonDecode(res) as Map<String, dynamic>;
     final code = (j['code'] as num?)?.toInt() ?? -1;
     final msg = (j['msg'] as String?) ?? '';
-    if (_isSessionExpired(code, msg)) {
+    // 请求本身没带 token（未登录/恢复中被超时放行）：401 属预期，
+    // 不能当会话失效清掉登录态
+    if (hasToken && _isSessionExpired(code, msg)) {
       await _handleSessionExpired();
     }
     if (code != 200) {
@@ -300,10 +328,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<dynamic> requestActionList(
       String action, Map<String, dynamic> body,
       {int? fetchTimeoutMs}) async {
+    await _ensureRestored();
     final dir = await _dataDir();
     final finalBody = Map<String, dynamic>.from(body);
     final token = _token;
-    if (token != null && token.isNotEmpty && !finalBody.containsKey('token')) {
+    final hasToken = token != null && token.isNotEmpty;
+    if (hasToken && !finalBody.containsKey('token')) {
       finalBody['token'] = token;
     }
     final res = await authAuthedRequest(
@@ -316,7 +346,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final j = jsonDecode(res) as Map<String, dynamic>;
     final code = (j['code'] as num?)?.toInt() ?? -1;
     final msg = (j['msg'] as String?) ?? '';
-    if (_isSessionExpired(code, msg)) {
+    // 同 requestAction：无 token 的 401 不当会话失效处理
+    if (hasToken && _isSessionExpired(code, msg)) {
       await _handleSessionExpired();
     }
     if (code != 200) {
@@ -332,12 +363,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       code == 401 && _sessionExpiredRe.hasMatch(msg);
 
   Future<void> _handleSessionExpired() async {
-    try {
-      final dir = await _dataDir();
-      await authClearCredentials(dataDir: dir);
-    } catch (e) {
-      AppLog.debug('auth', '会话失效后清理本地凭据失败: $e');
-    }
+    // 仅清内存态，不删本地凭据：服务端 401 也可能来自 DB 抖动等误判，
+    // 删盘会把可恢复的登录态变成永久登出（重启丢登录的推手之一）。
+    // 凭据本身是 AES 密文，留盘无泄露面；显式登出（logout）才真正清盘。
     _token = null;
     state = const AuthState(sessionExpired: true);
   }
