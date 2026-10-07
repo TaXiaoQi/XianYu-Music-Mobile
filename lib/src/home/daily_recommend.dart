@@ -594,6 +594,9 @@ final dailyRecommendProvider =
 class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
   @override
   Future<DailyRecommendState> build() async {
+    // 先等凭据恢复落定：恢复期 user 必为空，提前走未登录分支
+    // 会把当天日推缓存清掉，表现为每次重启都重新生成
+    await ref.read(authProvider.notifier).whenRestored;
     final auth = ref.watch(authProvider);
     final ciyuanxiId = auth.user?.ciyuanxiId?.trim() ?? '';
     if (ciyuanxiId.isEmpty) {
