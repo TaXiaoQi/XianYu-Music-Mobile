@@ -707,16 +707,19 @@ class _MyPlaylistsSection extends ConsumerWidget {
             ],
           ),
         ),
-        _ReorderCard(
-          itemCount: playlists.length,
-          onReorder: onReorder,
-          itemKey: (i) => ValueKey(playlists[i].id),
-          itemBuilder: (ctx, i) => _PlaylistRow(
-            playlist: playlists[i],
-            index: i,
-            dragEnabled: true,
+        // 空歌单不渲染玻璃卡：0 项时 _ReorderCard 仍会画一块空白
+        // 卡片表面（毛玻璃下读作白边）；标题行的新建/导入入口保留
+        if (playlists.isNotEmpty)
+          _ReorderCard(
+            itemCount: playlists.length,
+            onReorder: onReorder,
+            itemKey: (i) => ValueKey(playlists[i].id),
+            itemBuilder: (ctx, i) => _PlaylistRow(
+              playlist: playlists[i],
+              index: i,
+              dragEnabled: true,
+            ),
           ),
-        ),
         const SizedBox(height: 24),
       ],
     );
