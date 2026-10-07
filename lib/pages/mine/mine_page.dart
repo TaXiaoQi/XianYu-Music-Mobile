@@ -74,7 +74,8 @@ class MinePage extends ConsumerWidget {
               _QuickEntries(),
               SizedBox(height: 24),
               _MyPlaylistsSection(),
-              _FavoriteCollectionsSection(kind: 'playlist', title: tr('收藏歌单')),
+              // 收藏歌单已收纳进「我的收藏」页，本页只保留自建歌单；
+              // 收藏专辑仍在此展示
               _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
             ],
           ),
