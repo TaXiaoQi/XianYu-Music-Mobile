@@ -291,7 +291,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       useMaterial3: true,
     );
     lightBaseTextTheme = lightBase.textTheme;
-    _lightTheme = _applyWallpaperTextMode(lightBase, textMode);
+    _lightTheme = _applyWallpaperTextMode(lightBase, textMode, darkTheme: false);
     final darkScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.dark);
     darkBaseScheme = darkScheme;
@@ -325,11 +325,15 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       useMaterial3: true,
     );
     darkBaseTextTheme = _darkTheme!.textTheme;
-    _darkTheme = _applyWallpaperTextMode(_darkTheme!, textMode);
+    _darkTheme = _applyWallpaperTextMode(_darkTheme!, textMode, darkTheme: true);
   }
 
-  ThemeData _applyWallpaperTextMode(ThemeData base, WallpaperTextColor mode) {
+  ThemeData _applyWallpaperTextMode(ThemeData base, WallpaperTextColor mode,
+      {required bool darkTheme}) {
     if (mode == WallpaperTextColor.follow) return base;
+    // 暗色字体只在浅色主题翻转容器：深色主题保持原生深容器浅字，与
+    // wallpaperBlockFill 的深色主题恒深色块判定配套（壁纸模式深色适配）
+    if (mode == WallpaperTextColor.dark && darkTheme) return base;
     final Color onSurface;
     final Color onSurfaceVariant;
     if (mode == WallpaperTextColor.light) {

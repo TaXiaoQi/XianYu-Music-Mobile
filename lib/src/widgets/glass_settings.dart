@@ -47,9 +47,11 @@ Color wallpaperBlockFill(BuildContext context, WidgetRef ref) {
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.customBackground));
   final alpha = ((cb?.widgetAlpha ?? 30).clamp(0, 90)) / 100.0;
   if (alpha <= 0) return const Color(0x00000000);
-  final darkish = cb?.textMode == WallpaperTextColor.dark ||
-      (cb?.textMode == WallpaperTextColor.follow &&
-          Theme.of(context).brightness == Brightness.light);
+  // 深色主题恒深色块（壁纸模式深色适配）：暗色字体（dark）是为浅色壁纸
+  // 配浅色 UI 而设，深色主题下仍翻白块会整片发白与主题脱节；仅浅色
+  // 主题按文字模式选底色（亮字体配深块，暗字体/默认配白块）
+  final darkish = Theme.of(context).brightness == Brightness.light &&
+      cb?.textMode != WallpaperTextColor.light;
   final base =
       darkish ? const Color(0xFFFFFFFF) : const Color(0xFF202020);
   return base.withValues(alpha: alpha);
@@ -185,7 +187,10 @@ Widget frostedCardSurface({
       : Colors.white.withValues(alpha: 0.34);
   final baseFill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallpaperTransparent
+      // 壁纸模式恒走组件色块（含毛玻璃开）：此前毛玻璃开时用非壁纸的
+      // frostedFill（白 0.06/0.34），浅色壁纸被 blur 后叠白 tint 整卡
+      // 发白，且与 mini 条/底栏/顶栏（恒色块）口径不一致
+      : (wallpaper
           ? wallpaperGlassFill(context, ref)
           : frostedFill);
   final fill =
@@ -406,7 +411,9 @@ Widget pseudoLiquidSurface({
   final solid = !wallpaper && !frostedOn;
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallTransparent
+      // 壁纸模式恒走组件色块（含毛玻璃开），同 frostedCardSurface：
+      // 浅色壁纸 blur 后叠非壁纸白 tint 会整片发白
+      : (wallpaper
           ? wallpaperGlassFill(context, ref)
           : (isDark
               ? Colors.white.withValues(alpha: 0.06)
