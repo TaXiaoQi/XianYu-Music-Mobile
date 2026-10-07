@@ -92,7 +92,8 @@ class AutoSyncConfig {
 
   const AutoSyncConfig({
     this.enabled = true,
-    this.syncIntervalSeconds = 3600,
+    // 变更驱动的即时同步是主路径，轮询仅兜底（如设置类变更、上传失败重试）
+    this.syncIntervalSeconds = 900,
     this.maxDelayMinutes = 30,
   });
 

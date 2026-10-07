@@ -128,6 +128,7 @@ class SettingsSyncService {
         context: context,
         localTime: DateTime.now(),
         cloudTime: cloudTime ?? DateTime.now(),
+        diffLabels: diffSyncedSettingsLabels(local, cloud),
       );
       if (choices == null) {
         _lens.item = _lens.item.copyWith(
@@ -188,4 +189,34 @@ class SettingsSyncService {
       _fail(e is AuthException ? e.message : tr('同步失败: {e}', {'e': e}));
     }
   }
+}
+
+/// 对比本地与云端设置，返回不一致项的中文名列表（用于冲突弹窗展示具体冲突）。
+/// 与 [areSettingsEqual] 同规则：云端缺失的字段不算冲突。
+List<String> diffSyncedSettingsLabels(
+    AppSettings local, Map<String, dynamic> cloud) {
+  const labels = {
+    'volume': '音量',
+    'playMode': '播放模式',
+    'keepScreenOn': '屏幕常亮',
+    'themeMode': '主题模式',
+    'accentColor': '主题色',
+    'showQualityBadges': '音质标识',
+    'onlineDefaultQuality': '在线默认音质',
+    'libraryMinDurationSeconds': '曲库最短时长',
+    'showLyricsTranslation': '歌词翻译',
+    'enableWordEffect': '逐字歌词效果',
+    'downloadQuality': '下载音质',
+    'downloadLyrics': '下载歌词',
+    'organizeRule': '整理规则',
+  };
+  final localMap = settingsToSyncMap(local);
+  final m = normalizeCloudSettingsMap(cloud);
+  final out = <String>[];
+  for (final e in localMap.entries) {
+    final cv = m[e.key];
+    if (cv == null || cv == e.value) continue;
+    out.add(labels[e.key] ?? e.key);
+  }
+  return out;
 }

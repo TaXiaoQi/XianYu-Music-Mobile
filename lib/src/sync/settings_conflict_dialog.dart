@@ -34,22 +34,28 @@ Future<SyncCategoryChoices?> showSettingsConflictDialog({
   required BuildContext context,
   required DateTime localTime,
   required DateTime cloudTime,
+  List<String> diffLabels = const [],
 }) async {
   final navigator = Navigator.of(context, rootNavigator: true);
-  final direction = await navigator.push<SyncDirection>(
-    PredictiveBackDialogRoute<SyncDirection>(
-      builder: (ctx) => _ConflictOverallDialog(
-        localTime: localTime,
-        cloudTime: cloudTime,
+  while (true) {
+    final direction = await navigator.push<SyncDirection>(
+      PredictiveBackDialogRoute<SyncDirection>(
+        builder: (ctx) => _ConflictOverallDialog(
+          localTime: localTime,
+          cloudTime: cloudTime,
+          diffLabels: diffLabels,
+        ),
       ),
-    ),
-  );
-  if (direction == null) return null;
-  return navigator.push<SyncCategoryChoices>(
-    PredictiveBackDialogRoute<SyncCategoryChoices>(
-      builder: (ctx) => _ConflictCategoryDialog(initialDirection: direction),
-    ),
-  );
+    );
+    if (direction == null) return null;
+    final choices = await navigator.push<SyncCategoryChoices>(
+      PredictiveBackDialogRoute<SyncCategoryChoices>(
+        builder: (ctx) => _ConflictCategoryDialog(initialDirection: direction),
+      ),
+    );
+    if (choices != null) return choices;
+    // 类别页取消：回到第一级重新选择云端/本地，而非直接退出
+  }
 }
 
 String _formatTime(DateTime t) {
@@ -61,10 +67,12 @@ class _ConflictOverallDialog extends StatelessWidget {
   const _ConflictOverallDialog({
     required this.localTime,
     required this.cloudTime,
+    this.diffLabels = const [],
   });
 
   final DateTime localTime;
   final DateTime cloudTime;
+  final List<String> diffLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +130,48 @@ class _ConflictOverallDialog extends StatelessWidget {
               label: tr('云端设置'),
               time: _formatTime(cloudTime),
             ),
+            if (diffLabels.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.error.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: scheme.error.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      tr('不一致的设置项'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final label in diffLabels.take(6))
+                          _DiffChip(label: label),
+                        if (diffLabels.length > 6)
+                          _DiffChip(label: tr('等 {n} 项', {'n': diffLabels.length})),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 22),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -220,6 +270,28 @@ class _TimeRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _DiffChip extends StatelessWidget {
+  const _DiffChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.error.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(fontSize: 11, color: scheme.error),
       ),
     );
   }
