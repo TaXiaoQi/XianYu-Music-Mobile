@@ -299,9 +299,14 @@ double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
     };
 
 double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
-      LiquidGlassQuality.low => 1.5,
-      LiquidGlassQuality.medium => 2.1,
-      LiquidGlassQuality.high => 2.75,
+      // 三档模糊对齐毛玻璃导航面基准（16×档位）：低/中/高 ↔ 轻/中/重，
+      // 经 frostedBlurScaleOf 间接取值保证将来档位调整自动同步
+      LiquidGlassQuality.low => kNavSurfaceBlurSigma *
+          frostedBlurScaleOf(FrostedGlassLevel.light),
+      LiquidGlassQuality.medium => kNavSurfaceBlurSigma *
+          frostedBlurScaleOf(FrostedGlassLevel.medium),
+      LiquidGlassQuality.high => kNavSurfaceBlurSigma *
+          frostedBlurScaleOf(FrostedGlassLevel.strongest),
     };
 
 double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
