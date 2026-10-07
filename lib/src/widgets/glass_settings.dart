@@ -299,14 +299,13 @@ double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
     };
 
 double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
-      // 三档模糊对齐毛玻璃导航面基准（16×档位）：低/中/高 ↔ 轻/中/重，
-      // 经 frostedBlurScaleOf 间接取值保证将来档位调整自动同步
-      LiquidGlassQuality.low => kNavSurfaceBlurSigma *
-          frostedBlurScaleOf(FrostedGlassLevel.light),
-      LiquidGlassQuality.medium => kNavSurfaceBlurSigma *
-          frostedBlurScaleOf(FrostedGlassLevel.medium),
-      LiquidGlassQuality.high => kNavSurfaceBlurSigma *
-          frostedBlurScaleOf(FrostedGlassLevel.strongest),
+      // 液态独立低模糊，不对齐毛玻璃导航面基准：对齐后最低档 4.48 观感
+      // 仍糊成一团（真机实测），液态观感由「轻模糊 + 边缘折射」构成，
+      // 模糊只负责柔化透底（BiliPai 中档 backdropBlurRadius 仅 4px 的
+      // 等效量级），加重会埋掉折射细节
+      LiquidGlassQuality.low => 1.5,
+      LiquidGlassQuality.medium => 2.1,
+      LiquidGlassQuality.high => 2.75,
     };
 
 double bilipaiEdgeOf(LiquidGlassQuality q) => switch (q) {
