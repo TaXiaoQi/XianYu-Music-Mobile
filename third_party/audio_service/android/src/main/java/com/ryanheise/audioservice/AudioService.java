@@ -362,6 +362,7 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     @Override
     public void onDestroy() {
+        cancelTaskRemovedKill();
         super.onDestroy();
         if (listener != null) {
             listener.onDestroy();
@@ -913,7 +914,30 @@ public class AudioService extends MediaBrowserServiceCompat {
         if (listener != null) {
             listener.onTaskRemoved();
         }
+        // 划掉多任务的 native 兜底：Dart 侧 handler 正常时会在 ~2s 内 exit(0)，
+        // 本定时器随进程消亡失效；Dart 链路任何一环失败（消息死信 / isolate
+        // 挂起 / 引擎销毁）时由这里强制击杀进程，保证"划掉多任务=进程清理"。
+        // 用户 3s 内重新打开 app 时经 cancelTaskRemovedKill() 取消，防误杀冷启动。
+        cancelTaskRemovedKill();
+        final Runnable kill = () -> {
+            Log.w("AudioService", "taskRemoved kill fallback triggered");
+            android.os.Process.killProcess(android.os.Process.myPid());
+        };
+        taskRemovedKill = kill;
+        mainThreadHandler.postDelayed(kill, 3000);
         super.onTaskRemoved(rootIntent);
+    }
+
+    private static final Handler mainThreadHandler = new Handler(Looper.getMainLooper());
+    private static Runnable taskRemovedKill;
+
+    /** 取消划掉多任务的兜底击杀（新 Activity 冷启动 / 服务正常销毁时调用）。 */
+    public static void cancelTaskRemovedKill() {
+        final Runnable kill = taskRemovedKill;
+        if (kill != null) {
+            taskRemovedKill = null;
+            mainThreadHandler.removeCallbacks(kill);
+        }
     }
 
     public class MediaSessionCallback extends MediaSessionCompat.Callback {

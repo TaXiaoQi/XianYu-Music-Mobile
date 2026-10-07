@@ -145,8 +145,21 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
 
   @override
   Future<void> onTaskRemoved() async {
-    await _notifier?.pauseFromSystem(origin: 'mediasession.taskRemoved');
-    await super.stop();
+    // 划掉多任务 = 彻底退出进程。暂停只是收尾动作（保存会话/统计），
+    // 绝不能挡住 exit(0)：toggle 里 await _player.pause() 若撞上
+    // ExoPlayer 主线程楔死（本项目有先例，见 xianyu/diag 楔死探测）
+    // 或任何一环抛异常，进程就永远退不出去，表现为"划掉还在播"。
+    // 因此 try/catch 全包 + 2 秒超时，无论暂停成败，退出必达。
+    try {
+      await _notifier
+          ?.pauseFromSystem(origin: 'mediasession.taskRemoved')
+          .timeout(const Duration(seconds: 2));
+    } catch (e) {
+      AppLog.warn('playgate', 'taskRemoved 收尾异常(忽略): $e');
+    }
+    try {
+      await super.stop();
+    } catch (_) {}
     exit(0);
   }
 }
