@@ -4,6 +4,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:zxing2/qrcode.dart';
 
@@ -11,6 +13,7 @@ import '../../src/auth/auth_provider.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 
 class ScanPage extends ConsumerStatefulWidget {
@@ -21,13 +24,14 @@ class ScanPage extends ConsumerStatefulWidget {
 }
 
 class _ScanPageState extends ConsumerState<ScanPage>
-    with HidesShellChrome {
+    with HidesShellChrome, HideMiniBar {
   CameraController? _controller;
   bool _permissionDenied = false;
   bool _initFailed = false;
   bool _initializing = false;
   bool _handling = false;
   bool _torchOn = false;
+  bool _picking = false;
   String? _lastCode;
   DateTime? _lastDecodeAt;
 
@@ -114,7 +118,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
   }
 
   void _onImageStream(CameraImage image) {
-    if (_handling || image.planes.isEmpty) return;
+    if (_handling || _picking || image.planes.isEmpty) return;
     final now = DateTime.now();
     final last = _lastDecodeAt;
     if (last != null && now.difference(last) < const Duration(milliseconds: 250)) {
@@ -135,6 +139,62 @@ class _ScanPageState extends ConsumerState<ScanPage>
       _lastCode = code;
       _handleCode(code);
     } catch (_) { /* 当前帧无二维码，解码失败属正常情况 */ }
+  }
+
+  /// 相册识码：从本地图片解码二维码（拍摄/截图均可），无需相机权限。
+  /// 原生层先压到 ≤2000px 控制解码耗时；EXIF 方向烘焙后再取 ARGB 像素，
+  /// 复用与相机流相同的二维码读取器与提取规则。
+  Future<void> _pickFromGallery() async {
+    if (_picking || _handling) return;
+    _picking = true;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2000,
+        maxHeight: 2000,
+        imageQuality: 100,
+      );
+      if (picked == null || !mounted) return;
+      final bytes = await picked.readAsBytes();
+      var im = img.decodeImage(bytes);
+      if (!mounted) return;
+      if (im == null) {
+        showXianYuToast(context, tr('无法读取所选图片'));
+        return;
+      }
+      im = img.bakeOrientation(im);
+      if (im.width > 2000 || im.height > 2000) {
+        im = im.width >= im.height
+            ? img.copyResize(im, width: 2000)
+            : img.copyResize(im, height: 2000);
+      }
+      final data = im.getBytes(order: img.ChannelOrder.argb);
+      final pixels = Int32List(im.width * im.height);
+      for (var i = 0, j = 0; i < pixels.length; i++, j += 4) {
+        pixels[i] = (data[j] << 24) |
+            (data[j + 1] << 16) |
+            (data[j + 2] << 8) |
+            data[j + 3];
+      }
+      final source = RGBLuminanceSource(im.width, im.height, pixels);
+      String? code;
+      try {
+        code = _extractCode(
+            QRCodeReader().decode(BinaryBitmap(HybridBinarizer(source))).text);
+      } catch (_) { /* 图片中无二维码，解码失败属正常情况 */ }
+      if (!mounted) return;
+      if (code == null) {
+        showXianYuToast(context, tr('未在图片中识别到二维码'));
+        return;
+      }
+      _lastCode = code;
+      await _handleCode(code);
+    } catch (e) {
+      AppLog.debug('scan', '相册识码失败: $e');
+      if (mounted) showXianYuToast(context, tr('相册识码失败'));
+    } finally {
+      _picking = false;
+    }
   }
 
   Future<void> _resume() async {
@@ -383,6 +443,16 @@ class _ScanPageState extends ConsumerState<ScanPage>
                           tr('将桌面端登录页的二维码对准取景框'),
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextButton.icon(
+                        onPressed: _pickFromGallery,
+                        icon: const Icon(Icons.photo_outlined, size: 18),
+                        label: Text(tr('相册识码')),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          textStyle: const TextStyle(fontSize: 13),
                         ),
                       ),
                     ],

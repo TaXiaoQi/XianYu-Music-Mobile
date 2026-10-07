@@ -76,6 +76,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     '/home/toplists',
     '/account',
     '/leaderboard',
+    '/scan',
   };
 
   static bool _routeHidesBarOnly(String path) =>
