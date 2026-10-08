@@ -4,9 +4,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
+import '../../src/favorites/favorites_provider.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/drag_handle.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
@@ -15,6 +18,7 @@ import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/stagger_in.dart';
 import '../../src/i18n/i18n.dart';
 
 class DailyRecommendPage extends ConsumerStatefulWidget {
@@ -221,9 +225,29 @@ class _RecommendList extends ConsumerStatefulWidget {
 
 class _RecommendListState extends ConsumerState<_RecommendList> {
   final ScrollController _scroll = ScrollController();
+  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
+    if (mounted) setState(() {});
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _stagger.start();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RecommendList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 换一批/重新生成后整批内容变化，重播入场动画；
+    // 封面回填等同一批 items 的更新（同一 List 实例）不重播
+    if (!identical(oldWidget.state.items, widget.state.items)) {
+      _stagger.start();
+    }
+  }
 
   @override
   void dispose() {
+    _stagger.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -239,17 +263,51 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
     );
   }
 
+  void _toggleFavorite(DailyRecommendItem item, QueueItem q, bool wasFav) {
+    ref.read(favoritesProvider.notifier).toggle(q);
+    showXianYuToast(
+        context,
+        wasFav
+            ? tr('已取消收藏：{t}', {'t': item.title})
+            : tr('已收藏：{t}', {'t': item.title}));
+  }
+
+  /// 行首槽位：序号/播放标识（与其他在线歌曲列表同款），不可拖拽
+  Widget _rowShell(int i, String songPath, Widget row) => Stack(
+        children: [
+          Padding(padding: const EdgeInsets.only(left: 44), child: row),
+          Positioned(
+            left: 8,
+            top: 0,
+            bottom: 0,
+            width: 36,
+            child: Center(
+              child: SongRowLeading(index: i, songPath: songPath),
+            ),
+          ),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final state = widget.state;
+    final favorites = ref.watch(favoritesProvider);
     final hasSong = ref.watch(playerProvider.select((s) => s.current != null));
     final m = ListMetrics.ofRef(ref);
-    final rowExtent = 46.0 + 2 * m.vPad;
     final quality =
         ref.read(settingsProvider).valueOrNull?.onlineDefaultQuality ?? '320k';
     final bottomPad =
         (hasSong ? 92.0 : 24.0) + MediaQuery.of(context).padding.bottom;
+    // 行顶坐标前缀和（带 reason 的行加高一行），供悬浮定位按钮估算
+    final rowTops = <double>[6];
+    for (final it in state.items) {
+      rowTops.add(rowTops.last +
+          m.songCover +
+          2 * m.vPad +
+          (it.reason.isNotEmpty ? 18.0 : 0.0) +
+          4);
+    }
     return Stack(
       children: [
         ListView.separated(
@@ -259,121 +317,143 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
           separatorBuilder: (_, _) => SizedBox(height: 4),
           itemBuilder: (context, i) {
             final item = state.items[i];
-            return Builder(
-              builder: (rowContext) {
-            BuildContext? coverCtx;
-            final g = songRowPlay(
-              ref,
-              onPlay: () async {
-                final ok = await launchFlyCover(
-                  rowContext,
-                  coverContext: coverCtx,
-                  coverSize: 46,
-                  centerVertically: true,
-                  networkUrl: item.coverUrl,
-                  radius: 6,
-                );
-                if (ok) ref.read(dailyRecommendProvider.notifier).play(i);
-              },
-            );
-            void openActions() {
-              final quality = ref
-                      .read(settingsProvider)
-                      .valueOrNull
-                      ?.onlineDefaultQuality ??
-                  '320k';
-              showSongActionsSheet(
-                rowContext,
-                ref: ref,
-                item: item.toQueueItem(quality),
-                onPlay: () =>
-                    ref.read(dailyRecommendProvider.notifier).play(i),
-              );
-            }
+            final q = item.toQueueItem(quality);
+            final isFav = favorites.contains(q.path);
+            return _stagger.wrap(
+              i,
+              _rowShell(
+                i,
+                q.path,
+                Builder(
+                  builder: (rowContext) {
+                    BuildContext? coverCtx;
+                    final g = songRowPlay(
+                      ref,
+                      onPlay: () async {
+                        final ok = await launchFlyCover(
+                          rowContext,
+                          coverContext: coverCtx,
+                          coverSize: m.songCover,
+                          vPad: m.vPad,
+                          networkUrl: item.coverUrl,
+                          radius: m.songRadius,
+                        );
+                        if (ok) {
+                          ref.read(dailyRecommendProvider.notifier).play(i);
+                        }
+                      },
+                    );
+                    void openActions() {
+                      showSongActionsSheet(
+                        rowContext,
+                        ref: ref,
+                        item: q,
+                        onPlay: () =>
+                            ref.read(dailyRecommendProvider.notifier).play(i),
+                      );
+                    }
 
-            return g.wrap(
-                ListTile(
-                  dense: true,
-                leading: Builder(
-                  builder: (c) {
-                    coverCtx = c;
-                    return OnlineCover(url: item.coverUrl, size: 46);
-                  },
-                ),
-                onTap: g.onTap,
-                onLongPress: openActions,
-                title: Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontSize: 14.5, fontWeight: FontWeight.w600),
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 1),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            item.artist.isEmpty
-                                ? item.album
-                                : '${item.artist} · ${item.album}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant),
-                          ),
+                    return g.wrap(
+                      CoverRow(
+                        cover: Builder(
+                          builder: (c) {
+                            coverCtx = c;
+                            return OnlineCover(
+                              url: item.coverUrl,
+                              size: m.songCover,
+                              radius: m.songRadius,
+                            );
+                          },
                         ),
-                        const SizedBox(width: 6),
-                        _buildSourceTag(item),
-                      ],
-                    ),
-                    if (item.reason.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Text(
-                          item.reason,
+                        onTap: g.onTap,
+                        onLongPress: openActions,
+                        verticalPadding: m.vPad,
+                        title: Text(
+                          item.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: 10.5, color: scheme.primary),
+                              fontSize: m.titleSize,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.artist.isEmpty
+                                        ? item.album
+                                        : '${item.artist} · ${item.album}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: m.subtitleSize,
+                                        color: scheme.onSurfaceVariant),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                _buildSourceTag(item),
+                              ],
+                            ),
+                            if (item.reason.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Text(
+                                  item.reason,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 10.5, color: scheme.primary),
+                                ),
+                              ),
+                          ],
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                isFav ? Icons.favorite : Icons.favorite_border,
+                                size: 20,
+                                color: isFav
+                                    ? scheme.primary
+                                    : scheme.onSurfaceVariant,
+                              ),
+                              tooltip: tr('收藏'),
+                              onPressed: () => _toggleFavorite(item, q, isFav),
+                            ),
+                            if (item.durationMs > 0)
+                              Text(
+                                '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
+                                style: TextStyle(
+                                    fontSize: m.subtitleSize,
+                                    color: scheme.onSurfaceVariant),
+                              ),
+                            IconButton(
+                              icon: const Icon(Icons.more_horiz, size: 22),
+                              color: scheme.onSurfaceVariant,
+                              tooltip: tr('更多'),
+                              onPressed: openActions,
+                            ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (item.durationMs > 0)
-                      Text(
-                        '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    IconButton(
-                      icon: const Icon(Icons.more_horiz, size: 22),
-                      color: scheme.onSurfaceVariant,
-                      tooltip: tr('更多'),
-                      onPressed: openActions,
-                    ),
-                  ],
+                    );
+                  },
                 ),
               ),
             );
           },
-        );
-        },
         ),
         SongListScrollFabs(
           controller: _scroll,
           paths: [
             for (final it in state.items) it.toQueueItem(quality).path,
           ],
-          rowTopOf: (i) => 6 + i * (rowExtent + 4),
-          itemExtent: rowExtent + 4,
+          rowTopOf: (i) => i < rowTops.length ? rowTops[i] : rowTops.last,
+          itemExtent: m.songCover + 2 * m.vPad,
           bottom: bottomPad + 8,
           right: 12,
         ),
