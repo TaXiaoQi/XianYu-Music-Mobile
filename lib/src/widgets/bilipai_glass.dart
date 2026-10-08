@@ -93,6 +93,10 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   // _frozen 是否为整屏 chrome 缓存帧（决定 frozen 绘制走裁剪还是整图）
   bool _frozenIsChromeFrame = false;
 
+  // _frozen 为 chrome 缓存帧时该帧的抓取区域（null=整屏），与图像成对
+  // 更新：滚动补帧只抓 chrome 面并集区域，裁剪源矩形须减区域原点
+  Rect? _frozenRegion;
+
   bool _idle = false;
 
   bool _routeTransition = false;
@@ -198,10 +202,12 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       final frame = widget.useChromeFrame ? chromeGlassFrame.value : null;
       if (frame != null) {
         _frozen = frame.image.clone();
+        _frozenRegion = frame.region;
         _frozenIsChromeFrame = true;
         _fade.value = 1;
         _fade.reverse();
       } else {
+        _frozenRegion = null;
         _frozenIsChromeFrame = false;
         _fade.value = 0;
       }
@@ -244,6 +250,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         if (frame != null) {
           final old = _frozen;
           _frozen = frame.image.clone();
+          _frozenRegion = frame.region;
           _frozenIsChromeFrame = true;
           _fade.stop();
           _fade.value = 1;
@@ -273,6 +280,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         if (frame != null && _fade.value < 0.999) {
           final old = _frozen;
           _frozen = frame.image.clone();
+          _frozenRegion = frame.region;
           _frozenIsChromeFrame = true;
           _fade.stop();
           _fade.value = 1;
@@ -302,6 +310,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (frame == null) return;
     final old = _frozen;
     _frozen = frame.image.clone();
+    _frozenRegion = frame.region;
     setState(() {});
     if (old != null) {
       SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
@@ -543,6 +552,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               solidOnly: solidOnly,
               useChromeFrame: widget.useChromeFrame,
               frozenIsChromeFrame: _frozenIsChromeFrame,
+              frozenChromeRegion: _frozenRegion,
             ),
           ),
         ),

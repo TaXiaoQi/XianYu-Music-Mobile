@@ -19,6 +19,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     this.solidOnly = false,
     this.useChromeFrame = false,
     this.frozenIsChromeFrame = false,
+    this.frozenChromeRegion,
   });
 
   final ui.FragmentShader shader;
@@ -47,6 +48,9 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
 
   final bool frozenIsChromeFrame;
 
+  /// _frozen 为 chrome 缓存帧时该帧的抓取区域（null=整屏）
+  final Rect? frozenChromeRegion;
+
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderLiquidBacking(
@@ -67,6 +71,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       solidOnly: solidOnly,
       useChromeFrame: useChromeFrame,
       frozenIsChromeFrame: frozenIsChromeFrame,
+      frozenChromeRegion: frozenChromeRegion,
       dpr: MediaQuery.devicePixelRatioOf(context),
     );
   }
@@ -93,6 +98,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     ..solidOnly = solidOnly
     ..useChromeFrame = useChromeFrame
     ..frozenIsChromeFrame = frozenIsChromeFrame
+    ..frozenChromeRegion = frozenChromeRegion
     ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
   }
 }
@@ -116,6 +122,7 @@ class RenderLiquidBacking extends RenderBox {
     required bool solidOnly,
     required bool useChromeFrame,
     required bool frozenIsChromeFrame,
+    Rect? frozenChromeRegion,
     required double dpr,
   }) : _shader = shader,
        _radius = radius,
@@ -134,6 +141,7 @@ class RenderLiquidBacking extends RenderBox {
        _solidOnly = solidOnly,
        _useChromeFrame = useChromeFrame,
        _frozenIsChromeFrame = frozenIsChromeFrame,
+       _frozenChromeRegion = frozenChromeRegion,
        _devicePixelRatio = dpr;
 
   ui.FragmentShader _shader;
@@ -279,6 +287,17 @@ class RenderLiquidBacking extends RenderBox {
     markNeedsPaint();
   }
 
+  // _frozen 为 chrome 缓存帧时该帧的抓取区域（逻辑坐标；null=整屏）。
+  // 滚动补帧只抓 chrome 面并集区域，源矩形换算须减去区域原点，与图像
+  // 成对更新（State 侧 adopt 时随 _frozen 一起赋值）
+  Rect? _frozenChromeRegion;
+  Rect? get frozenChromeRegion => _frozenChromeRegion;
+  set frozenChromeRegion(Rect? value) {
+    if (_frozenChromeRegion == value) return;
+    _frozenChromeRegion = value;
+    markNeedsPaint();
+  }
+
   // chrome 缓存帧当前是否可用作本面的裁剪源：
   // 存在、抓帧 dpr 与当前一致、抓帧逻辑尺寸与当前屏一致（旋转/分屏后失效）
   bool _chromeFrameUsable() {
@@ -400,7 +419,13 @@ class RenderLiquidBacking extends RenderBox {
     // 缓存帧是上次正常合成的液态输出——直接画自己区域的裁剪即可复现
     // 上次观感，无任何采样。优先级最高（覆盖兜底/交叉淡入分支）
     if (_useChromeFrame && !_liveUseShader && _chromeFrameUsable()) {
-      _paintChromeFrame(context, offset, chromeGlassFrame.value!.image);
+      final frame = chromeGlassFrame.value!;
+      _paintChromeFrame(
+        context,
+        offset,
+        frame.image,
+        region: frame.region,
+      );
       return;
     }
     if (frozen != null && fade > 0.001) {
@@ -424,21 +449,24 @@ class RenderLiquidBacking extends RenderBox {
     }
   }
 
-  // 画整屏缓存帧中本面区域的裁剪：源矩形按静止布局位置×抓帧 dpr 映射，
-  // 裁剪到圆角矩形（缓存帧里圆角外是旧页面像素，不能带出来）。
-  // 纯 drawImageRect，无 backdrop 层无采样。alpha 供落定交叉淡回叠加用
+  // 画缓存帧中本面区域的裁剪：源矩形按静止布局位置×抓帧 dpr 映射（区域
+  // 帧先减去抓取区域原点），裁剪到圆角矩形（缓存帧里圆角外是旧页面像
+  // 素，不能带出来）。纯 drawImageRect，无 backdrop 层无采样。alpha 供
+  // 落定交叉淡回叠加用
   void _paintChromeFrame(
     PaintingContext context,
     Offset offset,
     ui.Image image, {
     double alpha = 1.0,
+    Rect? region,
   }) {
     final dpr = _devicePixelRatio;
     // 采样原点取抓帧时登记的静止布局位置（chromeFaceStaticOrigin）：
     // 转场中 localToGlobal 会被底栏 hidden 动画（AnimatedScale 0.92⇄1.0）
     // 的祖先变换污染，源矩形算偏后裁剪内容与实时渲染错位成双影
     final globalPos =
-        chromeFaceStaticOrigin(this) ?? localToGlobal(Offset.zero);
+        (chromeFaceStaticOrigin(this) ?? localToGlobal(Offset.zero)) -
+            (region?.topLeft ?? Offset.zero);
     final src = Rect.fromLTWH(
       globalPos.dx * dpr,
       globalPos.dy * dpr,
@@ -479,9 +507,15 @@ class RenderLiquidBacking extends RenderBox {
     Offset offset,
     ui.Image image,
   ) {
-    // chrome 缓存帧是整屏图：画本面区域裁剪，整图缩进玻璃矩形会串页
+    // chrome 缓存帧可能是区域图（滚动补帧）：画本面区域裁剪，整图缩进
+    // 玻璃矩形会串页
     if (_frozenIsChromeFrame) {
-      _paintChromeFrame(context, offset, image);
+      _paintChromeFrame(
+        context,
+        offset,
+        image,
+        region: _frozenChromeRegion,
+      );
       return;
     }
     final rect = offset & size;
@@ -510,10 +544,16 @@ class RenderLiquidBacking extends RenderBox {
     double fade,
   ) {
     _paintLive(context, offset, overlay: (context, offset) {
-      // chrome 缓存帧是整屏图：叠加必须裁剪到本面区域——原实现把整图
+      // chrome 缓存帧可能是区域图：叠加必须裁剪到本面区域——原实现把整图
       // 无裁剪画在玻璃原点上，上一页整屏叠在当前页上
       if (_frozenIsChromeFrame) {
-        _paintChromeFrame(context, offset, image, alpha: fade);
+        _paintChromeFrame(
+          context,
+          offset,
+          image,
+          alpha: fade,
+          region: _frozenChromeRegion,
+        );
         return;
       }
       final rect = offset & size;

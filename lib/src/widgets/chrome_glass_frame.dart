@@ -21,6 +21,7 @@ class ChromeGlassFrame {
     required this.image,
     required this.dpr,
     required this.logicalSize,
+    this.region,
   });
 
   final ui.Image image;
@@ -28,6 +29,12 @@ class ChromeGlassFrame {
   final double dpr;
 
   final Size logicalSize;
+
+  /// 滚动补帧只抓 chrome 玻璃面并集区域（逻辑屏幕坐标），把滚动中
+  /// 20Hz 的整屏 toImageSync 全场景重渲染（首页等重页签的滚动分段
+  /// 卡顿主源）降为小区域重渲染；null = 整屏抓帧（静置/落定帧）。
+  /// 消费端源矩形 = 面静止原点 − region.topLeft 后再乘 dpr。
+  final Rect? region;
 }
 
 /// 最近一帧整屏缓存；null = 尚未抓到（消费方回落原降级路径）
@@ -182,22 +189,45 @@ void unregisterChromeFace(RenderBox face) {
 
 Offset? chromeFaceStaticOrigin(RenderBox face) => _chromeFaceOrigins[face];
 
+/// 已登记 chrome 玻璃面的屏幕并集区域（逻辑坐标，裁到屏幕内）。
+/// 滚动补帧只重渲染该区域——各面在滚动中位置固定，localToGlobal 准确；
+/// 无已登记面时返回 null 回退整屏抓帧
+Rect? _chromeUnionRegion(Size screen) {
+  _chromeFaceOrigins.removeWhere((face, _) => !face.attached);
+  Rect? union;
+  for (final face in _chromeFaceOrigins.keys) {
+    final rect = face.localToGlobal(Offset.zero) & face.size;
+    union = union == null ? rect : union.expandToInclude(rect);
+  }
+  if (union == null || union.isEmpty) return null;
+  final clipped = union.intersect(Offset.zero & screen);
+  return clipped.isEmpty ? null : clipped;
+}
+
 /// 无读回抓帧：layer 树直接进 SceneBuilder，scene.toImageSync 产出
 /// GPU 常驻纹理（不发生 GPU→CPU 读回），比 RenderRepaintBoundary
 /// .toImage（读回型）便宜一个数量级——滚动中 50ms 节流刷新才可负担。
-/// dpr 缩放由 pushTransform 承担（Scene.toImageSync 不支持 pixelRatio）
-ui.Image? _captureSync(RenderRepaintBoundary box, double dpr) {
+/// dpr 缩放由 pushTransform 承担（Scene.toImageSync 不支持 pixelRatio）；
+/// region 非空时额外 pushClipRect 只光栅化该区域（chrome 面并集），
+/// toImageSync 尺寸随之收窄——滚动补帧不再全场景重渲染
+ui.Image? _captureSync(
+  RenderRepaintBoundary box,
+  double dpr, {
+  Rect? region,
+}) {
   final layer = box.debugLayer;
   if (layer is! OffsetLayer || !box.attached) return null;
-  final w = (box.size.width * dpr).round();
-  final h = (box.size.height * dpr).round();
+  final w = ((region?.width ?? box.size.width) * dpr).round();
+  final h = ((region?.height ?? box.size.height) * dpr).round();
   if (w <= 0 || h <= 0) return null;
   layer.updateSubtreeNeedsAddToScene();
   final builder = ui.SceneBuilder();
   try {
     builder.pushTransform(
         Matrix4.diagonal3Values(dpr, dpr, 1).storage);
+    if (region != null) builder.pushClipRect(region);
     layer.addToScene(builder);
+    if (region != null) builder.pop();
     builder.pop();
     final scene = builder.build();
     try {
@@ -234,10 +264,18 @@ Future<void> _capture() async {
   final dpr = MediaQuery.devicePixelRatioOf(ctx);
   _capturing = true;
   try {
+    // 滚动补帧只抓 chrome 玻璃面并集区域：整屏 toImageSync 全场景重渲染
+    // 在重页签（首页）上以 20Hz 插进滚动帧 = 滚动分段卡顿（2026-10-08）。
+    // 静置/落定帧保持整屏（转场 adopt 裁剪契约不变）
+    final region =
+        globalIsScrolling.value ? _chromeUnionRegion(box.size) : null;
     // 无读回抓帧优先：GPU 常驻纹理，比读回型便宜一个数量级；层未就绪
-    // 等异常回退读回型兜底
+    // 等异常回退读回型兜底（仅整屏帧——区域帧的图像范围与读回型不符，
+    // 回退会产生 region 错位的缓存帧，直接跳过等下个节流窗口重试）
     final img =
-        _captureSync(box, dpr) ?? await box.toImage(pixelRatio: dpr);
+        _captureSync(box, dpr, region: region) ??
+        (region == null ? await box.toImage(pixelRatio: dpr) : null);
+    if (img == null) return;
     if (!box.attached) {
       img.dispose();
       return;
@@ -252,6 +290,7 @@ Future<void> _capture() async {
       image: img,
       dpr: dpr,
       logicalSize: box.size,
+      region: region,
     );
     // 延迟一帧释放旧帧：消费方 paint 可能还持有引用读取
     if (old != null) {
