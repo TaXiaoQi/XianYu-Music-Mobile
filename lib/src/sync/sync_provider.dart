@@ -13,6 +13,7 @@ import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
+import '../home/home_providers.dart' show pullListenServerSnapshot;
 import '../library/library_provider.dart';
 import '../notifications/notification_service.dart';
 import '../playlist/playlist_provider.dart';
@@ -276,8 +277,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> syncHistoryDownload() => _historySyncSvc.download();
 
   Future<void> syncListenStats() async {
-    AppLogger.instance
-        .log('sync', '[听歌统计] 快照同步已废弃，听歌时长由增量上报统一维护');
+    // 快照双向同步已废弃，听歌时长由 delta 增量上报统一维护；此处只做纯
+    // 快照拉取（零 delta 不入账），登录同步与自动同步心跳复用同一路径
+    await pullListenServerSnapshot(_ref);
   }
 
   Future<void> _init() async {

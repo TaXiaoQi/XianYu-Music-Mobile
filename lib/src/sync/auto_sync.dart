@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
+import '../home/home_providers.dart' show pullListenServerSnapshot;
 import 'sync_provider.dart';
 import 'sync_trigger.dart';
 
@@ -44,6 +45,12 @@ class AutoSyncService {
 
   Future<void> _tick() async {
     if (_syncing) return;
+    // 听歌统计纯快照拉取：挂在既有 60s 心跳上（不受自动同步开关/间隔约束），
+    // 本机不播放时也能追平多端聚合值，与排行榜保持一致；播放中 50s 内有过
+    // 成功 delta 回执（自带最新快照）则由门控跳过，不重复请求
+    if (_ref.read(authProvider).isLoggedIn) {
+      await pullListenServerSnapshot(_ref, skipIfFresh: true);
+    }
     final config = await getConfig();
     if (!config.enabled) return;
     final auth = _ref.read(authProvider);

@@ -15,6 +15,10 @@ class PlayStatsReporter {
   double _accumulatedTime = 0;
   bool _currentPlayCountRecorded = false;
 
+  // ---- 云端事件流水（v2）：60 秒聚合一个幂等事件 ----
+  double _eventAccum = 0;
+  static const double _eventThresholdSecs = 60;
+
   /// 曲目开始/恢复播放时打点。
   void noteTrackStart() {
     _trackStartTime = DateTime.now();
@@ -24,6 +28,7 @@ class PlayStatsReporter {
   void resetCounters() {
     _currentPlayCountRecorded = false;
     _accumulatedTime = 0;
+    _eventAccum = 0; // 不足 60 秒的余额丢弃——宁可少报，绝不重报
   }
 
   /// 听歌时长累计口径：服务端快照 + 本地会话增量；达到阈值即落库。
@@ -58,6 +63,15 @@ class PlayStatsReporter {
       _accumulatedTime = 0;
     } else {
       _accumulatedTime = totalDuration;
+    }
+    // 云端事件流水：与本地落库同源（currentSession = 本次确认真实听到的
+    // 秒数），60 秒聚合一个幂等事件入队；队列由同步器节流批量上报，
+    // 失败保留重试。切曲时不足 60 秒的余额丢弃——宁可少报，绝不重报。
+    _eventAccum += currentSession;
+    if (_eventAccum >= _eventThresholdSecs) {
+      final secs = _eventAccum.floor();
+      _eventAccum -= secs;
+      _ref.read(listenStatsSyncProvider.notifier).enqueue(secs);
     }
     _trackStartTime = state.isPlaying ? DateTime.now() : null;
   }
