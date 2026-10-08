@@ -17,6 +17,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/app_logo.dart';
 import '../../src/widgets/user_agreement.dart';
 import '../../src/widgets/user_avatar.dart';
+import '../../src/widgets/app_toast.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
 import '../../src/i18n/i18n.dart';

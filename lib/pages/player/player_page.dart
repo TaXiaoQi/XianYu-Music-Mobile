@@ -306,14 +306,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       },
                       onToggleMv: current != null
                           ? () async {
-                              final messenger = ScaffoldMessenger.of(context);
+                              final overlay =
+                                  Overlay.of(context, rootOverlay: true);
                               final err = await ref
                                   .read(mvProvider.notifier)
                                   .toggle(current);
                               if (err != null && mounted) {
-                                messenger.showSnackBar(
-                                  SnackBar(content: Text(tr(err))),
-                                );
+                                showXianYuToastByOverlay(overlay, tr(err));
                               }
                             }
                           : null,

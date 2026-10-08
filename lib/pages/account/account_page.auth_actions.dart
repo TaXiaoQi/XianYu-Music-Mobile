@@ -39,10 +39,8 @@ extension _AccountPageAuthActions on _AccountPageState {
     }
   }
 
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
+  void _toast(String msg) =>
+      showXianYuToast(context, msg, duration: const Duration(seconds: 2));
 
   Future<void> _submit() async {
     final notifier = ref.read(authProvider.notifier);

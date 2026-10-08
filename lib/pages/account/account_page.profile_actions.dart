@@ -111,19 +111,16 @@ extension _ProfileViewActions on _ProfileViewState {
     }
   }
 
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
+  void _toast(String msg) =>
+      showXianYuToast(context, msg, duration: const Duration(seconds: 2));
 
   void _copy(BuildContext context, String text, String label) {
     if (text.isEmpty) return;
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(tr('已复制{label}：{text}', {'label': label, 'text': text})),
-        duration: const Duration(seconds: 2),
-      ),
+    showXianYuToast(
+      context,
+      tr('已复制{label}：{text}', {'label': label, 'text': text}),
+      duration: const Duration(seconds: 2),
     );
   }
 
