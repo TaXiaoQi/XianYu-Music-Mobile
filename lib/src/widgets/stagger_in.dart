@@ -37,8 +37,11 @@ class _StaggerInState extends State<StaggerIn>
     duration: widget.duration,
   );
   Timer? _delayTimer;
-  AnimationStatusListener? _routeAnimListener;
+  VoidCallback? _routeAnimListener;
   Animation<double>? _routeAnim;
+  ModalRoute<dynamic>? _route;
+  bool _routeChecking = false;
+  int _routeCheckFrames = 0;
 
   @override
   void initState() {
@@ -56,32 +59,59 @@ class _StaggerInState extends State<StaggerIn>
   // 逐帧 rebuild+重绘与整页平移逐帧叠加，是列表页（本地歌曲/喜欢/最近/
   // 歌单等）push 掉帧主源。落定前行动画停在 t=0（Opacity 0 跳过绘制，
   // 子树保持挂载，封面仍并行加载）；无转场场景（根页签首挂/
-  // maintainState 复挂）animation 已 completed，零延迟保持原行为
+  // maintainState 复挂）动画已落定，零延迟保持原行为。
+  // 判定必须走 controller 真值：ModalRoute 入场首帧把路由置 offstage
+  // （Hero 测量终位机制），route.animation 代理临时指向
+  // kAlwaysCompleteAnimation 恒读 completed——首读值/status 判定从未
+  // 生效，行动画在转场中照跑（_RouteDeferredBody 实证）。controller 是
+  // protected 触不可及，改为 offstage 窗口内逐帧重验 route.animation：
+  // offstage 解除后该动画即转场真值，值监听 value>=1 即落定（status
+  // 事件存在丢失边角）。重验设上限兜底，防常驻 offstage（被上层不透明
+  // 页盖住等）时永远等不到落定
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_delayTimer != null || _routeAnim != null) return;
-    final anim = ModalRoute.of(context)?.animation;
-    if (anim == null ||
-        anim.status == AnimationStatus.completed ||
-        anim.status == AnimationStatus.dismissed) {
+    _route ??= ModalRoute.of(context);
+    if (_delayTimer != null || _routeAnim != null || _routeChecking) return;
+    _routeChecking = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _verifyRouteSettled());
+  }
+
+  void _verifyRouteSettled() {
+    if (!mounted) return;
+    final route = _route;
+    final anim = route?.animation;
+    if (route == null || anim == null) {
+      _routeChecking = false;
+      _arm();
+      return;
+    }
+    if (route.offstage) {
+      if (++_routeCheckFrames > 12) {
+        _routeChecking = false;
+        _arm();
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => _verifyRouteSettled());
+      return;
+    }
+    _routeChecking = false;
+    if (anim.value >= 1.0) {
       _arm();
       return;
     }
     _routeAnim = anim;
-    _routeAnimListener = (status) {
-      if (status == AnimationStatus.completed ||
-          status == AnimationStatus.dismissed) {
-        _disarmRoute();
-        if (mounted) _arm();
-      }
+    _routeAnimListener = () {
+      if (_routeAnim!.value < 1.0) return;
+      _disarmRoute();
+      if (mounted) _arm();
     };
-    anim.addStatusListener(_routeAnimListener!);
+    _routeAnim!.addListener(_routeAnimListener!);
   }
 
   void _disarmRoute() {
     final listener = _routeAnimListener;
-    if (listener != null) _routeAnim?.removeStatusListener(listener);
+    if (listener != null) _routeAnim?.removeListener(listener);
     _routeAnimListener = null;
     _routeAnim = null;
   }
