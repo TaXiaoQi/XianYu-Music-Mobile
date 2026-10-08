@@ -120,8 +120,13 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
                   child: TabBarView(
                     controller: _tab,
                     children: [
-                      for (final p in _periods)
-                        _PeriodBoard(key: ValueKey(p.value), period: p.value),
+                      for (final (i, p) in _periods.indexed)
+                        _PeriodBoard(
+                          key: ValueKey(p.value),
+                          period: p.value,
+                          tab: _tab,
+                          tabIndex: i,
+                        ),
                     ],
                   ),
                 ),
@@ -162,8 +167,15 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
 }
 
 class _PeriodBoard extends ConsumerStatefulWidget {
-  const _PeriodBoard({super.key, required this.period});
+  const _PeriodBoard({
+    super.key,
+    required this.period,
+    required this.tab,
+    required this.tabIndex,
+  });
   final String period;
+  final TabController tab;
+  final int tabIndex;
 
   @override
   ConsumerState<_PeriodBoard> createState() => _PeriodBoardState();
@@ -173,6 +185,12 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
   List<LeaderboardEntry> _entries = [];
   bool _loading = true;
   bool _error = false;
+  bool _firstDisplay = true;
+  // 滑页未落位前不挂载列表：错峰动画跟 TabBarView 滑动同步跑会互相叠帧，
+  // 骨架先顶上，落位后再开窗错峰入场（与歌曲列表「转场落定才加载」同节奏）。
+  // tab.animation 值精确等于本 tab 序号即落位（animateTo 收尾值精确落点，
+  // 拖拽中途为连续小数不会误判）
+  bool _tabReady = false;
   int _requestId = 0;
   late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
     if (mounted) setState(() {});
@@ -181,19 +199,51 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
   @override
   void initState() {
     super.initState();
+    _initTabGate();
     _load();
   }
 
   @override
   void dispose() {
+    widget.tab.animation?.removeListener(_checkTabReady);
     _stagger.dispose();
     super.dispose();
   }
 
+  void _initTabGate() {
+    final anim = widget.tab.animation;
+    if (anim == null) {
+      _tabReady = true;
+      return;
+    }
+    anim.addListener(_checkTabReady);
+    if (anim.value == widget.tabIndex.toDouble()) {
+      _tabReady = true;
+      _armStaggerForFirstDisplay();
+    }
+  }
+
+  void _checkTabReady() {
+    if (_tabReady || !mounted) return;
+    if (widget.tab.animation!.value != widget.tabIndex.toDouble()) return;
+    _tabReady = true;
+    _armStaggerForFirstDisplay();
+    setState(() {});
+  }
+
+  // 每个榜单的首次展示都播错峰入场（切日/周/总榜都算）：开窗必须在
+  // 缓存内容上屏的 build 之前，否则行首帧就是裸内容、错过包装。
+  // 缓存命中只是省掉骨架屏，行仍从透明错峰浮入
+  void _armStaggerForFirstDisplay() {
+    if (!_firstDisplay) return;
+    _firstDisplay = false;
+    _stagger.start();
+  }
+
   Future<void> _load() async {
     final requestId = ++_requestId;
-    // 已经有内容时（重新进入/切周期/下拉刷新）：不退回骨架屏、不重播进场动画，
-    // 否则会先闪一屏灰色占位卡。骨架只留给“什么都没有”的首次加载。
+    // 同榜重试/刷新已有内容时：不退回骨架屏、不重播进场动画，
+    // 否则会先闪一屏灰色占位卡。骨架只留给“什么都没有”的加载。
     final hadEntries = _entries.isNotEmpty;
     // 预热命中：先用缓存内容顶上，转场那几百毫秒里就不是一屏空骨架了
     final cached = hadEntries ? null : readCachedLeaderboard(ref, widget.period);
@@ -212,8 +262,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
       if (data.me != null && !list.any((e) => e.isMe)) {
         list.add(data.me!);
       }
-      // 首次无缓存加载才播放入场动画；缓存顶上/已有内容刷新不重播
-      if (!hadEntries && cached == null) _stagger.start();
       setState(() {
         _entries = list;
         _loading = false;
@@ -236,7 +284,7 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
     final scheme = Theme.of(context).colorScheme;
     final loggedIn = ref.watch(authProvider).isLoggedIn;
 
-    if (_loading && _entries.isEmpty) {
+    if (!_tabReady || (_loading && _entries.isEmpty)) {
       final skeleton = Container(
         height: 56,
         margin: const EdgeInsets.only(bottom: 8),
@@ -306,7 +354,8 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            padding: EdgeInsets.fromLTRB(
+                16, 0, 16, 24 + MediaQuery.paddingOf(context).bottom),
             child: _stagger.wrap(
               top.length,
               _LeaderboardRow(
@@ -326,7 +375,8 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            padding: EdgeInsets.fromLTRB(
+                16, 0, 16, 24 + MediaQuery.paddingOf(context).bottom),
             child: _stagger.wrap(
               top.length,
               _LoginRow(onTap: () => context.push('/account')),
