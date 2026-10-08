@@ -83,47 +83,52 @@ class _AccountPageState extends ConsumerState<AccountPage>
         _showSessionExpiredDialog();
       });
     }
-    final portraitFloating = !widget.embedded &&
+    final portraitFloating =
+        !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
             true);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
-      resizeToAvoidBottomInset: false,
-      body: RepaintBoundary(child: Stack(
-        fit: StackFit.expand,
-        children: [
-          const _AmbientBackground(),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: EdgeInsets.only(
-                  top: GlassTopBar.height(context) +
-                      (portraitFloating ? 6 : 0)),
-              child: auth.isLoggedIn
-                  ? _ProfileView(
-                      user: auth.user!,
-                      onLogout: () => _confirmLogout(context),
-                    )
-                  : _buildAuthForm(context, auth),
+      resizeToAvoidBottomInset: true,
+      body: RepaintBoundary(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const _AmbientBackground(),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  top: GlassTopBar.height(context) + (portraitFloating ? 6 : 0),
+                ),
+                child: auth.isLoggedIn
+                    ? _ProfileView(
+                        user: auth.user!,
+                        onLogout: () => _confirmLogout(context),
+                      )
+                    : _buildAuthForm(context, auth),
+              ),
             ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: widget.embedded
-                  ? IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: widget.onBack,
-                    )
-                  : const BackButton(),
-              title: Text(auth.isLoggedIn ? tr('账号与安全') : tr('账号认证')),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: widget.embedded
+                    ? IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: widget.onBack,
+                      )
+                    : const BackButton(),
+                title: Text(auth.isLoggedIn ? tr('账号与安全') : tr('账号认证')),
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -301,8 +306,7 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
                 color: scheme.error.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(Icons.logout_rounded,
-                  size: 20, color: scheme.error),
+              child: Icon(Icons.logout_rounded, size: 20, color: scheme.error),
             ),
             title: Text(
               tr('退出登录'),
