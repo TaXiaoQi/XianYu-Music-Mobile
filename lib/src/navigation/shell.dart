@@ -236,7 +236,6 @@ class _AppShellState extends ConsumerState<AppShell> {
       ),
     );
   }
-
 }
 
 class _ShellScaffold extends ConsumerStatefulWidget {
@@ -431,6 +430,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         _lastPhysicalLandscape != null && _lastPhysicalLandscape != landscape;
     _lastPhysicalLandscape = landscape;
     if (!flipped) return;
+
+    // 横竖屏切换会重建/迁移部分页面；先释放后层账号等输入框的残留焦点，
+    // 避免 IME 在播放页因尺寸变化被重新拉起。
+    FocusManager.instance.primaryFocus?.unfocus();
+
     if (!landscape) {
       final lib = ref.read(landscapeLibraryProvider);
       final playlist = ref.read(landscapePlaylistOpenProvider);
