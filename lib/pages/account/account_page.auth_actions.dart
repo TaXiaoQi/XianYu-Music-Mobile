@@ -104,29 +104,6 @@ extension _AccountPageAuthActions on _AccountPageState {
     );
   }
 
-  Future<void> _showSessionExpiredDialog() async {
-    final notifier = ref.read(authProvider.notifier);
-    await showPredictiveDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('登录状态已失效')),
-        content:   Text(tr('登录状态已失效，请重新登录。')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('确认')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('登录')),
-          ),
-        ],
-      ),
-    );
-    notifier.consumeSessionExpired();
-  }
-
   Future<void> _confirmLogout(BuildContext context) async {
     final ok = await showPredictiveDialog<bool>(
       context: context,

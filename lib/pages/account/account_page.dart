@@ -78,12 +78,6 @@ class _AccountPageState extends ConsumerState<AccountPage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
-    if (auth.sessionExpired) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _showSessionExpiredDialog();
-      });
-    }
     final portraitFloating =
         !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&

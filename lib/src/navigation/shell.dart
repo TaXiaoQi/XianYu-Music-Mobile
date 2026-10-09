@@ -23,6 +23,7 @@ import 'landscape_tab_switcher.dart';
 import '../widgets/blur_budget.dart';
 import '../widgets/orientation_transition.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/predictive_dialog_route.dart';
 import '../notifications/notification_service.dart';
 import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
@@ -221,6 +222,16 @@ class _AppShellState extends ConsumerState<AppShell> {
     final hiddenCount = ref.watch(navBarHiddenProvider);
     final isSubPage = hiddenCount > 0 || GoRouter.of(context).canPop();
 
+    // 会话失效弹窗挂常驻壳层：失效由任意页面的鉴权请求触发（同步/统计/
+    // 榜单心跳等），此前只在账号页 build 里兜底，其余页面只会静默变未
+    // 登录态，点进账号页才知道原因。根导航弹窗保证任意页面即时可见
+    ref.listen<AuthState>(authProvider, (prev, next) {
+      if ((prev?.sessionExpired ?? false) || !next.sessionExpired) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showSessionExpiredDialog();
+      });
+    });
+
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (PointerDownEvent e) {
@@ -240,6 +251,37 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
   }
 
+  // 「登录」仅在不在账号页时才 push，避免账号页上重复叠页
+  Future<void> _showSessionExpiredDialog() async {
+    final router = GoRouter.of(context);
+    await showPredictiveDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('登录状态已失效')),
+        content: Text(tr('登录状态已失效，请重新登录。')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(tr('确认')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (_ShellScaffoldState._routerTopPath(
+                    router.routerDelegate.currentConfiguration,
+                  ) !=
+                  '/account') {
+                router.push('/account');
+              }
+            },
+            child: Text(tr('登录')),
+          ),
+        ],
+      ),
+    );
+    if (mounted) ref.read(authProvider.notifier).consumeSessionExpired();
+  }
 }
 
 class _ShellScaffold extends ConsumerStatefulWidget {
