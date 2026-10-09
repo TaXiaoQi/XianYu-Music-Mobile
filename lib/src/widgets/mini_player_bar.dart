@@ -151,7 +151,6 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
     this.onPanCancel,
     this.registerTarget = true,
     this.heroTag = 'player-cover',
-    this.returnTarget,
     this.degraded = false,
   });
 
@@ -163,8 +162,6 @@ class MiniPlayerBar extends ConsumerStatefulWidget {
   final bool registerTarget;
 
   final String? heroTag;
-
-  final Rect Function()? returnTarget;
 
   /// 磨砂降级：透明度<1 的淡入淡出窗口内产生 saveLayer，ImageFilter.shader
   /// 在其中采样图层自身内容（空）会渲染出黑底；普通 blur 不受 saveLayer
@@ -280,9 +277,6 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     if (rs != null) PredictiveCoverReturn.instance.unregisterSource(rs);
     final rt = _returnTargetProvider;
     if (rt != null) PredictiveCoverReturn.instance.unregisterTarget(rt);
-    if (widget.returnTarget != null) {
-      PredictiveCoverReturn.instance.unregisterTarget(widget.returnTarget!);
-    }
     super.dispose();
   }
 
@@ -338,27 +332,26 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   }
 
   void _syncReturnRegistration() {
+    // 返回目标（PredictiveCoverReturn.targetRect）由 MiniPlayerOverlay 宿主
+    // 常驻注册（跟手拖拽位置）：条子树在播放页打开期间会被整树卸载
+    // （_barGone），注册挂在子树里会在手势飞回时全部清空、落进左下兜底
     final internal = widget.onPanUpdate == null;
-    if (internal) {
-      if (playerOpenNotifier.value) {
-        final s = _returnSourceProvider;
-        if (s != null) {
-          PredictiveCoverReturn.instance.unregisterSource(s);
-          _returnSourceProvider = null;
-        }
-        return;
+    if (!internal) return;
+    if (playerOpenNotifier.value) {
+      final s = _returnSourceProvider;
+      if (s != null) {
+        PredictiveCoverReturn.instance.unregisterSource(s);
+        _returnSourceProvider = null;
       }
-      final provider = _returnSourceProvider ??= () => _coverRect;
-      final c = ref.read(playerProvider).current;
-      PredictiveCoverReturn.instance.registerSource(
-        songPath: c?.path,
-        networkUrl: c?.coverUrl,
-        rectProvider: provider,
-      );
-    } else {
-      final provider = widget.returnTarget ?? (_returnTargetProvider ??= () => _coverRect);
-      PredictiveCoverReturn.instance.registerTarget(provider);
+      return;
     }
+    final provider = _returnSourceProvider ??= () => _coverRect;
+    final c = ref.read(playerProvider).current;
+    PredictiveCoverReturn.instance.registerSource(
+      songPath: c?.path,
+      networkUrl: c?.coverUrl,
+      rectProvider: provider,
+    );
   }
 
   void _defaultPanUpdate(DragUpdateDetails d) {

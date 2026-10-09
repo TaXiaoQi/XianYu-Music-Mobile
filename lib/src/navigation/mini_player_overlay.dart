@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../core/settings.dart';
 import '../widgets/blur_budget.dart';
 import '../widgets/mini_player_bar.dart';
+import '../widgets/predictive_cover_return.dart';
 import 'routes.dart';
 import 'shell.dart';
 
@@ -28,6 +29,16 @@ class MiniPlayerOverlay extends ConsumerStatefulWidget {
 class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   double? _playerTop;
   double? _playerLeft;
+
+  /// 宿主常驻注册的预测返回目标（封面落点）：取条的实际位置（含用户
+  /// 拖拽自定义位置）。注册挂在宿主而非条子树——播放页打开期间条子树
+  /// 会被 _barGone 整树卸载，手势飞回时目标不能跟着消失（否则落进
+  /// PredictiveCoverReturnView 的左下兜底）
+  double _returnLeft = 12;
+  double _returnTop = 100;
+
+  Rect _returnTargetProvider() =>
+      Rect.fromLTWH(_returnLeft, _returnTop, 46, 46);
 
   Offset? _lastSeenShared;
 
@@ -113,12 +124,14 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     });
     appRouter.routerDelegate.addListener(_syncLow);
     playerOpenNotifier.addListener(_onPlayerOpenChanged);
+    PredictiveCoverReturn.instance.registerTarget(_returnTargetProvider);
   }
 
   @override
   void dispose() {
     appRouter.routerDelegate.removeListener(_syncLow);
     playerOpenNotifier.removeListener(_onPlayerOpenChanged);
+    PredictiveCoverReturn.instance.unregisterTarget(_returnTargetProvider);
     _barFadeTimer?.cancel();
     _barGoneTimer?.cancel();
     super.dispose();
@@ -384,12 +397,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         shared != null && shared != _lastSeenShared && !_isPlayerDragging;
     _lastSeenShared = shared;
 
-    final rootBarTop = (isSide
-            ? (screenSize.height - safeBottom - 58.0 - 12.0)
-            : (floating
-                ? (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0)
-                : (screenSize.height - safeBottom - 58.0 - 64.0))) -
-        batchLift;
+    // 飞回落点跟条的实际位置（含拖拽/吸附），供预测返回与飞行封面使用
+    _returnLeft = actualLeft;
+    _returnTop = actualTop;
 
     if (accountOpen) return const SizedBox.shrink();
 
@@ -443,12 +453,6 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
               onPanCancel: _onPlayerPanCancel,
               registerTarget: !hidden,
               heroTag: hidden ? null : 'player-cover',
-              returnTarget: () => Rect.fromLTWH(
-                actualLeft,
-                rootBarTop,
-                46,
-                46,
-              ),
             ),
           ),
         ),
