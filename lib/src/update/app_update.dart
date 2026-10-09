@@ -16,6 +16,7 @@ import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../device/device_info.dart';
 import '../navigation/routes.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
@@ -58,7 +59,8 @@ int compareVersions(String a, String b) {
     final bv = i < pb.fields.length ? pb.fields[i] : 0;
     if (av != bv) return av > bv ? 1 : -1;
   }
-  if (pa.pre == null || pb.pre == null) return 0;
+  // 语义化版本规则：主版本号相同时，预发布版低于正式版（1.0.3-beta4 < 1.0.3）
+  if (pa.pre == null || pb.pre == null) return pa.pre == null ? 1 : -1;
   final preA = pa.pre;
   final preB = pb.pre;
   if (preA != null && preB != null) {
@@ -314,6 +316,7 @@ String _today() {
 }
 
 void _toast(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+  // 全 App 统一胶囊 toast：此前用 Material SnackBar（文字左对齐、整条
+  // 通宽），观感与各页 showXianYuToast 不一致（不居中且多出一截）
+  showXianYuToast(context, msg);
 }

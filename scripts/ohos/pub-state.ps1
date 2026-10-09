@@ -96,6 +96,8 @@ function Exit-XianyuOhosPubState {
         Write-Host '[ohos-pub] package_config removed (will re-run pub get on next flutter command)'
     }
     Remove-Item (Join-Path $Root 'pubspec_overrides.yaml') -Force -ErrorAction SilentlyContinue
+    # build\ohos 可能不存在（flutter clean 后首次安卓构建），Set-Content 需目录先行
+    New-Item -ItemType Directory -Force -Path (Join-Path $Root 'build\ohos') | Out-Null
     Set-Content (Join-Path $Root 'build\ohos\.pub-state-current') 'android' -Force
     Write-Host '[ohos-pub] restored android dependency state (lock restored, overrides removed)'
 }

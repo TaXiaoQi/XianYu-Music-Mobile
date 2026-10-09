@@ -1,5 +1,7 @@
 const Map<String, String> enDictManual = {
   ' · 文件缺失': ' · File missing',
+  '不一致的设置项': 'Differing settings',
+  '等 {n} 项': '+{n} more',
   '个人中心': 'Profile',
   '自定义壁纸': 'Custom wallpaper',
   '选择本地图片': 'Choose local image',

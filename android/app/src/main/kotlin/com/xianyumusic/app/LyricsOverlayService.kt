@@ -110,7 +110,18 @@ class LyricsOverlayService : Service() {
             }
             else -> showOverlayIfAllowed()
         }
-        return START_STICKY
+        // START_NOT_STICKY：悬浮窗完全依赖 Flutter 引擎推送歌词/进度，
+        // 进程死后被系统在新进程里拉起只会得到一个无数据源的僵尸悬浮窗
+        // + 常驻通知（main() 重跑还会连带拉起媒体通知，表现为"划掉多任务
+        // 又回来了"）。引擎活着时由 Flutter 侧按需重启，无需 sticky 复活。
+        return START_NOT_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // 任务被划掉即随宿主一起退场：清窗 + 撤通知 + stopSelf，
+        // 避免与 Dart 侧 exit(0) 竞争期间留下残留通知或被再次调度。
+        disableAndStop()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

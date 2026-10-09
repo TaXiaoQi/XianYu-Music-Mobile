@@ -311,7 +311,7 @@ extension _TrackTabActions on _TrackTabState {
         ref.read(accountApiProvider).reportSearch(q, 'online', items.length);
       }
     } catch (e) {
-      AppLogger.instance.log('search', '音源搜索失败 source=${src.id} q=$q error=$e');
+      AppLog.warn('search', '音源搜索失败 source=${src.id} q=$q error=$e');
       if (!mounted) return;
       if (_searchedHash != hash) return;
       setState(() {

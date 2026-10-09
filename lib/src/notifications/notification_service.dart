@@ -26,6 +26,9 @@ class NotificationService {
     if (_checking) return;
     _checking = true;
     try {
+      // 等凭据恢复落定再查：恢复完成前 user 尚未就绪，会漏查登录用户的通知
+      await _ref.read(authProvider.notifier).whenRestored;
+      if (!context.mounted) return;
       final ann = await _api.fetchAnnouncement();
       if (ann != null && !await _isAnnouncementDismissed(ann)) {
         if (!context.mounted) return;

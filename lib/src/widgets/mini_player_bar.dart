@@ -48,6 +48,11 @@ Widget playbarGlassSurface(
     final quality = liquidGlassQualitySetting(ref);
     final glass = BiliPaiGlass(
       radius: radius,
+      // chrome 缓存帧：mini 条是 shell 常驻 chrome 条之一，与底栏/悬浮
+      // 顶栏同轨。push 二级页（如设置）时条在跑隐藏动画，逐帧 opacity
+      // 变化会让液态 shader backdrop 层每帧重采样（我的⇄设置转场 raster
+      // 三连卡主源）；缓存帧裁剪无采样，落定后交叉淡回实时渲染
+      useChromeFrame: true,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
       blurSigma: surfaceBlurSigma(
@@ -988,7 +993,11 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     if (widget.degraded ||
         shader == null ||
         !ui.ImageFilter.isShaderFilterSupported) {
-      if (!_kCapabilityWarned && shader != null) {
+      // warn 仅限能力位真的缺失：degraded 淡入淡出窗口的降级是预期设计，
+      // 此前文案把 degraded 误报成「引擎不支持」，液态实际一直生效
+      if (!_kCapabilityWarned &&
+          shader != null &&
+          !ui.ImageFilter.isShaderFilterSupported) {
         _kCapabilityWarned = true;
         AppLog.warn('glass',
             '液态玻璃降级：isShaderFilterSupported=false（引擎不支持 ImageFilter.shader）');

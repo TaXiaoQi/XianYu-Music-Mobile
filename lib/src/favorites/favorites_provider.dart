@@ -8,6 +8,7 @@ import '../auth/auth_provider.dart';
 import '../home/daily_recommend.dart';
 import '../player/player_provider.dart';
 import '../plugin/sheet_cache.dart';
+import '../sync/sync_trigger.dart';
 
 class FavoriteEntry {
   final String path;
@@ -263,6 +264,7 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     final entries = [entry, ...state.entries];
     state = FavoritesState(entries: entries, loading: false);
     await _persist(entries);
+    SyncTrigger.markDirty(const {SyncTrigger.favorites});
     unawaited(reportDailyLikeSignals(
       _ref.read(authProvider.notifier),
       _ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
@@ -299,6 +301,7 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     final entries = [...newEntries, ...existing];
     state = FavoritesState(entries: entries, loading: false);
     await _persist(entries);
+    SyncTrigger.markDirty(const {SyncTrigger.favorites});
     if (signalSongs.isNotEmpty) {
       unawaited(reportDailyLikeSignals(
         _ref.read(authProvider.notifier),
@@ -313,6 +316,7 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     final entries = state.entries.where((e) => e.path != path).toList();
     state = FavoritesState(entries: entries, loading: false);
     await _persist(entries);
+    SyncTrigger.markDirty(const {SyncTrigger.favorites});
   }
 
   Future<void> reorderEntries(List<String> orderedPaths) async {
@@ -327,6 +331,7 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     ];
     state = state.copyWith(entries: entries, loading: false);
     await _persist(entries);
+    SyncTrigger.markDirty(const {SyncTrigger.favorites});
   }
 
   Future<void> clear() async {
@@ -336,6 +341,7 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
       loading: false,
     );
     await _persist(const []);
+    SyncTrigger.markDirty(const {SyncTrigger.favorites});
   }
 
   Future<void> toggleCollection({

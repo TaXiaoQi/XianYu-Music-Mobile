@@ -40,7 +40,11 @@ dependencies:
     git:
       url: https://github.com/bggRGjQaUbCoE/flutter_cached_network_image_ce.git
       path: cached_network_image
-      ref: develop
+      # 钉死提交，勿用浮动 develop：develop 733d4aa 给 OctoImage 传
+      # useOldImageOnUrlChange（hosted octo_image 2.1.0 已删除该参数），
+      # lock 失效重解漂到新提交即 APK 编译失败（2026-10-07）。dacec4de
+      # 把该参数映射到 gaplessPlayback，与 octo_image ^2.1.0 兼容
+      ref: dacec4de669b4c52c59576509db069e3194408ac
   clock: ^1.1.0
   js: '>=0.6.3 <0.8.0'
   flutter:

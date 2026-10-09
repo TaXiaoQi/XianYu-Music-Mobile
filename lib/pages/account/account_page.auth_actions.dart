@@ -39,10 +39,8 @@ extension _AccountPageAuthActions on _AccountPageState {
     }
   }
 
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
+  void _toast(String msg) =>
+      showXianYuToast(context, msg, duration: const Duration(seconds: 2));
 
   Future<void> _submit() async {
     final notifier = ref.read(authProvider.notifier);
@@ -104,29 +102,6 @@ extension _AccountPageAuthActions on _AccountPageState {
       title: title,
       description: description,
     );
-  }
-
-  Future<void> _showSessionExpiredDialog() async {
-    final notifier = ref.read(authProvider.notifier);
-    await showPredictiveDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title:   Text(tr('登录状态已失效')),
-        content:   Text(tr('登录状态已失效，请重新登录。')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('确认')),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('登录')),
-          ),
-        ],
-      ),
-    );
-    notifier.consumeSessionExpired();
   }
 
   Future<void> _confirmLogout(BuildContext context) async {

@@ -8,7 +8,6 @@ import 'package:go_router/go_router.dart';
 import '../../src/auth/account_api.dart';
 import '../../src/theme/theme_tint.dart';
 import '../../src/core/app_colors.dart';
-import '../../src/core/app_logger.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';

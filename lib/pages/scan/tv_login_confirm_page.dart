@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/user_agreement.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -45,10 +46,11 @@ class _TvLoginConfirmPageState extends ConsumerState<TvLoginConfirmPage> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(e is AuthException ? e.message : tr('登录失败')),
+      showXianYuToast(
+        context,
+        e is AuthException ? e.message : tr('登录失败'),
         duration: const Duration(seconds: 2),
-      ));
+      );
       return;
     }
     if (!mounted) return;

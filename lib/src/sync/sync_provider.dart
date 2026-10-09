@@ -8,11 +8,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
-import '../core/app_logger.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../favorites/favorites_provider.dart';
+import '../home/home_providers.dart' show pullListenServerSnapshot;
 import '../library/library_provider.dart';
 import '../notifications/notification_service.dart';
 import '../playlist/playlist_provider.dart';
@@ -92,7 +92,8 @@ class AutoSyncConfig {
 
   const AutoSyncConfig({
     this.enabled = true,
-    this.syncIntervalSeconds = 3600,
+    // 变更驱动的即时同步是主路径，轮询仅兜底（如设置类变更、上传失败重试）
+    this.syncIntervalSeconds = 900,
     this.maxDelayMinutes = 30,
   });
 
@@ -275,8 +276,9 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> syncHistoryDownload() => _historySyncSvc.download();
 
   Future<void> syncListenStats() async {
-    AppLogger.instance
-        .log('sync', '[听歌统计] 快照同步已废弃，听歌时长由增量上报统一维护');
+    // 快照双向同步已废弃，听歌时长由 delta 增量上报统一维护；此处只做纯
+    // 快照拉取（零 delta 不入账），登录同步与自动同步心跳复用同一路径
+    await pullListenServerSnapshot(_ref);
   }
 
   Future<void> _init() async {
@@ -420,7 +422,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } on FormatException catch (e) {
       return tr('文件格式不匹配或无法解析: {msg}', {'msg': e.message});
     } catch (e) {
-      AppLogger.instance.log('sync', '导入本地备份失败: $e');
+      AppLog.warn('sync', '导入本地备份失败: $e');
       return tr('导入失败: {e}', {'e': e});
     }
   }

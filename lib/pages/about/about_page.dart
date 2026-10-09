@@ -338,6 +338,18 @@ class _AboutPageState extends ConsumerState<AboutPage> {
               style: TextStyle(fontSize: 12, color: scheme.outline),
             ),
           ),
+          const SizedBox(height: 6),
+          Center(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _openUrl('https://beian.miit.gov.cn/'),
+              child: Text(
+                tr('粤ICP备2026149270号-2A'),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
+            ),
+          ),
         ],
       ),
           ),

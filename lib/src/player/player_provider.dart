@@ -5,19 +5,19 @@ import 'dart:math';
 
 import 'package:audio_service/audio_service.dart' as as_pkg;
 import 'package:crypto/crypto.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:go_router/go_router.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../auth/account_api.dart';
-import '../core/app_logger.dart';
-import '../core/diagnostics.dart';
 import '../core/application_logger.dart';
+import '../core/diagnostics.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../download/download_provider.dart';
@@ -165,7 +165,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<ProcessingState>? _procSub;
   StreamSubscription<dynamic>? _errSub;
   StreamSubscription<dynamic>? _interruptionSub;
+  StreamSubscription<void>? _noisySub;
   bool _interruptedByInterruption = false;
+  // 后台/关闭期间被其他应用抢占音频输出：toast 无处可弹，记下标记，
+  // 回到前台补弹窗询问是否继续播放或修改自动恢复开关。
+  bool _pendingInterruptionNotice = false;
   Timer? _listenTimer;
   bool _playbackErrorHandling = false;
   bool _onTrackEndBusy = false;
@@ -218,6 +222,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     } else if (state == AppLifecycleState.resumed) {
       // 回到前台刷新听歌时长：服务端快照可能在后台期间被桌面端上报推进
       _ref.invalidate(listenStatsProvider);
+      _showPendingInterruptionDialog();
     }
   }
 
@@ -290,6 +295,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                     ?.autoResumeAfterInterruption ??
                 true;
             if (auto && !state.isPlaying && state.current != null) {
+              // 后台期间已被自动续播，回前台无需再补弹窗
+              _pendingInterruptionNotice = false;
               await _resumeAfterInterruption();
             }
           }
@@ -304,6 +311,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           _interruptedByInterruption = true;
           await _pauseForInterruption();
         }
+      });
+      // 拔出耳机/断开蓝牙音箱（ACTION_AUDIO_BECOMING_NOISY）：按惯例立即
+      // 暂停，不自动恢复。事件由 audio_session 原生在焦点申请成功后注册，
+      // 此前 handleInterruptions:false 禁掉了 just_audio 的内置订阅且管线
+      // 模式从未申请过焦点，该事件从未生效。
+      _noisySub = session.becomingNoisyEventStream.listen((_) async {
+        if (!state.isPlaying) return;
+        _pauseOrigin = 'becomingNoisy';
+        AppLog.warn('playgate', 'becomingNoisy pause');
+        await _pauseForInterruption(toast: false);
       });
     });
     _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
@@ -1069,7 +1086,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   bool mvSuppressFocusLoss = false;
 
-  Future<void> _pauseForInterruption() async {
+  Future<void> _pauseForInterruption({bool toast = true}) async {
     if (_ref.read(dlnaCastProvider).isCasting) return;
     // 走 _player.pause() 不经 toggle，必须在这里自己标注来源：日志里
     // 「player PAUSED origin=interruption」即可与其它暂停路径区分
@@ -1088,7 +1105,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
     _persistSession();
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
-      _showPlaybackToast(tr('音频输出被其他应用占用，已暂停'));
+      if (toast) _showPlaybackToast(tr('音频输出被其他应用占用，已暂停'));
+    } else if (toast) {
+      // 关闭/后台期间被抢占输出：toast 无处展示，记标记回前台补弹窗
+      _pendingInterruptionNotice = true;
     }
   }
 
@@ -1097,6 +1117,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     try {
       statsReporter.noteTrackStart();
       if (state.usbExclusive || state.dspActive) {
+        // 永久性焦点丢失后原生侧已自动 abandon，恢复前必须重新申请
+        if (!await _ensurePipelineAudioFocus()) return;
         await resumeUsbExclusive();
       } else {
         await _player.play();
@@ -1138,6 +1160,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         await pauseUsbExclusive();
         state = state.copyWith(isPlaying: false);
       } else {
+        if (!await _ensurePipelineAudioFocus()) return;
         statsReporter.noteTrackStart();
         await resumeUsbExclusive();
         state = state.copyWith(isPlaying: true);
@@ -1232,6 +1255,42 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final overlay = appNavigatorKey.currentState?.overlay;
     if (overlay == null) return;
     showXianYuToastByOverlay(overlay, message);
+  }
+
+  /// 后台/关闭期间被其他应用占用输出的补弹窗：当时 toast 无处展示，回到
+  /// 前台后询问是否继续播放，或跳转修改「被打断后自动恢复播放」开关。
+  Future<void> _showPendingInterruptionDialog() async {
+    if (!_pendingInterruptionNotice) return;
+    _pendingInterruptionNotice = false;
+    if (state.current == null || state.isPlaying) return;
+    final ctx = appNavigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    await showDialog<void>(
+      context: ctx,
+      builder: (dctx) => AlertDialog(
+        title: Text(tr('播放被打断')),
+        content: Text(
+          tr('上次播放被其他应用占用音频输出，已暂停。是否继续播放？'),
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dctx);
+              GoRouter.of(ctx).push('/settings/playback');
+            },
+            child: Text(tr('修改开关')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(dctx);
+              unawaited(_resumeAfterInterruption());
+            },
+            child: Text(tr('继续播放')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _onPlaybackError(Object e) async {
@@ -1463,6 +1522,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _procSub?.cancel();
     _errSub?.cancel();
     _interruptionSub?.cancel();
+    _noisySub?.cancel();
     try {
       stopUsbExclusivePlayback();
     } catch (e) {

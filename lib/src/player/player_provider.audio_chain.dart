@@ -95,8 +95,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
       } catch (e) {
-        AppLogger.instance
-            .log('exclusive', '关闭 USB 独占后恢复普通播放失败: $e');
+        AppLog.warn('exclusive', '关闭 USB 独占后恢复普通播放失败: $e');
         state = state.copyWith(isPlaying: false);
         _syncToSystemMediaSession();
       }
@@ -155,6 +154,20 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     }
   }
 
+  /// Rust 管线（独占/DSP）接管后 ExoPlayer 完全退出，音频焦点必须由应用层
+  /// 主动申请——interruptionEventStream 的前提是本应用持有焦点，未持焦点的
+  /// 管线播放对来电/其他应用抢焦点完全免疫（打断暂停形同虚设的根因）。
+  /// 焦点被拒（如正在通话）时不接管，回落 ExoPlayer 路径由其 play() 内部申请。
+  Future<bool> _ensurePipelineAudioFocus() async {
+    try {
+      final session = await AudioSession.instance;
+      return await session.setActive(true);
+    } catch (e) {
+      AppLog.warn('audio_session', '管线音频焦点申请失败: $e');
+      return false;
+    }
+  }
+
   Future<bool> _tryStartExclusive(
     String path, {
     required double startAtSecs,
@@ -164,6 +177,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       LastAudioSource.recordFilePath(path);
     }
     try {
+      if (isPlaying && !await _ensurePipelineAudioFocus()) return false;
       final sfx = _ref.read(soundEffectProvider).settings;
       final settings = _ref.read(settingsProvider).valueOrNull;
       final bitPerfect = settings?.bitPerfectOutput ?? false;
@@ -191,7 +205,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       return true;
     } catch (e) {
       state = state.copyWith(usbExclusive: false);
-      AppLogger.instance.log('exclusive', 'USB 独占输出启动失败，回退普通播放: $e');
+      AppLog.warn('exclusive', 'USB 独占输出启动失败，回退普通播放: $e');
       return false;
     }
   }
@@ -217,6 +231,10 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       LastAudioSource.recordFilePath(path);
     }
     try {
+      // DLNA 投放时出声的是渲染端，本机不抢焦点
+      if (isPlaying && !castPlayback && !await _ensurePipelineAudioFocus()) {
+        return false;
+      }
       var sfx = _ref.read(soundEffectProvider).settings;
       if (castPlayback) {
         // 被投播放按 DLNA 语义强制原速原调，其余音效（EQ/混响等）保持

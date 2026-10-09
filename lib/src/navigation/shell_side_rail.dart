@@ -129,7 +129,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final currentTop = _top ?? (topBarBottom + 24.0);
     final currentLeft = _left ?? 12.0;
 
-    final panelW = widget.expanded ? 84.0 : 52.0;
+    final panelW = widget.expanded ? 68.0 : 52.0;
 
     final minTop = topBarBottom + 12.0;
     final maxTop = screenSize.height - padding.bottom - 52.0 - 12.0;
@@ -231,7 +231,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
       animation: _curvedAnim,
       builder: (context, child) {
         final progress = _curvedAnim.value;
-        final panelWidth = lerpDouble(52.0, 84.0, progress)!;
+        final panelWidth = lerpDouble(52.0, 68.0, progress)!;
 
         final logoButton = GestureDetector(
           onPanStart: _onPanStart,
@@ -330,6 +330,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           final quality = liquidGlassQualitySetting(ref);
           panelWidget = BiliPaiGlass(
             radius: 24,
+            // 来源胶囊同款修法：Impeller 缓存背板快照，逐帧重抓才能折射跟手
+            alwaysLive: true,
+            freshBackdrop: true,
             refract: bilipaiRefractOf(quality),
             chroma: bilipaiChromaOf(quality),
             blurSigma: surfaceBlurSigma(
@@ -414,29 +417,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
                     ),
                   ),
                 );
-        }
-
-        final collapsedHintAlpha = (1.0 - progress).clamp(0.0, 1.0);
-        if (collapsedHintAlpha > 0.01) {
-          panelWidget = Stack(
-            children: [
-              Positioned.fill(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? Colors.black.withValues(
-                            alpha: 0.45 * collapsedHintAlpha,
-                          )
-                        : Colors.white.withValues(
-                            alpha: 0.70 * collapsedHintAlpha,
-                          ),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                ),
-              ),
-              panelWidget,
-            ],
-          );
         }
 
         return Positioned(

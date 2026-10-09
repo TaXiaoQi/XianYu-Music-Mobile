@@ -5,11 +5,15 @@ class CustomWallpaperEditor extends ConsumerStatefulWidget {
     super.key,
     this.initialImagePath,
     this.initialIsVideo = false,
+    this.initialVideoPath,
     this.topInset = 0,
   });
 
   final String? initialImagePath;
   final bool initialIsVideo;
+
+  /// 云端动态壁纸的视频文件（initialImagePath 为静帧封面），两者双保留以支持切换展示形态
+  final String? initialVideoPath;
   final double topInset;
 
   @override
@@ -22,10 +26,12 @@ class WallpaperCustomApplyPage extends StatelessWidget {
     super.key,
     required this.imagePath,
     this.mediaType = false,
+    this.videoPath,
   });
 
   final String imagePath;
   final bool mediaType;
+  final String? videoPath;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +40,7 @@ class WallpaperCustomApplyPage extends StatelessWidget {
       body: CustomWallpaperEditor(
         initialImagePath: imagePath,
         initialIsVideo: mediaType,
+        initialVideoPath: videoPath,
       ),
     );
   }
@@ -51,8 +58,11 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
     super.initState();
     final ip = widget.initialImagePath;
     if (ip != null && ip.isNotEmpty && File(ip).existsSync()) {
+      final vp = widget.initialVideoPath;
+      final hasMotion = vp != null && vp.isNotEmpty && File(vp).existsSync();
       _draft = CustomBackground(
         imagePath: ip,
+        motionVideoPath: hasMotion ? vp : '',
         mediaType: widget.initialIsVideo
             ? WallpaperMediaType.video
             : WallpaperMediaType.image,
@@ -222,7 +232,6 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
         ),
       );
     } catch (e) {
-      debugPrint('custom wallpaper pickVideo failed: $e');
       if (mounted) showXianYuToast(context, tr('请先选择视频'));
     }
   }

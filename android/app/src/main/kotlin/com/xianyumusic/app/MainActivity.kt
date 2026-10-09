@@ -404,6 +404,25 @@ class MainActivity : AudioServiceActivity() {
         }
         backGestureObserver = null
         if (live === this) live = null
+        if (isFinishing) {
+            super.onDestroy()
+            return
+        }
+        // 系统移除 task（划卡/批量清理）销毁 activity 时 isFinishing=false，部分
+        // 批量清理路径既不 SIGKILL 也不派发 onTaskRemoved，进程残留且继续出声。
+        // 延迟确认自己的 task 确已消失再自杀：内存回收销毁 activity 时 task 仍在
+        // （后台播放进程留壳属正常），不误杀；进程若已被杀则定时器随之消亡。
+        mainHandler.postDelayed({
+            val taskAlive = try {
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                am.getAppTasks().isNotEmpty()
+            } catch (_: Exception) {
+                true
+            }
+            if (!taskAlive) {
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
+        }, 2000)
         super.onDestroy()
     }
 

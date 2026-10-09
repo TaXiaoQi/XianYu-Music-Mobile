@@ -9,7 +9,7 @@ import 'blur_budget.dart';
 
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
-        FrostedGlassLevel.light));
+        FrostedGlassLevel.medium));
 
 bool wallpaperGlassActive(WidgetRef ref) =>
     ref.watch(settingsProvider.select(
@@ -47,9 +47,11 @@ Color wallpaperBlockFill(BuildContext context, WidgetRef ref) {
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.customBackground));
   final alpha = ((cb?.widgetAlpha ?? 30).clamp(0, 90)) / 100.0;
   if (alpha <= 0) return const Color(0x00000000);
-  final darkish = cb?.textMode == WallpaperTextColor.dark ||
-      (cb?.textMode == WallpaperTextColor.follow &&
-          Theme.of(context).brightness == Brightness.light);
+  // 深色主题恒深色块（壁纸模式深色适配）：暗色字体（dark）是为浅色壁纸
+  // 配浅色 UI 而设，深色主题下仍翻白块会整片发白与主题脱节；仅浅色
+  // 主题按文字模式选底色（亮字体配深块，暗字体/默认配白块）
+  final darkish = Theme.of(context).brightness == Brightness.light &&
+      cb?.textMode != WallpaperTextColor.light;
   final base =
       darkish ? const Color(0xFFFFFFFF) : const Color(0xFF202020);
   return base.withValues(alpha: alpha);
@@ -73,10 +75,11 @@ List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
 double wallpaperGlassSigma(BuildContext context) => 0.0;
 
 double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
-      // 旧档位（1.0/0.6/0.4）整体偏重，以原轻档 0.4 为新重档下压
-      FrostedGlassLevel.strongest => 0.4,
-      FrostedGlassLevel.medium => 0.28,
-      FrostedGlassLevel.light => 0.18,
+      // 档位整体上移一档（0.18 观感偏淡砍除）：原中 0.28→轻、原重
+      // 0.4→中（新默认档）；新重档 0.6 为初版中档值，仅手动重档启用
+      FrostedGlassLevel.strongest => 0.6,
+      FrostedGlassLevel.medium => 0.4,
+      FrostedGlassLevel.light => 0.28,
     };
 
 /// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
@@ -185,7 +188,10 @@ Widget frostedCardSurface({
       : Colors.white.withValues(alpha: 0.34);
   final baseFill = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallpaperTransparent
+      // 壁纸模式恒走组件色块（含毛玻璃开）：此前毛玻璃开时用非壁纸的
+      // frostedFill（白 0.06/0.34），浅色壁纸被 blur 后叠白 tint 整卡
+      // 发白，且与 mini 条/底栏/顶栏（恒色块）口径不一致
+      : (wallpaper
           ? wallpaperGlassFill(context, ref)
           : frostedFill);
   final fill =
@@ -293,6 +299,10 @@ double bilipaiSpecularOf(LiquidGlassQuality q) => switch (q) {
     };
 
 double bilipaiBackdropBlurOf(LiquidGlassQuality q) => switch (q) {
+      // 液态独立低模糊，不对齐毛玻璃导航面基准：对齐后最低档 4.48 观感
+      // 仍糊成一团（真机实测），液态观感由「轻模糊 + 边缘折射」构成，
+      // 模糊只负责柔化透底（BiliPai 中档 backdropBlurRadius 仅 4px 的
+      // 等效量级），加重会埋掉折射细节
       LiquidGlassQuality.low => 1.5,
       LiquidGlassQuality.medium => 2.1,
       LiquidGlassQuality.high => 2.75,
@@ -406,7 +416,9 @@ Widget pseudoLiquidSurface({
   final solid = !wallpaper && !frostedOn;
   final bg = solid
       ? (isDark ? const Color(0xE62A2A2E) : const Color(0xF0FFFFFF))
-      : (wallTransparent
+      // 壁纸模式恒走组件色块（含毛玻璃开），同 frostedCardSurface：
+      // 浅色壁纸 blur 后叠非壁纸白 tint 会整片发白
+      : (wallpaper
           ? wallpaperGlassFill(context, ref)
           : (isDark
               ? Colors.white.withValues(alpha: 0.06)

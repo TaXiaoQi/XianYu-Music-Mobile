@@ -132,9 +132,10 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
-  // 实证 defer 失效链路：didPush（动画 forward 起点）与 defer init
-  // （buildPage 首帧）的时间差与各自动画状态——若 init 时已 completed，
-  // 说明首帧 build 被 push 前/后的主线程重活阻塞 250ms+，转场被跳过
+  // 时间戳打点：didPush（动画 forward 起点）与 defer init（buildPage
+  // 首帧）的时间差与各自状态。实测 gap≈9ms 且 init 已 completed
+  // value=1.00——非首帧阻塞，而是 ModalRoute 入场首帧 offstage 代理
+  // 指向 kAlwaysCompleteAnimation（详见 buildPage 注释）
   @override
   TickerFuture didPush() {
     final c = controller;
@@ -180,6 +181,9 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    // 转场期间维持内容渲染（用户否决空壳方案：离屏缓存+渲显分离架构下
+    // 页面观感完整，性能由 stagger 推迟/液态垫降级/信号静默承担）。
+    // _RouteDeferredBody 恒即时落定，仅保留时间戳打点作诊断。
     return AppPageBackground(
         child: _RouteDeferredBody(builder: builder, animation: animation));
   }
@@ -296,7 +300,7 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   @override
   bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
 
-  // 实证 defer 失效链路（同 _CoverRoute）
+  // 时间戳打点（同 _CoverRoute）：实测确认 offstage 代理机制，非首帧阻塞
   @override
   TickerFuture didPush() {
     final c = controller;
@@ -336,6 +340,7 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
   ) {
+    // 同 _CoverRoute：转场期间维持内容渲染，_RouteDeferredBody 仅作诊断
     return AppPageBackground(
         child: _RouteDeferredBody(builder: builder, animation: animation));
   }
@@ -428,14 +433,12 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   }
 }
 
-/// cover 覆盖路由页体延迟构建：转场动画落定前只渲染背景空壳，落定后才
-/// 调 builder 构建页面。本地页数据同步可读，此前挂载即全量构建+布局+
-/// 封面解码与 250ms 转场逐帧叠加，是列表页（本地歌曲/喜欢/最近/歌单）
-/// 与设置页 push 掉帧源；在线页网络异步天然错峰，本组件把本地页拉齐
-/// 同构观感（转场滑入背景、落定内容浮现）。落定后挂载的列表 StaggerIn
-/// 逐行入场（此时 route animation 已 completed、零延迟）无缝衔接。
-/// push 后立即 pop 的路径动画走 reverse 永不 completed，listener 随
-/// route.dispose 回收，页面从未构建无副作用。
+/// cover 覆盖路由页体诊断壳：入转场时打 defer init/settled 时间戳。
+/// 空壳延迟构建方案已否决（转场中纯背景滑入，下一页内容缺失）——页面
+/// 性能由离屏缓存+渲显分离架构承担（RepaintBoundary retained 帧、
+/// StaggerIn 转场后错峰、液态垫/信号静默）。buildPage 传入的 animation
+/// 是 ModalRoute 的 offstage 代理（入场首帧指向 kAlwaysCompleteAnimation），
+/// initState 恒读到 completed value=1.00 即时落定，内容恒直接构建渲染。
 class _RouteDeferredBody extends StatefulWidget {
   const _RouteDeferredBody({required this.builder, required this.animation});
 
@@ -449,7 +452,9 @@ class _RouteDeferredBody extends StatefulWidget {
 
 class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
   late bool _settled = widget.animation.value >= 1.0;
-  late final Stopwatch _sinceInit = Stopwatch()..start();
+  // 勿改回 late：late 字段首次访问才初始化，唯一访问点在 settled 打点处，
+  // 那时才 start() 导致 elapsed 恒 0ms，日志会误导为「转场瞬跳 1.0」
+  final Stopwatch _sinceInit = Stopwatch()..start();
   VoidCallback? _listener;
 
   @override
@@ -466,9 +471,7 @@ class _RouteDeferredBodyState extends State<_RouteDeferredBody> {
     widget.animation.addListener(_listener!);
   }
 
-  // 值监听而非 status 监听：转场中页面却已全量构建的实测案例指向
-  // status 事件存在丢失边角；value>=1 是落定的唯一真值，逐帧比较
-  // 只是一次 double 判断，零成本
+  // 值监听即落定真值，不依赖 status 语义边角；逐帧比较只是一次 double 判断
   void _onTick() {
     if (widget.animation.value < 1.0) return;
     _cleanup();

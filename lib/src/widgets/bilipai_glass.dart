@@ -76,12 +76,26 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   static ui.FragmentProgram? _cachedProgram;
   static Future<ui.FragmentProgram>? _programFuture;
 
+  // 全局首烘串行链：转场结束沿会让转场中挂载的所有液态实例在同一
+  // 时刻（160ms 去抖对齐）并发 toImage 读回型离屏渲染，raster 单帧
+  // 内挤满读回任务 = push 落定后集中掉帧（我的→设置首屏多个液态实例；
+  // 二级页首屏无实例故一直流畅）。改为全局一次只跑一个，实例间留
+  // 一帧间隙让 raster 喘息
+  static Future<void> _captureQueue = Future<void>.value();
+
+  // 最近一次路由转场落定时刻（多实例共享写，用于首烘打点对齐掉帧时刻）
+  static DateTime? _lastTransitionEnd;
+
   final GlobalKey _backingKey = GlobalKey();
 
   ui.Image? _frozen;
 
   // _frozen 是否为整屏 chrome 缓存帧（决定 frozen 绘制走裁剪还是整图）
   bool _frozenIsChromeFrame = false;
+
+  // _frozen 为 chrome 缓存帧时该帧的抓取区域（null=整屏），与图像成对
+  // 更新：滚动补帧只抓 chrome 面并集区域，裁剪源矩形须减区域原点
+  Rect? _frozenRegion;
 
   bool _idle = false;
 
@@ -161,6 +175,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       return;
     }
     _idleDebounce?.cancel();
+    _lastTransitionEnd = DateTime.now();
     // 冷却只需覆盖「转场动画刚结束 backdrop 层短暂重建」的窗口；
     // 700ms 会让转场中挂载的新实例兜底拖太久
     _captureCooldownUntil =
@@ -187,10 +202,12 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       final frame = widget.useChromeFrame ? chromeGlassFrame.value : null;
       if (frame != null) {
         _frozen = frame.image.clone();
+        _frozenRegion = frame.region;
         _frozenIsChromeFrame = true;
         _fade.value = 1;
         _fade.reverse();
       } else {
+        _frozenRegion = null;
         _frozenIsChromeFrame = false;
         _fade.value = 0;
       }
@@ -233,6 +250,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         if (frame != null) {
           final old = _frozen;
           _frozen = frame.image.clone();
+          _frozenRegion = frame.region;
           _frozenIsChromeFrame = true;
           _fade.stop();
           _fade.value = 1;
@@ -262,6 +280,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         if (frame != null && _fade.value < 0.999) {
           final old = _frozen;
           _frozen = frame.image.clone();
+          _frozenRegion = frame.region;
           _frozenIsChromeFrame = true;
           _fade.stop();
           _fade.value = 1;
@@ -291,6 +310,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (frame == null) return;
     final old = _frozen;
     _frozen = frame.image.clone();
+    _frozenRegion = frame.region;
     setState(() {});
     if (old != null) {
       SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
@@ -392,7 +412,20 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     });
   }
 
-  Future<void> _capture() async {
+  // 首烘入全局串行链：多个实例同刻到达时按入队顺序逐个执行，
+  // 实例间 16ms 间隙错开 toImage 读回（见 _captureQueue 注释）
+  Future<void> _capture() {
+    final task = _captureQueue.then((_) async {
+      await _runCapture();
+      // 实例间错峰间隙：留一帧时长给 raster 线程，避免连续读回
+      await Future<void>.delayed(const Duration(milliseconds: 16));
+    });
+    // 吞错保持队列活跃：单个实例 capture 异常不能让后续实例饿死
+    _captureQueue = task.catchError((_) {});
+    return task;
+  }
+
+  Future<void> _runCapture() async {
     // chrome 缓存帧挂着不挡烘焙：帧模式玻璃画帧（烘焙产物本就不上屏，
     // 仅作为 backdrop 已验证就绪标志+启用液态 shader 的前提），挡门会
     // 让滚动后新实例的首烘永远推迟
@@ -457,6 +490,16 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
         _onFadeTicked();
       });
       _boot.forward();
+      // 首烘执行时刻打点：与 perf 窗口的 jank 帧时刻对齐，验证串行
+      // 错峰后读回不再与掉帧帧重叠
+      final sinceTransition = _lastTransitionEnd;
+      AppLog.debug(
+        'perf',
+        sinceTransition == null
+            ? 'capture inst=${identityHashCode(this).toRadixString(16)}'
+            : 'capture inst=${identityHashCode(this).toRadixString(16)} '
+                '@+${DateTime.now().difference(sinceTransition).inMilliseconds}ms',
+      );
       // toImage 离屏渲染中 shader 的 backdrop 采样无内容（产物恒黑），
       // 图不保存不展示——capture 仅作为「backdrop 已验证就绪」的一次性
       // 标志，图立即释放（从未上屏，无 scene 引用）
@@ -509,6 +552,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               solidOnly: solidOnly,
               useChromeFrame: widget.useChromeFrame,
               frozenIsChromeFrame: _frozenIsChromeFrame,
+              frozenChromeRegion: _frozenRegion,
             ),
           ),
         ),

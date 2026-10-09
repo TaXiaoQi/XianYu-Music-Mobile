@@ -26,14 +26,23 @@ class TopListsPreview {
 
 class TopListsPreviewNotifier extends StateNotifier<TopListsPreview> {
   TopListsPreviewNotifier(this._ref) : super(const TopListsPreview()) {
-    _ref.listen<PluginListState>(pluginManagerProvider, (_, _) async {
-      if (state.loaded && state.hasSource && !state.loading) return;
-      await _run();
+    _ref.listen<PluginListState>(pluginManagerProvider, (_, next) async {
+      // 插件顺序（主页榜单卡片的展示顺序来源）变化时按新顺序重取预览；
+      // 其余变化（如启停）不打扰已加载的预览，避免闪烁与重复请求
+      final sig = next.sources.map((s) => s.id).join(',');
+      final orderChanged = _lastOrderSig != null && _lastOrderSig != sig;
+      _lastOrderSig = sig;
+      if (state.loaded && state.hasSource && !state.loading) {
+        if (orderChanged) await _run();
+        return;
+      }
+      if (!state.loading) await _run();
     });
     _run();
   }
 
   final Ref _ref;
+  String? _lastOrderSig;
   bool _running = false;
   static const _previewCount = 8;
 

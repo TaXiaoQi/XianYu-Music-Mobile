@@ -220,7 +220,7 @@ extension SettingsNotifierMethods on SettingsNotifier {
   FrostedGlassLevel _fglFromString(String v) => switch (v) {
         'light' => FrostedGlassLevel.light,
         'medium' => FrostedGlassLevel.medium,
-        _ => FrostedGlassLevel.light,
+        _ => FrostedGlassLevel.medium,
       };
 
   ThemeModePreference _themeFromInt(int v) {

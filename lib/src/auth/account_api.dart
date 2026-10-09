@@ -11,7 +11,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.3-beta2';
+const appVersion = '1.0.3';
 
 /// 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。
 const _betaAccessCacheKey = 'beta_access_signed_payload_v1';
@@ -601,6 +601,7 @@ class AccountApi {
             w['image'] ??
             '') as String,
         'videoUrl': (w['videoUrl'] ?? w['video_url'] ?? '') as String,
+        'videoPoster': (w['videoPoster'] ?? w['video_poster'] ?? '') as String,
         'videoSha256': (w['videoSha256'] ?? w['video_sha256'] ?? '') as String,
         'videoDuration':
             ((w['videoDuration'] ?? w['video_duration'] ?? 0) as dynamic) is num
@@ -657,6 +658,7 @@ class AccountApi {
     required String imageData,
     String? videoData,
     int videoDuration = 0,
+    String mediaType = 'video',
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -673,6 +675,7 @@ class AccountApi {
       'image_data': imageData,
       if (isVideo) 'video_data': videoData,
       if (isVideo) 'video_duration': videoDuration,
+      if (isVideo) 'media_type': mediaType,
     }, fetchTimeoutMs: isVideo ? 600000 : 90000);
   }
 
@@ -705,12 +708,66 @@ class AccountApi {
         'delta_duration': deltaTotal.clamp(0, 1 << 31),
         'delta_daily_duration': deltaDaily.clamp(0, 1 << 31),
         'elapsed_secs': elapsedSecs,
-      }, fetchTimeoutMs: 8000);
+        // 弱网（蜂窝信号差）下 8s 频繁超时导致回执拿不到、快照进不来，
+        // 个人中心会退化为纯本地口径与排行榜脱节；放宽到与排行榜同级
+      }, fetchTimeoutMs: 15000);
       final resetAt = data['reset_at'];
       if (resetAt is String && resetAt.isNotEmpty) {
         return {'resetAt': resetAt};
       }
       return {
+        'total': (data['server_total_duration'] as num?)?.toInt() ?? 0,
+        'daily': (data['server_daily_duration'] as num?)?.toInt() ?? 0,
+        'weekly': (data['server_weekly_duration'] as num?)?.toInt() ?? 0,
+        'acceptedTotal': (data['accepted_total'] as num?)?.toInt() ?? 0,
+        'acceptedDaily': (data['accepted_daily'] as num?)?.toInt() ?? 0,
+        'serverElapsedSecs': (data['server_elapsed_secs'] as num?)?.toInt() ?? -1,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  /// 听歌事件流水上报（v2：幂等事件，服务端唯一账本）。
+  /// 与 reportListenStatsDelta 不同：失败直接抛异常——调用方必须区分
+  /// 成功/失败来决定删不删事件队列（失败保留队列重试，幂等键保证不重报）。
+  Future<Map<String, dynamic>> reportListenEvents({
+    required String batchId,
+    required List<Map<String, dynamic>> events,
+  }) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw StateError('未登录，听歌事件暂缓上报');
+    }
+    final data = await _action('report_listen_events', {
+      'ciyuanxi_id': ciyuanxiId,
+      'batch_id': batchId,
+      'events': events,
+      // 弱网（蜂窝信号差）下 8s 频繁超时导致回执拿不到、快照进不来，
+      // 个人中心会退化为纯本地口径与排行榜脱节；放宽到与排行榜同级
+    }, fetchTimeoutMs: 15000);
+    return {
+      'resetAt': (data['reset_at'] ?? '').toString(),
+      'reason': (data['reason'] ?? '').toString(),
+      'total': (data['server_total_duration'] as num?)?.toInt() ?? 0,
+      'daily': (data['server_daily_duration'] as num?)?.toInt() ?? 0,
+      'weekly': (data['server_weekly_duration'] as num?)?.toInt() ?? 0,
+      'accepted': (data['accepted'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  /// 纯快照拉取：零上报，云端现算值（总/今日/近七日）。失败返回空表。
+  Future<Map<String, dynamic>> fetchListenStatsSummary() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      return const {};
+    }
+    try {
+      final data = await _action('get_listen_stats_summary', {
+        'ciyuanxi_id': ciyuanxiId,
+      }, fetchTimeoutMs: 15000);
+      return {
+        'resetAt': (data['reset_at'] ?? '').toString(),
         'total': (data['server_total_duration'] as num?)?.toInt() ?? 0,
         'daily': (data['server_daily_duration'] as num?)?.toInt() ?? 0,
         'weekly': (data['server_weekly_duration'] as num?)?.toInt() ?? 0,

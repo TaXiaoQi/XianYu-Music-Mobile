@@ -88,7 +88,7 @@ class PluginsSyncService {
           uploaded++;
           uploadedIds.add(p.id);
         } catch (e) {
-          AppLogger.instance.log('sync', '插件 ${p.name} 上传失败: $e');
+          AppLog.warn('sync', '插件 ${p.name} 上传失败: $e');
           errors.add(tr('插件 "{name}" 上传失败', {'name': p.name}));
         }
       }
@@ -102,7 +102,7 @@ class PluginsSyncService {
         errors: errors,
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '插件上传失败: $e');
+      AppLog.warn('sync', '插件上传失败: $e');
       _fail(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
@@ -192,7 +192,7 @@ class PluginsSyncService {
           installed++;
           restoredIds.add(source.id);
         } catch (e) {
-          AppLogger.instance.log('sync', '插件 $name 恢复失败: $e');
+          AppLog.warn('sync', '插件 $name 恢复失败: $e');
           errors.add(tr('插件 "{name}" 恢复失败：{e}', {'name': name, 'e': e}));
         }
       }
@@ -206,7 +206,7 @@ class PluginsSyncService {
         errors: errors,
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '插件下载失败: $e');
+      AppLog.warn('sync', '插件下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }

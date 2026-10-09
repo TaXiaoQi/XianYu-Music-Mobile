@@ -175,6 +175,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
   int _videoDuration = 0;
   VideoPlayerController? _upVideo;
   bool _posterFromStill = false;
+  WallpaperMediaType _displayMode = WallpaperMediaType.video;
   bool _uploading = false;
   String? _error;
 
@@ -230,6 +231,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
       _upVideo = c;
       _videoDuration = c.value.duration.inSeconds;
     });
+    // 与自定义编辑器一致：自动循环静音播放，可直接预览动态效果
+    c..setLooping(true)..setVolume(0);
+    unawaited(c.play());
   }
 
   Future<void> _pickImage() async {
@@ -354,6 +358,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
               imageData: poster,
               videoData: 'data:video/mp4;base64,${base64Encode(bytes)}',
               videoDuration: _videoDuration,
+              mediaType: _displayMode == WallpaperMediaType.video
+                  ? 'video'
+                  : 'image',
             );
       } else {
         final imageData = await _compressToDataUrl(_picked!);
@@ -377,6 +384,131 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
     }
   }
 
+  /// 上传预览：视频画面 cover 铺满（与自定义编辑器一致）；
+  /// 「展示图片」模式且拿得到静帧（实况照片）时显示静帧原图
+  Widget _buildUploadPreview() {
+    final scheme = Theme.of(context).colorScheme;
+    final videoReady =
+        _videoPath != null && _upVideo != null && _upVideo!.value.isInitialized;
+    final showStill =
+        _displayMode == WallpaperMediaType.image && _picked != null;
+    if (videoReady && !showStill) {
+      final raw = _upVideo!.value.size;
+      final rot = _upVideo!.value.rotationCorrection;
+      final display =
+          (rot == 90 || rot == 270) ? Size(raw.height, raw.width) : raw;
+      final ar = display.width <= 0 || display.height <= 0
+          ? 16 / 9
+          : display.width / display.height;
+      return SizedBox(
+        height: 200,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: RepaintBoundary(
+            key: _upPosterKey,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                const ColoredBox(color: Colors.black),
+                LayoutBuilder(
+                  builder: (context, cons) {
+                    final w = cons.maxWidth;
+                    final h = cons.maxHeight;
+                    final vw = (h * ar) >= w ? h * ar : w;
+                    final vh = (h * ar) >= w ? h : w / ar;
+                    return ClipRect(
+                      child: Center(
+                        child: SizedBox(
+                          width: vw,
+                          height: vh,
+                          child: VideoPlayer(_upVideo!),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.videocam,
+                          color: Colors.white,
+                          size: 12,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          tr('视频壁纸'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: _uploading ? null : _pickImage,
+      child: Container(
+        height: videoReady ? 200 : 160,
+        decoration: BoxDecoration(
+          color: appCardColor(context),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: _picked == null
+            ? Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 40,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      tr('点击选择图片或视频\n(JPG / PNG / WEBP / MP4)'),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.file(
+                  File(_picked!.path),
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                ),
+              ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -393,105 +525,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
             ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 14),
-          _videoPath != null && _upVideo != null && _upVideo!.value.isInitialized
-          ? SizedBox(
-              height: 200,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-              child: RepaintBoundary(
-                key: _upPosterKey,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    const ColoredBox(color: Colors.black),
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio:
-                            _upVideo!.value.aspectRatio == 0
-                            ? 16 / 9
-                            : _upVideo!.value.aspectRatio,
-                        child: VideoPlayer(_upVideo!),
-                      ),
-                    ),
-                    Positioned(
-                      top: 8,
-                      right: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.55),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.videocam,
-                              color: Colors.white,
-                              size: 12,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              tr('视频壁纸'),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
-          : GestureDetector(
-              onTap: _uploading ? null : _pickImage,
-              child: Container(
-                height: 160,
-                decoration: BoxDecoration(
-                  color: appCardColor(context),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: _picked == null
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.add_photo_alternate_outlined,
-                              size: 40,
-                              color: scheme.onSurfaceVariant,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              tr('点击选择图片或视频\n(JPG / PNG / WEBP / MP4)'),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                height: 1.4,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.file(
-                          File(_picked!.path),
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
-                      ),
-              ),
-            ),
+          _buildUploadPreview(),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -512,6 +546,27 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
               ),
             ],
           ),
+          if (_videoPath != null) ...[
+            const SizedBox(height: 10),
+            SegmentedButton<WallpaperMediaType>(
+              segments: [
+                ButtonSegment(
+                  value: WallpaperMediaType.video,
+                  label: Text(tr('展示视频')),
+                ),
+                ButtonSegment(
+                  value: WallpaperMediaType.image,
+                  label: Text(tr('展示图片')),
+                ),
+              ],
+              selected: {_displayMode},
+              showSelectedIcon: false,
+              onSelectionChanged: _uploading
+                  ? null
+                  : (selection) =>
+                        setState(() => _displayMode = selection.first),
+            ),
+          ],
           const SizedBox(height: 12),
           TextField(
             controller: _titleCtrl,

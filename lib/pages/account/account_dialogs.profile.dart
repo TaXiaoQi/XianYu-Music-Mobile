@@ -56,10 +56,8 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
     }
   }
 
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
+  void _toast(String msg) =>
+      showXianYuToast(context, msg, duration: const Duration(seconds: 2));
 
   @override
   Widget build(BuildContext context) {
@@ -179,10 +177,8 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
     }
   }
 
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-  }
+  void _toast(String msg) =>
+      showXianYuToast(context, msg, duration: const Duration(seconds: 2));
 
   @override
   Widget build(BuildContext context) {

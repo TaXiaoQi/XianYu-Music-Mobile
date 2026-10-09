@@ -183,7 +183,6 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
   bool _videoReady = false;
   String? _videoKey;
   Size? _videoSize;
-  String? _lastVideoLogSig;
 
   final GlobalKey _captureKey = GlobalKey();
   Timer? _colorTimer;
@@ -279,7 +278,6 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
       _videoSize = (rot == 90 || rot == 270)
           ? Size(size.height, size.width)
           : size;
-      debugPrint('customBg video init raw=$size rot=$rot display=$_videoSize');
     });
     await controller.setVolume(0);
     if (_videoShouldAutoPlay &&
@@ -399,11 +397,6 @@ class _CustomBackgroundLayerState extends ConsumerState<CustomBackgroundLayer>
         final maxT = wallpaperMaxTranslate(w, h, box, sEff);
         final ddx = dx.clamp(-maxT.dx, maxT.dx).toDouble();
         final ddy = dy.clamp(-maxT.dy, maxT.dy).toDouble();
-        final logSig = videoReady ? '$videoBox|${w}x$h' : null;
-        if (logSig != null && logSig != _lastVideoLogSig) {
-          _lastVideoLogSig = logSig;
-          debugPrint('customBg videoBox=$videoBox container=${w}x$h');
-        }
         return RepaintBoundary(
           key: _captureKey,
           child: SizedBox.expand(

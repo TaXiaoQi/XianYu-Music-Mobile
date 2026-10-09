@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../plugin/plugin_backup_import.dart';
 import '../player/player_provider.dart';
+import '../sync/sync_trigger.dart';
 import 'playlist_store.dart';
 
 class ImportedPlaylistState {
@@ -41,12 +42,14 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
   ) async {
     final playlists = await _store.addPlaylists(prepared.playlists);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
     return playlists;
   }
 
   Future<void> remove(String id) async {
     final playlists = await _store.removePlaylist(id);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> detachCloud(String id) async {
@@ -66,21 +69,25 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     ];
     await _store.saveAll(result);
     state = ImportedPlaylistState(playlists: result, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> create(String name) async {
     final playlists = await _store.createPlaylist(name);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> rename(String id, String name) async {
     final playlists = await _store.renamePlaylist(id, name);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> addSongs(String id, List<ImportedSong> songs) async {
     final playlists = await _store.addSongsTo(id, songs);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> setSource(
@@ -96,6 +103,7 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
       sourceRaw: sourceRaw,
     );
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> applySourceSync(
@@ -109,16 +117,19 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
       fullSync: fullSync,
     );
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> removeSong(String id, String path) async {
     final playlists = await _store.removeSong(id, path);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> reorderSongs(String id, List<String> orderedPaths) async {
     final playlists = await _store.reorderSongs(id, orderedPaths);
     state = ImportedPlaylistState(playlists: playlists, loading: false);
+    SyncTrigger.markDirty(const {SyncTrigger.playlists});
   }
 
   Future<void> play(ImportedPlaylist playlist, int index) async {

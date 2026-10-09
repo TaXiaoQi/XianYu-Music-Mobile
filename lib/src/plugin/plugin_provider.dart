@@ -11,6 +11,7 @@ import '../core/rust_init.dart';
 import '../core/settings.dart';
 import '../rust/api.dart' as frb;
 import '../sync/plugin_sync_state.dart';
+import '../sync/sync_trigger.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 import 'plugin_store.dart';
@@ -437,6 +438,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       await engine.destroy(id);
     }
     engine.bakaManager.clearCache(id);
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
   Future<void> setUpdateAvailable(String id, bool value) async {
@@ -466,6 +468,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       }
       engine.bakaManager.clearCache(s.id);
     }
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
   Future<void> remove(String id) async {
@@ -476,6 +479,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     await engine.store.saveSources(list);
     state = PluginListState(sources: list);
     engine.bakaManager.clearCache(id);
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
   Future<void> reorder(List<String> orderedIds) async {
@@ -492,6 +496,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     final list = sortPluginSources(remapped);
     await engine.store.saveSources(list);
     state = PluginListState(sources: list);
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
   Future<bool> reload(String id) async {
@@ -519,6 +524,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     state = PluginListState(sources: list);
     engine.bakaManager.clearCache(oldId);
     if (newSource.id != oldId) engine.bakaManager.clearCache(newSource.id);
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
   Future<List<PluginUserVar>> getUserVars(String pluginId) async {
@@ -537,6 +543,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     if (source.isNotEmpty && source.first.enabled) {
       await engine.ensureLoaded(source.first);
     }
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
   Future<void> syncBilibiliCookiesFromVars(

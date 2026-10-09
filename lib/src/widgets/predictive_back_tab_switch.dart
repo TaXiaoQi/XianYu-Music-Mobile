@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/app_logger.dart';
 import '../core/settings.dart';
 import '../navigation/landscape_tab_switcher.dart';
 import '../navigation/page_switch_tab_view.dart';
@@ -80,7 +79,6 @@ class _PredictiveBackTabContainerState
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     if (_phase == PredictiveBackPhase.start || _phase == PredictiveBackPhase.update) {
-      AppLogger.instance.log('backgesture', 'tab 重复 start 重新认领 progress=${backEvent.progress.toStringAsFixed(3)}');
       return true;
     }
     if (!_shouldClaim(backEvent)) return false;
@@ -89,7 +87,6 @@ class _PredictiveBackTabContainerState
     _synth.reset();
     _ctrl.value = 1 - _synth.progressOf(backEvent);
     setState(() => _phase = PredictiveBackPhase.start);
-    AppLogger.instance.log('backgesture', 'tab 认领 start idx=$_exitIndex progress=${backEvent.progress.toStringAsFixed(3)}');
     return true;
   }
 
@@ -98,9 +95,6 @@ class _PredictiveBackTabContainerState
     // ROM 门控时系统 progress 恒 0（见 BackGestureProgressSynth），tab 返回
     // 同样需要触点合成进度，否则手势全程冻结、松手直接跳 commit
     final effective = _synth.progressOf(backEvent);
-    if (_synth.engagedThisFrame) {
-      AppLogger.instance.log('backgesture', 'tab synth engage');
-    }
     _ctrl.value = 1 - effective;
     setState(() => _phase = PredictiveBackPhase.update);
   }
@@ -108,8 +102,6 @@ class _PredictiveBackTabContainerState
   @override
   void handleCommitBackGesture() {
     if (!_inTransition) return;
-    AppLogger.instance.log('backgesture',
-        'tab commit updates=${_synth.updateCount} last=${_synth.lastProgress.toStringAsFixed(3)}');
     setState(() => _phase = PredictiveBackPhase.commit);
     widget.navigationShell.goBranch(0);
     _ctrl.animateTo(0.0, duration: _commitDuration, curve: Curves.easeOutCubic).whenComplete(() {
@@ -120,8 +112,6 @@ class _PredictiveBackTabContainerState
   @override
   void handleCancelBackGesture() {
     if (!_inTransition) return;
-    AppLogger.instance.log('backgesture',
-        'tab cancel updates=${_synth.updateCount} last=${_synth.lastProgress.toStringAsFixed(3)}');
     setState(() => _phase = PredictiveBackPhase.cancel);
     _ctrl.animateTo(1.0, duration: _cancelDuration, curve: Curves.easeOutCubic).whenComplete(() {
       if (mounted) setState(() => _phase = PredictiveBackPhase.idle);

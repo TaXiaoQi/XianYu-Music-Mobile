@@ -168,7 +168,7 @@ class PlaylistSyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '歌单上传失败: $e');
+      AppLog.warn('sync', '歌单上传失败: $e');
       _fail(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
@@ -186,7 +186,7 @@ class PlaylistSyncService {
         await _downloadViaSnapshot();
       }
     } catch (e) {
-      AppLogger.instance.log('sync', '歌单下载失败: $e');
+      AppLog.warn('sync', '歌单下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }

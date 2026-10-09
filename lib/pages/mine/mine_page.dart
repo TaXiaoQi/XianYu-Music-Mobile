@@ -74,7 +74,8 @@ class MinePage extends ConsumerWidget {
               _QuickEntries(),
               SizedBox(height: 24),
               _MyPlaylistsSection(),
-              _FavoriteCollectionsSection(kind: 'playlist', title: tr('收藏歌单')),
+              // 收藏歌单已收纳进「我的收藏」页，本页只保留自建歌单；
+              // 收藏专辑仍在此展示
               _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
             ],
           ),
@@ -707,16 +708,19 @@ class _MyPlaylistsSection extends ConsumerWidget {
             ],
           ),
         ),
-        _ReorderCard(
-          itemCount: playlists.length,
-          onReorder: onReorder,
-          itemKey: (i) => ValueKey(playlists[i].id),
-          itemBuilder: (ctx, i) => _PlaylistRow(
-            playlist: playlists[i],
-            index: i,
-            dragEnabled: true,
+        // 空歌单不渲染玻璃卡：0 项时 _ReorderCard 仍会画一块空白
+        // 卡片表面（毛玻璃下读作白边）；标题行的新建/导入入口保留
+        if (playlists.isNotEmpty)
+          _ReorderCard(
+            itemCount: playlists.length,
+            onReorder: onReorder,
+            itemKey: (i) => ValueKey(playlists[i].id),
+            itemBuilder: (ctx, i) => _PlaylistRow(
+              playlist: playlists[i],
+              index: i,
+              dragEnabled: true,
+            ),
           ),
-        ),
         const SizedBox(height: 24),
       ],
     );

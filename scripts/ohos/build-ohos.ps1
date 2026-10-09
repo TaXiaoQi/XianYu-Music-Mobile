@@ -412,6 +412,21 @@ try {
         if ($versionTs -match "APP_VERSION\s*=\s*'([^']+)'") { $appVersion = $Matches[1] }
         $relDir = Join-Path $ProjectRoot 'releases\ohos'
         $archSuffix = if ($targetAbi -eq 'x64') { 'x86' } else { 'arm64' }
+        # 归档前防呆：HAP 混入对侧架构 so（模拟器 x86_64 libxianyu_core.so ~6MB
+        # 压缩后）说明打包时 entry/libs 未清干净——直接绕过本脚本跑 flutter
+        # build hap/app 就会发生（2026-10-06 实测 31.2MB vs 24.9MB）。坏包禁止
+        # 进 releases，报错并指引修复，而不是静默归档。
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        foreach ($h in $haps) {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($h.FullName)
+            try {
+                $stray = $zip.Entries | Where-Object { $_.FullName -like 'libs/x86_64/*' -or $_.FullName -like 'libs/arm64-v8a/*' } |
+                    Group-Object { ($_.FullName -split '/')[1] } | Select-Object -ExpandProperty Name
+                if ($stray.Count -gt 1) {
+                    throw ("HAP {0} 混入多 ABI so（{1}）：先删 ohos\entry\libs 下对侧架构目录再打包" -f $h.Name, ($stray -join '+'))
+                }
+            } finally { $zip.Dispose() }
+        }
         # hvigor FlutterTask 的目标平台：缺省（不传 TARGET_PLATFORM）会编译全部
         # ohos 目标并在 entry/libs 重新物化 x86_64，.app 体积翻倍——assembleApp
         # 必须显式传（2026-09-25 腕上端实测 29.8MB vs 18.1MB）
