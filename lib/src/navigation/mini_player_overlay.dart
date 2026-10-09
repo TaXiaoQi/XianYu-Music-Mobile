@@ -67,6 +67,16 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   bool? _lastHidden;
   Timer? _barGoneTimer;
 
+  /// 预测返回手势进行中：mini 条提前现身接应飞回的封面（飞回落点即条
+  /// 位置），手势取消则收回；pop commit 后 playerOpen 翻 false 自然接管
+  bool _returnPeek = false;
+
+  void _onReturnChanged() {
+    if (!mounted) return;
+    _returnPeek = PredictiveCoverReturn.instance.returning.value;
+    if (playerOpenNotifier.value) setState(() {});
+  }
+
   /// 位置档位（是否坐在页面底部低位）：实时跟随当前页面，
   /// 变化通过与页面切换同节奏的隐式动画同步过渡
   bool _lowState = false;
@@ -124,6 +134,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     });
     appRouter.routerDelegate.addListener(_syncLow);
     playerOpenNotifier.addListener(_onPlayerOpenChanged);
+    PredictiveCoverReturn.instance.returning.addListener(_onReturnChanged);
     PredictiveCoverReturn.instance.registerTarget(_returnTargetProvider);
   }
 
@@ -131,6 +142,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   void dispose() {
     appRouter.routerDelegate.removeListener(_syncLow);
     playerOpenNotifier.removeListener(_onPlayerOpenChanged);
+    PredictiveCoverReturn.instance.returning.removeListener(_onReturnChanged);
     PredictiveCoverReturn.instance.unregisterTarget(_returnTargetProvider);
     _barFadeTimer?.cancel();
     _barGoneTimer?.cancel();
@@ -208,8 +220,8 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         screen == null || screen.size.width >= screen.size.height * 1.05;
     final side = landscape ||
         (ref.read(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) ==
-            NavBarPosition.side);
+                .select((s) => s.valueOrNull?.navBarPosition)) !=
+            NavBarPosition.bottom);
     if ((_lastFloating != null && _lastFloating != floating) ||
         (_lastSide != null && _lastSide != side)) {
       _playerTop = null;
@@ -313,10 +325,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         ref.watch(settingsProvider.select((s) => s.valueOrNull?.floatingNavBar)) ??
             true;
 
+    // 侧栏与顶部导航模式都没有底栏：mini 条停靠/拖拽下限按无底栏处理
+    // （贴底缘 12px），不吃固定底栏的 64px 让位
     final isSide = landscape ||
         (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) ==
-            NavBarPosition.side);
+                .select((s) => s.valueOrNull?.navBarPosition)) !=
+            NavBarPosition.bottom);
 
     final accountOpen = landscape && ref.watch(landscapeAccountOpenProvider);
 
@@ -325,7 +339,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     // 黑名单页（设置/搜索等 HideMiniBar）持有期间隐藏：变化通过与
     // 切换动画同节奏的隐式动画与页面转场同步完成
     final pageHidesBar = ref.watch(miniBarHiddenProvider) > 0;
-    final hidden = playerOpen || pageHidesBar;
+    final hidden = (playerOpen && !_returnPeek) || pageHidesBar;
     _syncBarGone(hidden);
 
     final miniBarW = landscape

@@ -199,6 +199,7 @@ const Map<String, String> enDictManual = {
   '参考项目': 'Reference project',
   '侧边栏展开方向': 'Sidebar expand direction',
   '侧边悬浮': 'Floating sidebar',
+  '顶部导航': 'Top navigation',
   '侧车文件（LRC）': 'Sidecar file (LRC)',
   '测试': 'Test',
   '测试 ModernDialogCard 通用确认弹窗': 'Test ModernDialogCard confirm dialog',

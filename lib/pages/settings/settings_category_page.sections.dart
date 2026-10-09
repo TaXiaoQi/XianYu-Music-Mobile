@@ -316,6 +316,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             trailing: Text(switch (s?.navBarPosition ?? NavBarPosition.bottom) {
               NavBarPosition.bottom => tr('底部导航'),
               NavBarPosition.side => tr('侧边悬浮'),
+              NavBarPosition.top => tr('顶部导航'),
             }),
             onTap: () => _pickNavBarPosition(context, ref, s),
           ),

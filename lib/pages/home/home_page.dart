@@ -8,6 +8,7 @@ import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/widgets/flying_cover.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/widgets/cover_carousel.dart';
 import '../../src/widgets/cover_image.dart';
@@ -221,6 +222,7 @@ class _MostPlayedRow extends ConsumerWidget {
     final title = item?.title ?? '';
     final artist = item?.artist ?? '';
     final path = song?.path ?? item?.path ?? '';
+    BuildContext? coverCtx;
     return frostedCardSurface(
       context: context,
       ref: ref,
@@ -230,7 +232,16 @@ class _MostPlayedRow extends ConsumerWidget {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(13),
         child: InkWell(
-          onTap: () {
+          onTap: () async {
+            // 封面飞向 mini 条；飞行不可用（mini 条未挂载）时不阻塞播放
+            await launchFlyCover(
+              context,
+              coverContext: coverCtx,
+              coverSize: 42,
+              songPath: path,
+              networkUrl: item?.coverUrl,
+              radius: 10,
+            );
             if (song != null) {
               ref.read(libraryProvider.notifier).playList([song], 0);
             } else if (item != null) {
@@ -243,13 +254,18 @@ class _MostPlayedRow extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
             children: [
-              CoverImage(
-                songPath: path,
-                networkUrl: item?.coverUrl,
-                width: 42,
-                height: 42,
-                radius: 10,
-                icon: Icons.music_note,
+              Builder(
+                builder: (c) {
+                  coverCtx = c;
+                  return CoverImage(
+                    songPath: path,
+                    networkUrl: item?.coverUrl,
+                    width: 42,
+                    height: 42,
+                    radius: 10,
+                    icon: Icons.music_note,
+                  );
+                },
               ),
               const SizedBox(width: 12),
               Expanded(

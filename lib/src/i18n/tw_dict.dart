@@ -181,6 +181,7 @@ const Map<String, String> twDict = {
   '参考项目': '參考專案',
   '侧边栏展开方向': '側邊欄展開方向',
   '侧边悬浮': '側邊懸浮',
+  '顶部导航': '頂部導航',
   '侧车文件（LRC）': '側車檔案（LRC）',
   '测试': '測試',
   '测试 ModernDialogCard 通用确认弹窗': '測試 ModernDialogCard 通用確認彈窗',

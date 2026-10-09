@@ -16,6 +16,7 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       options:   [
         ModernChoiceOption(label: tr('底部导航'), value: NavBarPosition.bottom, icon: Icons.subtitles_outlined),
         ModernChoiceOption(label: tr('侧边悬浮'), value: NavBarPosition.side, icon: Icons.navigation_outlined),
+        ModernChoiceOption(label: tr('顶部导航'), value: NavBarPosition.top, icon: Icons.vertical_align_top_outlined),
       ],
       currentValue: cur,
     );

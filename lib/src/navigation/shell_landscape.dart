@@ -121,8 +121,8 @@ class _LandscapeRail extends ConsumerWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          color: scheme.onSurfaceVariant.withValues(alpha: 0.45),
+          fontWeight: FontWeight.w700,
+          color: scheme.primary,
           letterSpacing: 0.5,
         ),
       ),
@@ -170,44 +170,106 @@ class _LandscapeRail extends ConsumerWidget {
           child: ListView(
             padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
             children: [
-              if (!collapsed) label(tr('导航')),
-              for (var i = 0; i < primary.length; i++)
-                _railItem(
-                  context,
-                  ref,
-                  icon: primary[i].icon,
-                  themeSlot: primary[i].themeSlot,
-                  title: navTitle(context, primary[i]),
-                  collapsed: collapsed,
-                  selected: libSel == null && i == index,
-                  onTap: () {
-                    ref.read(landscapeLibraryProvider.notifier).state = null;
-                    onSelect(i);
-                  },
+              if (!collapsed) ...[
+                // 分组独立玻璃卡，样式对齐设置页左列（frostedCardSurface
+                // 同款）；小标题在卡外（设置页同款），红色在 label() 内
+                label(tr('导航')),
+                const SizedBox(height: 2),
+                frostedCardSurface(
+                  context: context,
+                  ref: ref,
+                  radius: 16,
+                  themeSlot: 'settings.group',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var i = 0; i < primary.length; i++)
+                        _railItem(
+                          context,
+                          ref,
+                          icon: primary[i].icon,
+                          themeSlot: primary[i].themeSlot,
+                          title: navTitle(context, primary[i]),
+                          collapsed: collapsed,
+                          selected: libSel == null && i == index,
+                          onTap: () {
+                            ref
+                                .read(landscapeLibraryProvider.notifier)
+                                .state = null;
+                            onSelect(i);
+                          },
+                        ),
+                    ],
+                  ),
                 ),
-              if (!collapsed) label(tr('音乐库')),
-              for (var j = 0; j < library.length; j++)
-                _railItem(
-                  context,
-                  ref,
-                  icon: library[j].$2,
-                  title: library[j].$1,
-                  collapsed: collapsed,
-                  // 文件夹管理(4)归属「本地音乐」：右侧容器打开时保持其高亮
-                  selected: libSel == j || (j == 0 && libSel == 4),
-                  onTap: () {
-                    closeLandscapeSearch(ref);
-                    ref.read(landscapeLibraryProvider.notifier).state = j;
-                  },
+                const SizedBox(height: 10),
+                label(tr('音乐库')),
+                const SizedBox(height: 2),
+                frostedCardSurface(
+                  context: context,
+                  ref: ref,
+                  radius: 16,
+                  themeSlot: 'settings.group',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var j = 0; j < library.length; j++)
+                        _railItem(
+                          context,
+                          ref,
+                          icon: library[j].$2,
+                          title: library[j].$1,
+                          collapsed: collapsed,
+                          // 文件夹管理(4)归属「本地音乐」：右侧容器打开时
+                          // 保持其高亮
+                          selected: libSel == j || (j == 0 && libSel == 4),
+                          onTap: () {
+                            closeLandscapeSearch(ref);
+                            ref.read(landscapeLibraryProvider.notifier).state =
+                                j;
+                          },
+                        ),
+                    ],
+                  ),
                 ),
+              ] else ...[
+                for (var i = 0; i < primary.length; i++)
+                  _railItem(
+                    context,
+                    ref,
+                    icon: primary[i].icon,
+                    themeSlot: primary[i].themeSlot,
+                    title: navTitle(context, primary[i]),
+                    collapsed: collapsed,
+                    selected: libSel == null && i == index,
+                    onTap: () {
+                      ref.read(landscapeLibraryProvider.notifier).state = null;
+                      onSelect(i);
+                    },
+                  ),
+                for (var j = 0; j < library.length; j++)
+                  _railItem(
+                    context,
+                    ref,
+                    icon: library[j].$2,
+                    title: library[j].$1,
+                    collapsed: collapsed,
+                    selected: libSel == j || (j == 0 && libSel == 4),
+                    onTap: () {
+                      closeLandscapeSearch(ref);
+                      ref.read(landscapeLibraryProvider.notifier).state = j;
+                    },
+                  ),
+              ],
             ],
           ),
         ),
-        const Spacer(),
         // 主题提供侧栏贴纸时才出现；未启用主题时零尺寸，观感不变。
+        // 注意不可在此前放 Spacer：与上方 Expanded 平分剩余高度会把
+        // 列表视口砍半，音乐库后几项被挤到视口外且无法滚动露出
         if (!collapsed)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Align(
               alignment: Alignment.centerLeft,
               child: themeSlotSticker(
@@ -226,19 +288,9 @@ class _LandscapeRail extends ConsumerWidget {
 
     return SafeArea(
       right: false,
-      child: SizedBox(
-        width: railWidth,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              right: BorderSide(
-                color: scheme.onSurface.withValues(alpha: 0.08),
-              ),
-            ),
-          ),
-          child: content,
-        ),
-      ),
+      // 组卡（frostedCardSurface）自带玻璃底，整列不再垫玻璃，
+      // 否则卡间空隙和列底会露出第二层玻璃面
+      child: SizedBox(width: railWidth, child: content),
     );
   }
 
@@ -253,11 +305,11 @@ class _LandscapeRail extends ConsumerWidget {
     String? themeSlot,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final color = selected
-        ? scheme.primary
-        : scheme.onSurfaceVariant.withValues(alpha: 0.6);
+    // 字重/颜色对齐设置页 _CategoryTile（ListTile 默认）：常规粗细，
+    // 非选中用 onSurface（不用淡化灰）
+    final color = selected ? scheme.primary : scheme.onSurface;
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 8, vertical: 2),
+      padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 4, vertical: 2),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
@@ -265,8 +317,8 @@ class _LandscapeRail extends ConsumerWidget {
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,
           padding: EdgeInsets.symmetric(
-            horizontal: collapsed ? 0 : 10,
-            vertical: 9,
+            horizontal: collapsed ? 0 : 12,
+            vertical: 11,
           ),
           decoration: BoxDecoration(
             color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
@@ -282,19 +334,24 @@ class _LandscapeRail extends ConsumerWidget {
                 ref,
                 themeSlot,
                 fallback: icon,
-                size: 20,
+                size: 22,
                 color: color,
               ),
               if (!collapsed) ...[
-                const SizedBox(width: 9),
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: color,
+                const SizedBox(width: 10),
+                // 弹性截断：侧栏宽可拖拽收窄（下限仅 icon 档），固定宽
+                // 文本在窄列下会把 Row 挤溢出（RenderFlex overflow）
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.w400,
+                      color: color,
+                    ),
                   ),
                 ),
               ],

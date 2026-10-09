@@ -17,6 +17,7 @@ enum ThemeModePreference {
 enum NavBarPosition {
   bottom,
   side,
+  top,
 }
 
 enum SideBarExpandDirection {

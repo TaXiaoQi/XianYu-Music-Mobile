@@ -128,6 +128,8 @@ final navBarInsetProvider = Provider<double>((ref) {
   final landscape = ref.watch(isLandscapeProvider);
   final s = ref.watch(settingsProvider).valueOrNull;
   if (landscape || s?.navBarPosition == NavBarPosition.side) return 82;
+  // 顶部导航没有底栏：页面只需给 mini 播放条留白
+  if (s?.navBarPosition == NavBarPosition.top) return 82;
   // 悬浮底栏是覆盖式，页面需多留白避让；固定底栏占位在布局内，只需留 mini 播放条。
   return (s?.floatingNavBar ?? false) ? 175 : 82;
 });
@@ -643,6 +645,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         ) ??
         true;
 
+    // 顶部导航模式：不出底栏/侧栏，页面切换由顶栏右侧导航球承担
+    final navTop = !landscape &&
+        ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.navBarPosition,
+        )) ==
+        NavBarPosition.top;
+
     final libSel = ref.watch(landscapeLibraryProvider);
 
     final accountOpen = landscape && ref.watch(landscapeAccountOpenProvider);
@@ -771,7 +780,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       navBarColor = null;
     } else if (landscape) {
       navBarColor = null;
-    } else if (floating) {
+    } else if (floating || navTop) {
+      // 顶部导航没有固定底栏，三键区同悬浮模式涂页面背景色
       navBarColor = Theme.of(context).scaffoldBackgroundColor;
     } else {
       final (fill, _) = fixedNavBarSurfaceFill(context, ref);
@@ -845,7 +855,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
         actions: [
-          if (widget.index == 0) ...[
+          // 皮肤/设置在左，顶部导航球固定最右；固定顶栏下不画玻璃底，
+          // 与旁边皮肤/设置一致只出图标，点击直接切换首页/我的
+          if (widget.index == 0)
             IconButton(
               icon: themeSlotWidget(
                 ref,
@@ -854,9 +866,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               ),
               tooltip: tr('皮肤'),
               onPressed: () => context.push('/wallpaper'),
-            ),
-            const SizedBox(width: 16),
-          ] else ...[
+            )
+          else
             IconButton(
               icon: themeSlotIcon(
                 ref,
@@ -866,8 +877,21 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               tooltip: tr('设置'),
               onPressed: () => context.push('/settings'),
             ),
-            const SizedBox(width: 16),
+          if (navTop) ...[
+            // 顶部导航球显示目标页图标：在首页显示「我的」人头、在
+            // 我的显示「首页」房子，与底栏图标同款（含主题槽位）
+            IconButton(
+              icon: themeSlotIcon(
+                ref,
+                widget.index == 0 ? 'nav.settings' : 'nav.home',
+                fallback: widget.index == 0
+                    ? Icons.person_outline_rounded
+                    : Icons.home,
+              ),
+              onPressed: () => select(widget.index == 0 ? 1 : 0),
+            ),
           ],
+          const SizedBox(width: 16),
         ],
         bottom: PageSearchBarBottom(
           onTap: () => context.push('/search'),
@@ -1047,7 +1071,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               onSelect: select,
             ),
 
-          if (!isSide && floating)
+          if (!isSide && !navTop && floating)
             Positioned(
               left: 12,
               right: 12,
@@ -1176,6 +1200,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                   tooltip: tr('设置'),
                                   onTap: () => context.push('/settings'),
                                 ),
+                              // 顶部导航：悬浮顶栏保留侧栏气泡同款玻璃圆球，
+                              // 图标显示目标页（首页⇄我的互切），紧挨皮肤/设置
+                              if (navTop)
+                                BiliPaiIconButton(
+                                  iconChild: themeSlotIcon(
+                                    ref,
+                                    widget.index == 0
+                                        ? 'nav.settings'
+                                        : 'nav.home',
+                                    fallback: widget.index == 0
+                                        ? Icons.person_outline_rounded
+                                        : Icons.home,
+                                  ),
+                                  onTap: () =>
+                                      select(widget.index == 0 ? 1 : 0),
+                                ),
                             ],
                           ),
                   ),
@@ -1202,7 +1242,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           const OrientationTransitionOverlay(),
         ],
       ),
-      bottomNavigationBar: (!isSide && !floating)
+      bottomNavigationBar: (!isSide && !floating && !navTop)
           ? _JellySwitch(
               key: _jellyKey,
               mode: false,
@@ -1213,7 +1253,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               ),
             )
           : null,
-      extendBody: !isSide && !floating,
+      extendBody: !isSide && !floating && !navTop,
     );
   }
 }

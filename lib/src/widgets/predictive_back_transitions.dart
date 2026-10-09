@@ -247,6 +247,19 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
       }
     };
     anim.addStatusListener(listener);
+    // 快速取消：控制器可能全程未动（拉起量≈0 时无任何 status 事件），
+    // 上一状态本就是 completed，监听永远等不到触发——下一帧仍停在场值
+    // 则直接归零（此时控制器=1，与基线分支视觉一致，切换无跳变）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (anim.status == AnimationStatus.completed &&
+          anim.value >= 1.0) {
+        anim.removeStatusListener(listener);
+        if (!_owned && _phase != PredictiveBackPhase.idle) {
+          phase = PredictiveBackPhase.idle;
+        }
+      }
+    });
   }
 
   @override
@@ -556,9 +569,7 @@ class _PredictiveBackSharedElementPageTransitionState
             child: Opacity(
               opacity: _opacityTween.evaluate(_commitAnimation),
               child: ClipRRect(
-                borderRadius:
-                    MediaQuery.displayCornerRadiiOf(context) ??
-                    BorderRadius.circular(_borderRadiusTween.evaluate(_bounceAnimation)),
+                borderRadius: _gestureCornerRadius(context),
                 child: child,
               ),
             ),
@@ -567,5 +578,16 @@ class _PredictiveBackSharedElementPageTransitionState
       },
       child: widget.child,
     );
+  }
+
+  /// 手势期页面圆角：优先系统物理圆角；模拟器/浮窗等系统圆角为 0 的
+  /// 环境回退到随 bounce 归零的 tween 圆角（否则手势分支是生硬方角）
+  BorderRadius _gestureCornerRadius(BuildContext context) {
+    final sys = MediaQuery.displayCornerRadiiOf(context);
+    if (sys != null && sys.topLeft.x > 0 && sys.topRight.x > 0) {
+      return sys;
+    }
+    return BorderRadius.circular(
+        _borderRadiusTween.evaluate(_bounceAnimation));
   }
 }
