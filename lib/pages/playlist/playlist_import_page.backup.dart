@@ -169,14 +169,20 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
 
   Future<void> _pickLocalFile() async {
     try {
-      final files = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'txt', 'zip', 'lxmc', 'm3u', 'm3u8'],
-      );
+      // Android 选择器按 MIME 过滤，lxmc 无标准 MIME 会被置灰，故改 Dart 侧校验
+      final files = await FilePicker.pickFiles(type: FileType.any);
       if (files.isEmpty) return;
       final file = files.single;
       final path = file.path;
       if (path == null) return;
+      const supportedExts = {'json', 'txt', 'zip', 'lxmc', 'm3u', 'm3u8'};
+      final ext = file.name.contains('.')
+          ? file.name.split('.').last.toLowerCase()
+          : '';
+      if (!supportedExts.contains(ext)) {
+        _toast(tr('不支持的文件类型：{ext}', {'ext': '.$ext'}));
+        return;
+      }
       await _importFile(path, file.name);
     } catch (e) {
       if (!mounted) return;
