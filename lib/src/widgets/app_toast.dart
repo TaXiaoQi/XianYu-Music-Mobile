@@ -4,12 +4,20 @@ import 'package:flutter/material.dart';
 
 OverlayEntry? _currentToast;
 
+/// 提示宿主 overlay（app.dart builder 栈顶）：toast 一律插这里，
+/// 高于一切路由——弹窗/屏障/浮层打开时提示仍可见
+final GlobalKey<OverlayState> appToastOverlayKey =
+    GlobalKey<OverlayState>();
+
+OverlayState? _hostOverlay() => appToastOverlayKey.currentState;
+
 void showXianYuToast(
   BuildContext context,
   String message, {
   Duration duration = const Duration(milliseconds: 1800),
 }) {
-  _showToast(Overlay.of(context, rootOverlay: true), message,
+  _showToast(
+      _hostOverlay() ?? Overlay.of(context, rootOverlay: true), message,
       duration: duration);
 }
 
@@ -18,7 +26,8 @@ void showXianYuToastByOverlay(
   String message, {
   Duration duration = const Duration(milliseconds: 1800),
 }) {
-  _showToast(overlay, message, duration: duration);
+  // 旧签名兼容：overlay 参数仅作宿主未挂载时的回退，一律优先插宿主层
+  _showToast(_hostOverlay() ?? overlay, message, duration: duration);
 }
 
 void _showToast(
@@ -98,7 +107,7 @@ XianYuProgressToastHandle showXianYuProgressToast(
     builder: (ctx) => _XianYuProgressToast(handle: handle),
   );
   handle._entry = entry;
-  Overlay.of(context, rootOverlay: true).insert(entry);
+  (_hostOverlay() ?? Overlay.of(context, rootOverlay: true)).insert(entry);
   return handle;
 }
 

@@ -25,6 +25,8 @@ import 'src/navigation/shell.dart'
         navOnRootPathProvider;
 import 'src/plugin/lx_update_alerts.dart';
 import 'src/update/app_update.dart';
+import 'src/widgets/app_toast.dart'
+    show appToastOverlayKey;
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/glass_settings.dart';
 import 'src/widgets/privacy_policy.dart';
@@ -660,6 +662,14 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                     ),
                     // LX 插件自报更新（updateAlert）提示弹窗宿主
                     const LxUpdateAlertHost(),
+                    // 客户端提示 toast 顶层宿主：高于一切路由与飞行封面，
+                    // 弹窗/屏障打开时提示仍可见
+                    Overlay(
+                      key: appToastOverlayKey,
+                      initialEntries: [
+                        OverlayEntry(builder: (_) => const SizedBox.shrink()),
+                      ],
+                    ),
                   ],
                 ),
                 ),
