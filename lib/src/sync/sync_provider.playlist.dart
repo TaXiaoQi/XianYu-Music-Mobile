@@ -159,6 +159,10 @@ class PlaylistSyncService {
           if (localId != null && localId.isNotEmpty) {
             await store.setCloudId(localId, cloudId);
           }
+          // 重新上传视为用户要回该歌单，解除"仅删本地"的下载跳过
+          if (cloudId != null && cloudId.isNotEmpty) {
+            await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
+          }
         }
       }
       _lens.item = _lens.item.copyWith(
@@ -215,11 +219,18 @@ class PlaylistSyncService {
     }
 
     final data = await _api.fileSyncV2DownloadOps(reports);
+    final downloadSkip = await PlaylistSongSyncState.downloadSkipPlaylistIds();
     final ops = ((data['ops'] as List?) ?? const [])
         .whereType<Map>()
         .map((e) => e.cast<String, dynamic>())
         .toList();
-    if (ops.isEmpty) {
+    // "仅删本地（云端保留）"的歌单：跳过 create，防止被同步拉回来
+    final filteredOps = ops.where((op) {
+      if (op['type'] != 'create_playlist') return true;
+      final cid = (op['playlist']?['cloudId'] as String?) ?? '';
+      return cid.isEmpty || !downloadSkip.contains(cid);
+    }).toList();
+    if (filteredOps.isEmpty) {
       _lens.item = _lens.item.copyWith(
         syncing: false,
         lastSummary: tr('云端无变更'),
@@ -240,10 +251,10 @@ class PlaylistSyncService {
       isSongPendingDeleted: (cloudId, path) =>
           pendingAll[cloudId]?.contains(path) ?? false,
     );
-    final outcome = applySyncOps(ops, target);
+    final outcome = applySyncOps(filteredOps, target);
     await store.saveAll(target.playlists);
     // remove_songs 已被云端确认，清理对应待上报删除墓碑（对齐 v1 下载语义）
-    for (final op in ops) {
+    for (final op in filteredOps) {
       if (op['type'] != 'remove_songs') continue;
       final cloudId = (op['cloudId'] as String?) ?? '';
       if (cloudId.isEmpty) continue;
@@ -267,9 +278,15 @@ class PlaylistSyncService {
   /// v1 路径：全量快照下载 + 本地合并（回退开关用）。
   Future<void> _downloadViaSnapshot() async {
     final data = await _api.fileSyncDownload();
+      final downloadSkip = await PlaylistSongSyncState.downloadSkipPlaylistIds();
       final cloudPlaylists = ((data?['playlists'] as List?) ?? const [])
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
+          .where((pl) {
+            // 与 v2 一致："仅删本地"的歌单不再从云端拉回
+            final cid = (pl['cloudId'] as String?) ?? '';
+            return cid.isEmpty || !downloadSkip.contains(cid);
+          })
           .toList();
       if (cloudPlaylists.isEmpty) {
         _lens.item = _lens.item.copyWith(

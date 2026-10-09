@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/account_api.dart';
 import '../i18n/i18n.dart';
+import '../sync/playlist_song_sync_state.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../widgets/sheet_dialog.dart';
@@ -11,7 +12,10 @@ import 'playlist_store.dart';
 
 Future<void> confirmRemovePlaylist(
     BuildContext context, WidgetRef ref, ImportedPlaylist playlist) async {
-  final hasCloud = playlist.isCloud || (playlist.cloudId ?? '').isNotEmpty;
+  // 三选一的前提是本地知道云端条目 id：无 cloudId 时即使 isCloud=true 也删不了
+  // 云端（弹了"删除全部/仅保留本地"也无从生效），回落普通删除避免误导。
+  final cloudId = playlist.cloudId ?? '';
+  final hasCloud = cloudId.isNotEmpty;
   if (!hasCloud) {
     final ok = await showPredictiveDialog<bool>(
       context: context,
@@ -97,16 +101,19 @@ Future<void> confirmRemovePlaylist(
     ),
   );
   if (scope == null || !context.mounted) return;
-  final cloudId = playlist.cloudId ?? '';
   final manager = ref.read(playlistManagerProvider.notifier);
   switch (scope) {
     case 'local':
+      // 记录下载跳过，防止下次同步 diff 把云端歌单重新 create 回来
+      await PlaylistSongSyncState.addDownloadSkipPlaylistIds([cloudId]);
       await manager.remove(playlist.id);
     case 'all':
-      if (cloudId.isNotEmpty) await _deleteCloud(context, ref, cloudId);
+      await _deleteCloud(context, ref, cloudId);
+      await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
       await manager.remove(playlist.id);
     default:
-      if (cloudId.isNotEmpty) await _deleteCloud(context, ref, cloudId);
+      await _deleteCloud(context, ref, cloudId);
+      await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
       await manager.detachCloud(playlist.id);
   }
 }

@@ -6,6 +6,7 @@ abstract final class PlaylistSongSyncState {
   static const _cloudKeepKey = 'playlist_song_cloud_keep';
   static const _localOnlyKey = 'playlist_song_local_only';
   static const _pendingDeletedKey = 'playlist_song_pending_deleted';
+  static const _downloadSkipKey = 'playlist_download_skip';
 
   static Future<Map<String, dynamic>> _readMap(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -172,5 +173,32 @@ abstract final class PlaylistSongSyncState {
         await _writeMap(key, map);
       }
     }
+  }
+
+  // ==================== 歌单下载跳过（"仅删本地"防回拉） ====================
+  // "删除本地（云端保留）"后，云端快照仍在；若无跳过记录，下次下载 diff 会因
+  // 本地无匹配而 create_playlist 把歌单拉回来，用户感知为删除无效。
+
+  static Future<Set<String>> downloadSkipPlaylistIds() async {
+    final list = (await _readMap(_downloadSkipKey))['ids'];
+    if (list is! List) return const {};
+    return list.whereType<String>().toSet();
+  }
+
+  static Future<void> addDownloadSkipPlaylistIds(Iterable<String> ids) async {
+    final set = await downloadSkipPlaylistIds();
+    final next = {...set, ...ids.where((p) => p.isNotEmpty)};
+    if (next.length == set.length) return;
+    await _writeMap(_downloadSkipKey, {'ids': next.toList()});
+  }
+
+  static Future<void> removeDownloadSkipPlaylistIds(
+      Iterable<String> ids) async {
+    final remove = ids.toSet();
+    if (remove.isEmpty) return;
+    final set = await downloadSkipPlaylistIds();
+    final next = set.where((p) => !remove.contains(p)).toSet();
+    if (next.length == set.length) return;
+    await _writeMap(_downloadSkipKey, {'ids': next.toList()});
   }
 }
