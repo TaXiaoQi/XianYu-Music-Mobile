@@ -1,6 +1,7 @@
 // 桌面联动：移动端作 TCP client，经桌面控制通道（WatchLink 同款帧协议）遥控桌面端。
-// 发现：SSDP M-SEARCH 搜自家 ST（urn:xianyu-music:control:1，纯 Dart RawDatagramSocket），
-// 手动 IP:端口 兜底；鉴权：首配 6 位配对码换 token，安全存储持久化
+// 发现：SSDP M-SEARCH 搜自家 ST（urn:xianyu-music:control:1，纯 Dart RawDatagramSocket）
+// + TCP 直连扫描 /24 兜底（组播被吞的环境仍可发现），手动 IP:端口 再兜底；
+// 鉴权：首配 6 位配对码换 token，安全存储持久化
 // （Keystore/Keychain，不可用时回退 SharedPreferences 并自动迁移旧明文键），
 // 启动自动重连（指数退避），10s 心跳保活。
 
@@ -345,9 +346,33 @@ class DesktopLinkNotifier extends StateNotifier<DesktopLinkState> {
   Future<void> scan() async {
     if (state.scanning) return;
     state = state.copyWith(scanning: true, scanResults: const []);
+    try {
+      // SSDP 组播与 TCP 直连扫描并行；部分手机/路由会吞组播（Android 组播
+      // 路由、AP 隔离、双频不互转），TCP 直连完全不依赖组播，必有一条走通。
+      final both = await Future.wait<List<DesktopCandidate>>([
+        _ssdpScan(),
+        _tcpSweep(),
+      ]);
+      final found = <String, DesktopCandidate>{};
+      for (final c in both.expand((l) => l)) {
+        found['${c.host}:${c.port}'] = c;
+      }
+      final results = found.values.toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+      state = state.copyWith(scanning: false, scanResults: results);
+    } catch (_) {
+      state = state.copyWith(
+        scanning: false,
+        message: tr('扫描失败，请确认手机与电脑在同一网络'),
+      );
+    }
+  }
+
+  /// SSDP 组播发现（读 XY-CONTROL/XY-NAME 自定义头识别本家族桌面端）。
+  Future<List<DesktopCandidate>> _ssdpScan() async {
     RawDatagramSocket? socket;
     try {
-      socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      socket = await _bindScanSocket();
       final found = <String, DesktopCandidate>{};
       final packet = _mSearchPacket();
       final target = InternetAddress('239.255.255.250');
@@ -371,16 +396,112 @@ class DesktopLinkNotifier extends StateNotifier<DesktopLinkState> {
       });
       await Future<void>.delayed(_scanWindow);
       sub.cancel();
-      final results = found.values.toList()
-        ..sort((a, b) => a.name.compareTo(b.name));
-      state = state.copyWith(scanning: false, scanResults: results);
+      return found.values.toList();
     } catch (_) {
-      state = state.copyWith(
-        scanning: false,
-        message: tr('扫描失败，请确认手机与电脑在同一网络'),
-      );
+      return const [];
     } finally {
       socket?.close();
+    }
+  }
+
+  /// 优先绑到 WLAN 所在私网地址：Android 上绑 anyIPv4 时组播常从蜂窝接口
+  /// 发出导致 M-SEARCH 出不了局域网，绑具体地址强制走对网卡。
+  Future<RawDatagramSocket> _bindScanSocket() async {
+    final lan = await _privateLanAddress();
+    if (lan != null) {
+      try {
+        return await RawDatagramSocket.bind(InternetAddress(lan), 0);
+      } catch (_) {
+        // 个别机型拒绝绑具体地址，回退通配
+      }
+    }
+    return RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+  }
+
+  /// 本机私网 IPv4（10.x / 172.16-31.x / 192.168.x），无则 null。
+  Future<String?> _privateLanAddress() async {
+    try {
+      final list = await NetworkInterface.list(
+        includeLoopback: false,
+        includeLinkLocal: false,
+        type: InternetAddressType.IPv4,
+      );
+      for (final addr in list.expand((i) => i.addresses)) {
+        final o = addr.address.split('.');
+        if (o.length != 4) continue;
+        final a = int.tryParse(o[0]) ?? 0;
+        final b = int.tryParse(o[1]) ?? -1;
+        final priv = a == 10 ||
+            (a == 172 && b >= 16 && b <= 31) ||
+            (a == 192 && b == 168);
+        if (priv) return addr.address;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// TCP 直连扫描兜底：对所在 /24 私网逐个连桌面控制端口（9979 主端口；
+  /// 端口顺延属罕见场景，仍由 SSDP/手动连接覆盖），并发探测约 1s。
+  Future<List<DesktopCandidate>> _tcpSweep() async {
+    final lan = await _privateLanAddress();
+    if (lan == null) return const [];
+    final o = lan.split('.').map(int.parse).toList();
+    final probes = <Future<DesktopCandidate?>>[];
+    for (var i = 1; i <= 254; i++) {
+      probes.add(_probeDesktop('${o[0]}.${o[1]}.${o[2]}.$i', 9979));
+    }
+    final out = <DesktopCandidate>[];
+    for (final c in await Future.wait(probes)) {
+      if (c != null) out.add(c);
+    }
+    return out;
+  }
+
+  /// 探测单个地址：TCP 连上后发无凭据 hello，凭桌面端握手应答识别。
+  /// 未配对探测只收到 auth=bad_token 的 hello 即被断开，不留任何状态。
+  Future<DesktopCandidate?> _probeDesktop(String host, int port) async {
+    Socket? sock;
+    try {
+      sock = await Socket.connect(
+        host,
+        port,
+        timeout: const Duration(milliseconds: 350),
+      );
+      final decoder = FrameDecoder();
+      final reply = Completer<LinkMessage?>();
+      final sub = sock.listen((data) {
+        if (reply.isCompleted) return;
+        for (final msg in decoder.feed(data)) {
+          if (msg.type == LinkMsgType.hello && !reply.isCompleted) {
+            reply.complete(msg);
+          }
+        }
+      }, onDone: () {
+        if (!reply.isCompleted) reply.complete(null);
+      }, onError: (_) {
+        if (!reply.isCompleted) reply.complete(null);
+      });
+      final gen = makeSeqGenerator();
+      for (final frame in encodeFrames(
+        LinkMessage.hello(ver: kLinkProtocolVersion, role: 'remote', name: '弦予音乐'),
+        nextSeq: gen,
+      )) {
+        sock.add(frame);
+      }
+      final msg = await reply.future
+          .timeout(const Duration(milliseconds: 800), onTimeout: () => null);
+      sub.cancel();
+      if (msg == null) return null;
+      final name = (msg.payload['name'] as String?) ?? '';
+      return DesktopCandidate(
+        host: host,
+        port: port,
+        name: name.isEmpty ? '$host:$port' : name,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      sock?.destroy();
     }
   }
 

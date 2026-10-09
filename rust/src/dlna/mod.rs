@@ -75,7 +75,13 @@ impl DlnaCore {
 
     /// 搜索局域网 DLNA 渲染器（结果带描述解析，失败的设备跳过）。
     pub async fn search_devices(&self, timeout_ms: u64) -> Vec<DlnaDevice> {
-        let locations = ssdp::search_renderers(timeout_ms).await;
+        let mut locations = ssdp::search_renderers(timeout_ms).await;
+        // 组播兜底：单播直连扫描本家族渲染器（部分环境组播被吞，见 ssdp 注释）
+        for loc in ssdp::sweep_family_renderers().await {
+            if !locations.contains(&loc) {
+                locations.push(loc);
+            }
+        }
         let mut out: Vec<DlnaDevice> = Vec::new();
         {
             let cache = self.device_cache.lock().unwrap();
