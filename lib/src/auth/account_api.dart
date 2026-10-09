@@ -11,7 +11,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.3';
+const appVersion = '1.0.4';
 
 /// 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。
 const _betaAccessCacheKey = 'beta_access_signed_payload_v1';
