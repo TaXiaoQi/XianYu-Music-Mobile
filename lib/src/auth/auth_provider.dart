@@ -362,11 +362,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
   bool _isSessionExpired(int code, String msg) =>
       code == 401 && _sessionExpiredRe.hasMatch(msg);
 
+  /// 本次会话内是否发生过真实登录（区别于冷启动从盘恢复的凭据）
+  bool _loggedInThisSession = false;
+
   Future<void> _handleSessionExpired() async {
     // 仅清内存态，不删本地凭据：服务端 401 也可能来自 DB 抖动等误判，
     // 删盘会把可恢复的登录态变成永久登出（重启丢登录的推手之一）。
     // 凭据本身是 AES 密文，留盘无泄露面；显式登出（logout）才真正清盘。
     _token = null;
+    // 冷启动恢复的陈旧凭据（本次会话内从未登录过）失效时静默清空：
+    // 用户从没在界面上见过"已登录"，弹"请重新登录"只会困惑
+    if (!_loggedInThisSession) {
+      state = const AuthState();
+      return;
+    }
     state = const AuthState(sessionExpired: true);
   }
 
@@ -378,6 +387,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> _saveAuth(String token, Map<String, dynamic> data) async {
     final user = AuthUser.fromJson(data);
+    _loggedInThisSession = true;
     await _persistAuth(token, user);
   }
 
