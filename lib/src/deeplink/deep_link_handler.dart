@@ -16,7 +16,6 @@ import '../player/player_provider.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
-import '../core/app_logger.dart';
 import '../core/application_logger.dart';
 import '../core/rust_init.dart';
 import '../widgets/app_toast.dart';
@@ -74,14 +73,14 @@ class XianYuDeepLink {
       return;
     }
     if (_busy) {
-      AppLogger.instance.log('deeplink', '忽略重复的分享深链: $raw');
+      AppLog.info('deeplink', '忽略重复的分享深链: $raw');
       return;
     }
     _busy = true;
     try {
       await _run(container, router, raw);
     } catch (e, st) {
-      AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
+      AppLog.warn('deeplink', '分享深链解析异常: $e\n$st');
     } finally {
       _busy = false;
     }
@@ -139,7 +138,7 @@ class XianYuDeepLink {
       final p = _parseSong(raw);
       final name = p['name'] ?? '';
       if (name.isEmpty) return;
-      AppLogger.instance.log('deeplink', '收到分享深链: $raw');
+      AppLog.info('deeplink', '收到分享深链: $raw');
 
       final artist = p['artist'] ?? '';
       final source = p['source'] ?? '';
@@ -148,7 +147,7 @@ class XianYuDeepLink {
 
       final ready = await _ensureReady(container);
       if (!ready) {
-        AppLogger.instance.log('deeplink', 'Rust 引擎初始化失败，无法播放分享歌曲');
+        AppLog.warn('deeplink', 'Rust 引擎初始化失败，无法播放分享歌曲');
         return;
       }
       final localSong = _tryLocalMatch(container, name, artist, durationSec);
@@ -156,12 +155,12 @@ class XianYuDeepLink {
 
       final ctx = await _waitNavigatorContext();
       if (ctx == null) {
-        AppLogger.instance.log('deeplink', '等待导航上下文超时，跳过分享预览窗');
+        AppLog.warn('deeplink', '等待导航上下文超时，跳过分享预览窗');
         return;
       }
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay == null) {
-        AppLogger.instance.log('deeplink', '根 Overlay 未就绪，跳过分享预览窗');
+        AppLog.warn('deeplink', '根 Overlay 未就绪，跳过分享预览窗');
         return;
       }
 
@@ -271,7 +270,7 @@ class XianYuDeepLink {
       if (action == ShareLinkPreviewAction.cancel) return;
       if (action == ShareLinkPreviewAction.import) router.push('/plugin');
     } catch (e, st) {
-      AppLogger.instance.log('deeplink', '分享深链解析异常: $e\n$st');
+      AppLog.warn('deeplink', '分享深链解析异常: $e\n$st');
       AppLog.error('deeplink', '深链处理异常: $e');
     }
   }
@@ -343,7 +342,7 @@ class XianYuDeepLink {
   ) async {
     try {
       if (localSong != null) {
-        AppLogger.instance.log('deeplink', '本地匹配命中分享曲: ${localSong.path}');
+        AppLog.info('deeplink', '本地匹配命中分享曲: ${localSong.path}');
         final playerNotifier = container.read(playerProvider.notifier);
         try {
           await playerNotifier.playQueue(
@@ -351,7 +350,7 @@ class XianYuDeepLink {
             startIndex: 0,
           );
         } catch (e) {
-          AppLogger.instance.log('deeplink', '本地播放分享曲失败: $e');
+          AppLog.warn('deeplink', '本地播放分享曲失败: $e');
         }
         _openPlayerOnce(router);
         return;
@@ -372,7 +371,7 @@ class XianYuDeepLink {
             );
             _openPlayerOnce(router);
           } catch (e) {
-            AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
+            AppLog.warn('deeplink', '播放分享歌曲失败: $e');
             _openPlayerOnce(router);
           }
           return;
@@ -386,7 +385,7 @@ class XianYuDeepLink {
       try {
         await searchNotifier.search(keyword);
       } catch (e) {
-        AppLogger.instance.log('deeplink', '分享歌曲在线搜索失败: $e');
+        AppLog.warn('deeplink', '分享歌曲在线搜索失败: $e');
         return;
       }
 
@@ -405,11 +404,11 @@ class XianYuDeepLink {
         );
         _openPlayerOnce(router);
       } catch (e) {
-        AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
+        AppLog.warn('deeplink', '播放分享歌曲失败: $e');
         _openPlayerOnce(router);
       }
     } catch (e, st) {
-      AppLogger.instance.log('deeplink', '分享深链处理异常: $e\n$st');
+      AppLog.warn('deeplink', '分享深链处理异常: $e\n$st');
     }
   }
 
@@ -425,7 +424,7 @@ class XianYuDeepLink {
     try {
       final playerNotifier = container.read(playerProvider.notifier);
       if (localSong != null) {
-        AppLogger.instance.log('deeplink', '本地匹配命中分享曲(下一首): ${localSong.path}');
+        AppLog.info('deeplink', '本地匹配命中分享曲(下一首): ${localSong.path}');
         await playerNotifier.playNextShare(localSong.toQueueItem());
         showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
         return;
@@ -449,7 +448,7 @@ class XianYuDeepLink {
       try {
         await searchNotifier.search(keyword);
       } catch (e) {
-        AppLogger.instance.log('deeplink', '分享歌曲在线搜索失败: $e');
+        AppLog.warn('deeplink', '分享歌曲在线搜索失败: $e');
         showXianYuToastByOverlay(overlay, tr('未找到分享的歌曲'));
         return;
       }
@@ -464,7 +463,7 @@ class XianYuDeepLink {
       await playerNotifier.playNextShare(track.toQueueItem());
       showXianYuToastByOverlay(overlay, tr('已添加至下一首播放'));
     } catch (e, st) {
-      AppLogger.instance.log('deeplink', '添加到下一首播放异常: $e\n$st');
+      AppLog.warn('deeplink', '添加到下一首播放异常: $e\n$st');
     }
   }
 
@@ -481,7 +480,7 @@ class XianYuDeepLink {
     String filePath,
     String rawName,
   ) async {
-    AppLogger.instance.log('deeplink', '系统打开插件脚本: $filePath');
+    AppLog.info('deeplink', '系统打开插件脚本: $filePath');
     try {
       final bytes = await File(filePath).readAsBytes();
       final script = utf8.decode(bytes, allowMalformed: true);
@@ -505,7 +504,7 @@ class XianYuDeepLink {
         router.push('/plugin');
       }
     } catch (e, st) {
-      AppLogger.instance.log('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
+      AppLog.warn('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
       final overlay = appNavigatorKey.currentState?.overlay;
       if (overlay != null) {
         final where = st
@@ -524,7 +523,7 @@ class XianYuDeepLink {
     String filePath,
     String rawName,
   ) async {
-    AppLogger.instance.log('deeplink', '系统打开本地音乐: $filePath');
+    AppLog.info('deeplink', '系统打开本地音乐: $filePath');
     var title = rawName.trim();
     if (title.isEmpty) {
       final seg = filePath.replaceAll('\\', '/').split('/').last;
@@ -545,7 +544,7 @@ class XianYuDeepLink {
       await playerNotifier.playQueue([item], startIndex: 0, shareLinkPlayback: true);
       _openPlayerOnce(router);
     } catch (e, st) {
-      AppLogger.instance.log('deeplink', '播放系统打开的本地音乐失败: $e\n$st');
+      AppLog.warn('deeplink', '播放系统打开的本地音乐失败: $e\n$st');
     }
   }
 
@@ -601,7 +600,7 @@ class XianYuDeepLink {
       );
       _openPlayerOnce(router);
     } catch (e) {
-      AppLogger.instance.log('deeplink', '播放分享歌曲失败: $e');
+      AppLog.warn('deeplink', '播放分享歌曲失败: $e');
       _openPlayerOnce(router);
     }
   }
@@ -649,7 +648,7 @@ class XianYuDeepLink {
         return service.toQueueItem(plugin, items[idx]);
       }
     } catch (e) {
-      AppLogger.instance.log('deeplink', '插件搜索分享曲失败: $e');
+      AppLog.warn('deeplink', '插件搜索分享曲失败: $e');
     }
     return null;
   }

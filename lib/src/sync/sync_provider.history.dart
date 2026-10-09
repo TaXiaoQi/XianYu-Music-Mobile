@@ -42,7 +42,7 @@ class HistorySyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '播放历史上传失败: $e');
+      AppLog.warn('sync', '播放历史上传失败: $e');
       _fail(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
@@ -75,7 +75,7 @@ class HistorySyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '播放历史下载失败: $e');
+      AppLog.warn('sync', '播放历史下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }

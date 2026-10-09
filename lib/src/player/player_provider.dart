@@ -16,9 +16,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../auth/account_api.dart';
-import '../core/app_logger.dart';
-import '../core/diagnostics.dart';
 import '../core/application_logger.dart';
+import '../core/diagnostics.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
 import '../download/download_provider.dart';

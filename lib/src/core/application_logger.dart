@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -67,7 +68,7 @@ class AppLogEntry {
   }
 }
 
-const int kMaxAppLogEntries = 3000;
+const int kMaxAppLogEntries = 300;
 
 class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
   ApplicationLogManager._() : super(const []);
@@ -85,6 +86,8 @@ class ApplicationLogManager extends StateNotifier<List<AppLogEntry>> {
       state.any((e) => e.level.index >= LogLevel.error.index);
 
   void log(LogLevel level, String category, String message) {
+    // debug 级为开发期探针，生产构建不记录
+    if (!kDebugMode && level == LogLevel.debug) return;
     _seq++;
     final now = DateTime.now().millisecondsSinceEpoch;
     final entry = AppLogEntry(
@@ -263,6 +266,7 @@ class PerfFrameMonitor {
   }
 
   static void begin(String scene) {
+    if (!kDebugMode) return;
     _ensureInstalled();
     _scene = scene;
     _frames = 0;

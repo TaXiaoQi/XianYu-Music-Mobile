@@ -58,7 +58,7 @@ class FavoritesSyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '收藏上传失败: $e');
+      AppLog.warn('sync', '收藏上传失败: $e');
       _fail(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
@@ -136,7 +136,7 @@ class FavoritesSyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '收藏下载失败: $e');
+      AppLog.warn('sync', '收藏下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }

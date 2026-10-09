@@ -37,7 +37,7 @@ class SettingsSyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '设置上传失败: $e');
+      AppLog.warn('sync', '设置上传失败: $e');
       _fail(e is AuthException ? e.message : tr('上传失败: {e}', {'e': e}));
     }
   }
@@ -68,7 +68,7 @@ class SettingsSyncService {
         errors: [],
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '设置下载失败: $e');
+      AppLog.warn('sync', '设置下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
   }
@@ -185,7 +185,7 @@ class SettingsSyncService {
         errors: errors,
       );
     } catch (e) {
-      AppLogger.instance.log('sync', '设置同步失败: $e');
+      AppLog.warn('sync', '设置同步失败: $e');
       _fail(e is AuthException ? e.message : tr('同步失败: {e}', {'e': e}));
     }
   }

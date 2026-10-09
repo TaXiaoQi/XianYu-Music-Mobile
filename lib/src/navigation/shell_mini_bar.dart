@@ -22,7 +22,6 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       _navBarHidden = ProviderScope.containerOf(context, listen: false)
           .read(navBarHiddenProvider.notifier);
       _counted = true;
-      AppLogger.instance.log('shell', '进入二级页面 ${widget.runtimeType}');
       _navBarHidden!.state++;
     });
   }
@@ -32,7 +31,6 @@ mixin HidesShellChrome<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (_counted) {
       final controller = _navBarHidden;
       _counted = false;
-      AppLogger.instance.log('shell', '离开二级页面 ${widget.runtimeType}');
       if (controller != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (controller.state > 0) controller.state--;

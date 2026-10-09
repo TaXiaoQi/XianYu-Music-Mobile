@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
-import '../core/app_logger.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -423,7 +422,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
     } on FormatException catch (e) {
       return tr('文件格式不匹配或无法解析: {msg}', {'msg': e.message});
     } catch (e) {
-      AppLogger.instance.log('sync', '导入本地备份失败: $e');
+      AppLog.warn('sync', '导入本地备份失败: $e');
       return tr('导入失败: {e}', {'e': e});
     }
   }

@@ -95,8 +95,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         state = state.copyWith(isPlaying: playing);
         _syncToSystemMediaSession();
       } catch (e) {
-        AppLogger.instance
-            .log('exclusive', '关闭 USB 独占后恢复普通播放失败: $e');
+        AppLog.warn('exclusive', '关闭 USB 独占后恢复普通播放失败: $e');
         state = state.copyWith(isPlaying: false);
         _syncToSystemMediaSession();
       }
@@ -206,7 +205,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       return true;
     } catch (e) {
       state = state.copyWith(usbExclusive: false);
-      AppLogger.instance.log('exclusive', 'USB 独占输出启动失败，回退普通播放: $e');
+      AppLog.warn('exclusive', 'USB 独占输出启动失败，回退普通播放: $e');
       return false;
     }
   }

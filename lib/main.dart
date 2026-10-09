@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
-import 'src/core/app_logger.dart';
 import 'src/core/application_logger.dart';
 import 'src/core/platform_caps.dart';
 import 'src/core/rust_init.dart';
@@ -128,8 +127,6 @@ void _installErrorReporting(ProviderContainer container) {
     scheduleMicrotask(() => reportingError = false);
     final msg = details.exceptionAsString();
     final stack = details.stack?.toString() ?? '';
-    AppLogger.instance
-        .log('fatal', '未捕获异常: $msg\n$stack');
     AppLog.fatal('flutter', '$msg\n$stack');
     FlutterError.presentError(details);
     if (!shouldReport()) return;
@@ -148,8 +145,6 @@ void _installErrorReporting(ProviderContainer container) {
     if (reportingError) return true;
     reportingError = true;
     scheduleMicrotask(() => reportingError = false);
-    AppLogger.instance
-        .log('fatal', '平台异常: $error\n$stack');
     AppLog.fatal('platform', '$error\n$stack');
     if (!shouldReport()) return true;
     try {
@@ -203,7 +198,7 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
   void _runStartupPluginAutoUpdate() {
     runPluginAutoUpdateOnStartup(
       ProviderScope.containerOf(context),
-      (message) => AppLogger.instance.log('plugin', message),
+      (message) => AppLog.info('plugin', message),
     );
   }
 

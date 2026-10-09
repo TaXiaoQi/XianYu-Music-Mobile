@@ -232,7 +232,6 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
         ),
       );
     } catch (e) {
-      debugPrint('custom wallpaper pickVideo failed: $e');
       if (mounted) showXianYuToast(context, tr('请先选择视频'));
     }
   }

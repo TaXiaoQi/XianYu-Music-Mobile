@@ -204,7 +204,7 @@ extension PlayerNotifierSession on PlayerNotifier {
         final dbPath = await _ref.read(dbPathProvider.future);
         jsonStr = await loadPlaybackSession(dbPath: dbPath);
       } catch (e) {
-        AppLogger.instance.log('session', '读取数据库播放会话失败: $e');
+        AppLog.warn('session', '读取数据库播放会话失败: $e');
       }
 
       if (jsonStr.isEmpty || jsonStr == 'null') {
@@ -310,7 +310,7 @@ extension PlayerNotifierSession on PlayerNotifier {
                     (await RemoteLibraryService(_ref).transcodeToWav(path)).path;
                 await _updateRgGain(path);
               } catch (e) {
-                AppLogger.instance.log('session', '转码预载失败: $e');
+                AppLog.warn('session', '转码预载失败: $e');
               }
             }
             if (!isHttpSource) {
@@ -322,7 +322,7 @@ extension PlayerNotifierSession on PlayerNotifier {
                 await _setLocalSource(path);
                 await seek(pos);
               } catch (e) {
-                AppLogger.instance.log('session', '本地曲目预加载失败: $e');
+                AppLog.warn('session', '本地曲目预加载失败: $e');
               }
               await _player.setVolume(_effectiveVolume());
             }
@@ -337,7 +337,7 @@ extension PlayerNotifierSession on PlayerNotifier {
           'dur=${state.duration.toStringAsFixed(1)} '
           'online=${currentItem.isOnline}');
     } catch (e) {
-      AppLogger.instance.log('session', '恢复播放会话异常: $e');
+      AppLog.warn('session', '恢复播放会话异常: $e');
     }
   }
 
@@ -436,7 +436,7 @@ extension PlayerNotifierSession on PlayerNotifier {
       });
       await savePlaybackSession(dbPath: dbPath, sessionJson: sessionJson);
     } catch (e) {
-      AppLogger.instance.log('session', '播放会话保存失败: $e');
+      AppLog.warn('session', '播放会话保存失败: $e');
     }
   }
 }
