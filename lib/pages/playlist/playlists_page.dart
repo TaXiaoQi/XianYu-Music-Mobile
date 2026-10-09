@@ -5,6 +5,7 @@ import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
@@ -205,10 +206,34 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
   String _query = '';
   Timer? _debounce;
   bool _updating = false;
+  _PlaylistSort _sort = _PlaylistSort.custom;
+
+  /// 排序档位持久化（与桌面端同 key 语义）
+  static const _sortPrefsKey = 'player_playlist_sort_mode';
+
+  _PlaylistSort? _parseSort(String? v) => _PlaylistSort.values
+      .where((s) => s.name == v)
+      .firstOrNull;
+
+  Future<void> _loadSortMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final v = _parseSort(prefs.getString(_sortPrefsKey));
+    if (v != null && mounted && v != _sort) {
+      setState(() => _sort = v);
+    }
+  }
+
+  void _selectSort(_PlaylistSort s) {
+    setState(() => _sort = s);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setString(_sortPrefsKey, s.name),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
+    _loadSortMode();
     _batch.addListener(_onBatchChanged);
   }
 
@@ -302,6 +327,8 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
                         favState.isCollectionFavorite(_collectionKey(playlist)),
                     onToggleFavorite:
                         () => _toggleCollectionFavorite(playlist),
+                    currentSort: _sort,
+                    onSelectSort: _selectSort,
                     trailing: widget.embedded && showBatch
                         ? _batchToggle(context, floating: floating)
                         : null,
@@ -321,6 +348,7 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
                             manager: manager,
                             batch: _batch,
                             filter: _query,
+                            sort: _sort,
                             onRemove: (index) => removePlaylistSongsWithScope(
                                 context, ref, playlist, [playlist.songs[index]]),
                           ),

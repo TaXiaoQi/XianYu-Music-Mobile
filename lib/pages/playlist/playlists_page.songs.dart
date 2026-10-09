@@ -1,5 +1,107 @@
 part of 'playlists_page.dart';
 
+/// 歌单歌曲排序：对齐桌面端歌单页（歌曲名/文件名/歌手/添加时间/自定义），
+/// 全档带方向——点击未选中的档进入默认向（文本档升序、添加时间新→旧），
+/// 再点同档反向；「添加时间」依赖 ImportedSong.addedAt（store 入库层自动
+/// 补时间戳），旧数据无时间戳沉底
+enum _PlaylistSort {
+  custom,
+  titleAsc,
+  titleDesc,
+  nameAsc,
+  nameDesc,
+  artistAsc,
+  artistDesc,
+  addedAtAsc,
+  addedAtDesc,
+}
+
+bool _playlistSortIsDesc(_PlaylistSort sort) => switch (sort) {
+      _PlaylistSort.titleDesc ||
+      _PlaylistSort.nameDesc ||
+      _PlaylistSort.artistDesc ||
+      _PlaylistSort.addedAtDesc =>
+        true,
+      _ => false,
+    };
+
+int _playlistSortCompare(_PlaylistSort sort, ImportedSong a, ImportedSong b) {
+  switch (sort) {
+    case _PlaylistSort.titleAsc || _PlaylistSort.titleDesc:
+      final c =
+          a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      return _playlistSortIsDesc(sort) ? -c : c;
+    case _PlaylistSort.artistAsc || _PlaylistSort.artistDesc:
+      final c =
+          a.artist.toLowerCase().compareTo(b.artist.toLowerCase());
+      return _playlistSortIsDesc(sort) ? -c : c;
+    case _PlaylistSort.nameAsc || _PlaylistSort.nameDesc:
+      String base(ImportedSong s) {
+        var v = s.path.split('/').last;
+        if (v.contains('\\')) v = v.split('\\').last;
+        return v;
+      }
+
+      final c = base(a).toLowerCase().compareTo(base(b).toLowerCase());
+      return _playlistSortIsDesc(sort) ? -c : c;
+    case _PlaylistSort.addedAtAsc || _PlaylistSort.addedAtDesc:
+      final aa = a.addedAt?.millisecondsSinceEpoch;
+      final bb = b.addedAt?.millisecondsSinceEpoch;
+      if (aa == null && bb == null) return 0;
+      if (aa == null) return 1; // 旧数据无时间戳沉底（不随方向翻转）
+      if (bb == null) return -1;
+      final c = aa.compareTo(bb);
+      return _playlistSortIsDesc(sort) ? -c : c;
+    case _PlaylistSort.custom:
+      return 0;
+  }
+}
+
+PopupMenuItem<_PlaylistSort> _playlistSortItem(
+  BuildContext context, {
+  required _PlaylistSort value,
+  required String label,
+  required _PlaylistSort? current,
+}) =>
+    CheckedPopupMenuItem(
+      value: value,
+      checked: current == value,
+      child: Text(tr(label)),
+    );
+
+/// 排序菜单项（桌面端同款交互）：当前档显示方向箭头，点击反向；
+/// 未选中的档点击进入默认向（descDefault：添加时间新→旧，文本档升序）
+PopupMenuItem<_PlaylistSort> _sortDimensionItem(
+  BuildContext context, {
+  required _PlaylistSort asc,
+  required _PlaylistSort desc,
+  required String label,
+  required _PlaylistSort? current,
+  bool descDefault = false,
+}) {
+  final isAsc = current == asc;
+  final isDesc = current == desc;
+  final scheme = Theme.of(context).colorScheme;
+  return PopupMenuItem(
+    value: isAsc
+        ? desc
+        : isDesc
+            ? asc
+            : (descDefault ? desc : asc),
+    child: Row(
+      children: [
+        Expanded(child: Text(tr(label))),
+        if (isAsc || isDesc)
+          Icon(
+            isDesc ? Icons.arrow_downward : Icons.arrow_upward,
+            size: 15,
+            color: scheme.primary,
+          ),
+      ],
+    ),
+  );
+}
+
 class _AlbumHeader extends StatelessWidget {
   const _AlbumHeader({
     required this.name,
@@ -11,6 +113,8 @@ class _AlbumHeader extends StatelessWidget {
     this.favoriteLabel,
     this.isFavorite = false,
     this.onToggleFavorite,
+    this.currentSort,
+    this.onSelectSort,
     this.trailing,
   });
 
@@ -23,6 +127,8 @@ class _AlbumHeader extends StatelessWidget {
   final String? favoriteLabel;
   final bool isFavorite;
   final VoidCallback? onToggleFavorite;
+  final _PlaylistSort? currentSort;
+  final ValueChanged<_PlaylistSort>? onSelectSort;
 
   final Widget? trailing;
 
@@ -124,6 +230,45 @@ class _AlbumHeader extends StatelessWidget {
                         ),
                       ),
                     ],
+                    if (onSelectSort != null) ...[
+                      const SizedBox(width: 8),
+                      PopupMenuButton<_PlaylistSort>(
+                        tooltip: tr('排序方式'),
+                        onSelected: onSelectSort,
+                        icon: Icon(Icons.swap_vert,
+                            size: 18, color: scheme.primary),
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size(38, 34),
+                        ),
+                        itemBuilder: (context) => [
+                          _sortDimensionItem(context,
+                              asc: _PlaylistSort.titleAsc,
+                              desc: _PlaylistSort.titleDesc,
+                              label: '歌曲名',
+                              current: currentSort),
+                          _sortDimensionItem(context,
+                              asc: _PlaylistSort.nameAsc,
+                              desc: _PlaylistSort.nameDesc,
+                              label: '文件名',
+                              current: currentSort),
+                          _sortDimensionItem(context,
+                              asc: _PlaylistSort.artistAsc,
+                              desc: _PlaylistSort.artistDesc,
+                              label: '歌手',
+                              current: currentSort),
+                          _sortDimensionItem(context,
+                              asc: _PlaylistSort.addedAtAsc,
+                              desc: _PlaylistSort.addedAtDesc,
+                              label: '添加时间',
+                              current: currentSort,
+                              descDefault: true),
+                          _playlistSortItem(context,
+                              value: _PlaylistSort.custom,
+                              label: '自定义',
+                              current: currentSort),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ],
@@ -142,6 +287,7 @@ class _PlaylistSongs extends ConsumerStatefulWidget {
     required this.manager,
     required this.onRemove,
     required this.batch,
+    required this.sort,
     this.filter = '',
   });
 
@@ -149,6 +295,7 @@ class _PlaylistSongs extends ConsumerStatefulWidget {
   final PlaylistManager manager;
   final void Function(int index) onRemove;
   final SongBatchController batch;
+  final _PlaylistSort sort;
   final String filter;
 
   @override
@@ -302,6 +449,15 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
               ];
         final indices = filtered ??
             List<int>.generate(songs.length, (i) => i);
+        // 视图排序只重排显示索引（orig 映射不变，播放/移除仍按原位置）；
+        // 自定义序即歌单本体顺序，仅在自定义档下可拖拽重排
+        if (widget.sort != _PlaylistSort.custom) {
+          indices.sort((a, b) {
+            final c = _playlistSortCompare(widget.sort, songs[a], songs[b]);
+            return c != 0 ? c : a.compareTo(b);
+          });
+        }
+        final sortable = widget.sort != _PlaylistSort.custom || filtered != null;
         final visSongs = indices.map((i) => songs[i]).toList();
 
         void onReorder(int oldIndex, int newIndex) {
@@ -484,7 +640,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                   child: _stagger.wrap(display, batchRow(display)),
                 ),
               )
-            else if (filtered != null)
+            else if (sortable)
               ListView.builder(
                 controller: _controller,
                 padding: EdgeInsets.only(bottom: bottomPad),
@@ -528,7 +684,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                   onDone: batch.exit,
                 ),
               ),
-            if (!inBatch && filtered == null)
+            if (!inBatch && !sortable)
               SongListScrollFabs(
                 controller: _controller,
                 paths: songs.map((s) => s.path).toList(),

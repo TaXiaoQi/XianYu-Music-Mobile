@@ -146,7 +146,9 @@ class PlaylistStore {
           merged[s.path] = s;
         }
         for (final s in pl.songs) {
-          merged[s.path] = s;
+          // 新入库歌曲补添加时间（源自带时间则保留）；同 path 重新导入
+          // 时覆盖旧条目，添加时间随之刷新
+          merged[s.path] = s.copyWith(addedAt: s.addedAt ?? DateTime.now());
         }
         result[existingIndex] = existing.copyWith(
           songs: merged.values.toList(),
@@ -161,7 +163,9 @@ class PlaylistStore {
           ImportedPlaylist(
             id: newId(usedIds),
             name: pl.name,
-            songs: pl.songs,
+            songs: pl.songs
+                .map((s) => s.copyWith(addedAt: s.addedAt ?? DateTime.now()))
+                .toList(),
             importedAt: DateTime.now().millisecondsSinceEpoch,
             cloudId: pl.cloudId,
             isCloud: pl.isCloud,
@@ -245,7 +249,8 @@ class PlaylistStore {
         merged[s.path] = s;
       }
       for (final s in songs) {
-        merged[s.path] = s;
+        // 新添加的歌曲补添加时间；同 path 重新添加时刷新为最新时间
+        merged[s.path] = s.copyWith(addedAt: s.addedAt ?? DateTime.now());
       }
       return p.copyWith(songs: merged.values.toList());
     }).toList();

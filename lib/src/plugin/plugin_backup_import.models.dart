@@ -13,6 +13,7 @@ class ImportedSong {
   final String? format;
   final Map<String, dynamic>? musicInfo;
   final bool addedInApp;
+  final DateTime? addedAt;
   final String path;
 
   ImportedSong({
@@ -28,6 +29,7 @@ class ImportedSong {
     this.format,
     this.musicInfo,
     this.addedInApp = false,
+    this.addedAt,
     required this.path,
   });
 
@@ -46,6 +48,7 @@ class ImportedSong {
         'format': format,
         'musicInfo': musicInfo,
         if (addedInApp) 'addedInApp': true,
+        'addedAt': addedAt?.millisecondsSinceEpoch,
         'path': path,
       };
 
@@ -64,6 +67,11 @@ class ImportedSong {
             ? (j['musicInfo'] as Map).cast<String, dynamic>()
             : null,
         addedInApp: j['addedInApp'] == true,
+        addedAt: (j['addedAt'] as num?) == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(
+                (j['addedAt'] as num).toInt(),
+              ),
         path: j['path'] as String? ?? '',
       );
 
@@ -73,6 +81,7 @@ class ImportedSong {
     String? format,
     Map<String, dynamic>? musicInfo,
     bool? addedInApp,
+    DateTime? addedAt,
   }) => ImportedSong(
         title: title,
         artist: artist,
@@ -86,6 +95,7 @@ class ImportedSong {
         format: format ?? this.format,
         musicInfo: musicInfo ?? this.musicInfo,
         addedInApp: addedInApp ?? this.addedInApp,
+        addedAt: addedAt ?? this.addedAt,
         path: path,
       );
 }
