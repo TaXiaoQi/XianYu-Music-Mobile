@@ -4,9 +4,12 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_provider.dart';
+import '../core/db_path.dart';
 import '../core/settings.dart';
+import '../library/saf_channel.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_provider.dart';
+import '../rust/api.dart';
 
 final shareServiceProvider = Provider<ShareService>((ref) => ShareService(ref));
 
@@ -69,10 +72,16 @@ class ShareService {
     if (coverUrl.isNotEmpty && _isRemoteHttp(coverUrl)) return coverUrl;
     if (onlineCover.isNotEmpty && _isRemoteHttp(onlineCover)) return onlineCover;
     try {
-      final path = song.coverPath;
-      if (path == null || path.isEmpty || path.startsWith('content://')) {
-        return '';
+      // 播放页 preload 先于分享弹窗触发创建，此时 coverPath 尚未解析或缩略图
+      // 缓存已被清理；这里自解析一次，避免把空封面分享链接缓存住
+      var path = song.coverPath;
+      if (path != null && path.startsWith('content://')) path = '';
+      if (path == null || path.isEmpty) {
+        path = await _extractThumbnail(song.path);
+      } else if (!await File(_stripFileScheme(path)).exists()) {
+        path = await _extractThumbnail(song.path);
       }
+      if (path.isEmpty) return '';
       final file = File(_stripFileScheme(path));
       if (!await file.exists()) return '';
       final bytes = await file.readAsBytes();
@@ -86,6 +95,27 @@ class ShareService {
     } catch (_) {
       return '';
     }
+  }
+
+  Future<String> _extractThumbnail(String songPath) async {
+    final dbPath = await _ref.read(dbPathProvider.future);
+    final cacheRoot = await _ref.read(coverCacheRootProvider.future);
+    var p = await getSongCoverThumbnail(
+      dbPath: dbPath,
+      cacheRoot: cacheRoot,
+      path: songPath,
+    );
+    if (p.isEmpty && SafChannel.isSafPath(songPath)) {
+      final healed = await SafChannel.extractCoverToCache(songPath, cacheRoot);
+      if (healed.isNotEmpty) {
+        p = await getSongCoverThumbnail(
+          dbPath: dbPath,
+          cacheRoot: cacheRoot,
+          path: songPath,
+        );
+      }
+    }
+    return p;
   }
 
   static String _stripFileScheme(String path) {
