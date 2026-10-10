@@ -124,6 +124,11 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
   static const _activeKey = 'xianyu_active_theme_id_v1';
   static const _downloadedKey = 'xianyu_downloaded_theme_ids_v1';
 
+  /// 首次激活主题包前的用户设置快照（accentColor / themeMode）：
+  /// activate 会把包的主题色/深浅模式写进用户设置，取消应用时按此
+  /// 恢复——否则用户在壁纸模式下调好的主题色被包覆盖后无法找回。
+  static const _prevSettingsKey = 'xianyu_theme_prev_settings_v1';
+
   Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
     final packages = <ThemePackage>[];
@@ -267,12 +272,17 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
   }
 
   Future<void> remove(String id) async {
+    final wasActive = state.activeId == id;
     state = ThemeLibraryState(
       packages: state.packages.where((pkg) => pkg.id != id).toList(),
       activeId: state.activeId == id ? null : state.activeId,
       downloadedIds: <String>{...state.downloadedIds}..remove(id),
     );
     await _persist();
+    // 删除激活中的包等同取消应用：恢复激活前的用户设置快照。
+    if (wasActive) {
+      await _restorePrevSettings();
+    }
     // 清理该包落盘的壁纸资产目录；失败不阻断（目录可能已不存在）。
     try {
       final docs = await getApplicationDocumentsDirectory();
@@ -295,6 +305,13 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
 
     // 先确保设置载入完成，否则写入可能被随后的初始载入覆盖。
     await _ref.read(settingsProvider.future);
+
+    // 首次激活（从无主题 → 有主题）先快照当前用户设置；包间切换不重拍
+    // ——保持最早快照，取消最后一个包时仍回到当初无主题时的设置。
+    if (state.activeId == null) {
+      await _snapshotPrevSettings();
+    }
+
     final settings = _ref.read(settingsProvider.notifier);
     if (pkg.accentColor != null) {
       await settings.setAccentColor(pkg.accentColor!);
@@ -310,14 +327,54 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
     await _persist();
   }
 
-  /// 取消激活：只解除槽位映射。已写入的强调色/深浅模式保持不动——
-  /// 那是用户设置，取消主题不该把它改回去。
+  /// 取消激活：解除槽位映射，并把主题色/深浅模式恢复为激活前快照。
   Future<void> deactivate() async {
     state = ThemeLibraryState(
       packages: state.packages,
       downloadedIds: state.downloadedIds,
     );
     await _persist();
+    await _restorePrevSettings();
+  }
+
+  /// 快照当前用户设置（全量记录，恢复时照写，包括等于默认值的项）。
+  Future<void> _snapshotPrevSettings() async {
+    final s = await _ref.read(settingsProvider.future);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _prevSettingsKey,
+      jsonEncode({'accent': s.accentColor, 'mode': s.themeMode.name}),
+    );
+  }
+
+  /// 恢复激活前快照并清除；无快照（历史版本激活的存量场景）保持现状。
+  Future<void> _restorePrevSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_prevSettingsKey);
+    if (raw == null) return;
+    await prefs.remove(_prevSettingsKey);
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      return;
+    }
+    if (decoded is! Map) return;
+    await _ref.read(settingsProvider.future);
+    final settings = _ref.read(settingsProvider.notifier);
+    final accent = decoded['accent'];
+    if (accent is int) {
+      await settings.setAccentColor(accent);
+    }
+    final mode = switch (decoded['mode']) {
+      'dark' => ThemeModePreference.dark,
+      'light' => ThemeModePreference.light,
+      'system' => ThemeModePreference.system,
+      _ => null,
+    };
+    if (mode != null) {
+      await settings.setThemeMode(mode);
+    }
   }
 
   Future<void> _persist() async {
