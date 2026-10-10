@@ -95,9 +95,11 @@ class AppBackupService {
     final collections = <Map<String, dynamic>>[];
     if (includeFavorites) {
       favorites.addAll(
-          (await FavoritesStore().loadAll()).map((e) => e.toJson()));
-      collections.addAll((await FavoritesCollectionStore().loadAll())
-          .map((c) => c.toJson()));
+        (await FavoritesStore().loadAll()).map((e) => e.toJson()),
+      );
+      collections.addAll(
+        (await FavoritesCollectionStore().loadAll()).map((c) => c.toJson()),
+      );
     }
 
     final plugins = <Map<String, dynamic>>[];
@@ -112,9 +114,7 @@ class AppBackupService {
       }
     }
 
-    final recent = includeRecent
-        ? await _collectRecentForExport()
-        : null;
+    final recent = includeRecent ? await _collectRecentForExport() : null;
 
     final settings = includeSettings
         ? _ref.read(settingsProvider).valueOrNull
@@ -134,8 +134,9 @@ class AppBackupService {
         if (includePlugins) 'plugins': plugins,
         if (includeRecent) 'recentHistory': recent,
         'settings': {
-          kBackupPlatformMobile:
-              includeSettings && settings != null ? _settingsToJson(settings) : null,
+          kBackupPlatformMobile: includeSettings && settings != null
+              ? _settingsToJson(settings)
+              : null,
           kBackupPlatformDesktop: null,
           kBackupPlatformWatch: null,
         },
@@ -148,7 +149,10 @@ class AppBackupService {
     final out = <Map<String, dynamic>>[];
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
-      final list = await statsGetRecentHistory(dbPath: dbPath, limit: BigInt.from(200));
+      final list = await statsGetRecentHistory(
+        dbPath: dbPath,
+        limit: BigInt.from(200),
+      );
       final rows = (jsonDecode(list) as List)
           .whereType<Map>()
           .map((e) => e.cast<String, dynamic>())
@@ -161,8 +165,10 @@ class AppBackupService {
       final songMap = <String, Map<String, dynamic>>{};
       if (localPaths.isNotEmpty) {
         try {
-          final songsJson =
-              await getLibrarySongsByPaths(dbPath: dbPath, paths: localPaths);
+          final songsJson = await getLibrarySongsByPaths(
+            dbPath: dbPath,
+            paths: localPaths,
+          );
           for (final e in jsonDecode(songsJson) as List) {
             final m = (e as Map).cast<String, dynamic>();
             songMap[m['path'] as String? ?? ''] = m;
@@ -171,7 +177,8 @@ class AppBackupService {
           AppLog.debug('backup', '读取本地歌曲信息失败: $e');
         }
       }
-      final onlineMeta = await _ref.read(onlineMetaStoreProvider)
+      final onlineMeta = await _ref
+          .read(onlineMetaStoreProvider)
           .getAll(paths.where(_isOnlinePath).toList());
       for (final row in rows) {
         final path = row['songPath'] as String? ?? '';
@@ -180,11 +187,7 @@ class AppBackupService {
         final song = _isOnlinePath(path)
             ? _queueItemToSongMap(onlineMeta[path])
             : (songMap[path] ?? {});
-        out.add({
-          'path': path,
-          'playedAt': playedAt,
-          'song': song,
-        });
+        out.add({'path': path, 'playedAt': playedAt, 'song': song});
       }
     } catch (e) {
       AppLog.debug('backup', '收集最近播放记录失败: $e');
@@ -210,33 +213,34 @@ class AppBackupService {
   }
 
   Map<String, dynamic> _settingsToJson(AppSettings s) => {
-        'volume': s.volume,
-        'playMode': s.playMode,
-        'lastTab': s.lastTab,
-        'keepScreenOn': s.keepScreenOn,
-        'themeMode': s.themeMode.index,
-        'accentColor': s.accentColor,
-        'showQualityBadges': s.showQualityBadges,
-        'onlineDefaultQuality': s.onlineDefaultQuality,
-        'libraryMinDurationSeconds': s.libraryMinDurationSeconds,
-        'showLyricsTranslation': s.showLyricsTranslation,
-        'enableWordEffect': s.enableWordEffect,
-        'downloadPath': s.downloadPath,
-        'downloadQuality': s.downloadQuality,
-        'downloadLyrics': s.downloadLyrics,
-        'organizeRule': s.organizeRule,
-        'lyricFontSize': s.lyricFontSize,
-        'lyricOffsetMs': s.lyricOffsetMs,
-        'liquidGlass': s.liquidGlass,
-        'playerLiquidGlass': s.playerLiquidGlass,
-        'scanFormats': s.scanFormats,
-        'floatingNavBar': s.floatingNavBar,
-        'navBarPosition': s.navBarPosition.name,
-        'sideBarExpandDirection': s.sideBarExpandDirection.name,
-        'usbExclusiveOutput': s.usbExclusiveOutput,
-        'autoResumeAfterInterruption': s.autoResumeAfterInterruption,
-        'showRealQualitySizes': s.showRealQualitySizes,
-      };
+    'volume': s.volume,
+    'playMode': s.playMode,
+    'lastTab': s.lastTab,
+    'keepScreenOn': s.keepScreenOn,
+    'themeMode': s.themeMode.index,
+    'accentColor': s.accentColor,
+    'showQualityBadges': s.showQualityBadges,
+    'onlineDefaultQuality': s.onlineDefaultQuality,
+    'libraryMinDurationSeconds': s.libraryMinDurationSeconds,
+    'showLyricsTranslation': s.showLyricsTranslation,
+    'enableWordEffect': s.enableWordEffect,
+    'downloadPath': s.downloadPath,
+    'downloadQuality': s.downloadQuality,
+    'downloadLyrics': s.downloadLyrics,
+    'organizeRule': s.organizeRule,
+    'lyricFontSize': s.lyricFontSize,
+    'lyricOffsetMs': s.lyricOffsetMs,
+    'liquidGlass': s.liquidGlass,
+    'playerLiquidGlass': s.playerLiquidGlass,
+    'playerFlowingBackground': s.playerFlowingBackground,
+    'scanFormats': s.scanFormats,
+    'floatingNavBar': s.floatingNavBar,
+    'navBarPosition': s.navBarPosition.name,
+    'sideBarExpandDirection': s.sideBarExpandDirection.name,
+    'usbExclusiveOutput': s.usbExclusiveOutput,
+    'autoResumeAfterInterruption': s.autoResumeAfterInterruption,
+    'showRealQualitySizes': s.showRealQualitySizes,
+  };
 
   // ==================== 解析 ====================
 
@@ -245,25 +249,27 @@ class AppBackupService {
     try {
       data = jsonDecode(content);
     } catch (_) {
-      throw   FormatException(tr('文件不是有效的 JSON 格式'));
+      throw FormatException(tr('文件不是有效的 JSON 格式'));
     }
     if (data is! Map || data['schema'] != _kBackupSchema) {
-      throw   FormatException(tr('无法识别的备份格式，请选择本应用导出的备份文件'));
+      throw FormatException(tr('无法识别的备份格式，请选择本应用导出的备份文件'));
     }
     if (data['encrypted'] == true) {
       if (password == null || password.isEmpty) {
         throw BackupPasswordRequiredException();
       }
       final decrypted = PluginUserVarCrypto.decryptString(
-          password, data.cast<String, dynamic>());
+        password,
+        data.cast<String, dynamic>(),
+      );
       if (decrypted == null) {
-        throw   FormatException(tr('解密失败：密码错误或备份已损坏'));
+        throw FormatException(tr('解密失败：密码错误或备份已损坏'));
       }
       return parse(decrypted);
     }
     final inner = data['data'];
     if (inner is! Map) {
-      throw   FormatException(tr('备份文件数据结构无效'));
+      throw FormatException(tr('备份文件数据结构无效'));
     }
     return data.cast<String, dynamic>();
   }
@@ -341,8 +347,9 @@ class AppBackupService {
           );
           final userVarsRaw = entry['userVariables'];
           if (userVarsRaw is Map && userVarsRaw.isNotEmpty) {
-            final values = userVarsRaw
-                .map((k, v) => MapEntry(k.toString(), v?.toString() ?? ''));
+            final values = userVarsRaw.map(
+              (k, v) => MapEntry(k.toString(), v?.toString() ?? ''),
+            );
             await _ref
                 .read(pluginUserVarValuesProvider.notifier)
                 .save(source.id, values);
@@ -350,8 +357,7 @@ class AppBackupService {
           }
           importedPlugins++;
         } catch (e) {
-          errors.add(tr('插件「{name}」导入失败：{e}',
-              {'name': source.name, 'e': e}));
+          errors.add(tr('插件「{name}」导入失败：{e}', {'name': source.name, 'e': e}));
           skippedPlugins++;
         }
       }
@@ -366,16 +372,18 @@ class AppBackupService {
         final name = pl['name'] as String? ?? '';
         final songs = _parseSongs(pl['songs']);
         if (name.isEmpty || songs.isEmpty) continue;
-        entries.add(PluginBackupPlaylist(
-          name: name,
-          songs: songs,
-          originalSongCount: songs.length,
-          sourcePluginId: pl['sourcePluginId'] as String?,
-          sourceUrl: pl['sourceUrl'] as String?,
-          sourceRaw: pl['sourceRaw'] is Map
-              ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
-              : null,
-        ));
+        entries.add(
+          PluginBackupPlaylist(
+            name: name,
+            songs: songs,
+            originalSongCount: songs.length,
+            sourcePluginId: pl['sourcePluginId'] as String?,
+            sourceUrl: pl['sourceUrl'] as String?,
+            sourceRaw: pl['sourceRaw'] is Map
+                ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
+                : null,
+          ),
+        );
       }
       if (entries.isNotEmpty) {
         await store.addPlaylists(entries);
@@ -413,8 +421,10 @@ class AppBackupService {
         knownKeys.add(item.key);
       }
       if (incomingCollections.isNotEmpty) {
-        await collectionStore.saveAll(
-            [...incomingCollections, ...existingCollections]);
+        await collectionStore.saveAll([
+          ...incomingCollections,
+          ...existingCollections,
+        ]);
       }
       await _ref.read(favoritesProvider.notifier).refresh();
     }
@@ -425,8 +435,7 @@ class AppBackupService {
         try {
           final current = _ref.read(settingsProvider).valueOrNull;
           if (current != null) {
-            final restored =
-                _settingsFromJson(current, selfSettings);
+            final restored = _settingsFromJson(current, selfSettings);
             await _ref.read(settingsProvider.notifier).saveAll(restored);
             settingsApplied = true;
           }
@@ -456,8 +465,10 @@ class AppBackupService {
     if (list.isEmpty) return;
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
-      final existingJson =
-          await statsGetRecentHistory(dbPath: dbPath, limit: BigInt.from(5000));
+      final existingJson = await statsGetRecentHistory(
+        dbPath: dbPath,
+        limit: BigInt.from(5000),
+      );
       final merged = <String, int>{};
       for (final e in (jsonDecode(existingJson) as List).cast<Map>()) {
         final p = e['songPath'] as String? ?? '';
@@ -473,7 +484,9 @@ class AppBackupService {
       final ordered = merged.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       await statsRemoveFromRecentHistory(
-          dbPath: dbPath, songPaths: ordered.map((e) => e.key).toList());
+        dbPath: dbPath,
+        songPaths: ordered.map((e) => e.key).toList(),
+      );
       for (final entry in ordered) {
         await statsAddToHistory(dbPath: dbPath, songPath: entry.key);
       }
@@ -508,6 +521,7 @@ class AppBackupService {
       lyricOffsetMs: asInt('lyricOffsetMs'),
       liquidGlass: asBool('liquidGlass'),
       playerLiquidGlass: asBool('playerLiquidGlass'),
+      playerFlowingBackground: asBool('playerFlowingBackground'),
       scanFormats: j['scanFormats'] is List
           ? (j['scanFormats'] as List).cast<String>()
           : null,
@@ -515,13 +529,13 @@ class AppBackupService {
       navBarPosition: asStr('navBarPosition') == 'side'
           ? NavBarPosition.side
           : asStr('navBarPosition') == 'bottom'
-              ? NavBarPosition.bottom
-              : null,
+          ? NavBarPosition.bottom
+          : null,
       sideBarExpandDirection: asStr('sideBarExpandDirection') == 'up'
           ? SideBarExpandDirection.up
           : asStr('sideBarExpandDirection') == 'down'
-              ? SideBarExpandDirection.down
-              : null,
+          ? SideBarExpandDirection.down
+          : null,
       usbExclusiveOutput: asBool('usbExclusiveOutput'),
       autoResumeAfterInterruption: asBool('autoResumeAfterInterruption'),
       showRealQualitySizes: asBool('showRealQualitySizes'),
@@ -533,7 +547,11 @@ class AppBackupService {
   List<ImportedSong> _parseSongs(dynamic raw) {
     if (raw is! List) return const [];
     return raw
-        .map((e) => e is Map ? ImportedSong.fromJson(_normalizeSong(e.cast<String, dynamic>())) : null)
+        .map(
+          (e) => e is Map
+              ? ImportedSong.fromJson(_normalizeSong(e.cast<String, dynamic>()))
+              : null,
+        )
         .whereType<ImportedSong>()
         .where((s) => s.path.isNotEmpty)
         .toList();
@@ -542,7 +560,10 @@ class AppBackupService {
   Map<String, dynamic> _normalizeSong(Map<String, dynamic> j) {
     if (j.containsKey('localPath') || j.containsKey('musicInfo')) return j;
     final path = j['path'] as String? ?? '';
-    final isOnline = path.startsWith('plugin://') || path.startsWith('lx://') || path.startsWith('http');
+    final isOnline =
+        path.startsWith('plugin://') ||
+        path.startsWith('lx://') ||
+        path.startsWith('http');
     return {
       'title': (j['title'] ?? j['name']) as String? ?? '',
       'artist': j['artist'] as String? ?? '',
@@ -550,7 +571,8 @@ class AppBackupService {
       'duration': ((j['duration'] as num?)?.toDouble() ?? 0).round(),
       'coverUrl': (j['coverUrl'] ?? j['cover_thumb_path']) as String?,
       'localPath': isOnline ? null : path,
-      'pluginId': (j['pluginId'] ?? j['plugin_id'] ?? j['remote_source_id']) as String?,
+      'pluginId':
+          (j['pluginId'] ?? j['plugin_id'] ?? j['remote_source_id']) as String?,
       'source': (j['source'] ?? j['source_type']) as String?,
       'format': j['format'] as String?,
       'musicInfo': j['musicInfo'] is Map
@@ -568,7 +590,8 @@ class AppBackupService {
     final normalized = _normalizeSong(j);
     final path = normalized['path'] as String? ?? '';
     if (path.isEmpty) return null;
-    final online = normalized['musicInfo'] is Map && normalized['localPath'] == null;
+    final online =
+        normalized['musicInfo'] is Map && normalized['localPath'] == null;
     return FavoriteEntry(
       path: path,
       title: normalized['title'] as String? ?? '',
@@ -592,7 +615,8 @@ Future<String> writeBackupFile(String dirPath, String json) async {
   final dir = Directory(dirPath);
   if (!dir.existsSync()) dir.createSync(recursive: true);
   final stamp = DateTime.now();
-  final name = 'xianyu-backup-'
+  final name =
+      'xianyu-backup-'
       '${stamp.year}${stamp.month.toString().padLeft(2, '0')}${stamp.day.toString().padLeft(2, '0')}-'
       '${stamp.hour}${stamp.minute.toString().padLeft(2, '0')}.json';
   final file = File('${dir.path}${Platform.pathSeparator}$name');
@@ -600,4 +624,6 @@ Future<String> writeBackupFile(String dirPath, String json) async {
   return file.path;
 }
 
-final appBackupProvider = Provider<AppBackupService>((ref) => AppBackupService(ref));
+final appBackupProvider = Provider<AppBackupService>(
+  (ref) => AppBackupService(ref),
+);

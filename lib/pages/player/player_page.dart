@@ -53,6 +53,7 @@ import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
+import 'player_flowing_background.dart';
 import 'dart:async';
 
 part 'player_page.lyrics.adjust.dart';
@@ -212,6 +213,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
     final playerStyle = settings?.playerStyle ?? PlayerStyle.traditional;
 
     final hideMvVideo = _hideMvVideo && playerStyle == PlayerStyle.traditional;
+    // 播放页实际底色：浅色主题下的表面色明显偏灰，流光层需要据此调整浓淡
+    final playerBaseColor = Color.lerp(scheme.surface, Colors.black, 0.6)!;
+    final showFlowingBackground =
+        playerStyle == PlayerStyle.advanced &&
+        (settings?.playerFlowingBackground ?? true) &&
+        !(mv.ready && !hideMvVideo);
 
     final autoHideChrome = settings?.landscapeAutoHideChrome ?? true;
     final landscapeNow = ref.watch(isLandscapeProvider);
@@ -238,12 +245,19 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          Positioned.fill(
-            child: ColoredBox(
-              color: Color.lerp(scheme.surface, Colors.black, 0.6)!,
-            ),
-          ),
+          Positioned.fill(child: ColoredBox(color: playerBaseColor)),
           Positioned.fill(child: _BlurredCoverBackground(current: current)),
+          if (showFlowingBackground)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: PlayerFlowingBackground(
+                  primary: scheme.primary,
+                  secondary: scheme.secondary,
+                  tertiary: scheme.tertiary,
+                  baseColor: playerBaseColor,
+                ),
+              ),
+            ),
           if (mv.ready && mv.controller != null)
             Positioned.fill(
               child: IgnorePointer(
@@ -306,8 +320,10 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       },
                       onToggleMv: current != null
                           ? () async {
-                              final overlay =
-                                  Overlay.of(context, rootOverlay: true);
+                              final overlay = Overlay.of(
+                                context,
+                                rootOverlay: true,
+                              );
                               final err = await ref
                                   .read(mvProvider.notifier)
                                   .toggle(current);

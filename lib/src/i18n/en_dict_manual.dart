@@ -193,6 +193,9 @@ const Map<String, String> enDictManual = {
   '播放页控制卡使用液态玻璃材质': 'The player control card uses liquid glass material',
   '播放页样式': 'Player page style',
   '播放页液态玻璃': 'Player page liquid glass',
+  '沉浸流光背景': 'Immersive flowing background',
+  '使用随封面颜色缓慢流动的多边形背景':
+      'A slowly flowing polygon background based on the cover colors',
   '播放中': 'Playing',
   '不排除': 'Do not exclude',
   '部分内容导入失败': 'Some content failed to import',

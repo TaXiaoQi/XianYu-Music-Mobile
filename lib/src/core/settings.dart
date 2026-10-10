@@ -8,71 +8,31 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../lyrics/lyric_font.dart';
 part 'settings.methods.dart';
 
-enum ThemeModePreference {
-  system,
-  light,
-  dark,
-}
+enum ThemeModePreference { system, light, dark }
 
-enum NavBarPosition {
-  bottom,
-  side,
-  top,
-}
+enum NavBarPosition { bottom, side, top }
 
-enum SideBarExpandDirection {
-  down,
-  up,
-}
+enum SideBarExpandDirection { down, up }
 
-enum PageTransitionStyle {
-  cover,
+enum PageTransitionStyle { cover, smooth }
 
-  smooth,
-}
+enum PerformanceMode { auto, full, performance }
 
-enum PerformanceMode {
-  auto,
-  full,
-  performance,
-}
+enum PlayerStyle { advanced, traditional }
 
-enum PlayerStyle {
-  advanced,
-  traditional,
-}
+enum LiquidGlassQuality { low, medium, high }
 
-enum LiquidGlassQuality {
-  low,
-  medium,
-  high,
-}
-
-enum FrostedGlassLevel {
-  strongest,
-  medium,
-  light,
-}
+enum FrostedGlassLevel { strongest, medium, light }
 
 bool performancePriority(AppSettings s) => switch (s.performanceMode) {
-      PerformanceMode.full => false,
-      PerformanceMode.performance => true,
-      PerformanceMode.auto =>
-        (Platform.numberOfProcessors <= 4),
-    };
+  PerformanceMode.full => false,
+  PerformanceMode.performance => true,
+  PerformanceMode.auto => (Platform.numberOfProcessors <= 4),
+};
 
-enum AppLanguage {
-  system,
-  zhCN,
-  zhTW,
-  en,
-}
+enum AppLanguage { system, zhCN, zhTW, en }
 
-enum ListSize {
-  compact,
-  medium,
-  large;
-}
+enum ListSize { compact, medium, large }
 
 enum AppFontSize {
   system(1.0, followsSystem: true),
@@ -93,11 +53,23 @@ const kUiScaleValues = [0.85, 1.0, 1.15, 1.3];
 
 /// 整套 UI 缩放系数：越界档位回退标准
 double uiScaleOf(int index) =>
-    (index >= 0 && index < kUiScaleValues.length)
-        ? kUiScaleValues[index]
-        : 1.0;
+    (index >= 0 && index < kUiScaleValues.length) ? kUiScaleValues[index] : 1.0;
 
-const kSupportedScanFormats = ['flac', 'mp3', 'wav', 'aac', 'm4a', 'ogg', 'opus', 'aiff', 'dsf', 'dff', 'ape', 'wv', 'qmc'];
+const kSupportedScanFormats = [
+  'flac',
+  'mp3',
+  'wav',
+  'aac',
+  'm4a',
+  'ogg',
+  'opus',
+  'aiff',
+  'dsf',
+  'dff',
+  'ape',
+  'wv',
+  'qmc',
+];
 
 List<String> _mergeScanFormats(List<String>? saved) {
   if (saved == null) return kSupportedScanFormats;
@@ -179,10 +151,8 @@ class CustomBackground {
       translateX: translateX ?? this.translateX,
       translateY: translateY ?? this.translateY,
       landscapeScale: landscapeScale ?? this.landscapeScale,
-      landscapeTranslateX:
-          landscapeTranslateX ?? this.landscapeTranslateX,
-      landscapeTranslateY:
-          landscapeTranslateY ?? this.landscapeTranslateY,
+      landscapeTranslateX: landscapeTranslateX ?? this.landscapeTranslateX,
+      landscapeTranslateY: landscapeTranslateY ?? this.landscapeTranslateY,
       textMode: textMode ?? this.textMode,
       widgetAlpha: widgetAlpha ?? this.widgetAlpha,
     );
@@ -231,6 +201,7 @@ class AppSettings {
     this.lyricFontPath = '',
     this.liquidGlass = false,
     this.playerLiquidGlass = false,
+    this.playerFlowingBackground = true,
     this.frostedGlass = false,
     this.frostedGlassLevel = FrostedGlassLevel.medium,
     this.liquidGlassQuality = LiquidGlassQuality.medium,
@@ -367,6 +338,7 @@ class AppSettings {
   final String lyricAlignment;
   final bool liquidGlass;
   final bool playerLiquidGlass;
+  final bool playerFlowingBackground;
 
   final bool frostedGlass;
 
@@ -401,19 +373,21 @@ class AppSettings {
 
   /// 跳过静音：静音段只保留 [skipSilenceKeepMs]，多出来的丢掉。
   final bool skipSilenceEnabled;
+
   /// 静音判定阈值（dBFS，负值）。
   final double skipSilenceThresholdDb;
+
   /// 静音段保留时长（毫秒）。
   final int skipSilenceKeepMs;
 
   /// 无缝播放：本地曲目之间不留缝（采样率/声道不一致时自动退回普通切歌）。
   final bool gaplessEnabled;
 
-    /// 曲间交叉淡入淡出：本地曲目之间按等功率曲线交叠换曲。
-    final bool crossfadeEnabled;
+  /// 曲间交叉淡入淡出：本地曲目之间按等功率曲线交叠换曲。
+  final bool crossfadeEnabled;
 
-    /// 交叉时长（秒，1–12）。
-    final int crossfadeSeconds;
+  /// 交叉时长（秒，1–12）。
+  final int crossfadeSeconds;
 
   final bool volumeBalanceEnabled;
 
@@ -555,6 +529,7 @@ class AppSettings {
     String? lyricAlignment,
     bool? liquidGlass,
     bool? playerLiquidGlass,
+    bool? playerFlowingBackground,
     bool? frostedGlass,
     FrostedGlassLevel? frostedGlassLevel,
     LiquidGlassQuality? liquidGlassQuality,
@@ -661,12 +636,15 @@ class AppSettings {
       downloadQualityFallbackBehavior:
           downloadQualityFallbackBehavior ??
           this.downloadQualityFallbackBehavior,
-      onlineDefaultMvQuality: onlineDefaultMvQuality ?? this.onlineDefaultMvQuality,
+      onlineDefaultMvQuality:
+          onlineDefaultMvQuality ?? this.onlineDefaultMvQuality,
       onlineMvQualityFallbackBehavior:
-          onlineMvQualityFallbackBehavior ?? this.onlineMvQualityFallbackBehavior,
+          onlineMvQualityFallbackBehavior ??
+          this.onlineMvQualityFallbackBehavior,
       downloadMvQuality: downloadMvQuality ?? this.downloadMvQuality,
       downloadMvQualityFallbackBehavior:
-          downloadMvQualityFallbackBehavior ?? this.downloadMvQualityFallbackBehavior,
+          downloadMvQualityFallbackBehavior ??
+          this.downloadMvQualityFallbackBehavior,
       keepSourceFilename: keepSourceFilename ?? this.keepSourceFilename,
       downloadLyricsFormat: downloadLyricsFormat ?? this.downloadLyricsFormat,
       downloadLyricsStyle: downloadLyricsStyle ?? this.downloadLyricsStyle,
@@ -676,10 +654,11 @@ class AppSettings {
       lyricAlignment: lyricAlignment ?? this.lyricAlignment,
       liquidGlass: liquidGlass ?? this.liquidGlass,
       playerLiquidGlass: playerLiquidGlass ?? this.playerLiquidGlass,
+      playerFlowingBackground:
+          playerFlowingBackground ?? this.playerFlowingBackground,
       frostedGlass: frostedGlass ?? this.frostedGlass,
       frostedGlassLevel: frostedGlassLevel ?? this.frostedGlassLevel,
-      liquidGlassQuality:
-          liquidGlassQuality ?? this.liquidGlassQuality,
+      liquidGlassQuality: liquidGlassQuality ?? this.liquidGlassQuality,
       performanceMode: performanceMode ?? this.performanceMode,
       hapticStrength: hapticStrength ?? this.hapticStrength,
       updateCheckMode: updateCheckMode ?? this.updateCheckMode,
@@ -688,16 +667,14 @@ class AppSettings {
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
       floatingSearchBar: floatingSearchBar ?? this.floatingSearchBar,
       navBarPosition: navBarPosition ?? this.navBarPosition,
-      pageTransitionStyle:
-          pageTransitionStyle ?? this.pageTransitionStyle,
+      pageTransitionStyle: pageTransitionStyle ?? this.pageTransitionStyle,
       landscapeTransitionEnabled:
           landscapeTransitionEnabled ?? this.landscapeTransitionEnabled,
       sideBarExpandDirection:
           sideBarExpandDirection ?? this.sideBarExpandDirection,
       usbExclusiveOutput: usbExclusiveOutput ?? this.usbExclusiveOutput,
       bitPerfectOutput: bitPerfectOutput ?? this.bitPerfectOutput,
-      dsdNativePassthrough:
-          dsdNativePassthrough ?? this.dsdNativePassthrough,
+      dsdNativePassthrough: dsdNativePassthrough ?? this.dsdNativePassthrough,
       skipSilenceEnabled: skipSilenceEnabled ?? this.skipSilenceEnabled,
       skipSilenceThresholdDb:
           skipSilenceThresholdDb ?? this.skipSilenceThresholdDb,
@@ -712,8 +689,7 @@ class AppSettings {
           volumeBalancePreventClipping ?? this.volumeBalancePreventClipping,
       autoResumeAfterInterruption:
           autoResumeAfterInterruption ?? this.autoResumeAfterInterruption,
-      showRealQualitySizes:
-          showRealQualitySizes ?? this.showRealQualitySizes,
+      showRealQualitySizes: showRealQualitySizes ?? this.showRealQualitySizes,
       onlineFailureBehavior:
           onlineFailureBehavior ?? this.onlineFailureBehavior,
       onlineQualityFallbackBehavior:
@@ -725,7 +701,8 @@ class AppSettings {
       listSize: listSize ?? this.listSize,
       fontSize: fontSize ?? this.fontSize,
       uiScaleIndex: uiScaleIndex ?? this.uiScaleIndex,
-      shareLinkValidityMinutes: shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
+      shareLinkValidityMinutes:
+          shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
       playerStyle: playerStyle ?? this.playerStyle,
@@ -748,8 +725,8 @@ class AppSettings {
           floatingLyricsSecondaryScale ?? this.floatingLyricsSecondaryScale,
       floatingLyricsShowTranslation:
           floatingLyricsShowTranslation ?? this.floatingLyricsShowTranslation,
-          floatingLyricsShowNextLine:
-              floatingLyricsShowNextLine ?? this.floatingLyricsShowNextLine,
+      floatingLyricsShowNextLine:
+          floatingLyricsShowNextLine ?? this.floatingLyricsShowNextLine,
       floatingLyricsShowRomanization:
           floatingLyricsShowRomanization ?? this.floatingLyricsShowRomanization,
       floatingLyricsShowBackground:
@@ -758,8 +735,7 @@ class AppSettings {
           floatingLyricsHideWhenPaused ?? this.floatingLyricsHideWhenPaused,
       floatingLyricsHideInLandscape:
           floatingLyricsHideInLandscape ?? this.floatingLyricsHideInLandscape,
-      landscapeCameraArea:
-          landscapeCameraArea ?? this.landscapeCameraArea,
+      landscapeCameraArea: landscapeCameraArea ?? this.landscapeCameraArea,
       floatingLyricsWidthPercent:
           floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
       floatingLyricsUseLyricFont:
@@ -814,14 +790,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       themeMode: _themeFromInt(prefs.getInt('themeMode') ?? 0),
       accentColor: prefs.getInt('accentColor') ?? 0xFFEC4141,
       showQualityBadges: prefs.getBool('showQualityBadges') ?? true,
-      enableScrollToTopButton:
-          prefs.getBool('enableScrollToTopButton') ?? true,
-      onlineDefaultQuality:
-          prefs.getString('onlineDefaultQuality') ?? '320k',
-      libraryMinDurationSeconds:
-          prefs.getInt('libraryMinDurationSeconds') ?? 0,
-      showLyricsTranslation:
-          prefs.getBool('showLyricsTranslation') ?? true,
+      enableScrollToTopButton: prefs.getBool('enableScrollToTopButton') ?? true,
+      onlineDefaultQuality: prefs.getString('onlineDefaultQuality') ?? '320k',
+      libraryMinDurationSeconds: prefs.getInt('libraryMinDurationSeconds') ?? 0,
+      showLyricsTranslation: prefs.getBool('showLyricsTranslation') ?? true,
       showLyricsRomaji: prefs.getBool('showLyricsRomaji') ?? false,
       lyricFontName: prefs.getString('lyricFontName') ?? '',
       lyricFontPath: prefs.getString('lyricFontPath') ?? '',
@@ -833,14 +805,14 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       overwriteExisting: prefs.getBool('overwriteExisting') ?? false,
       downloadFileNameStyle:
           prefs.getString('downloadFileNameStyle') ?? 'artist-title',
-      embedDownloadMetadata:
-          prefs.getBool('embedDownloadMetadata') ?? true,
+      embedDownloadMetadata: prefs.getBool('embedDownloadMetadata') ?? true,
       embedDownloadLyrics: prefs.getBool('embedDownloadLyrics') ?? true,
       embedDownloadCover: prefs.getBool('embedDownloadCover') ?? true,
       downloadBehavior: prefs.getString('downloadBehavior') ?? 'default',
       downloadQualityFallbackBehavior:
           prefs.getString('downloadQualityFallbackBehavior') ?? 'lower',
-      onlineDefaultMvQuality: prefs.getString('onlineDefaultMvQuality') ?? '720p',
+      onlineDefaultMvQuality:
+          prefs.getString('onlineDefaultMvQuality') ?? '720p',
       onlineMvQualityFallbackBehavior:
           prefs.getString('onlineMvQualityFallbackBehavior') ?? 'lower',
       downloadMvQuality: prefs.getString('downloadMvQuality') ?? '720p',
@@ -848,42 +820,48 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getString('downloadMvQualityFallbackBehavior') ?? 'lower',
       keepSourceFilename: prefs.getBool('keepSourceFilename') ?? false,
       downloadLyricsFormat: prefs.getString('downloadLyricsFormat') ?? 'lrc',
-      downloadLyricsStyle: prefs.getString('downloadLyricsStyle') ?? 'word-by-word',
-      organizeRule: prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
+      downloadLyricsStyle:
+          prefs.getString('downloadLyricsStyle') ?? 'word-by-word',
+      organizeRule:
+          prefs.getString('organizeRule') ?? '{Artist}/{Album}/{Title}',
       lyricFontSize: prefs.getInt('lyricFontSize') ?? 1,
       lyricOffsetMs: prefs.getInt('lyricOffsetMs') ?? 0,
       lyricAlignment: prefs.getString('lyricAlignment') ?? 'center',
       liquidGlass: liquidGlass,
       frostedGlass: frostedGlass,
-      frostedGlassLevel: _fglFromString(prefs.getString('frostedGlassLevel') ?? 'medium'),
+      frostedGlassLevel: _fglFromString(
+        prefs.getString('frostedGlassLevel') ?? 'medium',
+      ),
       playerLiquidGlass: prefs.getBool('playerLiquidGlass') ?? false,
-      liquidGlassQuality:
-          _lgqFromString(prefs.getString('liquidGlassQuality') ?? 'medium'),
-      performanceMode: _perfFromString(prefs.getString('performanceMode') ?? 'auto'),
+      playerFlowingBackground: prefs.getBool('playerFlowingBackground') ?? true,
+      liquidGlassQuality: _lgqFromString(
+        prefs.getString('liquidGlassQuality') ?? 'medium',
+      ),
+      performanceMode: _perfFromString(
+        prefs.getString('performanceMode') ?? 'auto',
+      ),
       hapticStrength: prefs.getInt('hapticStrength') ?? 1,
       updateCheckMode: prefs.getString('updateCheckMode') ?? 'startup',
       streamCacheSizeMB: prefs.getInt('streamCacheSizeMB') ?? 500,
       scanFormats: _mergeScanFormats(prefs.getStringList('scanFormats')),
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
-      navBarPosition:
-          (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
-              ? NavBarPosition.side
-              : NavBarPosition.bottom,
+      navBarPosition: (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
+          ? NavBarPosition.side
+          : NavBarPosition.bottom,
       pageTransitionStyle:
           (prefs.getString('pageTransitionStyle') ?? 'cover') == 'smooth'
-              ? PageTransitionStyle.smooth
-              : PageTransitionStyle.cover,
+          ? PageTransitionStyle.smooth
+          : PageTransitionStyle.cover,
       landscapeTransitionEnabled:
           prefs.getBool('landscapeTransitionEnabled') ?? true,
       sideBarExpandDirection:
           (prefs.getString('sideBarExpandDirection') ?? 'down') == 'up'
-              ? SideBarExpandDirection.up
-              : SideBarExpandDirection.down,
+          ? SideBarExpandDirection.up
+          : SideBarExpandDirection.down,
       usbExclusiveOutput: prefs.getBool('usbExclusiveOutput') ?? false,
       bitPerfectOutput: prefs.getBool('bitPerfectOutput') ?? false,
-      dsdNativePassthrough: prefs.getBool('dsdNativePassthrough')
-          ?? false,
+      dsdNativePassthrough: prefs.getBool('dsdNativePassthrough') ?? false,
       skipSilenceEnabled: prefs.getBool('skipSilenceEnabled') ?? false,
       skipSilenceThresholdDb:
           prefs.getDouble('skipSilenceThresholdDb') ?? -45.0,
@@ -898,14 +876,13 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('volumeBalancePreventClipping') ?? true,
       autoResumeAfterInterruption:
           prefs.getBool('autoResumeAfterInterruption') ?? true,
-      showRealQualitySizes:
-          prefs.getBool('showRealQualitySizes') ?? false,
+      showRealQualitySizes: prefs.getBool('showRealQualitySizes') ?? false,
       onlineFailureBehavior:
           prefs.getString('onlineFailureBehavior') == 'autoswitch'
-              ? 'autoswitch'
-              : prefs.getString('onlineFailureBehavior') == 'skip'
-                  ? 'skip'
-                  : 'stop',
+          ? 'autoswitch'
+          : prefs.getString('onlineFailureBehavior') == 'skip'
+          ? 'skip'
+          : 'stop',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
@@ -915,26 +892,23 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
       fontSize: _fontSizeFromString(prefs.getString('fontSize') ?? 'standard'),
       uiScaleIndex: prefs.getInt('uiScaleIndex') ?? 1,
-      shareLinkValidityMinutes:
-          prefs.getInt('shareLinkValidityMinutes') ?? 120,
+      shareLinkValidityMinutes: prefs.getInt('shareLinkValidityMinutes') ?? 120,
       sharePlaybackFailureBehavior:
           prefs.getString('sharePlaybackFailureBehavior') ?? 'pause',
       playerStyle: _playerStyleFromString(
-          prefs.getString('playerStyle') ?? 'traditional'),
-      landscapeAutoHideChrome:
-          prefs.getBool('landscapeAutoHideChrome') ?? true,
+        prefs.getString('playerStyle') ?? 'traditional',
+      ),
+      landscapeAutoHideChrome: prefs.getBool('landscapeAutoHideChrome') ?? true,
       landscapeTapToHideChrome:
           prefs.getBool('landscapeTapToHideChrome') ?? true,
-      floatingLyricsEnabled:
-          prefs.getBool('floatingLyricsEnabled') ?? false,
+      floatingLyricsEnabled: prefs.getBool('floatingLyricsEnabled') ?? false,
       floatingLyricsLocked: prefs.getBool('floatingLyricsLocked') ?? false,
       floatingLyricsTextColor:
           prefs.getInt('floatingLyricsTextColor') ?? 0xFFFFFFFF,
       floatingLyricsUnplayedColor:
           prefs.getInt('floatingLyricsUnplayedColor') ?? 0,
       floatingLyricsOpacity: prefs.getInt('floatingLyricsOpacity') ?? 100,
-      floatingLyricsFontScale:
-          prefs.getInt('floatingLyricsFontScale') ?? 100,
+      floatingLyricsFontScale: prefs.getInt('floatingLyricsFontScale') ?? 100,
       floatingLyricsSecondaryScale:
           prefs.getInt('floatingLyricsSecondaryScale') ?? 88,
       floatingLyricsShowTranslation:
@@ -954,19 +928,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getInt('floatingLyricsWidthPercent') ?? 92,
       floatingLyricsUseLyricFont:
           prefs.getBool('floatingLyricsUseLyricFont') ?? false,
-      statusBarLyricsEnabled:
-          prefs.getBool('statusBarLyricsEnabled') ?? false,
+      statusBarLyricsEnabled: prefs.getBool('statusBarLyricsEnabled') ?? false,
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
       watchLinkageEnabled: prefs.getBool('watchLinkageEnabled') ?? true,
-      watchLinkTransferMode:
-          prefs.getString('watchLinkTransferMode') ?? 'ask',
-      watchLinkAutoTransfer:
-          prefs.getBool('watchLinkAutoTransfer') ?? false,
+      watchLinkTransferMode: prefs.getString('watchLinkTransferMode') ?? 'ask',
+      watchLinkAutoTransfer: prefs.getBool('watchLinkAutoTransfer') ?? false,
       watchLinkAskDate: prefs.getString('watchLinkAskDate') ?? '',
       watchLinkAskGranted: prefs.getBool('watchLinkAskGranted') ?? false,
-      watchLinkCloudEnabled:
-          prefs.getBool('watchLinkCloudEnabled') ?? true,
+      watchLinkCloudEnabled: prefs.getBool('watchLinkCloudEnabled') ?? true,
       watchLinkCloudKey: prefs.getString('watchLinkCloudKey') ?? '',
       dlnaRendererEnabled: prefs.getBool('dlnaRendererEnabled') ?? false,
       dlnaRendererName: prefs.getString('dlnaRendererName') ?? '',

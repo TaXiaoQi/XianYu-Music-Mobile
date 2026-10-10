@@ -1,4 +1,5 @@
 part of 'settings_category_page.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
@@ -58,23 +59,28 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       _sectionHeader(context, tr('DLNA 渲染器')),
       _CardGroup(
         children: [
-          Builder(builder: (ctx) {
-            final dlnaCast = ref.watch(dlnaCastProvider);
-            return _switchTile(
-              context,
-              icon: Icons.album_outlined,
-              title: tr('接收其它设备投屏'),
-              subtitle: dlnaCast.rendererRunning
-                  ? tr('运行中 · 端口 {port}',
-                      {'port': dlnaCast.rendererPort.toString()})
-                  : tr('开启后本机作为 DLNA 设备出现在局域网，其它 App 可直接投歌到本端'),
-              value: s?.dlnaRendererEnabled ?? false,
-              onChanged: (v) async {
-                await n.setDlnaRendererEnabled(v);
-                await ref.read(dlnaCastProvider.notifier).applyRendererSetting();
-              },
-            );
-          }),
+          Builder(
+            builder: (ctx) {
+              final dlnaCast = ref.watch(dlnaCastProvider);
+              return _switchTile(
+                context,
+                icon: Icons.album_outlined,
+                title: tr('接收其它设备投屏'),
+                subtitle: dlnaCast.rendererRunning
+                    ? tr('运行中 · 端口 {port}', {
+                        'port': dlnaCast.rendererPort.toString(),
+                      })
+                    : tr('开启后本机作为 DLNA 设备出现在局域网，其它 App 可直接投歌到本端'),
+                value: s?.dlnaRendererEnabled ?? false,
+                onChanged: (v) async {
+                  await n.setDlnaRendererEnabled(v);
+                  await ref
+                      .read(dlnaCastProvider.notifier)
+                      .applyRendererSetting();
+                },
+              );
+            },
+          ),
           _tile(
             context,
             icon: Icons.badge_outlined,
@@ -85,8 +91,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
                   ? tr('弦予音乐')
                   : s!.dlnaRendererName.trim(),
               style: TextStyle(
-                  fontSize: 13,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant),
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -234,8 +241,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.view_list_outlined,
             title: tr('列表大小'),
             subtitle: tr('歌曲 / 歌手 / 专辑 / 歌单列表项尺寸'),
-            trailing: Text(listSizeLabel(
-                s?.listSize ?? ListSize.medium)),
+            trailing: Text(listSizeLabel(s?.listSize ?? ListSize.medium)),
             onTap: () => _pickListSize(context, ref, s),
           ),
           _tile(
@@ -285,8 +291,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.gradient_outlined,
             title: tr('液态玻璃'),
-            subtitle: tr(
-                '开启时自动切换到悬浮式底栏；底栏、迷你条、搜索框与播放页控制卡优先液态，其余表面由毛玻璃补齐'),
+            subtitle: tr('开启时自动切换到悬浮式底栏；底栏、迷你条、搜索框与播放页控制卡优先液态，其余表面由毛玻璃补齐'),
             value: s?.liquidGlass ?? false,
             onChanged: (v) => n.setLiquidGlass(v),
           ),
@@ -409,7 +414,8 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             value: s?.landscapeTapToHideChrome ?? true,
             onChanged: (v) => n.setLandscapeTapToHideChrome(v),
           ),
-          if ((s?.playerStyle ?? PlayerStyle.traditional) == PlayerStyle.advanced)
+          if ((s?.playerStyle ?? PlayerStyle.traditional) ==
+              PlayerStyle.advanced) ...[
             _switchTile(
               context,
               icon: Icons.sync_alt_outlined,
@@ -418,6 +424,15 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
               value: s?.playerLiquidGlass ?? true,
               onChanged: (v) => n.setPlayerLiquidGlass(v),
             ),
+            _switchTile(
+              context,
+              icon: Icons.auto_awesome_outlined,
+              title: tr('沉浸流光背景'),
+              subtitle: tr('使用随封面颜色缓慢流动的多边形背景'),
+              value: s?.playerFlowingBackground ?? true,
+              onChanged: (v) => n.setPlayerFlowingBackground(v),
+            ),
+          ],
         ],
       ),
     ];
@@ -471,183 +486,182 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
         ],
       ),
       if (PlatformCaps.supportsFloatingLyrics) ...[
-      _sectionHeader(context, tr('桌面歌词')),
-      _CardGroup(
-        children: [
-          _switchTile(
-            context,
-            icon: Icons.lyrics_outlined,
-            title: tr('桌面歌词窗'),
-            subtitle: mvOn
-                ? tr('此功能不支持在MV期间使用')
-                : tr('在其他应用上层显示卡拉OK逐字歌词'),
-            enabled: !mvOn,
-            value: s?.floatingLyricsEnabled ?? false,
-            onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
-          ),
-          _tile(
-            context,
-            icon: Icons.palette_outlined,
-            title: tr('文字颜色'),
-            trailing: _ColorDot(
-              color: Color(s?.floatingLyricsTextColor ?? 0xFFFFFFFF),
+        _sectionHeader(context, tr('桌面歌词')),
+        _CardGroup(
+          children: [
+            _switchTile(
+              context,
+              icon: Icons.lyrics_outlined,
+              title: tr('桌面歌词窗'),
+              subtitle: mvOn ? tr('此功能不支持在MV期间使用') : tr('在其他应用上层显示卡拉OK逐字歌词'),
+              enabled: !mvOn,
+              value: s?.floatingLyricsEnabled ?? false,
+              onChanged: (v) => _toggleFloatingLyrics(context, ref, n, v),
             ),
-            onTap: (s?.floatingLyricsEnabled ?? false)
-                ? () => _pickFloatingLyricsColor(context, ref, s)
-                : null,
-          ),
-          _tile(
-            context,
-            icon: Icons.contrast,
-            title: tr('未播放颜色'),
-            trailing: _ColorDot(
-              // 0 = 跟随主色：以主色按淡度预览
-              color: (s?.floatingLyricsUnplayedColor ?? 0) == 0
-                  ? Color(s?.floatingLyricsTextColor ?? 0xFFFFFFFF)
-                      .withValues(alpha: 0.38)
-                  : Color(s!.floatingLyricsUnplayedColor),
+            _tile(
+              context,
+              icon: Icons.palette_outlined,
+              title: tr('文字颜色'),
+              trailing: _ColorDot(
+                color: Color(s?.floatingLyricsTextColor ?? 0xFFFFFFFF),
+              ),
+              onTap: (s?.floatingLyricsEnabled ?? false)
+                  ? () => _pickFloatingLyricsColor(context, ref, s)
+                  : null,
             ),
-            onTap: (s?.floatingLyricsEnabled ?? false)
-                ? () => _pickFloatingLyricsUnplayedColor(context, ref, s)
-                : null,
-          ),
-          _tile(
-            context,
-            icon: Icons.opacity_outlined,
-            title: tr('不透明度'),
-            trailing: _floatingLyricsOpacitySlider(s, n),
-          ),
-          _tile(
-            context,
-            icon: Icons.text_fields_outlined,
-            title: tr('字号'),
-            trailing: _floatingLyricsFontSlider(s, n),
-          ),
-          _tile(
-            context,
-            icon: Icons.subtitles_outlined,
-            title: tr('副行字号'),
-            trailing: _floatingLyricsSecondarySlider(s, n),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.font_download_outlined,
-            title: tr('使用歌词字体'),
-            subtitle: tr('应用播放页设置的自定义歌词字体'),
-            value: s?.floatingLyricsUseLyricFont ?? false,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsUseLyricFont(v)
-                : null,
-          ),
-          _switchTile(
-            context,
-            icon: Icons.translate_outlined,
-            title: tr('显示翻译'),
-            value: s?.floatingLyricsShowTranslation ?? true,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsShowTranslation(v)
-                : null,
-          ),
-          _switchTile(
-            context,
-            icon: Icons.skip_next_outlined,
-            title: tr('显示下一句'),
-            subtitle: tr('在下方提前显示下一句歌词；与「显示翻译」同开时会占三行'),
-            value: s?.floatingLyricsShowNextLine ?? false,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsShowNextLine(v)
-                : null,
-          ),
-          _switchTile(
-            context,
-            icon: Icons.spellcheck_outlined,
-            title: tr('显示罗马音'),
-            value: s?.floatingLyricsShowRomanization ?? false,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsShowRomanization(v)
-                : null,
-          ),
-          _switchTile(
-            context,
-            icon: Icons.queue_music_outlined,
-            title: tr('显示背景歌词'),
-            value: s?.floatingLyricsShowBackground ?? true,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsShowBackground(v)
-                : null,
-          ),
-          _switchTile(
-            context,
-            icon: Icons.pause_outlined,
-            title: tr('暂停时隐藏'),
-            value: s?.floatingLyricsHideWhenPaused ?? false,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsHideWhenPaused(v)
-                : null,
-          ),
-          _switchTile(
-            context,
-            icon: Icons.screen_lock_landscape_outlined,
-            title: tr('横屏时隐藏'),
-            value: s?.floatingLyricsHideInLandscape ?? false,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsHideInLandscape(v)
-                : null,
-          ),
-          _tile(
-            context,
-            icon: Icons.width_full_outlined,
-            title: tr('宽度'),
-            trailing: _floatingLyricsWidthSlider(s, n),
-          ),
-          _tile(
-            context,
-            icon: Icons.swap_horiz_outlined,
-            title: tr('水平位置'),
-            trailing: _floatingLyricsXSlider(context, s, n),
-          ),
-          _tile(
-            context,
-            icon: Icons.swap_vert_outlined,
-            title: tr('垂直位置'),
-            trailing: _floatingLyricsYSlider(context, s, n),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.lock_outline,
-            title: tr('锁定位置'),
-            subtitle: tr('锁定后不可拖动，通知栏解锁'),
-            value: s?.floatingLyricsLocked ?? false,
-            onChanged: (s?.floatingLyricsEnabled ?? false)
-                ? (v) => n.setFloatingLyricsLocked(v)
-                : null,
-          ),
-          _tile(
-            context,
-            icon: Icons.center_focus_strong_outlined,
-            title: tr('重置位置'),
-            trailing: const SizedBox.shrink(),
-            onTap: (s?.floatingLyricsEnabled ?? false)
-                ? () => _resetFloatingLyricsPosition()
-                : null,
-          ),
-        ],
-      ),
+            _tile(
+              context,
+              icon: Icons.contrast,
+              title: tr('未播放颜色'),
+              trailing: _ColorDot(
+                // 0 = 跟随主色：以主色按淡度预览
+                color: (s?.floatingLyricsUnplayedColor ?? 0) == 0
+                    ? Color(
+                        s?.floatingLyricsTextColor ?? 0xFFFFFFFF,
+                      ).withValues(alpha: 0.38)
+                    : Color(s!.floatingLyricsUnplayedColor),
+              ),
+              onTap: (s?.floatingLyricsEnabled ?? false)
+                  ? () => _pickFloatingLyricsUnplayedColor(context, ref, s)
+                  : null,
+            ),
+            _tile(
+              context,
+              icon: Icons.opacity_outlined,
+              title: tr('不透明度'),
+              trailing: _floatingLyricsOpacitySlider(s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.text_fields_outlined,
+              title: tr('字号'),
+              trailing: _floatingLyricsFontSlider(s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.subtitles_outlined,
+              title: tr('副行字号'),
+              trailing: _floatingLyricsSecondarySlider(s, n),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.font_download_outlined,
+              title: tr('使用歌词字体'),
+              subtitle: tr('应用播放页设置的自定义歌词字体'),
+              value: s?.floatingLyricsUseLyricFont ?? false,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsUseLyricFont(v)
+                  : null,
+            ),
+            _switchTile(
+              context,
+              icon: Icons.translate_outlined,
+              title: tr('显示翻译'),
+              value: s?.floatingLyricsShowTranslation ?? true,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsShowTranslation(v)
+                  : null,
+            ),
+            _switchTile(
+              context,
+              icon: Icons.skip_next_outlined,
+              title: tr('显示下一句'),
+              subtitle: tr('在下方提前显示下一句歌词；与「显示翻译」同开时会占三行'),
+              value: s?.floatingLyricsShowNextLine ?? false,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsShowNextLine(v)
+                  : null,
+            ),
+            _switchTile(
+              context,
+              icon: Icons.spellcheck_outlined,
+              title: tr('显示罗马音'),
+              value: s?.floatingLyricsShowRomanization ?? false,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsShowRomanization(v)
+                  : null,
+            ),
+            _switchTile(
+              context,
+              icon: Icons.queue_music_outlined,
+              title: tr('显示背景歌词'),
+              value: s?.floatingLyricsShowBackground ?? true,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsShowBackground(v)
+                  : null,
+            ),
+            _switchTile(
+              context,
+              icon: Icons.pause_outlined,
+              title: tr('暂停时隐藏'),
+              value: s?.floatingLyricsHideWhenPaused ?? false,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsHideWhenPaused(v)
+                  : null,
+            ),
+            _switchTile(
+              context,
+              icon: Icons.screen_lock_landscape_outlined,
+              title: tr('横屏时隐藏'),
+              value: s?.floatingLyricsHideInLandscape ?? false,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsHideInLandscape(v)
+                  : null,
+            ),
+            _tile(
+              context,
+              icon: Icons.width_full_outlined,
+              title: tr('宽度'),
+              trailing: _floatingLyricsWidthSlider(s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.swap_horiz_outlined,
+              title: tr('水平位置'),
+              trailing: _floatingLyricsXSlider(context, s, n),
+            ),
+            _tile(
+              context,
+              icon: Icons.swap_vert_outlined,
+              title: tr('垂直位置'),
+              trailing: _floatingLyricsYSlider(context, s, n),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.lock_outline,
+              title: tr('锁定位置'),
+              subtitle: tr('锁定后不可拖动，通知栏解锁'),
+              value: s?.floatingLyricsLocked ?? false,
+              onChanged: (s?.floatingLyricsEnabled ?? false)
+                  ? (v) => n.setFloatingLyricsLocked(v)
+                  : null,
+            ),
+            _tile(
+              context,
+              icon: Icons.center_focus_strong_outlined,
+              title: tr('重置位置'),
+              trailing: const SizedBox.shrink(),
+              onTap: (s?.floatingLyricsEnabled ?? false)
+                  ? () => _resetFloatingLyricsPosition()
+                  : null,
+            ),
+          ],
+        ),
       ],
       if (PlatformCaps.supportsStatusBarLyrics) ...[
-      _sectionHeader(context, tr('通知栏歌词')),
-      _CardGroup(
-        children: [
-          _switchTile(
-            context,
-            icon: Icons.notifications_active_outlined,
-            title: tr('通知栏歌词'),
-            subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
-            value: s?.statusBarLyricsEnabled ?? false,
-            onChanged: (v) => n.setStatusBarLyricsEnabled(v),
-          ),
-        ],
-      ),
+        _sectionHeader(context, tr('通知栏歌词')),
+        _CardGroup(
+          children: [
+            _switchTile(
+              context,
+              icon: Icons.notifications_active_outlined,
+              title: tr('通知栏歌词'),
+              subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
+              value: s?.statusBarLyricsEnabled ?? false,
+              onChanged: (v) => n.setStatusBarLyricsEnabled(v),
+            ),
+          ],
+        ),
       ],
     ];
   }
@@ -702,7 +716,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.straighten_outlined,
             title: tr('显示真实音质体积'),
-            subtitle: tr('开启后每首在线歌会向音源多请求约 5~8 次（预解析全部档位并探测真实体积），可能触发音源限流；关闭时仅按需解析，体积显示插件自报值'),
+            subtitle: tr(
+              '开启后每首在线歌会向音源多请求约 5~8 次（预解析全部档位并探测真实体积），可能触发音源限流；关闭时仅按需解析，体积显示插件自报值',
+            ),
             value: s?.showRealQualitySizes ?? false,
             onChanged: (v) => n.setShowRealQualitySizes(v),
           ),
@@ -724,8 +740,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('起播失败行为'),
             subtitle: tr('在线音源完全无法播放时的处理方式'),
             trailing: Text(
-              _failureBehaviorLabel(
-                  s?.onlineFailureBehavior ?? 'stop'),
+              _failureBehaviorLabel(s?.onlineFailureBehavior ?? 'stop'),
             ),
             onTap: () => _pickFailureBehavior(context, ref, s),
           ),
@@ -775,8 +790,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.speaker_outlined,
             title: tr('输出设备'),
-            subtitle:
-                tr('独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式'),
+            subtitle: tr('独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式'),
             trailing: Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
             onTap: () => _pickOutputDevice(context, ref),
           ),
@@ -784,8 +798,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.usb_outlined,
             title: tr('USB 独占输出 (Bit-perfect)'),
-            subtitle:
-                tr('绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退'),
+            subtitle: tr(
+              '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
+            ),
             value: s?.usbExclusiveOutput ?? false,
             onChanged: (v) => n.setUsbExclusiveOutput(v),
           ),
@@ -793,8 +808,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.high_quality,
             title: tr('Bit-perfect 直出'),
-            subtitle:
-                tr('USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」'),
+            subtitle: tr(
+              'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+            ),
             value: s?.bitPerfectOutput ?? false,
             onChanged: (v) => n.setBitPerfectOutput(v),
           ),
@@ -802,8 +818,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.graphic_eq_outlined,
             title: tr('DSD 原生直出'),
-            subtitle:
-                tr('dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定'),
+            subtitle: tr(
+              'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
+            ),
             value: s?.dsdNativePassthrough ?? false,
             onChanged: (v) => n.setDsdNativePassthrough(v),
           ),
@@ -812,8 +829,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.link,
             title: tr('无缝播放'),
             subtitle: tr(
-                '本地曲目之间不留缝：当前曲播完直接在输出流里接上下一首。'
-                '采样率或声道与当前流不一致时自动退回普通切歌'),
+              '本地曲目之间不留缝：当前曲播完直接在输出流里接上下一首。'
+              '采样率或声道与当前流不一致时自动退回普通切歌',
+            ),
             value: s?.gaplessEnabled ?? true,
             onChanged: (v) => n.setGaplessEnabled(v),
           ),
@@ -822,8 +840,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.swap_horiz,
             title: tr('曲间淡入淡出'),
             subtitle: tr(
-                '本地曲目之间按等功率曲线交叠换曲（交叉段本身就是无缝的，'
-                '开启时优先于「无缝播放」）；太短的曲子不交叉'),
+              '本地曲目之间按等功率曲线交叠换曲（交叉段本身就是无缝的，'
+              '开启时优先于「无缝播放」）；太短的曲子不交叉',
+            ),
             value: s?.crossfadeEnabled ?? false,
             onChanged: (v) => n.setCrossfadeEnabled(v),
           ),
@@ -840,8 +859,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.content_cut,
             title: tr('跳过静音'),
             subtitle: tr(
-                '把过长的静音段压到「保留时长」，多出来的直接跳过（播客/有声书/现场专辑友好）；'
-                '只作用于走音效引擎的播放，进度条仍按原曲时间轴显示'),
+              '把过长的静音段压到「保留时长」，多出来的直接跳过（播客/有声书/现场专辑友好）；'
+              '只作用于走音效引擎的播放，进度条仍按原曲时间轴显示',
+            ),
             value: s?.skipSilenceEnabled ?? false,
             onChanged: (v) => n.setSkipSilenceEnabled(v),
           ),
@@ -873,8 +893,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.link_outlined,
             title: tr('分享链接播放失败行为'),
-            subtitle:
-                tr('通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌'),
+            subtitle: tr('通过分享链接播放的歌曲起播失败时：暂停播放，或按来源信息走插件换源重播同一首歌'),
             trailing: Text(
               _sharePlaybackFailureBehaviorLabel(
                 s?.sharePlaybackFailureBehavior ?? 'pause',
@@ -887,7 +906,10 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
     ];
   }
 
-  Future<void> _editDlnaRendererName(BuildContext context, WidgetRef ref) async {
+  Future<void> _editDlnaRendererName(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final s = ref.read(settingsProvider).valueOrNull;
     final name = await showModernInputDialog(
       context: context,
@@ -920,7 +942,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
               icon: Icons.folder_outlined,
               title: tr('下载路径'),
               trailing: Text(
-                s?.downloadPath == null || s!.downloadPath.isEmpty ? tr('默认') : tr('自定义'),
+                s?.downloadPath == null || s!.downloadPath.isEmpty
+                    ? tr('默认')
+                    : tr('自定义'),
               ),
               onTap: () => _pickDownloadPath(context, ref, s),
             ),
@@ -935,7 +959,9 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.movie_outlined,
             title: tr('MV 默认画质'),
-            trailing: Text(_mvQualityKeyLabel(s?.onlineDefaultMvQuality ?? '720p')),
+            trailing: Text(
+              _mvQualityKeyLabel(s?.onlineDefaultMvQuality ?? '720p'),
+            ),
             onTap: () => _pickMvQuality(context, ref, s),
           ),
           _tile(
@@ -1076,8 +1102,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       await n.setEnablePredictiveBack(false);
       return;
     }
-    if (PlatformCaps.isAndroid &&
-        await SystemUiChannel.androidSdkInt() < 33) {
+    if (PlatformCaps.isAndroid && await SystemUiChannel.androidSdkInt() < 33) {
       if (context.mounted) showXianYuToast(context, tr('需要 Android 13+'));
       return;
     }
