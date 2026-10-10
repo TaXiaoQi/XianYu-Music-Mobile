@@ -93,6 +93,13 @@ dependencies:
 
   # 诊断日志分享（Android 系统分享面板）
   share_plus: ^13.3.0
+  # 鸿蒙原生实现（仅声明 ohos 平台，Android/iOS 构建零参与）：
+  # vendor 自 SIG flutter_plus_plugins 的 share_plus 适配（br_share_plus-
+  # v10.1.1_ohos），剥 Dart 层 + 补 10+ 协议的 share 方法文件参数路由，
+  # 官方主包经同名 MethodChannel 直连鸿蒙系统分享面板，
+  # 详见 third_party/share_plus_ohos/README.md
+  share_plus_ohos:
+    path: third_party/share_plus_ohos
   record: ^7.1.1
   # 扫码登录（2026-09-12 起替代 mobile_scanner/MLKit，APK 约减 2~3MB）：
   # camera（CameraX 预览 + YUV 帧流）+ zxing2（纯 Dart ZXing 移植，无原生库）。

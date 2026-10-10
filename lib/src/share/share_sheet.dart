@@ -339,25 +339,45 @@ Future<void> _shareViaQQ(
     return;
   }
 
-  var coverPath = '';
-  try {
-    if (coverFile != null) {
-      coverPath = (await _resizeCoverForShare(coverFile))?.path ?? coverFile.path;
-    }
-  } catch (e) {
-    AppLog.debug('share', '压缩分享封面失败: $e');
-  }
-
   final artist = song.artist.isEmpty ? tr('未知歌手') : song.artist;
-  final useMusicCard = scene == TencentScene.kScene_QQ;
-  final result = await qq.share(
-    scene: scene,
-    title: song.title,
-    summary: artist,
-    targetUrl: url,
-    coverPath: coverPath,
-    musicUrl: useMusicCard ? url : null,
-  );
+
+  QqShareResult result;
+  if (PlatformCaps.isOhos) {
+    // 鸿蒙走 QQ 开放平台 ark 图文，仅支持网络封面，无音乐卡片
+    var coverUrl = '';
+    try {
+      coverUrl = await ref.read(shareServiceProvider).resolveCover(song2);
+    } catch (e) {
+      AppLog.debug('share', '解析网络封面失败: $e');
+    }
+    result = await qq.shareHarmony(
+      scene: scene,
+      title: song.title,
+      summary: artist,
+      targetUrl: url,
+      coverUrl: coverUrl,
+    );
+  } else {
+    var coverPath = '';
+    try {
+      if (coverFile != null) {
+        coverPath =
+            (await _resizeCoverForShare(coverFile))?.path ?? coverFile.path;
+      }
+    } catch (e) {
+      AppLog.debug('share', '压缩分享封面失败: $e');
+    }
+
+    final useMusicCard = scene == TencentScene.kScene_QQ;
+    result = await qq.share(
+      scene: scene,
+      title: song.title,
+      summary: artist,
+      targetUrl: url,
+      coverPath: coverPath,
+      musicUrl: useMusicCard ? url : null,
+    );
+  }
 
   switch (result) {
     case QqShareResult.success:

@@ -139,4 +139,18 @@ abstract class TencentKitPlatform extends PlatformInterface {
     throw UnimplementedError(
         'shareWebpage({required scene, required title, summary, imageUri, required targetUrl, appName, extInt}) has not been implemented.');
   }
+
+  /// 分享 - Ark 图文（鸿蒙 QQ 开放平台专用）
+  ///
+  /// shareJson/timestamp/nonce/sign 均由业务后台组装并签名（HMAC-SHA1）。
+  Future<void> shareArk({
+    required int scene,
+    required String shareJson,
+    required int timestamp,
+    required int nonce,
+    required String sign,
+  }) {
+    throw UnimplementedError(
+        'shareArk({required scene, required shareJson, required timestamp, required nonce, required sign}) has not been implemented.');
+  }
 }

@@ -15,6 +15,9 @@ import {
   QQOpenApiFactory,
   ApiCallback,
   AuthResponse,
+  ShareData,
+  ShareResult,
+  ShareResultType,
 } from '@tencent/qq-open-sdk'
 import { AbilityConstant, Want } from '@kit.AbilityKit';
 
@@ -121,6 +124,9 @@ export default class TencentKitPlugin implements FlutterPlugin, MethodCallHandle
       case "loginServerSide":
         this.loginServerSide(call, result);
         break;
+      case "shareArk":
+        this.shareArk(call, result);
+        break;
       default:
         result.notImplemented();
     }
@@ -152,5 +158,56 @@ export default class TencentKitPlugin implements FlutterPlugin, MethodCallHandle
       networkTimeout: 0, // 不限制, 由 SDK 自行决定
     }, this.authListener);
     result.success(null);
+  }
+
+  // 鸿蒙 QQ 开放平台分享: scene 0=QQ 好友(ark 图文 type 2), 1=QZone(图文 type 3009)。
+  // shareJson/timestamp/nonce/shareJsonSign 由业务后台签名组装, 客户端只透传。
+  private shareArk(call: MethodCall, result: MethodResult) {
+    if (this.tencent == null) {
+      this.sendShareResp(TencentRetCode.RET_FAILED, "QQOpenApi not initialized");
+      result.success(null);
+      return;
+    }
+    const scene: number = call.argument("scene") as number;
+    // 鸿蒙 SDK 无音乐卡片类型, 好友分享降级为 ark 图文
+    const type: number = scene == 1 ? 3009 : 2;
+    const data: ShareData = new ShareData();
+    data.shareJson = call.argument("shareJson") as string;
+    data.timestamp = call.argument("timestamp") as number;
+    data.nonce = call.argument("nonce") as number;
+    data.shareJsonSign = call.argument("shareJsonSign") as string;
+    const shareListener: ApiCallback<ShareResult> = {
+      onComplete: (shareResult: ShareResult): void => {
+        let ret: number;
+        switch (shareResult.resultType) {
+          case ShareResultType.Success:
+            ret = TencentRetCode.RET_SUCCESS;
+            break;
+          case ShareResultType.Cancel:
+            ret = TencentRetCode.RET_CANCEL;
+            break;
+          default:
+            ret = TencentRetCode.RET_FAILED;
+        }
+        this.sendShareResp(ret, shareResult.message);
+        result.success(null);
+      },
+      onError: (msg: string | null): void => {
+        this.sendShareResp(TencentRetCode.RET_FAILED, msg);
+        result.success(null);
+      },
+      onCancel: (msg: string | null): void => {
+        this.sendShareResp(TencentRetCode.RET_CANCEL, msg);
+        result.success(null);
+      }
+    }
+    this.tencent.share(type, data, undefined, shareListener);
+  }
+
+  private sendShareResp(ret: number, msg: string | undefined | null): void {
+    const resp: Map<string, Any> = new Map();
+    resp.set(KEY_RET_CODE, ret);
+    resp.set(KEY_RET_MSG, msg);
+    this.channel?.invokeMethod("onShareResp", resp);
   }
 }

@@ -25,7 +25,7 @@ abstract final class PlatformCaps {
 
   static bool get supportsCustomDownloadDir => isAndroid;
 
-  static bool get supportsQQShare => isAndroid || isIOS;
+  static bool get supportsQQShare => isAndroid || isIOS || isOhos;
 
   static bool get supportsInAppUpdate => isAndroid;
 

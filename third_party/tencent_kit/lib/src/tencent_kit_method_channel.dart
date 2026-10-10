@@ -214,4 +214,24 @@ class MethodChannelTencentKit extends TencentKitPlatform {
       },
     );
   }
+
+  @override
+  Future<void> shareArk({
+    required int scene,
+    required String shareJson,
+    required int timestamp,
+    required int nonce,
+    required String sign,
+  }) {
+    return methodChannel.invokeMethod<void>(
+      'shareArk',
+      <String, dynamic>{
+        'scene': scene,
+        'shareJson': shareJson,
+        'timestamp': timestamp,
+        'nonce': nonce,
+        'shareJsonSign': sign,
+      },
+    );
+  }
 }
