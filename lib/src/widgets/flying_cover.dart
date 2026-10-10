@@ -22,8 +22,15 @@ class FlyingCover {
   /// 播放条 → 播放页的飞行封面用它的实时矩形作目标
   Rect Function()? outboundTargetProvider;
 
+  /// 目标封面圆角（FlyingCoverAnchor 挂载）：传统播放页大封面为圆形
+  /// 唱片，飞行副本目标圆角 = 起点宽度/2；沉浸式封面为全宽直角图，
+  /// 锚点上报 0，飞行副本落成直角与真封面形状对齐。
+  double? outboundTargetRadius;
+
   /// true = 目标端真封面在飞行期间隐藏（飞行副本是唯一封面），
-  /// 落地瞬间恢复显示，副本 0.92→0 淡出正好叠回真封面
+  /// 落地瞬间恢复显示，副本 0.92→0 淡出正好叠回真封面。
+  /// 沉浸式封面的「真封面」是页面背景层（不可藏），锚点声明
+  /// hideOnFly=false 后飞行期间背景保持可见，副本落地淡出融入。
   final ValueNotifier<bool> targetHidden = ValueNotifier<bool>(false);
 
   void attach(OverlayState overlay) => _overlay = overlay;
@@ -92,6 +99,7 @@ class FlyingCover {
         networkUrl: networkUrl,
         thumbPath: thumbPath,
         radius: radius,
+        targetRadius: outboundTargetRadius,
         onLanded: () {
           if (id == _flyId) {
             // 落地：真封面恢复显示，副本随后淡出叠回
@@ -189,10 +197,26 @@ Future<bool> launchFlyCover(
 /// 播放页封面锚点：把播放页大封面的实时矩形注册为
 /// [FlyingCover.outboundTargetProvider]，供播放条 → 播放页的
 /// 飞行封面取目标（播放条在 Navigator 之外，Hero 无法配对）。
+///
+/// [rectOverride]：沉浸式封面等「真封面是整块背景」的布局无法直接把
+/// 锚点 child 当作飞行目标（整块矩形非方形、中心落在渐变区），传一个
+/// 返回全局矩形的闭包作为飞行目标（沉浸式取上半屏顶部全宽正方形）。
+/// [hideOnFly]=false：飞行期间不隐藏 child——沉浸式封面的 child 就是
+/// 页面背景层，藏掉会让上半屏在飞行期间空白。
+/// [targetRadius]：上报目标圆角（沉浸式全宽直角 = 0）。
 class FlyingCoverAnchor extends StatefulWidget {
-  const FlyingCoverAnchor({super.key, required this.child});
+  const FlyingCoverAnchor({
+    super.key,
+    required this.child,
+    this.rectOverride,
+    this.hideOnFly = true,
+    this.targetRadius,
+  });
 
   final Widget child;
+  final Rect Function()? rectOverride;
+  final bool hideOnFly;
+  final double? targetRadius;
 
   @override
   State<FlyingCoverAnchor> createState() => _FlyingCoverAnchorState();
@@ -202,6 +226,11 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
   late final Rect Function() _provider = _computeProviderRect;
 
   Rect _computeProviderRect() {
+    final over = widget.rectOverride;
+    if (over != null) {
+      final r = over();
+      if (!r.isEmpty) return r;
+    }
     final ro = context.findRenderObject();
     if (ro is RenderBox && ro.attached && ro.hasSize) {
       return ro.localToGlobal(Offset.zero) & ro.size;
@@ -213,18 +242,21 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
   void initState() {
     super.initState();
     FlyingCover.instance.outboundTargetProvider = _provider;
+    FlyingCover.instance.outboundTargetRadius = widget.targetRadius;
   }
 
   @override
   void dispose() {
     if (identical(FlyingCover.instance.outboundTargetProvider, _provider)) {
       FlyingCover.instance.outboundTargetProvider = null;
+      FlyingCover.instance.outboundTargetRadius = null;
     }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.hideOnFly) return widget.child;
     return ValueListenableBuilder<bool>(
       valueListenable: FlyingCover.instance.targetHidden,
       builder: (context, hidden, _) => Opacity(
@@ -244,6 +276,7 @@ class _FlyingCoverOverlay extends StatefulWidget {
     required this.networkUrl,
     required this.thumbPath,
     required this.radius,
+    required this.targetRadius,
     required this.onLanded,
     required this.onDone,
   });
@@ -254,6 +287,10 @@ class _FlyingCoverOverlay extends StatefulWidget {
   final String? networkUrl;
   final String? thumbPath;
   final double radius;
+
+  /// 目标端封面圆角：null = 旧行为（圆形唱片，起点宽度/2）；
+  /// 沉浸式锚点上报 0（全宽直角图）。
+  final double? targetRadius;
   final VoidCallback onLanded;
   final VoidCallback onDone;
 
@@ -296,11 +333,15 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     final bottom = MediaQuery.of(context).padding.bottom;
     _fallbackRect = Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
 
-    // 飞行副本解码宽度按目的地大封面（播放页竖屏 coverSize = 屏宽×0.68）
-    // 计算，并与真封面一样走 highQuality 全图：与播放页同文件同解码宽度
-    // → FileImage 缓存命中同一条目，飞行全程清晰且落地无二次解码跳变
-    _cacheWidth = ((size.shortestSide * 0.68) *
-            MediaQuery.of(context).devicePixelRatio)
+    // 飞行副本解码宽度按目的地大封面计算，并与真封面一样走 highQuality
+    // 全图：与播放页同文件同解码宽度 → FileImage 缓存命中同一条目，飞行
+    // 全程清晰且落地无二次解码跳变。传统播放页竖屏 coverSize = 屏宽×0.68；
+    // 沉浸式封面目标为全宽矩形，按锚点实时矩形宽度取值（未就绪回落屏宽）。
+    final t0 = widget.targetProvider?.call();
+    final targetW = (t0 != null && !t0.isEmpty && t0.width > 0)
+        ? t0.width
+        : size.shortestSide * 0.68;
+    _cacheWidth = (targetW * MediaQuery.of(context).devicePixelRatio)
         .round()
         .clamp(1, 1600);
 
@@ -329,7 +370,10 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
   }
 
   double _radius(double t) {
-    final targetRadius = widget.fromRect.width / 2;
+    // 目标圆角：锚点上报值优先（沉浸式全宽直角 = 0）；无上报按旧行为
+    // 走圆形唱片（起点宽度/2）。
+    final targetRadius =
+        widget.targetRadius ?? widget.fromRect.width / 2;
     return widget.radius + (targetRadius - widget.radius) * t;
   }
 

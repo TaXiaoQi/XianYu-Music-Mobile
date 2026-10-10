@@ -19,12 +19,14 @@ class PredictiveCoverReturn {
     String? networkUrl,
     String? thumbPath,
     required Rect Function() rectProvider,
+    double? radiusHint,
   }) {
     final s = _source ??= _ReturnSource();
     s.rectProvider = rectProvider;
     s.songPath = songPath;
     s.networkUrl = networkUrl;
     s.thumbPath = thumbPath;
+    s.radiusHint = radiusHint;
   }
 
   void updateSource({String? songPath, String? networkUrl, String? thumbPath}) {
@@ -43,6 +45,10 @@ class PredictiveCoverReturn {
   }
 
   Rect get sourceRect => _source?.rectProvider?.call() ?? Rect.zero;
+
+  /// 源封面圆角：沉浸式封面为全宽直角图，锚点上报 0；未上报按
+  /// min(32, 宽×0.08) 估算（传统列表卡片圆角）。
+  double? get sourceRadius => _source?.radiusHint;
 
   (String?, String?, String?) get coverSource {
     final s = _source;
@@ -67,6 +73,7 @@ class _ReturnSource {
   String? networkUrl;
   String? thumbPath;
   Rect Function()? rectProvider;
+  double? radiusHint;
 }
 
 class CoverReturnSource extends StatefulWidget {
@@ -76,12 +83,21 @@ class CoverReturnSource extends StatefulWidget {
     this.songPath,
     this.networkUrl,
     this.thumbPath,
+    this.rectOverride,
+    this.radiusHint,
   });
 
   final Widget child;
   final String? songPath;
   final String? networkUrl;
   final String? thumbPath;
+
+  /// 沉浸式封面等「真封面是整块背景」的布局：返回飞行的源矩形取
+  /// 该闭包（沉浸式取上半屏顶部全宽正方形），而非整块 child 矩形。
+  final Rect Function()? rectOverride;
+
+  /// 源封面圆角提示（沉浸式直角图 = 0），见 [PredictiveCoverReturn.sourceRadius]。
+  final double? radiusHint;
 
   @override
   State<CoverReturnSource> createState() => _CoverReturnSourceState();
@@ -92,6 +108,11 @@ class _CoverReturnSourceState extends State<CoverReturnSource> {
   bool _registered = false;
   // ignore: prefer_function_declarations_over_variables
   late final Rect Function() _provider = () {
+    final over = widget.rectOverride;
+    if (over != null) {
+      final r = over();
+      if (!r.isEmpty) return r;
+    }
     final ctx = _key.currentContext;
     if (ctx == null || !ctx.mounted) return Rect.zero;
     final ro = ctx.findRenderObject();
@@ -111,6 +132,7 @@ class _CoverReturnSourceState extends State<CoverReturnSource> {
         networkUrl: widget.networkUrl,
         thumbPath: widget.thumbPath,
         rectProvider: _provider,
+        radiusHint: widget.radiusHint,
       );
     } else {
       PredictiveCoverReturn.instance.updateSource(
@@ -236,7 +258,10 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
             final p2 = target.center;
             final s0 = src.width;
             final s1 = target.width;
-            final srcRadius = math.min(32.0, s0 * 0.08);
+            // 源圆角：锚点上报优先（沉浸式全宽直角 = 0）；未上报按
+            // min(32, 宽×0.08) 估算（传统列表卡片圆角）
+            final srcRadius = PredictiveCoverReturn.instance.sourceRadius ??
+                math.min(32.0, s0 * 0.08);
             final dstRadius = s1 / 2;
 
             final raw = (1 - widget.animation.value).clamp(0.0, 1.0);
