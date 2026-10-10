@@ -42,6 +42,7 @@ import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../../pages/playlist/playlist_import_page.dart';
 import '../../pages/download/download_page.dart';
+import '../../pages/download/download_move_page.dart';
 import '../../pages/settings/batch_rename_page.dart';
 import '../../pages/remote/remote_library_page.dart';
 import '../../pages/tools/qmc_decrypt_page.dart';
@@ -356,6 +357,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _coverBackPage(
         context,
         (_) => const HideShellChrome(child: DownloadPage()),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/download-move',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const HideShellChrome(child: DownloadMovePage()),
         key: state.pageKey,
       ),
     ),

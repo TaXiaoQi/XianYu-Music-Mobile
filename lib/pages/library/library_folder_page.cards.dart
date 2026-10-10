@@ -138,6 +138,7 @@ class _ScanFoldersCard extends ConsumerWidget {
     required this.lost,
     required this.adding,
     this.importMode = false,
+    this.onAddFolder,
     required this.onAdd,
     required this.onRemove,
     required this.onReauthorize,
@@ -147,6 +148,9 @@ class _ScanFoldersCard extends ConsumerWidget {
   final List<String> lost;
   final bool adding;
   final bool importMode;
+
+  /// 沙盒模式（鸿蒙）的「导入文件夹」入口：folder picker 批量物化。
+  final VoidCallback? onAddFolder;
   final VoidCallback? onAdd;
   final void Function(String path) onRemove;
   final void Function(String path) onReauthorize;
@@ -178,6 +182,12 @@ class _ScanFoldersCard extends ConsumerWidget {
                       fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 const Spacer(),
+                if (onAddFolder != null)
+                  IconButton(
+                    tooltip: tr('导入文件夹'),
+                    onPressed: adding ? null : onAddFolder,
+                    icon: const Icon(Icons.folder_open),
+                  ),
                 IconButton(
                   tooltip: importMode ? tr('导入音频文件') : tr('添加目录'),
                   onPressed: onAdd,
@@ -197,7 +207,7 @@ class _ScanFoldersCard extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
               child: Text(
                 importMode
-                    ? tr('沙盒目录（下载/导入的音乐）会自动扫描；也可点击右上角「+」导入音频文件')
+                    ? tr('沙盒目录（下载/导入的音乐）会自动扫描；右上角可导入文件夹或音频文件')
                     : tr('还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）'),
                 style: TextStyle(
                     fontSize: 12, color: scheme.onSurfaceVariant),

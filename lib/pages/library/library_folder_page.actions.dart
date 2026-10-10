@@ -60,6 +60,46 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
+  /// 鸿蒙「导入文件夹」：系统 folder picker 临时授权 → 递归列音频 →
+  /// 复制进沙盒 `Music/<folderName>/` → 加入扫描目录并扫描。授权不持久化，
+  /// 重启后扫描的是沙盒副本（与 _importFiles 单文件导入同一物化模型）。
+  Future<void> _importFolder() async {
+    setState(() => _adding = true);
+    try {
+      final uri = await OhosFolderChannel.pickFolder();
+      if (uri == null || !mounted) return;
+      final docs = await getApplicationDocumentsDirectory();
+      final segs = Uri.parse(uri).pathSegments.where((s) => s.isNotEmpty);
+      final folderName = segs.isEmpty ? 'imported' : segs.last;
+      final destDir = Directory(p.join(docs.path, 'Music', folderName));
+      await destDir.create(recursive: true);
+      final files = await OhosFolderChannel.listAudioFiles(
+          uri, _LibraryFolderPageState._audioExts);
+      if (!mounted) return;
+      if (files.isEmpty) {
+        _toast(tr('该文件夹内没有受支持的音频文件'));
+        return;
+      }
+      final imported = await OhosFolderChannel.importFiles(
+        folderUri: uri,
+        rels: [for (final f in files) f.rel],
+        destDir: destDir.path,
+      );
+      if (!mounted) return;
+      if (imported == 0) {
+        _toast(tr('导入失败，文件可能已被移动或删除'));
+        return;
+      }
+      _toast(tr('{n} 个文件已导入，开始扫描', {'n': imported}));
+      await ref.read(scanFoldersProvider.notifier).addFolder(destDir.path);
+      await _startScan();
+    } catch (e) {
+      _toast('导入失败：$e');
+    } finally {
+      if (mounted) setState(() => _adding = false);
+    }
+  }
+
   Future<bool> _ensureStoragePermission() async {
     if (!Platform.isAndroid) return true;
     final sdkInt = await SafChannel.androidSdkInt();

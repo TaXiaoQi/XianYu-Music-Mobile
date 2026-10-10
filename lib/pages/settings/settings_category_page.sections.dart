@@ -936,6 +936,15 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       _sectionHeader(context, tr('下载')),
       _CardGroup(
         children: [
+          if (PlatformCaps.supportsSandboxLibrary)
+            _tile(
+              context,
+              icon: Icons.drive_file_move_outline,
+              title: tr('批量移动'),
+              subtitle: tr('把下载的歌曲批量移动到手机公共目录（音乐/Documents 等）'),
+              trailing: const SizedBox.shrink(),
+              onTap: () => context.push('/download-move'),
+            ),
           if (PlatformCaps.supportsCustomDownloadDir)
             _tile(
               context,

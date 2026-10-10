@@ -74,6 +74,9 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           lost: lost,
                           adding: _adding,
                           importMode: PlatformCaps.supportsSandboxLibrary,
+                          onAddFolder: PlatformCaps.supportsSandboxLibrary
+                              ? _importFolder
+                              : null,
                           onAdd: _adding
                               ? null
                               : (PlatformCaps.supportsSandboxLibrary
@@ -226,6 +229,10 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                               adding: _adding,
                               importMode:
                                   PlatformCaps.supportsSandboxLibrary,
+                              onAddFolder:
+                                  PlatformCaps.supportsSandboxLibrary
+                                      ? _importFolder
+                                      : null,
                               onAdd: _adding
                                   ? null
                                   : (PlatformCaps.supportsSandboxLibrary
