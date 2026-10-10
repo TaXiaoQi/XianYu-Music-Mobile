@@ -177,7 +177,7 @@ class _DailyCard extends ConsumerWidget {
         ),
       );
     }
-    final items = state?.items.take(3).toList() ?? const [];
+    final items = state?.items.take(5).toList() ?? const [];
     return _CardContainer(
       // 该区块在竖屏首页与横屏发现页共用（_discoverBlocks 两处渲染），
       // 而槽位是横屏专属，必须按方向判定，不能写死 ls- 槽。

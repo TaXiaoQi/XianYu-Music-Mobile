@@ -55,8 +55,15 @@ Widget _themedImage(
   BoxFit fit = BoxFit.contain,
   required Widget fallback,
 }) {
-  final w = width ?? size;
-  final h = height ?? size;
+  // 尺寸完全未指定时回落 24（对齐 IconTheme 默认）：Image 无尺寸约束
+  // 会按原始分辨率渲染，不传 size 的槽位（如顶部导航）自定义图会爆大小；
+  // 部分指定（如贴纸只给 width）保持另一维自由以维持宽高比
+  double? w = width ?? size;
+  double? h = height ?? size;
+  if (w == null && h == null) {
+    w = 24;
+    h = 24;
+  }
   if (url.startsWith('data:')) {
     final bytes = _decodeDataUrl(url);
     if (bytes == null) {
