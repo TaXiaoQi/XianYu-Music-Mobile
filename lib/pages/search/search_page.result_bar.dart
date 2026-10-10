@@ -81,7 +81,14 @@ extension _SearchResultPageSources on _SearchResultPageState {
     final initial = sessionSource.isNotEmpty ? sessionSource : result.first.id;
 
     if (result.length > 1) {
-      _pageCtrl ??= PageController();
+      // PageView 需要知道初始页，否则会话恢复时选中态在第 N 页而视图停在
+      // 第 0 页——点第 0 页气泡 animateToPage 同页不触发 onPageChanged，
+      // 选中态永远卡在 N（表现为「点气泡无法切换列表」）。
+      _pageCtrl ??= PageController(
+        initialPage: result.indexWhere((s) => s.id == initial) < 0
+            ? 0
+            : result.indexWhere((s) => s.id == initial),
+      );
       for (final s in result) {
         _sourceKeys[s.id] ??= GlobalKey();
       }
@@ -103,8 +110,13 @@ extension _SearchResultPageSources on _SearchResultPageState {
     final newIdx = _sources.indexWhere((s) => s.id == id);
     if (newIdx == -1) return;
     final ctrl = _pageCtrl;
-    if (ctrl != null) {
-      if (!ctrl.hasClients) return;
+    if (ctrl != null && ctrl.hasClients) {
+      // 乐观同步选中态：animateToPage 落在当前页时 onPageChanged 不会回调
+      // （如 _refreshSources 重跑后 controller 停在旧页），不能依赖回调。
+      final changed = id != _selectedSourceId;
+      _selectedSourceId = id;
+      ref.read(searchSessionProvider.notifier).setSource(id);
+      if (changed) setState(() {});
       ctrl.animateToPage(
         newIdx,
         duration: const Duration(milliseconds: 300),
@@ -112,9 +124,24 @@ extension _SearchResultPageSources on _SearchResultPageState {
       );
       return;
     }
+    // PageView 未挂载（controller 无 client）时不能静默 return，否则点击
+    // 气泡毫无反应；直接同步选中态，视图挂载后按 initialPage 对齐。
     _selectedSourceId = id;
     ref.read(searchSessionProvider.notifier).setSource(id);
     setState(() {});
+    _ensureVisibleSource(id);
+  }
+
+  void _ensureVisibleSource(String id) {
+    final ctx = _sourceKeys[id]?.currentContext;
+    if (ctx != null) {
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.fastLinearToSlowEaseIn,
+        alignment: 0.5,
+      );
+    }
   }
 
   Widget _buildSourceBar({bool floating = false}) {
