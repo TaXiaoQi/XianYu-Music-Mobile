@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -455,7 +456,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     if (ro is! RenderRepaintBoundary) {
       return;
     }
-    if (ro.debugNeedsPaint) {
+    // debugNeedsPaint 是 debug-only API（release 下一读即抛
+    // LateInitializationError），必须用 kDebugMode 短路。
+    if (kDebugMode && ro.debugNeedsPaint) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && (_frozen == null || _frozenIsChromeFrame)) _capture();
       });

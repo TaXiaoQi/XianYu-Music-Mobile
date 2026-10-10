@@ -1,4 +1,4 @@
-﻿part of 'player_page.dart';
+part of 'player_page.dart';
 
 class _LyricWordItem {
   final String text;
@@ -235,7 +235,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     if (boundary == null ||
         !boundary.attached ||
         !boundary.hasSize ||
-        boundary.debugNeedsPaint) {
+        // debugNeedsPaint 是 debug-only API（release 下内部 late 未初始
+        // 化，一读即抛 LateInitializationError），必须用 kDebugMode 短路。
+        (kDebugMode && boundary.debugNeedsPaint)) {
       return;
     }
     final dpr = MediaQuery.of(
