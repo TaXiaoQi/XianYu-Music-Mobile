@@ -16,19 +16,16 @@ final pageIdProvider = Provider<String?>((ref) => null);
 /// 竖屏/横屏各自成页：home 与 ls-home 是包内两个独立槽位。
 String? pageIdForLocation(String? location, {required bool landscape}) {
   if (location == null || location.isEmpty) return null;
-  // 设置域页面（一级页 /settings + 各分类二级页 /settings/:category、
-  // /settings/account）共用同一个壁纸槽位，二级页与一级页观感一致。
-  if (location == '/settings' || location.startsWith('/settings/')) {
-    return landscape ? 'ls-settings' : 'settings';
-  }
   if (landscape) {
     return switch (location) {
       '/player' => 'ls-player',
+      '/settings' => 'ls-settings',
       _ => null,
     };
   }
   return switch (location) {
     '/player' => 'player',
+    '/settings' => 'settings',
     '/recognize' => 'recognize',
     '/search' => 'search',
     '/search/result' => 'search_result',
@@ -82,3 +79,13 @@ final pageWallpaperProvider = Provider<CustomBackground?>((ref) {
 final pageWallpaperActiveProvider = Provider<bool>((ref) {
   return ref.watch(pageWallpaperProvider) != null;
 }, dependencies: [pageWallpaperProvider]);
+
+/// 主题包是否处于「壁纸模式」：已启用主题包且包内定义了任意页面壁纸。
+/// shell 顶栏/底栏、mini 条等 chrome 在 PageWallpaperScope 之外拿不到
+/// pageId，据此回落全局口径跟随壁纸玻璃观感（色块半透明），不再在
+/// 主题壁纸页上落实底白；主题包壁纸通常整包配置，误差仅出现在
+/// 「只配部分页」的包在未配壁纸页 chrome 变半透明，观感仍成立。
+final themeWallpaperAnyProvider = Provider<bool>((ref) {
+  return ref.watch(themeLibraryProvider
+      .select((s) => s.active?.wallpapers.isNotEmpty ?? false));
+});

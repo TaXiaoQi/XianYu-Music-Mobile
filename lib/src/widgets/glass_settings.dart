@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../theme/page_wallpaper.dart' show pageWallpaperActiveProvider, themeWallpaperAnyProvider;
 import '../theme/theme_tint.dart';
 import 'blur_budget.dart';
 
@@ -11,9 +12,14 @@ FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
         FrostedGlassLevel.medium));
 
+/// 壁纸模式玻璃观感开关：全局用户壁纸或主题包页面壁纸任一生效。
+/// 页面作用域内（RoutePageBackdrop/PageWallpaperScope 之下）按页精确
+/// 判定；shell chrome/根层 overlay 拿不到 pageId，由 [themeWallpaperAnyProvider]
+/// 回落全局口径——主题壁纸模式下顶栏/底栏/mini 条与用户壁纸模式同轨
+/// 走组件色块，不再落实底白（设置二级页上下白条根因）。
 bool wallpaperGlassActive(WidgetRef ref) =>
-    ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.customBackground.active ?? false));
+    ref.watch(pageWallpaperActiveProvider) ||
+    ref.watch(themeWallpaperAnyProvider);
 
 /// 材质是否实际在渲染：毛玻璃或液态玻璃任一开启且未开性能优先。
 /// 离屏缓存（路由快照/chrome 缓存帧/液态预烘焙）与渲显分离（0.01 保底
