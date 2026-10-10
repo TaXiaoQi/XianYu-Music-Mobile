@@ -238,6 +238,7 @@ final appRouter = GoRouter(
         context,
         (_) => const AccountSettingsPage(),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(
@@ -250,6 +251,7 @@ final appRouter = GoRouter(
           ),
         ),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(

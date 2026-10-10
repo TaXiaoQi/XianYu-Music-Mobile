@@ -1,4 +1,4 @@
-﻿part of 'player_page.dart';
+part of 'player_page.dart';
 
 class _MessageCircleIcon extends StatelessWidget {
   const _MessageCircleIcon({this.size = 24, this.color});
@@ -739,10 +739,12 @@ class _BlurredCoverBackground extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    // 主题包定义了播放页壁纸：整层替换封面模糊背景（静图，含遮罩/缩放参数）
+    // 主题包定义了播放页壁纸：外层路由作用域（PageWallpaperScope）已垫
+    // 不透明底 + 同图同参壁纸层，这里再垫会双层叠加（不透明度翻倍），
+    // 本层退透明让外层壁纸透出即可
     final themed = ref.watch(themedPageWallpaperProvider);
     if (themed != null) {
-      return RepaintBoundary(child: CustomBackgroundLayer(background: themed));
+      return const SizedBox.shrink();
     }
     final item = current;
     if (item == null) {

@@ -846,9 +846,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       scanFormats: _mergeScanFormats(prefs.getStringList('scanFormats')),
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
-      navBarPosition: (prefs.getString('navBarPosition') ?? 'bottom') == 'side'
-          ? NavBarPosition.side
-          : NavBarPosition.bottom,
+      navBarPosition:
+          NavBarPosition.values.asNameMap()[prefs.getString('navBarPosition')] ??
+              NavBarPosition.bottom,
       pageTransitionStyle:
           (prefs.getString('pageTransitionStyle') ?? 'cover') == 'smooth'
           ? PageTransitionStyle.smooth

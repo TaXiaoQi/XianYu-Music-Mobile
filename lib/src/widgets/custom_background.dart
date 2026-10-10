@@ -540,9 +540,13 @@ class PageWallpaperScope extends ConsumerWidget {
             .select((s) => s.active?.wallpapers[pageId!]));
     Widget inner = child;
     if (wp != null) {
+      // 垫不透明页面底色：根层（app.dart）恒画全局用户壁纸，主题壁纸层
+      // 本身半透明，不垫实底会把用户壁纸透出来（叠叠乐）。垫实底后主题
+      // 壁纸的 opacity 相对页面底色混合，与全局壁纸完全互斥。
       inner = Stack(
         fit: StackFit.expand,
         children: [
+          ColoredBox(color: appSurfaceBg(context)),
           CustomBackgroundLayer(
             background: pageWallpaperToCustomBackground(wp),
           ),
@@ -608,9 +612,11 @@ class RoutePageBackdrop extends ConsumerWidget {
       BuildContext context, WidgetRef ref, PageWallpaper? pageWp) {
     final plain = ColoredBox(color: appSurfaceBg(context), child: child);
     if (pageWp != null) {
-      // 主题包页面壁纸（静图）：整页垫层，转场随页面一起进出
+      // 主题包页面壁纸（静图）：整页垫层，转场随页面一起进出。
+      // 底垫不透明页面底色：根层全局用户壁纸在路由树之下恒绘制，
+      // 主题壁纸半透明不垫实底会与它叠加（叠叠乐）
       return ColoredBox(
-        color: Colors.transparent,
+        color: appSurfaceBg(context),
         child: Stack(
           fit: StackFit.expand,
           children: [

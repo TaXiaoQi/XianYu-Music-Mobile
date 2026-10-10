@@ -16,16 +16,19 @@ final pageIdProvider = Provider<String?>((ref) => null);
 /// 竖屏/横屏各自成页：home 与 ls-home 是包内两个独立槽位。
 String? pageIdForLocation(String? location, {required bool landscape}) {
   if (location == null || location.isEmpty) return null;
+  // 设置域页面（一级页 /settings + 各分类二级页 /settings/:category、
+  // /settings/account）共用同一个壁纸槽位，二级页与一级页观感一致。
+  if (location == '/settings' || location.startsWith('/settings/')) {
+    return landscape ? 'ls-settings' : 'settings';
+  }
   if (landscape) {
     return switch (location) {
       '/player' => 'ls-player',
-      '/settings' => 'ls-settings',
       _ => null,
     };
   }
   return switch (location) {
     '/player' => 'player',
-    '/settings' => 'settings',
     '/recognize' => 'recognize',
     '/search' => 'search',
     '/search/result' => 'search_result',
