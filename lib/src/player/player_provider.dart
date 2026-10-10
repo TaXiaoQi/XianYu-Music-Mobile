@@ -19,6 +19,7 @@ import '../auth/account_api.dart';
 import '../core/application_logger.dart';
 import '../core/diagnostics.dart';
 import '../core/db_path.dart';
+import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../download/download_provider.dart';
 import '../effects/sound_effect_provider.dart';
@@ -87,7 +88,14 @@ class _StartOnlineTimeoutException implements Exception {
 BeforePlayGate? beforePlayGate;
 
 class _GatedAudioPlayer extends AudioPlayer {
-  _GatedAudioPlayer() : super(handleInterruptions: false);
+  _GatedAudioPlayer()
+      : super(
+          handleInterruptions: false,
+          // 鸿蒙不走 just_audio 内置本地代理：在线流的 headers/Range/206 全由
+          // app 侧 AudioProxyServer（AudioHeadCache）自足代理，AVPlayer 直连它
+          // 即可；内置代理层在鸿蒙上曾致在线播放静默失败（fatal/404），绕开。
+          useProxyForRequestHeaders: !PlatformCaps.isOhos,
+        );
 
   @override
   Future<void> play() async {

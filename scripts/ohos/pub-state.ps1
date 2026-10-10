@@ -64,7 +64,54 @@ function Enter-XianyuOhosPubState {
     # pub get（热缓存 ~10s）。
     Remove-Item (Join-Path $Root '.dart_tool\package_config.json') -Force -ErrorAction SilentlyContinue
     Remove-Item (Join-Path $Root '.flutter-plugins-dependencies') -Force -ErrorAction SilentlyContinue
+    Add-XianyuJustAudioProxyGuard -Root $Root
     Write-Host '[ohos-pub] entered ohos dependency state (overrides + forced re-resolution)'
+}
+
+# just_audio 鸿蒙 fork 代理补丁（幂等）：AVPlayer 切源后仍用旧 key 重放请求，
+# fork 的 `_handlerMap[uriPath]!` 未命中即 Null check 崩 isolate（在线播放
+# FATAL，2026-10-10）。fork checkout 由 pub 以锁定 hash 管理，一般不会重建；
+# 本补丁每次进 ohos 态时幂等执行，清缓存后也能自动恢复。
+# 主工程 vendored third_party/just_audio（android 态用）已带同款修复。
+function Add-XianyuJustAudioProxyGuard {
+    param([Parameter(Mandatory)] [string]$Root)
+    # pub cache 在 workspace 根 .tools（也可能在主工程内），两处都找
+    $caches = @((Join-Path (Split-Path $Root -Parent) '.tools\pub-cache\git'),
+                (Join-Path $Root '.tools\pub-cache\git'))
+    $files = $caches | Where-Object { Test-Path $_ } | ForEach-Object {
+        Get-ChildItem $_ -Directory -Filter 'fluttertpc_just_audio-*' -ErrorAction SilentlyContinue
+    } | ForEach-Object { Join-Path $_.FullName 'just_audio\lib\just_audio.dart' } |
+        Where-Object { Test-Path $_ } | Select-Object -Unique
+    foreach ($f in $files) {
+        $text = [System.IO.File]::ReadAllText($f)
+        $old = @'
+      if (request.method == 'GET') {
+        final uriPath = _requestKey(request.uri);
+        final handler = _handlerMap[uriPath]!;
+        handler(this, request);
+      }
+'@
+        if (-not $text.Contains($old)) { continue }
+        $new = @'
+      if (request.method == 'GET') {
+        final uriPath = _requestKey(request.uri);
+        final handler = _handlerMap[uriPath];
+        if (handler == null) {
+          // 播放器可能在切换源后仍用旧 key 重放请求（鸿蒙 AVPlayer 预加载/
+          // 续传行为），未命中时返回 404 而非 Null check 崩掉 isolate。
+          try {
+            request.response.statusCode = HttpStatus.notFound;
+            await request.response.close();
+          } catch (_) {}
+          return;
+        }
+        handler(this, request);
+      }
+'@
+        $utf8 = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::WriteAllText($f, $text.Replace($old, $new), $utf8)
+        Write-Host "[ohos-pub] patched just_audio proxy guard -> $f" -ForegroundColor DarkCyan
+    }
 }
 
 # 退出鸿蒙态。-KeepState（驻留态模型默认）：仅释放互斥标记，overrides/

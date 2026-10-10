@@ -2155,7 +2155,18 @@ class _ProxyHttpServer {
     _server.listen((request) async {
       if (request.method == 'GET') {
         final uriPath = _requestKey(request.uri);
-        final handler = _handlerMap[uriPath]!;
+        final handler = _handlerMap[uriPath];
+        if (handler == null) {
+          // 播放器可能在切换源后仍用旧 key 重放请求（如鸿蒙 AVPlayer 的
+          // 预加载/续传行为）。此处原为 `_handlerMap[uriPath]!`，未命中
+          // 会抛 Null check 崩掉 isolate；改为返回 404 关闭连接，由播放
+          // 器自行处理失败。
+          try {
+            request.response.statusCode = HttpStatus.notFound;
+            await request.response.close();
+          } catch (_) {}
+          return;
+        }
         handler(this, request);
       }
     }, onDone: () {

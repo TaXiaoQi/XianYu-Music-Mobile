@@ -239,6 +239,7 @@ extension PlayerNotifierOnline on PlayerNotifier {
       }
     }
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
+    final setUrlAt = DateTime.now();
     try {
       await _player.setUrl(playUrl,
               headers: h,
@@ -246,6 +247,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
                   ? Duration(milliseconds: (startAtSecs * 1000).round())
                   : null)
           .timeout(const Duration(seconds: 10));
+      AppLog.debug('play',
+          '[startOnlineUrl] setUrl 完成 ${DateTime.now().difference(setUrlAt).inMilliseconds}ms '
+          'proc=${_player.processingState} url=$playUrl');
     } on TimeoutException {
       AppLog.warn('play',
           '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
