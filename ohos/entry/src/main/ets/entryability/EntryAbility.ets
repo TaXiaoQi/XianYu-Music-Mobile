@@ -1,6 +1,8 @@
 
 import { FlutterAbility, FlutterEngine, MethodChannel } from '@ohos/flutter_ohos';
 import { GeneratedPluginRegistrant } from '../plugins/GeneratedPluginRegistrant';
+import { FolderImportChannel } from '../plugins/FolderImportChannel';
+import { DeviceInfoChannel } from '../plugins/DeviceInfoChannel';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { AbilityConstant, Want } from '@kit.AbilityKit';
 import { WatchLinkServerDispatcher } from './WatchLinkServerDispatcher';
@@ -12,6 +14,12 @@ export default class EntryAbility extends FlutterAbility {
   configureFlutterEngine(flutterEngine: FlutterEngine) {
     super.configureFlutterEngine(flutterEngine)
     GeneratedPluginRegistrant.registerWith(flutterEngine)
+    // 曲库「导入文件夹」通道：picker 选公共目录 → 物化进沙盒（免权限声明）
+    FolderImportChannel.attach(
+      flutterEngine.dartExecutor.getBinaryMessenger(), this.context)
+    // 设备信息通道：反馈/日志上报带品牌机型与鸿蒙版本号
+    DeviceInfoChannel.attach(
+      flutterEngine.dartExecutor.getBinaryMessenger(), this.context)
     // 手表联动 SPP 通道（ohos 服务端角色）：协议与安卓 WatchLink.kt
     // 一致（字节管道 + Dart 侧帧/心跳），实机差异见 WatchLinkServerDispatcher。
     WatchLinkServerDispatcher.attach(
@@ -49,7 +57,8 @@ export default class EntryAbility extends FlutterAbility {
   // general.javascript / general.audio 等 UTD + viewData）：把 want.uri 物化到
   // 沙盒缓存（沙盒副本不随原文件移动/删除失效），按类型封装成与 Android 端
   // MainActivity / iOS SceneDelegate 同构的 xianyu://open 深链，复用 Dart 派发
-  // 管线：.js 插件脚本 → target=plugin（导入插件）；音频 → target=file（直接播放）。
+  // 管线：.js 插件脚本 → target=plugin（导入插件）；.json 主题包 →
+  // target=theme（导入并应用）；音频 → target=file（直接播放）。
   private handleOpenWant(want: Want): void {
     const uri = want.uri;
     if (!uri) {
@@ -59,7 +68,10 @@ export default class EntryAbility extends FlutterAbility {
     const dot = fileName.lastIndexOf('.');
     const ext = dot > 0 ? fileName.substring(dot + 1).toLowerCase() : '';
     const isJs = ext === 'js';
-    if (!isJs && !EntryAbility.audioExtensions.has(ext)) {
+    // .json 主题包：文件管理器「打开」→ 导入并应用（target=theme）。
+    // 与 general.javascript（插件）/ general.audio（音频）同一管线。
+    const isTheme = ext === 'json';
+    if (!isJs && !isTheme && !EntryAbility.audioExtensions.has(ext)) {
       return;
     }
     try {
@@ -67,7 +79,7 @@ export default class EntryAbility extends FlutterAbility {
       const dest = `${this.context.cacheDir}/${fileName}`;
       fs.copyFileSync(src.fd, dest);
       fs.closeSync(src.fd);
-      const target = isJs ? 'plugin' : 'file';
+      const target = isJs ? 'plugin' : isTheme ? 'theme' : 'file';
       const link =
         `xianyu://open?target=${target}&name=${encodeURIComponent(fileName)}` +
         `&file=${encodeURIComponent(dest)}`;

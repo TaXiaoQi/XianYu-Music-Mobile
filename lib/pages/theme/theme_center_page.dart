@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +13,7 @@ import '../../src/i18n/i18n.dart';
 import '../../src/theme/remote_theme.dart';
 import '../../src/theme/remote_theme_store.dart';
 import '../../src/theme/remote_theme_tile.dart';
+import '../../src/theme/theme_icon.dart';
 import '../../src/theme/theme_package.dart';
 import '../../src/theme/theme_store.dart';
 import '../../src/widgets/app_toast.dart';
@@ -433,15 +433,14 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
     );
     if (pkg.preview.isEmpty) return fallback;
 
+    // 编辑器导出的本地包 preview 可能是 data URL（未物化：preview 参与
+    // 包 id 派生，改写会漂移 id），统一走三态出图兜底。
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: CachedNetworkImage(
-        imageUrl: pkg.preview,
-        width: size,
-        height: size,
-        fit: BoxFit.cover,
-        placeholder: (_, _) => fallback,
-        errorWidget: (_, _, _) => fallback,
+      child: themePreviewImage(
+        pkg.preview,
+        size: size,
+        fallback: fallback,
       ),
     );
   }

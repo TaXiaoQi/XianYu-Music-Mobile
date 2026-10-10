@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -44,7 +44,6 @@ import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/auto_hide_chrome.dart';
 import '../../src/widgets/cover_image.dart';
-import '../../src/widgets/custom_background.dart' show CustomBackgroundLayer;
 import '../../src/theme/page_wallpaper.dart' show themedPageWallpaperProvider;
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/modern_dialog.dart';
@@ -2026,7 +2025,6 @@ class _TraditionalPlayerLayoutState
                 ref,
                 'player.speed',
                 size: 18,
-                color: Colors.white.withValues(alpha: 0.85),
                 fallback: const SizedBox.shrink(),
               ),
             ],

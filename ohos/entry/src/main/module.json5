@@ -12,6 +12,8 @@
     "installationFree": false,
     "compressNativeLibs": true,
     "pages": "$profile:main_pages",
+    // 鸿蒙 QQ 开放平台要求：允许查询跳转的 scheme（https 拉起 QQ 下载页 / qqopenapi 回调）
+    "querySchemes": ["https", "qqopenapi"],
     "abilities": [
       {
       "backgroundModes": ["audioPlayback"],
@@ -43,6 +45,17 @@
             ]
           },
           {
+            // 主题包文件关联：文件管理器「打开」主题 .json → 弦予音乐
+            // （导入并应用主题）。general.json 为系统 UTD（统一数据类型），
+            // 与上方 general.javascript（插件脚本）同一管线。
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              { "type": "general.json" }
+            ]
+          },
+          {
             // 音频文件关联：文件管理器「打开」音频 → 弦予音乐（直接播放）。
             // 声明 general.audio 伞类型 + 系统预置音频子 UTD（mp3/flac/ogg/
             // aiff/alac），保证文件管理器按具体 UTD 匹配时也能命中；格式清单
@@ -58,6 +71,21 @@
               { "type": "general.ogg" },
               { "type": "general.aiff" },
               { "type": "general.alac" }
+            ]
+          },
+          {
+            // 鸿蒙 QQ 开放平台分享/授权回调：QQ 通过 qqopenapi://<appId>/share
+            // 拉起本应用回传结果。host 必须与 qq_share_service.dart 的 appId
+            // 一致；若鸿蒙开放平台下发新 appId，两处需同改。
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "qqopenapi",
+                "host": "1905495962",
+                "pathRegex": "\\b(auth|share)\\b"
+              }
             ]
           }
         ]

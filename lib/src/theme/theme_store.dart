@@ -154,7 +154,15 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
   Future<ThemePackage?> importJson(String text, {bool fromSquare = false}) async {
     final parsed = ThemePackage.parse(text);
     if (parsed == null) return null;
-    final pkg = await _materializeWallpapers(parsed);
+    var pkg = await _materializeWallpapers(parsed);
+    // 图标/贴纸同样归一化：编辑器导出的本地包值是巨型 data URL，不落盘
+    // 会原样进 SharedPreferences，且 CachedNetworkImage 无法渲染 data URL
+    // （表现为主题图标永远回落内置图标）。
+    pkg = await _materializeIconStickers(pkg);
+    AppLog.debug('theme',
+        '主题包导入: id=${pkg.id} name=${pkg.name} icons=${pkg.icons.keys.toList()} '
+        'stickers=${pkg.stickers.keys.toList()} surfaces=${pkg.surfaces.keys.toList()} '
+        'wallpapers=${pkg.wallpapers.keys.toList()}');
     state = ThemeLibraryState(
       packages: [...state.packages.where((item) => item.id != pkg.id), pkg],
       activeId: state.activeId,
@@ -205,6 +213,54 @@ class ThemeLibraryNotifier extends StateNotifier<ThemeLibraryState> {
       }
       wp['ref'] = localPath;
       changed = true;
+    }
+    if (!changed) return pkg;
+    return ThemePackage.parse(jsonEncode(decoded)) ?? pkg;
+  }
+
+  /// 把包内 icons/stickers 的值归一化：data URL 解码落盘、http(s) 下载落盘，
+  /// 已是本地路径的原样保留。与 wallpapers 的 {ref} 对象形态不同，图标/贴纸
+  /// 的值直接是 URL 字符串。未变更原样返回。
+  Future<ThemePackage> _materializeIconStickers(ThemePackage pkg) async {
+    if (pkg.icons.isEmpty && pkg.stickers.isEmpty) return pkg;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(pkg.raw);
+    } on FormatException {
+      return pkg;
+    }
+    if (decoded is! Map || decoded['payload'] is! Map) return pkg;
+    final payload = decoded['payload'] as Map;
+    final dir = await _themeAssetDir(pkg.id);
+    var changed = false;
+    for (final (slot, prefix) in const [('icons', 'icon'), ('stickers', 'sticker')]) {
+      final map = payload[slot];
+      if (map is! Map || map.isEmpty) continue;
+      for (final entry in map.entries) {
+        final key = entry.key.toString();
+        final ref = entry.value;
+        if (ref is! String || ref.isEmpty) continue;
+        final String localPath;
+        if (ref.startsWith('data:')) {
+          final bytes = _decodeDataUrl(ref);
+          if (bytes == null) {
+            throw const ThemeAssetException('主题图标数据无效');
+          }
+          localPath = p.join(dir.path, '${prefix}_$key.${_sniffImageExt(bytes)}');
+          await File(localPath).writeAsBytes(bytes, flush: true);
+        } else if (ref.startsWith('http://') || ref.startsWith('https://')) {
+          final bytes = await _downloadBytes(ref);
+          if (bytes == null) {
+            throw ThemeAssetException('主题图标下载失败（$slot.$key）');
+          }
+          localPath = p.join(dir.path, '${prefix}_$key.${_sniffImageExt(bytes)}');
+          await File(localPath).writeAsBytes(bytes, flush: true);
+        } else {
+          continue;
+        }
+        map[key] = localPath;
+        changed = true;
+      }
     }
     if (!changed) return pkg;
     return ThemePackage.parse(jsonEncode(decoded)) ?? pkg;

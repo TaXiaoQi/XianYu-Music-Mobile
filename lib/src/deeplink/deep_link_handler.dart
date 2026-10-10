@@ -18,6 +18,7 @@ import '../plugin/plugin_provider.dart';
 import '../plugin/plugin_search.dart';
 import '../core/application_logger.dart';
 import '../core/rust_init.dart';
+import '../theme/theme_store.dart';
 import '../widgets/app_toast.dart';
 import 'share_link_dialog.dart';
 import '../i18n/i18n.dart';
@@ -116,6 +117,14 @@ class XianYuDeepLink {
           final name = openUri.queryParameters['name'] ?? '';
           if (file.isNotEmpty) {
             await _importOpenedPlugin(container, router, file, name);
+          }
+          return;
+        }
+        if (openUri.queryParameters['target'] == 'theme') {
+          final file = openUri.queryParameters['file'] ?? '';
+          final name = openUri.queryParameters['name'] ?? '';
+          if (file.isNotEmpty) {
+            await _importOpenedTheme(container, router, file, name);
           }
           return;
         }
@@ -513,6 +522,56 @@ class XianYuDeepLink {
             .take(2)
             .join('  ');
         showXianYuToastByOverlay(overlay, '${tr('插件导入失败')}: $e\n$where');
+      }
+    }
+  }
+
+  /// 系统打开主题包（.json）：导入并应用后跳主题中心（与主题中心本地导入
+  /// 同源 importJson；「应用」与其 _activate 一致）。鸿蒙 EntryAbility /
+  /// Android MainActivity 物化缓存后经 target=theme 深链进入。
+  static Future<void> _importOpenedTheme(
+    ProviderContainer container,
+    GoRouter router,
+    String filePath,
+    String rawName,
+  ) async {
+    AppLog.info('deeplink', '系统打开主题包文件: $filePath');
+    String content;
+    try {
+      content = await File(filePath).readAsString();
+    } catch (e, st) {
+      AppLog.warn('deeplink', '读取系统打开的主题包失败: $e\n$st');
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        showXianYuToastByOverlay(overlay, tr('无法读取所选文件'));
+      }
+      return;
+    }
+    try {
+      final pkg =
+          await container.read(themeLibraryProvider.notifier).importJson(content);
+      await _waitNavigatorContext();
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (pkg == null) {
+        if (overlay != null) {
+          showXianYuToastByOverlay(overlay, tr('主题包格式不正确（需 mobile 版 v2/v3）'));
+        }
+        return;
+      }
+      // 导入即应用：与主题中心「应用」一致
+      await container.read(themeLibraryProvider.notifier).activate(pkg.id);
+      if (overlay != null) {
+        showXianYuToastByOverlay(
+            overlay, tr('已导入并应用《{name}》', {'name': pkg.name}));
+      }
+      if (router.routerDelegate.currentConfiguration.uri.toString() != '/theme') {
+        router.push('/theme');
+      }
+    } catch (e, st) {
+      AppLog.warn('deeplink', '导入系统打开的主题包失败: $e\n$st');
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        showXianYuToastByOverlay(overlay, '${tr('主题导入失败')}: $e');
       }
     }
   }

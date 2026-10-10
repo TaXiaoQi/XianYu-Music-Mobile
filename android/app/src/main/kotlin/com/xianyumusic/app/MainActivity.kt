@@ -560,6 +560,22 @@ class MainActivity : AudioServiceActivity() {
             }
             return
         }
+        // 主题包（.json）：文件管理器「打开」直接进导入并应用流程——物化到缓存
+        // 后封装成 xianyu://open?target=theme&file=<path>&name=<原名> 深链交给
+        // Flutter 走主题导入管线（与主题中心本地导入同源）。MIME 兜底覆盖下载器
+        // 把原文件改名 .tmp 保存的场景（此时扩展名判定失效但 type 仍是 json）。
+        val looksLikeTheme = rawName.endsWith(".json", ignoreCase = true) ||
+            intent.type == "application/json"
+        if (looksLikeTheme) {
+            safExecutor.execute {
+                val localPath = copyContentToCache(data, rawName)
+                if (localPath == null) return@execute
+                val link = "xianyu://open?target=theme" +
+                    "&name=${Uri.encode(rawName)}&file=${Uri.encode(localPath)}"
+                deliver(link)
+            }
+            return
+        }
         safExecutor.execute {
             val localPath = copyContentToCache(data, rawName)
             if (localPath == null) return@execute
