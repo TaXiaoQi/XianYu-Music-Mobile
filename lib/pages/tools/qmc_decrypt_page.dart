@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 
 class QmcDecryptPage extends ConsumerStatefulWidget {
@@ -170,24 +171,30 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
                   Row(
                     children: [
                       Expanded(
-                        child: FilledButton.icon(
-                          onPressed: _busy ? null : _pickAndDecrypt,
-                          icon: _busy
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2))
-                              : const Icon(Icons.folder_open, size: 18),
-                          label: Text(_busy ? tr('解密中…') : tr('选择文件并解密')),
+                        child: PressableScale(
+                          pressScale: 0.92,
+                          child: FilledButton.icon(
+                            onPressed: _busy ? null : _pickAndDecrypt,
+                            icon: _busy
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2))
+                                : const Icon(Icons.folder_open, size: 18),
+                            label: Text(_busy ? tr('解密中…') : tr('选择文件并解密')),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
-                      IconButton(
-                        tooltip: _showEkey ? tr('隐藏 ekey 输入') : tr('手动输入 ekey'),
-                        isSelected: _showEkey,
-                        onPressed: () => setState(() => _showEkey = !_showEkey),
-                        icon: const Icon(Icons.vpn_key_outlined, size: 20),
+                      PressableScale(
+                        pressScale: 0.88,
+                        child: IconButton(
+                          tooltip: _showEkey ? tr('隐藏 ekey 输入') : tr('手动输入 ekey'),
+                          isSelected: _showEkey,
+                          onPressed: () => setState(() => _showEkey = !_showEkey),
+                          icon: const Icon(Icons.vpn_key_outlined, size: 20),
+                        ),
                       ),
                     ],
                   ),
@@ -268,10 +275,13 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
                 ),
               ),
               if (item.status == _DecryptStatus.decrypted)
-                TextButton.icon(
-                  onPressed: () => _share(item),
-                  icon: const Icon(Icons.share_outlined, size: 17),
-                  label:   Text(tr('分享')),
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton.icon(
+                    onPressed: () => _share(item),
+                    icon: const Icon(Icons.share_outlined, size: 17),
+                    label:   Text(tr('分享')),
+                  ),
                 ),
             ],
           ),

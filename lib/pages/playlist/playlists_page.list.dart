@@ -62,7 +62,7 @@ class _PlaylistCard extends ConsumerWidget {
     final manager = ref.read(playlistManagerProvider.notifier);
     final first = playlist.songs.isNotEmpty ? playlist.songs.first : null;
 
-    return Material(
+    final card = Material(
       color: useLandscape(ref)
           ? themeTint(ref, 'ls-sheets.card', appCardFill(context, ref))
           : appCardFill(context, ref),
@@ -133,6 +133,7 @@ class _PlaylistCard extends ConsumerWidget {
         ),
       ),
     );
+    return PressableScale(child: card);
   }
 
   void _openPlaylist(BuildContext context, WidgetRef ref, String id) {

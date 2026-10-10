@@ -13,6 +13,7 @@ import '../rust/music/types.dart';
 
 import 'predictive_dialog_route.dart';
 import 'app_toast.dart';
+import 'press_scale.dart';
 import '../i18n/i18n.dart';
 
 Future<void> showSongInfoDialog(BuildContext context, WidgetRef ref,
@@ -231,28 +232,28 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
       case _InfoMode.view:
         return [
           if (widget.editable)
-            TextButton(
+            PressableScale(child: TextButton(
               onPressed: () =>
                   setState(() { _mode = _InfoMode.edit; _error = null; }),
               child:   Text(tr('编辑信息')),
-            ),
+            )),
           if (widget.editable)
-            TextButton(
+            PressableScale(child: TextButton(
               onPressed: _enterLyricsMode,
               child:   Text(tr('编辑歌词')),
-            ),
-          TextButton(
+            )),
+          PressableScale(child: TextButton(
             onPressed: () => Navigator.pop(context),
             child:   Text(tr('关闭')),
-          ),
+          )),
         ];
       case _InfoMode.edit:
         return [
-          TextButton(
+          PressableScale(child: TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
             child:   Text(tr('取消')),
-          ),
-          FilledButton(
+          )),
+          PressableScale(child: FilledButton(
             onPressed: _saving ? null : _saveTags,
             child: _saving
                 ? const SizedBox(
@@ -260,15 +261,15 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
                 :   Text(tr('保存')),
-          ),
+          )),
         ];
       case _InfoMode.lyrics:
         return [
-          TextButton(
+          PressableScale(child: TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
             child:   Text(tr('取消')),
-          ),
-          FilledButton(
+          )),
+          PressableScale(child: FilledButton(
             onPressed: _saving ? null : _saveLyrics,
             child: _saving
                 ? const SizedBox(
@@ -276,7 +277,7 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
                     height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2))
                 :   Text(tr('保存')),
-          ),
+          )),
         ];
     }
   }

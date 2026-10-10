@@ -56,7 +56,7 @@ class _FolderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
+    final tile = ListTile(
       leading: const Icon(Icons.folder),
       title: Text(
         node.name.isNotEmpty ? node.name : node.path.split('/').last,
@@ -100,5 +100,6 @@ class _FolderTile extends StatelessWidget {
       ),
       onTap: hasChildren ? onToggle : onOpen,
     );
+    return PressableScale(child: tile);
   }
 }

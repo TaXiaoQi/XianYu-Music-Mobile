@@ -10,6 +10,7 @@ import 'cover_image.dart';
 import 'drag_handle.dart';
 import 'flying_cover.dart';
 import 'list_metrics.dart';
+import 'press_scale.dart';
 import 'song_actions_sheet.dart';
 import 'song_list_scroll_fabs.dart';
 import 'stagger_in.dart';
@@ -101,13 +102,17 @@ class CoverRow extends StatelessWidget {
       ),
     );
 
-    if (background == null) return row;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: row,
+    // 行主体统一按压缩放；可排序列表的拖拽把手在行外层 Stack，不受影响
+    return PressableScale(
+      child: background == null
+          ? row
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: row,
+            ),
     );
   }
 }

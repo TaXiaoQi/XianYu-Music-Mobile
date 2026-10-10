@@ -17,6 +17,7 @@ import '../core/settings.dart';
 import '../device/device_info.dart';
 import '../navigation/routes.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/press_scale.dart';
 import '../widgets/predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
 
@@ -95,17 +96,23 @@ Future<void> showUpdateDialog(BuildContext context, LatestVersion latest) {
         ),
       ),
       actions: [
-        TextButton(
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
           onPressed: () => Navigator.pop(ctx),
           child: Text(tr('暂不更新')),
+          ),
         ),
         if (latest.downloadUrl.isNotEmpty)
-          FilledButton(
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await openExternalUrl(ctx, absoluteDownloadUrl(latest.downloadUrl));
             },
             child: Text(tr('去下载')),
+            ),
           ),
       ],
     ),
@@ -257,13 +264,19 @@ Future<bool> showBetaUnverifiedDialog(BuildContext context) async {
         content: Text(tr('请连接网络后重试。若持续失败，请联系管理员。'),
             style: const TextStyle(fontSize: 14, height: 1.5)),
         actions: [
-          TextButton(
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
             onPressed: () => SystemNavigator.pop(),
             child: Text(tr('退出软件')),
+            ),
           ),
-          FilledButton(
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(tr('重试')),
+            ),
           ),
         ],
       ),
@@ -293,16 +306,22 @@ Future<void> showBetaGateDialog(BuildContext context, {required bool pending}) {
                 : tr('当前设备未申请内测资格，无法使用内测版本。\n点击「申请资格」填写申请理由，管理员同意后即可继续使用。'),
             style: const TextStyle(fontSize: 14, height: 1.5)),
         actions: [
-          TextButton(
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
             onPressed: () => SystemNavigator.pop(),
             child: Text(tr('退出软件')),
+            ),
           ),
           if (!pending)
-            FilledButton(
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
               onPressed: () {
                 GoRouter.of(ctx).push('/feedback?tab=1');
               },
               child: Text(tr('申请资格')),
+              ),
             ),
         ],
       ),

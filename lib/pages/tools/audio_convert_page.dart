@@ -12,6 +12,7 @@ import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 
 class _Format {
   final String value;
@@ -197,24 +198,33 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         title: Text(tr('选择保存位置')),
         content: Text(tr('转换后的文件将保存在哪里？')),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: Text(tr('取消'))),
-          TextButton(
-            onPressed: () async {
-              final d = await FilePicker.getDirectoryPath();
-              if (d != null && ctx.mounted) {
-                choice = d;
-                Navigator.pop(ctx);
-              }
-            },
-            child: Text(tr('自定义…')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+                onPressed: () => Navigator.pop(ctx), child: Text(tr('取消'))),
           ),
-          FilledButton(
-            onPressed: () {
-              choice = defaultDir;
-              Navigator.pop(ctx);
-            },
-            child: Text(tr('原文件夹')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () async {
+                final d = await FilePicker.getDirectoryPath();
+                if (d != null && ctx.mounted) {
+                  choice = d;
+                  Navigator.pop(ctx);
+                }
+              },
+              child: Text(tr('自定义…')),
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () {
+                choice = defaultDir;
+                Navigator.pop(ctx);
+              },
+              child: Text(tr('原文件夹')),
+            ),
           ),
         ],
       ),
@@ -290,18 +300,21 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
               right: 16,
               bottom: 24,
               child: SafeArea(
-                child: FilledButton.icon(
-                  onPressed: _busy ? null : _start,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.play_arrow, size: 18),
-                  label: Text(_busy
-                      ? tr('转换中…')
-                      : tr('开始转换 → {fmt} ({count})',
-                          {'fmt': _fmt.label, 'count': _selected.length})),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _start,
+                    icon: _busy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.play_arrow, size: 18),
+                    label: Text(_busy
+                        ? tr('转换中…')
+                        : tr('开始转换 → {fmt} ({count})',
+                            {'fmt': _fmt.label, 'count': _selected.length})),
+                  ),
                 ),
               ),
             ),
@@ -357,10 +370,13 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           runSpacing: 8,
           children: _formats.map((f) {
             final selected = _format == f.value;
-            return ChoiceChip(
-              label: Text('${f.label}${f.lossless ? ' ⭐' : ''}'),
-              selected: selected,
-              onSelected: (_) => setState(() => _format = f.value),
+            return PressableScale(
+              pressScale: 0.92,
+              child: ChoiceChip(
+                label: Text('${f.label}${f.lossless ? ' ⭐' : ''}'),
+                selected: selected,
+                onSelected: (_) => setState(() => _format = f.value),
+              ),
             );
           }).toList(),
         ),
@@ -380,10 +396,13 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           runSpacing: 6,
           children: _sampleRates.map((s) {
             final selected = _sampleRate == s.$1;
-            return ChoiceChip(
-              label: Text(s.$2),
-              selected: selected,
-              onSelected: _busy ? null : (_) => setState(() => _sampleRate = s.$1),
+            return PressableScale(
+              pressScale: 0.92,
+              child: ChoiceChip(
+                label: Text(s.$2),
+                selected: selected,
+                onSelected: _busy ? null : (_) => setState(() => _sampleRate = s.$1),
+              ),
             );
           }).toList(),
         ),
@@ -402,36 +421,40 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SwitchListTile.adaptive(
-              dense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              secondary: Icon(Icons.image_outlined,
-                  size: 20, color: scheme.primary),
-              title: Text(tr('保留内置封面'),
-                  style: const TextStyle(fontSize: 13.5)),
-              subtitle: Text(tr('复制专辑封面到输出文件'),
-                  style: TextStyle(fontSize: 11.5, color: scheme.outline)),
-              value: _keepCover,
-              onChanged: _busy
-                  ? null
-                  : (v) => setState(() => _keepCover = v),
+            PressableScale(
+              child: SwitchListTile.adaptive(
+                dense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                secondary: Icon(Icons.image_outlined,
+                    size: 20, color: scheme.primary),
+                title: Text(tr('保留内置封面'),
+                    style: const TextStyle(fontSize: 13.5)),
+                subtitle: Text(tr('复制专辑封面到输出文件'),
+                    style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+                value: _keepCover,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _keepCover = v),
+              ),
             ),
             const Divider(height: 1, indent: 52),
-            SwitchListTile.adaptive(
-              dense: true,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-              secondary: Icon(Icons.subtitles_outlined,
-                  size: 20, color: scheme.primary),
-              title: Text(tr('保留内置歌词'),
-                  style: const TextStyle(fontSize: 13.5)),
-              subtitle: Text(tr('复制内嵌歌词和元数据'),
-                  style: TextStyle(fontSize: 11.5, color: scheme.outline)),
-              value: _keepLyrics,
-              onChanged: _busy
-                  ? null
-                  : (v) => setState(() => _keepLyrics = v),
+            PressableScale(
+              child: SwitchListTile.adaptive(
+                dense: true,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+                secondary: Icon(Icons.subtitles_outlined,
+                    size: 20, color: scheme.primary),
+                title: Text(tr('保留内置歌词'),
+                    style: const TextStyle(fontSize: 13.5)),
+                subtitle: Text(tr('复制内嵌歌词和元数据'),
+                    style: TextStyle(fontSize: 11.5, color: scheme.outline)),
+                value: _keepLyrics,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _keepLyrics = v),
+              ),
             ),
           ],
         ),
@@ -443,10 +466,13 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
     return Row(
       children: [
         Expanded(
-          child: OutlinedButton.icon(
-            onPressed: _busy ? null : _pickFiles,
-            icon: const Icon(Icons.add, size: 18),
-            label: Text(tr('选择文件')),
+          child: PressableScale(
+            pressScale: 0.92,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _pickFiles,
+              icon: const Icon(Icons.add, size: 18),
+              label: Text(tr('选择文件')),
+            ),
           ),
         ),
       ],
@@ -471,11 +497,14 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 13.5)),
           ),
-          IconButton(
-            iconSize: 18,
-            onPressed: _busy ? null : () => setState(() => _selected.removeAt(index)),
-            icon: const Icon(Icons.close),
-            color: scheme.outline,
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              iconSize: 18,
+              onPressed: _busy ? null : () => setState(() => _selected.removeAt(index)),
+              icon: const Icon(Icons.close),
+              color: scheme.outline,
+            ),
           ),
         ],
       ),
@@ -540,10 +569,13 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
                         fontSize: 14, fontWeight: FontWeight.w600)),
               ),
               if (item.status == _Status.done)
-                TextButton.icon(
-                  onPressed: () => _share(item),
-                  icon: const Icon(Icons.share_outlined, size: 17),
-                  label: Text(tr('分享')),
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton.icon(
+                    onPressed: () => _share(item),
+                    icon: const Icon(Icons.share_outlined, size: 17),
+                    label: Text(tr('分享')),
+                  ),
                 ),
             ],
           ),
@@ -609,17 +641,23 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
           ),
           actions: [
             if (ok.length > 1)
-              TextButton.icon(
-                onPressed: () async {
-                  await _share(ok.first);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                icon: const Icon(Icons.share_outlined, size: 17),
-                label: Text(tr('分享第一个')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    await _share(ok.first);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  icon: const Icon(Icons.share_outlined, size: 17),
+                  label: Text(tr('分享第一个')),
+                ),
               ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dctx),
-              child: Text(tr('完成')),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(dctx),
+                child: Text(tr('完成')),
+              ),
             ),
           ],
         );

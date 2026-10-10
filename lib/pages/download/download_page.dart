@@ -14,6 +14,7 @@ import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -68,10 +69,13 @@ class DownloadPage extends ConsumerWidget {
                   title:   Text(tr('下载管理')),
                   actions: [
                     if (state.history.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.delete_sweep_outlined),
-                        tooltip: tr('清空记录'),
-                        onPressed: () => _confirmClear(context, notifier),
+                      PressableScale(
+                        pressScale: 0.88,
+                        child: IconButton(
+                          icon: const Icon(Icons.delete_sweep_outlined),
+                          tooltip: tr('清空记录'),
+                          onPressed: () => _confirmClear(context, notifier),
+                        ),
                       ),
                   ],
                 ),
@@ -96,61 +100,69 @@ class DownloadPage extends ConsumerWidget {
               children: [
                 Text(tr('确定要清空全部下载记录吗？')),
                 const SizedBox(height: 12),
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () {
-                    setState(() {
-                      deleteFiles = !deleteFiles;
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: Checkbox(
-                            value: deleteFiles,
-                            onChanged: (v) {
-                              setState(() {
-                                deleteFiles = v ?? false;
-                              });
-                            },
+                PressableScale(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        deleteFiles = !deleteFiles;
+                      });
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: Checkbox(
+                              value: deleteFiles,
+                              onChanged: (v) {
+                                setState(() {
+                                  deleteFiles = v ?? false;
+                                });
+                              },
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          tr('同时删除本地文件'),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(ctx).colorScheme.onSurface,
+                          const SizedBox(width: 8),
+                          Text(
+                            tr('同时删除本地文件'),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Theme.of(ctx).colorScheme.onSurface,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ],
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: Text(tr('取消')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(tr('取消')),
+                ),
               ),
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  notifier.clearHistory(deleteFiles: deleteFiles);
-                  showXianYuToast(
-                    context,
-                    deleteFiles
-                        ? tr('已清空记录并删除本地文件')
-                        : tr('已清空下载记录'),
-                  );
-                },
-                child: Text(tr('清空')),
+              PressableScale(
+                pressScale: 0.92,
+                child: FilledButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    notifier.clearHistory(deleteFiles: deleteFiles);
+                    showXianYuToast(
+                      context,
+                      deleteFiles
+                          ? tr('已清空记录并删除本地文件')
+                          : tr('已清空下载记录'),
+                    );
+                  },
+                  child: Text(tr('清空')),
+                ),
               ),
             ],
           );
@@ -326,10 +338,13 @@ class _FinishedTaskTile extends StatelessWidget {
             fontSize: 12,
             color: ok ? scheme.onSurfaceVariant : scheme.error),
       ),
-      trailing: IconButton(
-        icon: Icon(Icons.close, size: 18, color: scheme.outline),
-        tooltip: tr('移除'),
-        onPressed: onDismiss,
+      trailing: PressableScale(
+        pressScale: 0.88,
+        child: IconButton(
+          icon: Icon(Icons.close, size: 18, color: scheme.outline),
+          tooltip: tr('移除'),
+          onPressed: onDismiss,
+        ),
       ),
     );
   }
@@ -365,49 +380,57 @@ class _HistoryTile extends ConsumerWidget {
             if (ok) onPlay();
           }
         : null;
-    return CoverRow(
-      horizontalPadding: 16,
-      verticalPadding: m.vPad,
-      onTap: play,
-      cover: Builder(
-        builder: (c) {
-          coverCtx = c;
-          return CoverImage(
-            songPath: entry.filePath,
-            width: m.songCover,
-            height: m.songCover,
-            radius: m.songRadius,
-            icon: Icons.music_note,
-          );
-        },
-      ),
-      title: Text(entry.title ?? entry.fileName,
-          maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-              fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-      subtitle: Text(
-        '${entry.artist ?? ''}${entry.artist?.isNotEmpty == true ? ' · ' : ''}${entry.quality}${exists ? '' : ' · ${tr('文件缺失')}'}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: m.subtitleSize,
-          color: exists ? scheme.onSurfaceVariant : scheme.error,
+    return PressableScale(
+      child: CoverRow(
+        horizontalPadding: 16,
+        verticalPadding: m.vPad,
+        onTap: play,
+        cover: Builder(
+          builder: (c) {
+            coverCtx = c;
+            return CoverImage(
+              songPath: entry.filePath,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.music_note,
+            );
+          },
         ),
-      ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          IconButton(
-            icon: Icon(Icons.play_arrow, size: 20, color: scheme.primary),
-            tooltip: tr('播放'),
-            onPressed: play,
+        title: Text(entry.title ?? entry.fileName,
+            maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontSize: m.titleSize, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          '${entry.artist ?? ''}${entry.artist?.isNotEmpty == true ? ' · ' : ''}${entry.quality}${exists ? '' : ' · ${tr('文件缺失')}'}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: m.subtitleSize,
+            color: exists ? scheme.onSurfaceVariant : scheme.error,
           ),
-          IconButton(
-            icon: Icon(Icons.close, size: 18, color: scheme.outline),
-            tooltip: tr('移除记录'),
-            onPressed: onRemove,
-          ),
-        ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            PressableScale(
+              pressScale: 0.88,
+              child: IconButton(
+                icon: Icon(Icons.play_arrow, size: 20, color: scheme.primary),
+                tooltip: tr('播放'),
+                onPressed: play,
+              ),
+            ),
+            PressableScale(
+              pressScale: 0.88,
+              child: IconButton(
+                icon: Icon(Icons.close, size: 18, color: scheme.outline),
+                tooltip: tr('移除记录'),
+                onPressed: onRemove,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

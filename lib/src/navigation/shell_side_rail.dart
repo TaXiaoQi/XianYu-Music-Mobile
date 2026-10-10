@@ -456,41 +456,44 @@ class _SideNavTab extends ConsumerWidget {
         ? primary
         : scheme.onSurfaceVariant.withValues(alpha: 0.6);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? primary.withValues(alpha: 0.14)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              themeSlotIcon(
-                ref,
-                item.themeSlot,
-                fallback: item.icon,
-                size: 22,
-                color: color,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                navTitle(context, item),
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
+    return PressableScale(
+      pressScale: 0.92,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 3),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected
+                  ? primary.withValues(alpha: 0.14)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                themeSlotIcon(
+                  ref,
+                  item.themeSlot,
+                  fallback: item.icon,
+                  size: 22,
                   color: color,
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  navTitle(context, item),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

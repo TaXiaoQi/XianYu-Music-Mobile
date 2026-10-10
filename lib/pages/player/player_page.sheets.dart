@@ -354,7 +354,7 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
           width: selected ? 1.4 : 1,
         ),
       ),
-      child: InkWell(
+      child: PressableScale(child: InkWell(
         onTap: onTap,
         customBorder: const StadiumBorder(),
         child: Padding(
@@ -368,7 +368,7 @@ class _MvQualitySheetState extends ConsumerState<_MvQualitySheet> {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -711,7 +711,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
               const Spacer(),
-              IconButton(
+              PressableScale(pressScale: 0.88, child: IconButton(
                 icon: Icon(
                   Icons.delete_outline,
                   size: 20,
@@ -727,7 +727,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                           AppLog.warn('ui', '清空播放队列失败: $e');
                         }
                       },
-              ),
+              )),
             ],
           ),
         ),
@@ -758,7 +758,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                 return ReorderableDelayedDragStartListener(
                   key: ValueKey('${item.path}_$index'),
                   index: index,
-                  child: ListTile(
+                  child: PressableScale(child: ListTile(
                     dense: true,
                     contentPadding: const EdgeInsets.only(
                       left: 16,
@@ -810,7 +810,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                           onlineSongJson: item.onlineSongJson,
                         ),
                         const SizedBox(width: 4),
-                        IconButton(
+                        PressableScale(pressScale: 0.88, child: IconButton(
                           icon: Icon(
                             Icons.close,
                             size: 18,
@@ -819,14 +819,14 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                           onPressed: () => ref
                               .read(playerProvider.notifier)
                               .removeFromQueue(index),
-                        ),
+                        )),
                       ],
                     ),
                     onTap: () {
                       Navigator.of(context).pop();
                       ref.read(playerProvider.notifier).playQueueItem(index);
                     },
-                  ),
+                  )),
                 );
               },
             ),
@@ -864,7 +864,7 @@ class _SheetSegmentButton extends StatelessWidget {
           ? scheme.primary.withValues(alpha: 0.14)
           : scheme.onSurface.withValues(alpha: 0.05),
       borderRadius: BorderRadius.circular(10),
-      child: InkWell(
+      child: PressableScale(child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
         child: SizedBox(
@@ -882,7 +882,7 @@ class _SheetSegmentButton extends StatelessWidget {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -965,7 +965,7 @@ class _SleepTimerRowState extends State<_SleepTimerRow> {
                 ),
               ),
               if (active)
-                TextButton(
+                PressableScale(child: TextButton(
                   onPressed: () {
                     widget.onCancel();
                     setState(() {});
@@ -980,7 +980,7 @@ class _SleepTimerRowState extends State<_SleepTimerRow> {
                     tr('取消'),
                     style: TextStyle(fontSize: 12, color: scheme.primary),
                   ),
-                ),
+                )),
             ],
           ),
           CommittedSlider(

@@ -16,6 +16,7 @@ import '../playlist/playlist_store.dart';
 import '../plugin/plugin_backup_import.dart';
 import 'sheet_dialog.dart';
 import 'app_toast.dart';
+import 'press_scale.dart';
 import '../i18n/i18n.dart';
 
 ImportedSong importedSongFromQueueItem(QueueItem item) {
@@ -106,7 +107,7 @@ Future<void> showAddToPlaylistSheet(
                     shrinkWrap: true,
                     padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                     children: [
-                      ListTile(
+                      PressableScale(child: ListTile(
                         leading: Container(
                           width: 42,
                           height: 42,
@@ -126,9 +127,9 @@ Future<void> showAddToPlaylistSheet(
                           Navigator.of(context).pop();
                           showXianYuToast(context, tr('已创建歌单「{name}」', {'name': name.trim()}));
                         },
-                      ),
+                      )),
                       for (final p in state.playlists)
-                        ListTile(
+                        PressableScale(child: ListTile(
                           leading: Container(
                             width: 42,
                             height: 42,
@@ -163,7 +164,7 @@ Future<void> showAddToPlaylistSheet(
                             showXianYuToast(
                                 context, tr('已添加到「{name}」({n} 首)', {'name': p.name, 'n': songs.length}));
                           },
-                        ),
+                        )),
                     ],
                   ),
                 ),
@@ -189,14 +190,14 @@ Future<String?> _promptName(BuildContext context, String title,
         decoration:   InputDecoration(hintText: tr('歌单名称')),
       ),
       actions: [
-        TextButton(
+        PressableScale(child: TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child:   Text(tr('取消')),
-        ),
-        FilledButton(
+        )),
+        PressableScale(child: FilledButton(
           onPressed: () => Navigator.of(context).pop(ctrl.text),
           child:   Text(tr('确定')),
-        ),
+        )),
       ],
     ),
   );
@@ -222,7 +223,7 @@ Future<void> showPlaylistActionsSheet(
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
           ),
-          ListTile(
+          PressableScale(child: ListTile(
             leading: Icon(Icons.edit_outlined, color: scheme.primary),
             title:   Text(tr('重命名歌单')),
             onTap: () async {
@@ -232,15 +233,15 @@ Future<void> showPlaylistActionsSheet(
               await manager.rename(playlist.id, name.trim());
               if (context.mounted) Navigator.of(context).pop();
             },
-          ),
-          ListTile(
+          )),
+          PressableScale(child: ListTile(
             leading: Icon(Icons.delete_outline, color: scheme.error),
             title: Text(tr('删除歌单'), style: TextStyle(color: scheme.error)),
             onTap: () {
               Navigator.of(context).pop();
               confirmRemovePlaylist(context, ref, playlist);
             },
-          ),
+          )),
           const SizedBox(height: 6),
         ],
       ),

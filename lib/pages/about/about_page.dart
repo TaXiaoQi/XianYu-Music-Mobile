@@ -13,6 +13,7 @@ import '../../src/update/app_update.dart';
 import '../../src/widgets/app_logo.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -168,16 +169,19 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                 ],
               ),
             const SizedBox(height: 18),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 32, vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 32, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
+                child: Text(tr('知道了')),
               ),
-              child: Text(tr('知道了')),
             ),
           ],
         ),
@@ -251,20 +255,23 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           ),
           const SizedBox(height: 20),
           if (_config.updateEnabled && PlatformCaps.supportsInAppUpdate)
-            FilledButton.icon(
-              onPressed: _checkingUpdate ? null : _checkUpdate,
-              icon: _checkingUpdate
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.system_update_alt, size: 18),
-              label: Text(_checkingUpdate ? tr('检查中…') : tr('检查更新')),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton.icon(
+                onPressed: _checkingUpdate ? null : _checkUpdate,
+                icon: _checkingUpdate
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.system_update_alt, size: 18),
+                label: Text(_checkingUpdate ? tr('检查中…') : tr('检查更新')),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
@@ -284,29 +291,35 @@ class _AboutPageState extends ConsumerState<AboutPage> {
               child: Column(
                 children: [
                   for (final item in links) ...[
-                    ListTile(
-                      leading: Icon(item.icon, color: scheme.primary),
-                      title: Text(item.label),
-                      trailing: Icon(Icons.open_in_new,
-                          size: 16, color: scheme.outline),
-                      onTap: () => _openUrl(item.url),
+                    PressableScale(
+                      child: ListTile(
+                        leading: Icon(item.icon, color: scheme.primary),
+                        title: Text(item.label),
+                        trailing: Icon(Icons.open_in_new,
+                            size: 16, color: scheme.outline),
+                        onTap: () => _openUrl(item.url),
+                      ),
                     ),
                     Divider(height: 1, indent: 52, color: scheme.outlineVariant),
                   ],
-                  ListTile(
-                    leading: Icon(Icons.book_outlined, color: scheme.primary),
-                    title: Text(tr('参考项目')),
-                    trailing: Icon(Icons.chevron_right,
-                        size: 18, color: scheme.outline),
-                    onTap: () => _showReferenceProjects(_allReferenceProjects),
-                  ),
-                  if (_allAcknowledgements.isNotEmpty)
-                    ListTile(
-                      leading: Icon(Icons.favorite_outline, color: scheme.primary),
-                      title: Text(tr('致谢名单')),
+                  PressableScale(
+                    child: ListTile(
+                      leading: Icon(Icons.book_outlined, color: scheme.primary),
+                      title: Text(tr('参考项目')),
                       trailing: Icon(Icons.chevron_right,
                           size: 18, color: scheme.outline),
-                      onTap: () => _showAcknowledgements(_allAcknowledgements),
+                      onTap: () => _showReferenceProjects(_allReferenceProjects),
+                    ),
+                  ),
+                  if (_allAcknowledgements.isNotEmpty)
+                    PressableScale(
+                      child: ListTile(
+                        leading: Icon(Icons.favorite_outline, color: scheme.primary),
+                        title: Text(tr('致谢名单')),
+                        trailing: Icon(Icons.chevron_right,
+                            size: 18, color: scheme.outline),
+                        onTap: () => _showAcknowledgements(_allAcknowledgements),
+                      ),
                     ),
                 ],
               ),

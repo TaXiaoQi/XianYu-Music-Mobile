@@ -29,6 +29,7 @@ import '../player/player_provider.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
+import '../widgets/press_scale.dart';
 import 'cloud_channel.dart';
 import 'link_auth.dart';
 import 'protocol.dart';

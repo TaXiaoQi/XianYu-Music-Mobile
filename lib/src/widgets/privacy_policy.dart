@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/account_api.dart';
 import '../auth/server_models.dart';
 import '../i18n/i18n.dart';
+import 'press_scale.dart';
 import 'user_agreement.dart';
 
 const kPrivacyPolicyDefaultTitle = '弦予音乐隐私政策';
@@ -226,20 +227,20 @@ class _PrivacyConsentDialogState extends State<_PrivacyConsentDialog> {
             spacing: 8,
             overflowSpacing: 4,
             children: [
-              TextButton(
+              PressableScale(child: TextButton(
                 onPressed: () => SystemNavigator.pop(),
                 child: Text(
                   tr('不同意并退出'),
                   style: const TextStyle(fontSize: 13),
                 ),
-              ),
-              FilledButton(
+              )),
+              PressableScale(child: FilledButton(
                 onPressed: _atEnd ? _agree : null,
                 child: Text(
                   _atEnd ? tr('同意并继续') : tr('请滚动至底部'),
                   style: const TextStyle(fontSize: 13),
                 ),
-              ),
+              )),
             ],
           ),
         ],

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'mini_player_bar.dart';
 import '../i18n/i18n.dart';
+import 'press_scale.dart';
 
 class SongBatchController extends ChangeNotifier {
   bool _batchMode = false;
@@ -51,13 +52,15 @@ Widget wrapBatchRow(
   final scheme = Theme.of(context).colorScheme;
   return Stack(
     children: [
-      Material(
-        color: selected
-            ? scheme.primary.withValues(alpha: 0.07)
-            : Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.only(left: 44),
-          child: row,
+      PressableScale(
+        child: Material(
+          color: selected
+              ? scheme.primary.withValues(alpha: 0.07)
+              : Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 44),
+            child: row,
+          ),
         ),
       ),
       Positioned(
@@ -86,25 +89,28 @@ class SongBatchCheckbox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: selected ? scheme.primary : Colors.transparent,
-          border: Border.all(
-            color: selected ? scheme.primary : scheme.outlineVariant,
-            width: 1.4,
+    return PressableScale(
+      pressScale: 0.88,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          width: 20,
+          height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? scheme.primary : Colors.transparent,
+            border: Border.all(
+              color: selected ? scheme.primary : scheme.outlineVariant,
+              width: 1.4,
+            ),
           ),
+          child: selected
+              ? Icon(Icons.check, size: 13, color: scheme.onPrimary)
+              : null,
         ),
-        child: selected
-            ? Icon(Icons.check, size: 13, color: scheme.onPrimary)
-            : null,
       ),
     );
   }
@@ -133,39 +139,41 @@ class SongBatchRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final row = Material(
-      color: selected
-          ? scheme.primary.withValues(alpha: 0.07)
-          : Colors.transparent,
-      child: InkWell(
-        onTap: onToggle,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: verticalPadding,
-          ),
-          child: Row(
-            children: [
-              cover,
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    title,
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 4),
-                      subtitle!,
+    final row = PressableScale(
+      child: Material(
+        color: selected
+            ? scheme.primary.withValues(alpha: 0.07)
+            : Colors.transparent,
+        child: InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: verticalPadding,
+            ),
+            child: Row(
+              children: [
+                cover,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      title,
+                      if (subtitle != null) ...[
+                        const SizedBox(height: 4),
+                        subtitle!,
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              if (trailing != null) ...[
-                const SizedBox(width: 8),
-                trailing!,
+                if (trailing != null) ...[
+                  const SizedBox(width: 8),
+                  trailing!,
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -295,21 +303,24 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
       final color = on
           ? (danger ? const Color(0xFFEC4141) : scheme.onSurface)
           : scheme.onSurface.withValues(alpha: 0.32);
-      return InkWell(
-        onTap: on ? onTap : null,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 21, color: color),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                style: TextStyle(fontSize: 10.5, color: color),
-              ),
-            ],
+      return PressableScale(
+        pressScale: 0.92,
+        child: InkWell(
+          onTap: on ? onTap : null,
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 21, color: color),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 10.5, color: color),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -334,35 +345,39 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
                   ),
                 ),
                 const Spacer(),
-                TextButton(
-                  onPressed: widget.onSelectAll,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                  ),
-                  child: Text(
-                    _allSelected ? tr('取消全选') : tr('全选'),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w600,
+                PressableScale(
+                  child: TextButton(
+                    onPressed: widget.onSelectAll,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 0),
+                    ),
+                    child: Text(
+                      _allSelected ? tr('取消全选') : tr('全选'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
-                TextButton(
-                  onPressed: widget.onDone,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                  ),
-                  child: Text(
-                    tr('完成'),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.primary,
-                      fontWeight: FontWeight.w600,
+                PressableScale(
+                  child: TextButton(
+                    onPressed: widget.onDone,
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 0),
+                    ),
+                    child: Text(
+                      tr('完成'),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),

@@ -6,6 +6,7 @@ import '../auth/account_api.dart';
 import '../i18n/i18n.dart';
 import '../sync/favorites_sync_state.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/press_scale.dart';
 import '../widgets/sheet_dialog.dart';
 
 Future<bool> shouldAskFavoriteDeleteScope(
@@ -53,29 +54,35 @@ Future<String?> resolveFavoriteDeleteScope(
               ),
             ),
             const Divider(height: 1),
-            ListTile(
+            PressableScale(
+              child: ListTile(
               leading: Icon(Icons.devices_other_outlined,
                   color: scheme.onSurfaceVariant, size: 22),
               title: Text(tr('删除本地（云端保留）')),
               subtitle: Text(tr('仅删除本机，云端与其他设备保留'),
                   style: const TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'local'),
+              ),
             ),
-            ListTile(
+            PressableScale(
+              child: ListTile(
               leading: Icon(Icons.delete_forever_outlined,
                   color: scheme.error, size: 22),
               title: Text(tr('删除全部')),
               subtitle: Text(tr('本机、云端、其他设备一起删除'),
                   style: const TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'all'),
+              ),
             ),
-            ListTile(
+            PressableScale(
+              child: ListTile(
               leading: Icon(Icons.cloud_off_outlined,
                   color: scheme.error, size: 22),
               title: Text(tr('仅保留本地')),
               subtitle: Text(tr('云端与其他设备删除，本机保留'),
                   style: const TextStyle(fontSize: 12)),
               onTap: () => Navigator.pop(ctx, 'cloud'),
+              ),
             ),
           ],
         ),

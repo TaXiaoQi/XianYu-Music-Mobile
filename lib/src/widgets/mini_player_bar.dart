@@ -21,6 +21,7 @@ import 'cover_hero.dart';
 import 'cover_image.dart';
 import 'flying_cover.dart';
 import 'predictive_cover_return.dart';
+import 'press_scale.dart';
 import 'glass_settings.dart';
 import 'liquid_wave.dart';
 
@@ -515,26 +516,35 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               ],
             ),
           ),
-          IconButton(
-            icon: themeSlotIcon(ref, 'player.prev',
-                fallback: Icons.skip_previous, size: 22),
-            iconSize: 22,
-            onPressed: () => ref.read(playerProvider.notifier).previous(),
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: themeSlotIcon(ref, 'player.prev',
+                  fallback: Icons.skip_previous, size: 22),
+              iconSize: 22,
+              onPressed: () => ref.read(playerProvider.notifier).previous(),
+            ),
           ),
-          IconButton(
-            icon: themeSlotIcon(ref, 'player.play',
-                fallback: isPlaying ? Icons.pause : Icons.play_arrow,
-                size: 26,
-                color: scheme.primary),
-            iconSize: 26,
-            onPressed: () =>
-                ref.read(playerProvider.notifier).toggle(origin: 'miniBar'),
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: themeSlotIcon(ref, 'player.play',
+                  fallback: isPlaying ? Icons.pause : Icons.play_arrow,
+                  size: 26,
+                  color: scheme.primary),
+              iconSize: 26,
+              onPressed: () =>
+                  ref.read(playerProvider.notifier).toggle(origin: 'miniBar'),
+            ),
           ),
-          IconButton(
-            icon: themeSlotIcon(ref, 'player.next',
-                fallback: Icons.skip_next, size: 22),
-            iconSize: 22,
-            onPressed: () => ref.read(playerProvider.notifier).next(),
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: themeSlotIcon(ref, 'player.next',
+                  fallback: Icons.skip_next, size: 22),
+              iconSize: 22,
+              onPressed: () => ref.read(playerProvider.notifier).next(),
+            ),
           ),
         ],
       ),
@@ -543,33 +553,36 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
 
     // 淡入/还原首帧的采样黑闪由 overlay 层 0.01 保底持续绘制 +
     // BiliPaiGlass 预烘焙图续展兜住，液态面保持实时玻璃不切实底
-    final bar = GestureDetector(
-      onPanStart: _handlePanStart,
-      onPanUpdate: _handlePanUpdate,
-      onPanEnd: _handlePanEnd,
-      onPanCancel: _handlePanCancel,
-      onTap: () {
-        final ro = _coverKey.currentContext?.findRenderObject();
-        if (ro is RenderBox && ro.hasSize) {
-          final from = ro.localToGlobal(Offset.zero) & ro.size;
-          unawaited(FlyingCover.instance.launch(
-            fromRect: from,
-            songPath: current.path,
-            networkUrl: current.coverUrl,
-            radius: 23,
-            // 飞入播放页期间隐藏目的地真封面，落地才露出
-            hideTarget: true,
-            targetProvider: () =>
-                FlyingCover.instance.outboundTargetProvider?.call() ?? from,
-          ));
-        }
-        openPlayer();
-      },
-      behavior: HitTestBehavior.opaque,
-      child: liquid
-          ? _liquidSurface(context, content)
-          : _frostedSurface(context, content,
-              lowPerf: lowPerf, budget: budget),
+    final bar = PressableScale(
+      pressScale: 0.92,
+      child: GestureDetector(
+        onPanStart: _handlePanStart,
+        onPanUpdate: _handlePanUpdate,
+        onPanEnd: _handlePanEnd,
+        onPanCancel: _handlePanCancel,
+        onTap: () {
+          final ro = _coverKey.currentContext?.findRenderObject();
+          if (ro is RenderBox && ro.hasSize) {
+            final from = ro.localToGlobal(Offset.zero) & ro.size;
+            unawaited(FlyingCover.instance.launch(
+              fromRect: from,
+              songPath: current.path,
+              networkUrl: current.coverUrl,
+              radius: 23,
+              // 飞入播放页期间隐藏目的地真封面，落地才露出
+              hideTarget: true,
+              targetProvider: () =>
+                  FlyingCover.instance.outboundTargetProvider?.call() ?? from,
+            ));
+          }
+          openPlayer();
+        },
+        behavior: HitTestBehavior.opaque,
+        child: liquid
+            ? _liquidSurface(context, content)
+            : _frostedSurface(context, content,
+                lowPerf: lowPerf, budget: budget),
+      ),
     );
 
     if (widget.onPanUpdate == null) {

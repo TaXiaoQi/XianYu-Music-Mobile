@@ -111,13 +111,19 @@ extension _AccountPageAuthActions on _AccountPageState {
         title:   Text(tr('退出登录')),
         content:   Text(tr('确定要退出当前账号吗？')),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:   Text(tr('取消')),
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('退出')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:   Text(tr('退出')),
+            ),
           ),
         ],
       ),

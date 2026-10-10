@@ -158,9 +158,12 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
           ),
         ),
         actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(tr('好的')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('好的')),
+            ),
           ),
         ],
       ),
@@ -204,12 +207,15 @@ class _BackupImportTabState extends ConsumerState<_BackupImportTab> {
         ),
         const SizedBox(height: 24),
         Center(
-          child: OutlinedButton.icon(
-            onPressed: _loading ? null : _pickLocalFile,
-            icon: const Icon(Icons.folder_open, size: 24),
-            label: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Text(tr('选择本地备份文件'), style: TextStyle(fontSize: 15)),
+          child: PressableScale(
+            pressScale: 0.92,
+            child: OutlinedButton.icon(
+              onPressed: _loading ? null : _pickLocalFile,
+              icon: const Icon(Icons.folder_open, size: 24),
+              label: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text(tr('选择本地备份文件'), style: TextStyle(fontSize: 15)),
+              ),
             ),
           ),
         ),

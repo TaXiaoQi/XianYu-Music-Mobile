@@ -25,6 +25,7 @@ import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/page_search_bar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../home/discover_section.dart' show StatsSummaryCard;
@@ -212,7 +213,7 @@ class _QuickCards extends ConsumerWidget {
     }
 
     Widget card((String, String, IconData, String) c) {
-      return Material(
+      final tile = Material(
         color: Colors.transparent,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -271,6 +272,7 @@ class _QuickCards extends ConsumerWidget {
           ),
         ),
       );
+      return PressableScale(child: tile);
     }
 
     return Row(
@@ -301,39 +303,41 @@ class _AccountArea extends ConsumerWidget {
       return Column(
         children: [
           const SizedBox(height: 6),
-          Material(
-            borderRadius: BorderRadius.circular(999),
-            child: InkWell(
-              onTap: () => context.push('/account'),
+          PressableScale(
+            child: Material(
               borderRadius: BorderRadius.circular(999),
-              child: Container(
-                height: 52,
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFEC4141), Color(0xFFFF6B6B)],
-                  ),
-                  borderRadius: BorderRadius.circular(999),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFEC4141).withValues(alpha: 0.35),
-                      blurRadius: 18,
-                      offset: const Offset(0, 6),
+              child: InkWell(
+                onTap: () => context.push('/account'),
+                borderRadius: BorderRadius.circular(999),
+                child: Container(
+                  height: 52,
+                  padding: const EdgeInsets.symmetric(horizontal: 28),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFEC4141), Color(0xFFFF6B6B)],
                     ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      tr('登录弦予音乐账号'),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onPrimary,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFEC4141).withValues(alpha: 0.35),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        tr('登录弦予音乐账号'),
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -425,7 +429,7 @@ class _AccountArea extends ConsumerWidget {
         context: context,
         ref: ref,
         radius: 16,
-        child: accountCard,
+        child: PressableScale(child: accountCard),
         themeSlot: 'mine.user');
   }
 
@@ -477,45 +481,44 @@ class _QuickEntries extends ConsumerWidget {
       required VoidCallback onTap,
       String? themeSlot,
     }) {
-      return Expanded(
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.10),
-                    shape: BoxShape.circle,
-                  ),
-                  child: themeSlotIcon(ref, themeSlot,
-                      fallback: icon, color: scheme.primary, size: 24),
+      final tile = InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: themeSlotIcon(ref, themeSlot,
+                    fallback: icon, color: scheme.primary, size: 24),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  count,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                count,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
+      return Expanded(child: PressableScale(child: tile));
     }
 
     final entriesCard = Material(
@@ -965,7 +968,7 @@ class _CollectionRow extends ConsumerWidget {
         ? OnlineDetailType.album
         : OnlineDetailType.playlist;
 
-    return InkWell(
+    final row = InkWell(
       onTap: () => context.push(
         '/online-detail',
         extra: OnlineDetailArgs(
@@ -1035,6 +1038,8 @@ class _CollectionRow extends ConsumerWidget {
         ),
       ),
     );
+    // 行主体可点；拖拽仅由行内 DragHandle 发起，缩放不影响其手势
+    return PressableScale(child: row);
   }
 
   String _pluginName(WidgetRef ref, String id) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
+import '../widgets/press_scale.dart';
 import '../i18n/i18n.dart';
 
 enum SyncDirection { local, cloud }
@@ -176,7 +177,9 @@ class _ConflictOverallDialog extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
@@ -188,9 +191,12 @@ class _ConflictOverallDialog extends StatelessWidget {
                     ),
                   ),
                   child:   Text(tr('取消')),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                OutlinedButton(
+                PressableScale(
+                  pressScale: 0.92,
+                  child: OutlinedButton(
                   onPressed: () =>
                       Navigator.of(context).pop(SyncDirection.cloud),
                   style: OutlinedButton.styleFrom(
@@ -203,9 +209,12 @@ class _ConflictOverallDialog extends StatelessWidget {
                     ),
                   ),
                   child:   Text(tr('保留云端')),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
+                PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton(
                   onPressed: () =>
                       Navigator.of(context).pop(SyncDirection.local),
                   style: FilledButton.styleFrom(
@@ -219,6 +228,7 @@ class _ConflictOverallDialog extends StatelessWidget {
                     ),
                   ),
                   child:   Text(tr('保留本地')),
+                  ),
                 ),
               ],
             ),
@@ -386,7 +396,9 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   style: TextButton.styleFrom(
                     padding: const EdgeInsets.symmetric(
@@ -398,9 +410,12 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
                     ),
                   ),
                   child:   Text(tr('取消')),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
+                PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton(
                   onPressed: () => Navigator.of(context).pop(_choices),
                   style: FilledButton.styleFrom(
                     backgroundColor: scheme.primary,
@@ -413,6 +428,7 @@ class _ConflictCategoryDialogState extends State<_ConflictCategoryDialog> {
                     ),
                   ),
                   child:   Text(tr('确认同步')),
+                  ),
                 ),
               ],
             ),
@@ -542,11 +558,13 @@ class _ToggleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: selected ? scheme.primary : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
+    return PressableScale(
+        pressScale: 0.92,
+        child: Material(
+        color: selected ? scheme.primary : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -559,6 +577,7 @@ class _ToggleChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

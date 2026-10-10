@@ -39,7 +39,7 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
         ? scheme.onSurfaceVariant
         : scheme.onSurfaceVariant.withValues(alpha: 0.45);
 
-    return InkWell(
+    final tile = InkWell(
       onTap: enabled ? onTap : null,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -102,6 +102,8 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
         ),
       ),
     );
+    // 无 onTap 的展示行不缩放，避免按下无响应的误导
+    return onTap == null ? tile : PressableScale(child: tile);
   }
 
   Widget _switchTile(
@@ -224,13 +226,19 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
             title:   Text(tr('桌面歌词需要悬浮窗权限')),
             content:   Text(tr('开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。')),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child:   Text(tr('取消')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child:   Text(tr('取消')),
+                ),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child:   Text(tr('去授权')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child:   Text(tr('去授权')),
+                ),
               ),
             ],
           ),

@@ -146,10 +146,13 @@ class _MyUploadsTabState extends ConsumerState<_MyUploadsTab>
         Positioned(
           right: 16,
           bottom: 24,
-          child: FloatingActionButton.extended(
-            onPressed: _openUpload,
-            icon: const Icon(Icons.upload_outlined),
-            label: Text(tr('上传壁纸')),
+          child: PressableScale(
+            pressScale: 0.92,
+            child: FloatingActionButton.extended(
+              onPressed: _openUpload,
+              icon: const Icon(Icons.upload_outlined),
+              label: Text(tr('上传壁纸')),
+            ),
           ),
         ),
       ],
@@ -465,7 +468,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
         ),
       );
     }
-    return GestureDetector(
+    return PressableScale(
+      pressScale: 0.92,
+      child: GestureDetector(
       onTap: _uploading ? null : _pickImage,
       child: Container(
         height: videoReady ? 200 : 160,
@@ -506,6 +511,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                 ),
               ),
       ),
+      ),
     );
   }
 
@@ -530,18 +536,24 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _uploading ? null : _pickImage,
-                  icon: const Icon(Icons.photo_outlined, size: 18),
-                  label: Text(tr('选图片')),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: OutlinedButton.icon(
+                    onPressed: _uploading ? null : _pickImage,
+                    icon: const Icon(Icons.photo_outlined, size: 18),
+                    label: Text(tr('选图片')),
+                  ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _uploading ? null : _pickVideo,
-                  icon: const Icon(Icons.movie_outlined, size: 18),
-                  label: Text(tr('选视频')),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: OutlinedButton.icon(
+                    onPressed: _uploading ? null : _pickVideo,
+                    icon: const Icon(Icons.movie_outlined, size: 18),
+                    label: Text(tr('选视频')),
+                  ),
                 ),
               ),
             ],
@@ -607,7 +619,9 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
               ),
             ),
           const SizedBox(height: 14),
-          FilledButton(
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
             onPressed: _uploading ? null : _submit,
             child: _uploading
                 ? const SizedBox(
@@ -619,6 +633,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
                     ),
                   )
                 : Text(tr('提交审核')),
+            ),
           ),
         ],
       ),

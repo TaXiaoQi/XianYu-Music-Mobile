@@ -87,19 +87,25 @@ class _ChangeNicknameDialogState extends State<ChangeNicknameDialog> {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context, null),
-          child:   Text(tr('取消')),
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: _loading ? null : () => Navigator.pop(context, null),
+            child:   Text(tr('取消')),
+          ),
         ),
-        FilledButton(
-          onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              :   Text(tr('提交申请')),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton(
+            onPressed: _loading ? null : _submit,
+            child: _loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                :   Text(tr('提交申请')),
+          ),
         ),
       ],
     );
@@ -226,28 +232,37 @@ class _ChangeCiyuanxiDialogState extends State<ChangeCiyuanxiDialog> {
               hintText: tr('请输入当前登录密码'),
               border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12)),
-              suffixIcon: IconButton(
-                icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-                onPressed: () => setState(() => _obscure = !_obscure),
+              suffixIcon: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
               ),
             ),
           ),
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child:   Text(tr('取消')),
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: _loading ? null : () => Navigator.pop(context, false),
+            child:   Text(tr('取消')),
+          ),
         ),
-        FilledButton(
-          onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              :   Text(tr('确认修改')),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton(
+            onPressed: _loading ? null : _submit,
+            child: _loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                :   Text(tr('确认修改')),
+          ),
         ),
       ],
     );
@@ -359,17 +374,23 @@ class ProfileEditGateDialog extends StatelessWidget {
               children: [
                 if (!blocked) ...[
                   Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child:   Text(tr('取消')),
+                    child: PressableScale(
+                      pressScale: 0.92,
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child:   Text(tr('取消')),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                 ],
                 Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(context, !blocked),
-                    child: Text(blocked ? tr('关闭') : confirmText),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(context, !blocked),
+                      child: Text(blocked ? tr('关闭') : confirmText),
+                    ),
                   ),
                 ),
               ],

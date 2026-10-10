@@ -26,6 +26,7 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 
 class RecognizePage extends ConsumerStatefulWidget {
@@ -563,46 +564,49 @@ class _MicView extends ConsumerWidget {
                         color: primary.withValues(alpha: 0.10),
                       ),
                     ),
-                  Container(
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: primary
-                              .withValues(alpha: active ? 0.32 : 0.18),
-                          blurRadius: 22,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: Material(
-                      color: themeTint(
-                          ref,
-                          'recognize.btn',
-                          active && !recognizing
-                              ? primary
-                              : primary.withValues(alpha: 0.16)),
-                      shape: const CircleBorder(),
-                      child: InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: onTap,
-                        child: SizedBox(
-                          width: 76,
-                          height: 76,
-                          child: themeSlotIcon(
+                  PressableScale(
+                    pressScale: 0.92,
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: primary
+                                .withValues(alpha: active ? 0.32 : 0.18),
+                            blurRadius: 22,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: themeTint(
                             ref,
-                            'recognize.mic',
-                            fallback: recognizing
-                                ? Icons.mic_off
-                                : active
-                                    ? Icons.mic
-                                    : Icons.mic_none_rounded,
-                            color: active && !recognizing
-                                ? Colors.white
-                                : primary,
-                            size: 32,
+                            'recognize.btn',
+                            active && !recognizing
+                                ? primary
+                                : primary.withValues(alpha: 0.16)),
+                        shape: const CircleBorder(),
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: onTap,
+                          child: SizedBox(
+                            width: 76,
+                            height: 76,
+                            child: themeSlotIcon(
+                              ref,
+                              'recognize.mic',
+                              fallback: recognizing
+                                  ? Icons.mic_off
+                                  : active
+                                      ? Icons.mic
+                                      : Icons.mic_none_rounded,
+                              color: active && !recognizing
+                                  ? Colors.white
+                                  : primary,
+                              size: 32,
+                            ),
                           ),
                         ),
                       ),
@@ -942,26 +946,34 @@ class _MatchRowState extends State<_MatchRow> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              IconButton(
-                icon: Icon(Icons.play_circle_fill,
-                    size: 30, color: primary),
-                tooltip: tr('播放'),
-                onPressed: _handlePlay,
-              ),
-              IconButton(
-                icon: Icon(
-                  widget.fav ? Icons.favorite : Icons.favorite_border,
-                  size: 22,
-                  color: widget.fav ? primary : scheme.onSurfaceVariant,
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  icon: Icon(Icons.play_circle_fill, size: 30, color: primary),
+                  tooltip: tr('播放'),
+                  onPressed: _handlePlay,
                 ),
-                tooltip: widget.fav ? tr('已收藏') : tr('收藏'),
-                onPressed: widget.onFavorite,
               ),
-              IconButton(
-                icon: Icon(Icons.playlist_add,
-                    size: 22, color: scheme.onSurfaceVariant),
-                tooltip: tr('添加到歌单'),
-                onPressed: widget.onAddToPlaylist,
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  icon: Icon(
+                    widget.fav ? Icons.favorite : Icons.favorite_border,
+                    size: 22,
+                    color: widget.fav ? primary : scheme.onSurfaceVariant,
+                  ),
+                  tooltip: widget.fav ? tr('已收藏') : tr('收藏'),
+                  onPressed: widget.onFavorite,
+                ),
+              ),
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  icon: Icon(Icons.playlist_add,
+                      size: 22, color: scheme.onSurfaceVariant),
+                  tooltip: tr('添加到歌单'),
+                  onPressed: widget.onAddToPlaylist,
+                ),
               ),
             ],
           ),
@@ -978,31 +990,34 @@ class _ReRecognizeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 11),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEC4141).withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        alignment: Alignment.center,
-        child:   Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.refresh, size: 18, color: Color(0xFFEC4141)),
-            SizedBox(width: 6),
-            Text(
-              tr('重新识别'),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFFEC4141),
+    return PressableScale(
+      pressScale: 0.92,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 11),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEC4141).withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          alignment: Alignment.center,
+          child:   Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.refresh, size: 18, color: Color(0xFFEC4141)),
+              SizedBox(width: 6),
+              Text(
+                tr('重新识别'),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFFEC4141),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

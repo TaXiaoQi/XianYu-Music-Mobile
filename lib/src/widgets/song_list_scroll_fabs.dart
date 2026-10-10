@@ -9,6 +9,7 @@ import '../core/settings.dart';
 import '../i18n/i18n.dart';
 import 'bilipai_glass.dart';
 import 'glass_settings.dart';
+import 'press_scale.dart';
 
 class SongListScrollFabs extends ConsumerWidget {
   const SongListScrollFabs({
@@ -383,6 +384,9 @@ class _ScrollFabState extends ConsumerState<_ScrollFab> {
         ),
       );
     }
-    return Tooltip(message: widget.tooltip, child: surface);
+    return PressableScale(
+      pressScale: 0.88,
+      child: Tooltip(message: widget.tooltip, child: surface),
+    );
   }
 }

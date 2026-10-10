@@ -1,4 +1,4 @@
-﻿part of 'player_page.dart';
+part of 'player_page.dart';
 
 class _GlassControlCard extends ConsumerWidget {
   const _GlassControlCard({
@@ -215,7 +215,7 @@ class _TitleRow extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               if (current.isOnline)
-                InkWell(
+                PressableScale(pressScale: 0.88, child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: () => _showQualitySheet(context, ref),
                   child: Padding(
@@ -243,13 +243,13 @@ class _TitleRow extends ConsumerWidget {
                       ),
                     ),
                   ),
-                ),
+                )),
               if (chain.known) ...[
                 const SizedBox(width: 6),
                 _AudioFormatBadge(chain: chain, dense: true),
               ],
               const SizedBox(width: 4),
-              InkWell(
+              PressableScale(pressScale: 0.88, child: InkWell(
                 borderRadius: BorderRadius.circular(10),
                 onTap: mvRequested
                     ? null
@@ -283,7 +283,7 @@ class _TitleRow extends ConsumerWidget {
                     ),
                   ),
                 ),
-              ),
+              )),
             ],
           ),
         ),
@@ -292,7 +292,7 @@ class _TitleRow extends ConsumerWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              IconButton(
+              PressableScale(pressScale: 0.88, child: IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                 padding: EdgeInsets.zero,
                 icon: themeSlotIcon(
@@ -307,8 +307,8 @@ class _TitleRow extends ConsumerWidget {
                 tooltip: tr('收藏'),
                 onPressed: () =>
                     ref.read(favoritesProvider.notifier).toggle(current),
-              ),
-              IconButton(
+              )),
+              PressableScale(pressScale: 0.88, child: IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                 padding: EdgeInsets.zero,
                 icon: themeSlotIcon(
@@ -320,9 +320,9 @@ class _TitleRow extends ConsumerWidget {
                 ),
                 tooltip: tr('分享歌曲'),
                 onPressed: () => _shareCurrent(context, ref, current),
-              ),
+              )),
               if (current.isOnline)
-                IconButton(
+                PressableScale(pressScale: 0.88, child: IconButton(
                   constraints: const BoxConstraints(
                     minWidth: 40,
                     minHeight: 36,
@@ -338,9 +338,9 @@ class _TitleRow extends ConsumerWidget {
                   tooltip: tr('下载歌曲'),
                   onPressed: () =>
                       _showDownloadQualitySheet(context, ref, current),
-                ),
+                )),
               if (current.isOnline)
-                IconButton(
+                PressableScale(pressScale: 0.88, child: IconButton(
                   constraints: const BoxConstraints(
                     minWidth: 40,
                     minHeight: 36,
@@ -358,7 +358,7 @@ class _TitleRow extends ConsumerWidget {
                     context,
                     (_) => CommentSheet(songJson: current.onlineSongJson),
                   ),
-                ),
+                )),
             ],
           ),
         ),
@@ -852,7 +852,7 @@ class _Controls extends ConsumerWidget {
         children: [
           Expanded(
             child: Center(
-              child: IconButton(
+              child: PressableScale(pressScale: 0.88, child: IconButton(
                 iconSize: 28,
                 icon: themeSlotWidget(
                   ref,
@@ -865,16 +865,16 @@ class _Controls extends ConsumerWidget {
                   ),
                 ),
                 onPressed: notifier.cyclePlayMode,
-              ),
+              )),
             ),
           ),
           Expanded(
             child: Center(
-              child: IconButton(
+              child: PressableScale(pressScale: 0.88, child: IconButton(
                 iconSize: 28,
                 icon: const Icon(Icons.skip_previous),
                 onPressed: notifier.previous,
-              ),
+              )),
             ),
           ),
           Expanded(
@@ -901,29 +901,29 @@ class _Controls extends ConsumerWidget {
                           color: Colors.white,
                         ),
                       )
-                    : IconButton(
+                    : PressableScale(pressScale: 0.92, child: IconButton(
                         icon: Icon(
                           isPlaying ? Icons.pause : Icons.play_arrow,
                           color: Colors.white,
                         ),
                         iconSize: 34,
                         onPressed: notifier.toggle,
-                      ),
+                      )),
               ),
             ),
           ),
           Expanded(
             child: Center(
-              child: IconButton(
+              child: PressableScale(pressScale: 0.88, child: IconButton(
                 iconSize: 28,
                 icon: const Icon(Icons.skip_next),
                 onPressed: notifier.next,
-              ),
+              )),
             ),
           ),
           Expanded(
             child: Center(
-              child: IconButton(
+              child: PressableScale(pressScale: 0.88, child: IconButton(
                 iconSize: 28,
                 icon: themeSlotIcon(
                   ref,
@@ -933,7 +933,7 @@ class _Controls extends ConsumerWidget {
                   color: scheme.onSurfaceVariant,
                 ),
                 onPressed: () => _showQueueSheet(context, ref),
-              ),
+              )),
             ),
           ),
         ],

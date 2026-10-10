@@ -26,13 +26,19 @@ Future<String?> _promptName(BuildContext context, String title) {
         onSubmitted: (v) => Navigator.pop(ctx, v),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child:   Text(tr('取消')),
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:   Text(tr('取消')),
+          ),
         ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, controller.text),
-          child:   Text(tr('确定')),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child:   Text(tr('确定')),
+          ),
         ),
       ],
     ),
@@ -102,12 +108,15 @@ extension _PlaylistDetailActions on _PlaylistDetailPageState {
           isDense: true,
           suffixIcon: _query.isEmpty
               ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear, size: 18),
-                  onPressed: () {
-                    _searchCtrl.clear();
-                    _onQueryChanged('');
-                  },
+              : PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    onPressed: () {
+                      _searchCtrl.clear();
+                      _onQueryChanged('');
+                    },
+                  ),
                 ),
         ),
       ),
@@ -125,17 +134,23 @@ extension _PlaylistDetailActions on _PlaylistDetailPageState {
         final tip = active ? tr('完成') : tr('批量');
         void onTap() => active ? _batch.exit() : _batch.enter();
         if (floating) {
-          return BiliPaiIconButton(
-            icon: icon,
-            tooltip: tip,
-            color: active ? Theme.of(context).colorScheme.primary : null,
-            onTap: onTap,
+          return PressableScale(
+            pressScale: 0.88,
+            child: BiliPaiIconButton(
+              icon: icon,
+              tooltip: tip,
+              color: active ? Theme.of(context).colorScheme.primary : null,
+              onTap: onTap,
+            ),
           );
         }
-        return IconButton(
-          icon: Icon(icon, size: 22),
-          tooltip: tip,
-          onPressed: onTap,
+        return PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            icon: Icon(icon, size: 22),
+            tooltip: tip,
+            onPressed: onTap,
+          ),
         );
       },
     );

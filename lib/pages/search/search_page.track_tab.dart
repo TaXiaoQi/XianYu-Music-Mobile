@@ -123,7 +123,8 @@ class _TrackTabState extends ConsumerState<_TrackTab>
             Builder(
               builder: (rowContext) {
                 BuildContext? coverCtx;
-                return CoverRow(
+                return PressableScale(
+                  child: CoverRow(
                 background: themeTintOrNull(ref, 'sr.item'),
                 cover: Builder(
                   builder: (c) {
@@ -157,6 +158,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                     radius: m.songRadius,
                   );
                 },
+                ),
                 );
               },
             ),
@@ -172,7 +174,8 @@ class _TrackTabState extends ConsumerState<_TrackTab>
           Builder(
             builder: (rowContext) {
               BuildContext? coverCtx;
-              return CoverRow(
+              return PressableScale(
+                child: CoverRow(
               background: themeTintOrNull(ref, 'sr.item'),
               cover: Builder(
                 builder: (c) {
@@ -198,25 +201,31 @@ class _TrackTabState extends ConsumerState<_TrackTab>
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: Icon(
-                    isFav ? Icons.favorite : Icons.favorite_border,
-                    size: 20,
-                    color: isFav ? scheme.primary : scheme.onSurfaceVariant,
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: Icon(
+                      isFav ? Icons.favorite : Icons.favorite_border,
+                      size: 20,
+                      color: isFav ? scheme.primary : scheme.onSurfaceVariant,
+                    ),
+                    tooltip: tr('收藏'),
+                    onPressed: () => _toggleFavorite(i),
                   ),
-                  tooltip: tr('收藏'),
-                  onPressed: () => _toggleFavorite(i),
                 ),
                 Text(
                   r.interval,
                   style: TextStyle(
                       fontSize: m.subtitleSize, color: scheme.outline),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.more_horiz, size: 22),
-                  color: scheme.onSurfaceVariant,
-                  tooltip: tr('更多'),
-                  onPressed: () => _openActions(i),
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: const Icon(Icons.more_horiz, size: 22),
+                    color: scheme.onSurfaceVariant,
+                    tooltip: tr('更多'),
+                    onPressed: () => _openActions(i),
+                  ),
                 ),
               ],
             ),
@@ -236,6 +245,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                   AppLog.debug('search', '封面飞入动画失败: $e');
                 }
               },
+              ),
             );
             },
           ),

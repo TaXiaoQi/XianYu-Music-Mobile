@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/account_api.dart';
 import '../auth/server_models.dart';
 import '../i18n/i18n.dart';
+import 'press_scale.dart';
 import 'predictive_dialog_route.dart';
 import 'privacy_policy.dart';
 
@@ -132,21 +133,21 @@ class _UserAgreementCheckboxState extends ConsumerState<UserAgreementCheckbox> {
                   WidgetSpan(
                     alignment: PlaceholderAlignment.baseline,
                     baseline: TextBaseline.alphabetic,
-                    child: GestureDetector(
+                    child: PressableScale(child: GestureDetector(
                       onTap: _openModal,
                       child: Text('《${tr(kUserAgreementDefaultTitle)}》',
                           style: linkStyle),
-                    ),
+                    )),
                   ),
                   TextSpan(text: ' ${tr('和')} '),
                   WidgetSpan(
                     alignment: PlaceholderAlignment.baseline,
                     baseline: TextBaseline.alphabetic,
-                    child: GestureDetector(
+                    child: PressableScale(child: GestureDetector(
                       onTap: _openPrivacyModal,
                       child: Text('《${tr(kPrivacyPolicyDefaultTitle)}》',
                           style: linkStyle),
-                    ),
+                    )),
                   ),
                 ],
               ),
@@ -267,16 +268,16 @@ class _AgreementDialogState extends State<_AgreementDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        PressableScale(child: TextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: Text(tr('取消')),
-        ),
-        FilledButton(
+        )),
+        PressableScale(child: FilledButton(
           onPressed: enable ? () => Navigator.of(context).pop(true) : null,
           child: Text(widget.requireScrollToBottom && !_atEnd
               ? tr('请滚动至底部')
               : tr('同意')),
-        ),
+        )),
       ],
     );
   }

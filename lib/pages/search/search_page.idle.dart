@@ -39,29 +39,31 @@ class _SuggestionView extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         for (final w in keywords)
-          InkWell(
-            onTap: () => onSubmit(w),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              child: Row(
-                children: [
-                  const SizedBox(width: 4),
-                  Icon(Icons.search,
-                      size: 16, color: scheme.onSurfaceVariant),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: highlightedText(
-                      w,
-                      query,
-                      scheme.primary,
-                      maxLines: 1,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w500),
+          PressableScale(
+            child: InkWell(
+              onTap: () => onSubmit(w),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 4),
+                    Icon(Icons.search,
+                        size: 16, color: scheme.onSurfaceVariant),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: highlightedText(
+                        w,
+                        query,
+                        scheme.primary,
+                        maxLines: 1,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w500),
+                      ),
                     ),
-                  ),
-                  Icon(Icons.north_west,
-                      size: 14, color: scheme.onSurfaceVariant),
-                ],
+                    Icon(Icons.north_west,
+                        size: 14, color: scheme.onSurfaceVariant),
+                  ],
+                ),
               ),
             ),
           ),
@@ -117,17 +119,20 @@ class SearchIdleView extends ConsumerWidget {
                   ),
                   const Spacer(),
                   if (history.isNotEmpty)
-                    InkWell(
-                      onTap: () =>
-                          ref.read(searchHistoryProvider.notifier).clear(),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        child: Text(
-                          tr('清空'),
-                          style: TextStyle(
-                              fontSize: 12, color: scheme.onSurfaceVariant),
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: InkWell(
+                        onTap: () =>
+                            ref.read(searchHistoryProvider.notifier).clear(),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          child: Text(
+                            tr('清空'),
+                            style: TextStyle(
+                                fontSize: 12, color: scheme.onSurfaceVariant),
+                          ),
                         ),
                       ),
                     ),
@@ -239,7 +244,8 @@ class _HistoryTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     // 胶囊标签：词条与删除按钮挨着，整行高度也从 ~40px 降到 ~32px
-    return InkWell(
+    return PressableScale(
+      child: InkWell(
       onTap: () => onTap(keyword),
       borderRadius: BorderRadius.circular(999),
       child: Container(
@@ -261,18 +267,22 @@ class _HistoryTile extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 2),
-            InkWell(
-              onTap: () => ref
-                  .read(searchHistoryProvider.notifier)
-                  .remove(keyword),
-              borderRadius: BorderRadius.circular(999),
-              child: Padding(
-                padding: const EdgeInsets.all(3),
-                child: Icon(Icons.close, size: 14, color: scheme.outline),
+            PressableScale(
+              pressScale: 0.88,
+              child: InkWell(
+                onTap: () => ref
+                    .read(searchHistoryProvider.notifier)
+                    .remove(keyword),
+                borderRadius: BorderRadius.circular(999),
+                child: Padding(
+                  padding: const EdgeInsets.all(3),
+                  child: Icon(Icons.close, size: 14, color: scheme.outline),
+                ),
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -300,7 +310,8 @@ class _HotTile extends ConsumerWidget {
             ? 15.0
             : 14.5;
     final itemTint = themeTintOrNull(ref, 'search.item');
-    return Container(
+    return PressableScale(
+      child: Container(
       decoration: itemTint == null
           ? null
           : BoxDecoration(
@@ -344,6 +355,7 @@ class _HotTile extends ConsumerWidget {
             ],
           ),
         ),
+      ),
       ),
     );
   }

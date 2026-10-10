@@ -7,6 +7,7 @@ import '../core/settings.dart';
 import '../theme/theme_tint.dart';
 import 'floating_search_bar.dart';
 import 'glass_settings.dart';
+import 'press_scale.dart';
 
 class GlassTopBar extends ConsumerWidget {
   const GlassTopBar({
@@ -121,7 +122,8 @@ class GlassTopBar extends ConsumerWidget {
           height: kToolbarHeight,
           child: Row(
             children: [
-              ?leading,
+              if (leading != null)
+                PressableScale(pressScale: 0.92, child: leading!),
               Expanded(
                 child: Padding(
                   padding: EdgeInsets.only(
@@ -141,7 +143,13 @@ class GlassTopBar extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (actions != null) ...?actions,
+              // SizedBox 是列表里的占位间距，不参与按压
+              if (actions != null)
+                ...actions!.map(
+                  (w) => w is SizedBox
+                      ? w
+                      : PressableScale(pressScale: 0.92, child: w),
+                ),
             ],
           ),
         ),

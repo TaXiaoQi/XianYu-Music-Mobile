@@ -22,6 +22,7 @@ import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';

@@ -21,6 +21,7 @@ import 'glass_appbar.dart';
 import 'floating_search_bar.dart';
 import 'glass_settings.dart';
 import 'page_search_bar.dart';
+import 'press_scale.dart';
 import 'skin_icon.dart';
 
 class LandscapeSearchBar extends ConsumerWidget {
@@ -302,36 +303,42 @@ class _LandscapeSearchFieldState extends ConsumerState<_LandscapeSearchField> {
               ),
             ),
             if (hasText)
-              GestureDetector(
-                onTap: () {
-                  _ctrl.clear();
-                  setState(() {});
-                },
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Icon(
-                    Icons.clear,
-                    size: 17,
-                    color: scheme.onSurfaceVariant,
+              PressableScale(
+                pressScale: 0.88,
+                child: GestureDetector(
+                  onTap: () {
+                    _ctrl.clear();
+                    setState(() {});
+                  },
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      Icons.clear,
+                      size: 17,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ),
             const SizedBox(width: 6),
-            GestureDetector(
-              onTap: () => context.push('/recognize'),
-              behavior: HitTestBehavior.opaque,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEC4141).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.mic_none,
-                  size: 17,
-                  color: Color(0xFFEC4141),
+            PressableScale(
+              pressScale: 0.88,
+              child: GestureDetector(
+                onTap: () => context.push('/recognize'),
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEC4141).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.mic_none,
+                    size: 17,
+                    color: Color(0xFFEC4141),
+                  ),
                 ),
               ),
             ),
@@ -426,15 +433,18 @@ class _LandscapeLibrarySearchFieldState
               ),
             ),
             if (hasText)
-              GestureDetector(
-                onTap: _clear,
-                behavior: HitTestBehavior.opaque,
-                child: Padding(
-                  padding: const EdgeInsets.all(6),
-                  child: Icon(
-                    Icons.clear,
-                    size: 17,
-                    color: scheme.onSurfaceVariant,
+              PressableScale(
+                pressScale: 0.88,
+                child: GestureDetector(
+                  onTap: _clear,
+                  behavior: HitTestBehavior.opaque,
+                  child: Padding(
+                    padding: const EdgeInsets.all(6),
+                    child: Icon(
+                      Icons.clear,
+                      size: 17,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ),

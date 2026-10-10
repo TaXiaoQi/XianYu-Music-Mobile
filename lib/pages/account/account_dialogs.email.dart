@@ -153,16 +153,19 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
                 padding: const EdgeInsets.only(top: 8),
                 child: SizedBox(
                   height: 56,
-                  child: OutlinedButton(
-                    onPressed:
-                        (_codeLoading || _loading || _countdown > 0)
-                            ? null
-                            : _sendCode,
-                    child: Text(_codeLoading
-                        ? tr('发送中…')
-                        : _countdown > 0
-                            ? tr('重新发送({n}s)', {'n': _countdown})
-                            : tr('发送验证码')),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: OutlinedButton(
+                      onPressed:
+                          (_codeLoading || _loading || _countdown > 0)
+                              ? null
+                              : _sendCode,
+                      child: Text(_codeLoading
+                          ? tr('发送中…')
+                          : _countdown > 0
+                              ? tr('重新发送({n}s)', {'n': _countdown})
+                              : tr('发送验证码')),
+                    ),
                   ),
                 ),
               ),
@@ -171,19 +174,25 @@ class _BindEmailDialogState extends State<BindEmailDialog> {
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child:   Text(tr('取消')),
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: _loading ? null : () => Navigator.pop(context, false),
+            child:   Text(tr('取消')),
+          ),
         ),
-        FilledButton(
-          onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              :   Text(tr('确认绑定')),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton(
+            onPressed: _loading ? null : _submit,
+            child: _loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                :   Text(tr('确认绑定')),
+          ),
         ),
       ],
     );

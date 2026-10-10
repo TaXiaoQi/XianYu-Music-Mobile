@@ -1,4 +1,4 @@
-﻿part of 'player_page.dart';
+part of 'player_page.dart';
 
 class _LyricSettingsRail extends ConsumerStatefulWidget {
   const _LyricSettingsRail({
@@ -73,7 +73,7 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                InkWell(
+                PressableScale(pressScale: 0.88, child: InkWell(
                   onTap: () => setState(() => _expanded = !_expanded),
                   borderRadius: BorderRadius.circular(20),
                   child: SizedBox(
@@ -94,7 +94,7 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
                       ),
                     ),
                   ),
-                ),
+                )),
 
                 AnimatedSize(
                   duration: const Duration(milliseconds: 260),
@@ -167,7 +167,7 @@ class _FontImportAction extends ConsumerWidget {
     final hasFont = fontName.isNotEmpty;
 
     if (!hasFont) {
-      return TextButton.icon(
+      return PressableScale(child: TextButton.icon(
         onPressed: () async {
           try {
             final imported = await LyricFontManager.importCustomFont(
@@ -189,7 +189,7 @@ class _FontImportAction extends ConsumerWidget {
         },
         icon: const Icon(Icons.file_open_outlined, size: 18),
         label: Text(tr('选择字体')),
-      );
+      ));
     }
 
     return Row(
@@ -202,7 +202,7 @@ class _FontImportAction extends ConsumerWidget {
             color: Theme.of(context).colorScheme.primary,
           ),
         ),
-        TextButton.icon(
+        PressableScale(child: TextButton.icon(
           onPressed: () async {
             final n = ref.read(settingsProvider.notifier);
             await n.setLyricFontName('');
@@ -210,7 +210,7 @@ class _FontImportAction extends ConsumerWidget {
           },
           icon: const Icon(Icons.refresh, size: 16),
           label: Text(tr('恢复默认')),
-        ),
+        )),
       ],
     );
   }
@@ -236,7 +236,7 @@ class _RailIconButton extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: InkWell(
+      child: PressableScale(pressScale: 0.88, child: InkWell(
         onTap: disabled ? null : onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -254,7 +254,7 @@ class _RailIconButton extends StatelessWidget {
             color: active ? activeColor : inactiveColor,
           ),
         ),
-      ),
+      )),
     );
   }
 }

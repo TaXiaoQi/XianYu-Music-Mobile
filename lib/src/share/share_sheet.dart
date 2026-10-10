@@ -22,6 +22,7 @@ import '../player/player_provider.dart';
 import '../auth/auth_provider.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/dlna_device_dialog.dart';
+import '../widgets/press_scale.dart';
 import '../widgets/sheet_dialog.dart';
 import 'qq_share_service.dart';
 import 'share_service.dart';
@@ -52,15 +53,18 @@ Future<void> showSongShareSheet(
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 6),
           if (PlatformCaps.supportsQQShare) ...[
-            ListTile(
+            PressableScale(
+              child: ListTile(
               leading: _qqBadge('assets/icon/share_qq.png', fit: BoxFit.contain),
               title:   Text(tr('分享到 QQ 好友')),
               onTap: () {
                 Navigator.pop(ctx);
                 _shareViaQQ(overlay, ref, song, scene: TencentScene.kScene_QQ);
               },
+              ),
             ),
-            ListTile(
+            PressableScale(
+              child: ListTile(
               leading: _qqBadge('assets/icon/share_qzone.jpg'),
               title:   Text(tr('分享到 QQ 空间')),
               subtitle:   Text(tr('QQ 空间支持网页分享，不支持音乐卡片')),
@@ -68,9 +72,11 @@ Future<void> showSongShareSheet(
                 Navigator.pop(ctx);
                 _shareViaQQ(overlay, ref, song, scene: TencentScene.kScene_QZone);
               },
+              ),
             ),
           ],
-          ListTile(
+          PressableScale(
+            child: ListTile(
             leading: _customBadge(
                 context, _Share2Painter(Theme.of(context).colorScheme.primary)),
             title:   Text(tr('分享到更多应用')),
@@ -79,8 +85,10 @@ Future<void> showSongShareSheet(
               Navigator.pop(ctx);
               await _shareToOtherApps(overlay, ref, song);
             },
+            ),
           ),
-          ListTile(
+          PressableScale(
+            child: ListTile(
             leading: _customBadge(
                 context, _LinkPainter(Theme.of(context).colorScheme.primary)),
             title:   Text(tr('复制分享链接')),
@@ -88,8 +96,10 @@ Future<void> showSongShareSheet(
               Navigator.pop(ctx);
               await _copyLink(overlay, ref, song);
             },
+            ),
           ),
-          ListTile(
+          PressableScale(
+            child: ListTile(
             leading: _customBadge(
                 context, _CastPainter(Theme.of(context).colorScheme.primary)),
             title:   Text(tr('投屏到 DLNA 设备')),
@@ -102,6 +112,7 @@ Future<void> showSongShareSheet(
               }
               showDlnaDeviceDialog(context, ref);
             },
+            ),
           ),
           const SizedBox(height: 8),
         ],

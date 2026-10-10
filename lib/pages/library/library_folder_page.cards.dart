@@ -106,7 +106,7 @@ class _FilterCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Material(
+    final card = Material(
       color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
@@ -129,6 +129,7 @@ class _FilterCard extends ConsumerWidget {
         onTap: onPick,
       ),
     );
+    return PressableScale(child: card);
   }
 }
 
@@ -183,21 +184,27 @@ class _ScanFoldersCard extends ConsumerWidget {
                 ),
                 const Spacer(),
                 if (onAddFolder != null)
-                  IconButton(
-                    tooltip: tr('导入文件夹'),
-                    onPressed: adding ? null : onAddFolder,
-                    icon: const Icon(Icons.folder_open),
+                  PressableScale(
+                    pressScale: 0.88,
+                    child: IconButton(
+                      tooltip: tr('导入文件夹'),
+                      onPressed: adding ? null : onAddFolder,
+                      icon: const Icon(Icons.folder_open),
+                    ),
                   ),
-                IconButton(
-                  tooltip: importMode ? tr('导入音频文件') : tr('添加目录'),
-                  onPressed: onAdd,
-                  icon: adding
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.add),
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    tooltip: importMode ? tr('导入音频文件') : tr('添加目录'),
+                    onPressed: onAdd,
+                    icon: adding
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.add),
+                  ),
                 ),
               ],
             ),
@@ -242,17 +249,23 @@ class _ScanFoldersCard extends ConsumerWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (isLost)
-                        IconButton(
-                          tooltip: tr('重新授权'),
-                          icon: Icon(Icons.key,
-                              color: scheme.error, size: 20),
-                          onPressed: () => onReauthorize(f.path),
+                        PressableScale(
+                          pressScale: 0.88,
+                          child: IconButton(
+                            tooltip: tr('重新授权'),
+                            icon: Icon(Icons.key,
+                                color: scheme.error, size: 20),
+                            onPressed: () => onReauthorize(f.path),
+                          ),
                         ),
-                      IconButton(
-                        tooltip: tr('移除'),
-                        icon: Icon(Icons.delete_outline,
-                            color: scheme.error, size: 20),
-                        onPressed: () => onRemove(f.path),
+                      PressableScale(
+                        pressScale: 0.88,
+                        child: IconButton(
+                          tooltip: tr('移除'),
+                          icon: Icon(Icons.delete_outline,
+                              color: scheme.error, size: 20),
+                          onPressed: () => onRemove(f.path),
+                        ),
                       ),
                     ],
                   ),
@@ -317,7 +330,7 @@ class _RemoteLibraryCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Material(
+    final card = Material(
       color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
@@ -335,5 +348,6 @@ class _RemoteLibraryCard extends ConsumerWidget {
         onTap: () => context.push('/remote-library'),
       ),
     );
+    return PressableScale(child: card);
   }
 }

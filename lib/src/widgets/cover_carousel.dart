@@ -9,6 +9,7 @@ import '../theme/theme_tint.dart';
 import '../navigation/routes.dart' show openPlayer;
 import '../player/player_provider.dart';
 import 'cover_image.dart';
+import 'press_scale.dart';
 import '../i18n/i18n.dart';
 
 class CoverCarousel extends ConsumerStatefulWidget {
@@ -125,7 +126,7 @@ class _NowPlayingCard extends StatelessWidget {
       return const _EmptyCarousel();
     }
 
-    return GestureDetector(
+    final card = GestureDetector(
       onTap: onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
@@ -187,6 +188,7 @@ class _NowPlayingCard extends StatelessWidget {
         ),
       ),
     );
+    return PressableScale(child: card);
   }
 }
 

@@ -13,6 +13,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 
 class LeaderboardPage extends ConsumerStatefulWidget {
@@ -455,7 +456,7 @@ class _PeriodTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
+    final tab = GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -483,6 +484,7 @@ class _PeriodTab extends StatelessWidget {
         ),
       ),
     );
+    return PressableScale(pressScale: 0.88, child: tab);
   }
 }
 
@@ -672,7 +674,7 @@ class _LoginRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
 
-    return Material(
+    final card = Material(
       color: scheme.primary.withValues(alpha: 0.08),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
@@ -740,5 +742,6 @@ class _LoginRow extends ConsumerWidget {
         ),
       ),
     );
+    return PressableScale(child: card);
   }
 }

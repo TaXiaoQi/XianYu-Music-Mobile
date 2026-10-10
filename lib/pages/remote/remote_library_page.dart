@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/remote/remote_library_service.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/widgets/app_toast.dart';
@@ -21,10 +22,13 @@ class RemoteLibraryPage extends ConsumerWidget {
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showSourceEditor(context, ref),
-        icon: const Icon(Icons.add),
-        label:   Text(tr('添加 WebDAV 音乐库')),
+      floatingActionButton: PressableScale(
+        pressScale: 0.92,
+        child: FloatingActionButton.extended(
+          onPressed: () => _showSourceEditor(context, ref),
+          icon: const Icon(Icons.add),
+          label:   Text(tr('添加 WebDAV 音乐库')),
+        ),
       ),
       body: Stack(
         children: [
@@ -112,31 +116,34 @@ class RemoteLibraryPage extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton.icon(
-                onPressed: state.cacheUsage.bytes <= 0
-                    ? null
-                    : () async {
-                        final ok = await _confirm(
-                          context,
-                          title: tr('清理远程缓存'),
-                          message: tr('将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。'),
-                        );
-                        if (ok != true) return;
-                        try {
-                          await ref
-                              .read(remoteLibraryProvider.notifier)
-                              .clearCache();
-                          if (context.mounted) {
-                            showXianYuToast(context, tr('远程缓存已清理'));
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton.icon(
+                  onPressed: state.cacheUsage.bytes <= 0
+                      ? null
+                      : () async {
+                          final ok = await _confirm(
+                            context,
+                            title: tr('清理远程缓存'),
+                            message: tr('将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。'),
+                          );
+                          if (ok != true) return;
+                          try {
+                            await ref
+                                .read(remoteLibraryProvider.notifier)
+                                .clearCache();
+                            if (context.mounted) {
+                              showXianYuToast(context, tr('远程缓存已清理'));
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              showXianYuToast(context, tr('清理失败：{e}', {'e': e}));
+                            }
                           }
-                        } catch (e) {
-                          if (context.mounted) {
-                            showXianYuToast(context, tr('清理失败：{e}', {'e': e}));
-                          }
-                        }
-                      },
-                icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                label:   Text(tr('清理缓存')),
+                        },
+                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
+                  label:   Text(tr('清理缓存')),
+                ),
               ),
             ],
           ),
@@ -161,13 +168,19 @@ class RemoteLibraryPage extends ConsumerWidget {
         title: Text(title),
         content: Text(message),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:   Text(tr('取消')),
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('确定')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:   Text(tr('确定')),
+            ),
           ),
         ],
       ),
@@ -254,14 +267,17 @@ class _SourceCard extends ConsumerWidget {
                       style: TextStyle(
                           fontSize: 10.5, color: scheme.onSurfaceVariant)),
                 ),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert,
-                    size: 20, color: scheme.onSurfaceVariant),
-                onSelected: (v) => _onMenu(context, ref, v),
-                itemBuilder: (_) =>   [
-                  PopupMenuItem(value: 'edit', child: Text(tr('编辑'))),
-                  PopupMenuItem(value: 'remove', child: Text(tr('删除'))),
-                ],
+              PressableScale(
+                pressScale: 0.88,
+                child: PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert,
+                      size: 20, color: scheme.onSurfaceVariant),
+                  onSelected: (v) => _onMenu(context, ref, v),
+                  itemBuilder: (_) =>   [
+                    PopupMenuItem(value: 'edit', child: Text(tr('编辑'))),
+                    PopupMenuItem(value: 'remove', child: Text(tr('删除'))),
+                  ],
+                ),
               ),
             ],
           ),
@@ -284,15 +300,18 @@ class _SourceCard extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              TextButton.icon(
-                onPressed: syncing ? null : () => _sync(context, ref),
-                icon: syncing
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.sync_outlined, size: 18),
-                label: Text(syncing ? tr('同步中…') : tr('同步')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton.icon(
+                  onPressed: syncing ? null : () => _sync(context, ref),
+                  icon: syncing
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.sync_outlined, size: 18),
+                  label: Text(syncing ? tr('同步中…') : tr('同步')),
+                ),
               ),
             ],
           ),
@@ -315,15 +334,21 @@ class _SourceCard extends ConsumerWidget {
           content: Text(
               '将删除「${source.name}」及其在曲库中的全部远程歌曲（不删除服务器上的文件）。'),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child:   Text(tr('取消')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child:   Text(tr('取消')),
+              ),
             ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(ctx).colorScheme.error),
-              onPressed: () => Navigator.pop(ctx, true),
-              child:   Text(tr('删除')),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                    backgroundColor: Theme.of(ctx).colorScheme.error),
+                onPressed: () => Navigator.pop(ctx, true),
+                child:   Text(tr('删除')),
+              ),
             ),
           ],
         ),
@@ -543,10 +568,13 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
                 label: tr('根目录'),
                 hint: '/',
                 keyboard: TextInputType.text,
-                suffix: IconButton(
-                  icon: const Icon(Icons.folder_open_outlined, size: 20),
-                  tooltip: tr('浏览目录'),
-                  onPressed: _browseRoot,
+                suffix: PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: const Icon(Icons.folder_open_outlined, size: 20),
+                    tooltip: tr('浏览目录'),
+                    onPressed: _browseRoot,
+                  ),
                 )),
             const SizedBox(height: 6),
             Text(
@@ -562,28 +590,34 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _testing ? null : _test,
-                    icon: _testing
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.wifi_tethering, size: 18),
-                    label: Text(_testing ? tr('测试中…') : tr('测试连接')),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: OutlinedButton.icon(
+                      onPressed: _testing ? null : _test,
+                      icon: _testing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.wifi_tethering, size: 18),
+                      label: Text(_testing ? tr('测试中…') : tr('测试连接')),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _saving ? null : _save,
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.check, size: 18),
-                    label: Text(_saving ? tr('保存中…') : tr('保存')),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.check, size: 18),
+                      label: Text(_saving ? tr('保存中…') : tr('保存')),
+                    ),
                   ),
                 ),
               ],
@@ -621,10 +655,13 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
           borderSide: BorderSide(color: scheme.outline.withValues(alpha: 0.3)),
         ),
         suffixIcon: onToggleObscure != null
-            ? IconButton(
-                icon: Icon(obscure ? Icons.visibility_off : Icons.visibility,
-                    size: 19),
-                onPressed: onToggleObscure,
+            ? PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  icon: Icon(obscure ? Icons.visibility_off : Icons.visibility,
+                      size: 19),
+                  onPressed: onToggleObscure,
+                ),
               )
             : suffix,
       ),
@@ -704,14 +741,17 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
               Row(
                 children: [
                   if (_path != '/' && _path.isNotEmpty)
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.arrow_upward, size: 20),
-                      tooltip: tr('上级目录'),
-                      onPressed: _loading ? null : () {
-                        setState(() => _path = _parentPath);
-                        _load();
-                      },
+                    PressableScale(
+                      pressScale: 0.88,
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.arrow_upward, size: 20),
+                        tooltip: tr('上级目录'),
+                        onPressed: _loading ? null : () {
+                          setState(() => _path = _parentPath);
+                          _load();
+                        },
+                      ),
                     ),
                   Expanded(
                     child: Text(
@@ -760,20 +800,22 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
                             itemCount: _dirs.length,
                             itemBuilder: (_, i) {
                               final dir = _dirs[i];
-                              return ListTile(
-                                dense: true,
-                                leading: Icon(Icons.folder_outlined,
-                                    size: 22, color: scheme.primary),
-                                title: Text(dir.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 14)),
-                                trailing: const Icon(Icons.chevron_right,
-                                    size: 20),
-                                onTap: () {
-                                  setState(() => _path = dir.remotePath);
-                                  _load();
-                                },
+                              return PressableScale(
+                                child: ListTile(
+                                  dense: true,
+                                  leading: Icon(Icons.folder_outlined,
+                                      size: 22, color: scheme.primary),
+                                  title: Text(dir.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 14)),
+                                  trailing: const Icon(Icons.chevron_right,
+                                      size: 20),
+                                  onTap: () {
+                                    setState(() => _path = dir.remotePath);
+                                    _load();
+                                  },
+                                ),
                               );
                             },
                           ),
@@ -784,19 +826,25 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
           child: Row(
             children: [
               Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(tr('取消')),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(tr('取消')),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: FilledButton.icon(
-                  onPressed: _loading
-                      ? null
-                      : () => Navigator.pop(context, _path),
-                  icon: const Icon(Icons.check, size: 18),
-                  label: Text(tr('选择此目录')),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton.icon(
+                    onPressed: _loading
+                        ? null
+                        : () => Navigator.pop(context, _path),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: Text(tr('选择此目录')),
+                  ),
                 ),
               ),
             ],

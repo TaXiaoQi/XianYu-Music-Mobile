@@ -49,6 +49,7 @@ import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/modern_dialog.dart';
 import '../../src/widgets/predictive_cover_return.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
@@ -379,9 +380,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.keyboard_arrow_down, size: 28),
-                  onPressed: () => Navigator.of(context).pop(),
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down, size: 28),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ),
                 Expanded(
                   child: Text(
@@ -407,7 +411,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 setState(() => _showLyrics = true);
               },
               child: Center(
-                child: Hero(
+                child: PressableScale(child: Hero(
                   tag: 'player-cover',
                   flightShuttleBuilder:
                       (ctx, animation, direction, fromCtx, toCtx) {
@@ -439,7 +443,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       ),
                     ),
                   ),
-                ),
+                )),
               ),
             ),
         ],
@@ -537,9 +541,12 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.keyboard_arrow_down, size: 28),
-                  onPressed: () => Navigator.of(context).pop(),
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: const Icon(Icons.keyboard_arrow_down, size: 28),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
                 ),
                 Expanded(
                   child: Column(
@@ -597,7 +604,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                               child: GestureDetector(
                                 onTap: () =>
                                     setState(() => _showLyrics = !_showLyrics),
-                                child: Hero(
+                                child: PressableScale(child: Hero(
                                   tag: 'player-cover',
                                   flightShuttleBuilder:
                                       (
@@ -639,7 +646,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                       ),
                                     ),
                                   ),
-                                ),
+                                )),
                               ),
                             );
                           },
@@ -1251,7 +1258,7 @@ class _TraditionalPlayerLayoutState
           children: [
             for (final (value, label) in labels)
               Expanded(
-                child: InkWell(
+                child: PressableScale(child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: () {
                     notifier.setLyricAlignment(value);
@@ -1279,7 +1286,7 @@ class _TraditionalPlayerLayoutState
                       ),
                     ),
                   ),
-                ),
+                )),
               ),
           ],
         ),
@@ -1294,7 +1301,7 @@ class _TraditionalPlayerLayoutState
     required VoidCallback onTap,
   }) {
     final scheme = Theme.of(ctx).colorScheme;
-    return InkWell(
+    return PressableScale(child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Padding(
@@ -1316,7 +1323,7 @@ class _TraditionalPlayerLayoutState
           ],
         ),
       ),
-    );
+    ));
   }
 
   static Widget _buildLyricMenuSwitch(
@@ -1328,7 +1335,7 @@ class _TraditionalPlayerLayoutState
     bool enabled = true,
   }) {
     final scheme = Theme.of(ctx).colorScheme;
-    return InkWell(
+    return PressableScale(child: InkWell(
       onTap: enabled ? () => onChanged(!value) : null,
       borderRadius: BorderRadius.circular(10),
       child: Padding(
@@ -1358,7 +1365,7 @@ class _TraditionalPlayerLayoutState
           ],
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildTopBar(BuildContext context, {bool landscape = false}) {
@@ -1366,10 +1373,10 @@ class _TraditionalPlayerLayoutState
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
-          IconButton(
+          PressableScale(pressScale: 0.88, child: IconButton(
             icon: const Icon(Icons.keyboard_arrow_down, size: 28),
             onPressed: () => Navigator.of(context).pop(),
-          ),
+          )),
           Expanded(
             child: Center(
               child: landscape
@@ -1401,7 +1408,7 @@ class _TraditionalPlayerLayoutState
                     ),
             ),
           ),
-          IconButton(
+          PressableScale(pressScale: 0.88, child: IconButton(
             icon: themeSlotIcon(
               ref,
               'action.share',
@@ -1414,7 +1421,7 @@ class _TraditionalPlayerLayoutState
               final c = widget.current;
               if (c != null) _shareCurrent(context, ref, c);
             },
-          ),
+          )),
         ],
       ),
     );
@@ -1595,7 +1602,7 @@ class _TraditionalPlayerLayoutState
             ),
           ),
           if (fromDaily)
-            InkWell(
+            PressableScale(pressScale: 0.88, child: InkWell(
               borderRadius: BorderRadius.circular(22),
               onTap: () => _reportDailyDislike(context, c),
               child: Padding(
@@ -1615,9 +1622,9 @@ class _TraditionalPlayerLayoutState
                   ),
                 ),
               ),
-            ),
+            )),
           if (fromDaily) const SizedBox(width: 8),
-          InkWell(
+          PressableScale(pressScale: 0.88, child: InkWell(
             borderRadius: BorderRadius.circular(22),
             onTap: () {
               if (c != null) {
@@ -1636,7 +1643,7 @@ class _TraditionalPlayerLayoutState
                     : Colors.white.withValues(alpha: 0.9),
               ),
             ),
-          ),
+          )),
         ],
       ),
     );
@@ -1792,7 +1799,7 @@ class _TraditionalPlayerLayoutState
 
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
     if (_showLyrics) {
-      return IconButton(
+      return PressableScale(pressScale: 0.88, child: IconButton(
         iconSize: 28,
         tooltip: tr('歌词调节'),
         icon: Icon(
@@ -1806,9 +1813,9 @@ class _TraditionalPlayerLayoutState
           hasRomaji: _lyricsViewHasRomaji,
           showAlign: true,
         ),
-      );
+      ));
     }
-    return IconButton(
+    return PressableScale(pressScale: 0.88, child: IconButton(
       iconSize: 28,
       tooltip: tr('更多'),
       icon: themeSlotIcon(
@@ -1819,7 +1826,7 @@ class _TraditionalPlayerLayoutState
         color: Colors.white.withValues(alpha: 0.85),
       ),
       onPressed: () => _showCoverMoreSheet(context, lyricsEnabled),
-    );
+    ));
   }
 
   Future<void> _showCoverMoreSheet(
@@ -1898,7 +1905,7 @@ class _TraditionalPlayerLayoutState
               onCancel: _cancelSleepTimer,
             ),
             if (widget.mvSupported && widget.onToggleMv != null)
-              ListTile(
+              PressableScale(child: ListTile(
                 leading: widget.mvLoading
                     ? SizedBox(
                         width: 22,
@@ -1936,8 +1943,8 @@ class _TraditionalPlayerLayoutState
                         Navigator.pop(ctx);
                         widget.onToggleMv?.call();
                       },
-              ),
-            ListTile(
+              )),
+            PressableScale(child: ListTile(
               leading: Icon(
                 Icons.playlist_add,
                 color: scheme.primary,
@@ -1950,8 +1957,8 @@ class _TraditionalPlayerLayoutState
                   importedSongFromQueueItem(c),
                 ]);
               },
-            ),
-            ListTile(
+            )),
+            PressableScale(child: ListTile(
               enabled: !widget.mvEnabled,
               leading: Icon(
                 Icons.closed_caption_outlined,
@@ -1976,7 +1983,7 @@ class _TraditionalPlayerLayoutState
                 Navigator.pop(ctx);
                 _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
               },
-            ),
+            )),
           ],
         ),
       );
@@ -2027,7 +2034,7 @@ class _TraditionalPlayerLayoutState
     required bool dlDone,
     required VoidCallback onTap,
   }) {
-    return IconButton(
+    return PressableScale(pressScale: 0.88, child: IconButton(
       iconSize: 28,
       tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
       icon: dlActive
@@ -2050,7 +2057,7 @@ class _TraditionalPlayerLayoutState
                   : Colors.white.withValues(alpha: 0.85),
             ),
       onPressed: onTap,
-    );
+    ));
   }
 
   Widget _qualityActionItem(
@@ -2060,7 +2067,7 @@ class _TraditionalPlayerLayoutState
   }) {
     return Tooltip(
       message: tr('音质'),
-      child: InkWell(
+      child: PressableScale(pressScale: 0.88, child: InkWell(
         borderRadius: BorderRadius.circular(14),
         onTap: onTap,
         child: Container(
@@ -2092,7 +2099,7 @@ class _TraditionalPlayerLayoutState
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 
@@ -2107,7 +2114,7 @@ class _TraditionalPlayerLayoutState
     required VoidCallback onTap,
   }) {
     final accent = Theme.of(context).colorScheme.primary;
-    return IconButton(
+    return PressableScale(pressScale: 0.88, child: IconButton(
       iconSize: 28,
       tooltip: tooltip,
       icon:
@@ -2120,6 +2127,6 @@ class _TraditionalPlayerLayoutState
                 : Colors.white.withValues(alpha: 0.32),
           ),
       onPressed: enabled ? onTap : null,
-    );
+    ));
   }
 }

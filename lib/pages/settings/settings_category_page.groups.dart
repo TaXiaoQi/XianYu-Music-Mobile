@@ -27,23 +27,26 @@ class _StepperSliderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     Widget stepButton(IconData icon, double delta) {
-      return IconButton(
-        visualDensity: VisualDensity.compact,
-        constraints: const BoxConstraints.tightFor(width: 30, height: 30),
-        padding: EdgeInsets.zero,
-        iconSize: 16,
-        style: IconButton.styleFrom(
-          backgroundColor: enabled
-              ? scheme.surfaceContainerHighest
-              : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-          foregroundColor: enabled
-              ? scheme.onSurfaceVariant
-              : scheme.onSurfaceVariant.withValues(alpha: 0.45),
+      return PressableScale(
+        pressScale: 0.88,
+        child: IconButton(
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+          padding: EdgeInsets.zero,
+          iconSize: 16,
+          style: IconButton.styleFrom(
+            backgroundColor: enabled
+                ? scheme.surfaceContainerHighest
+                : scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+            foregroundColor: enabled
+                ? scheme.onSurfaceVariant
+                : scheme.onSurfaceVariant.withValues(alpha: 0.45),
+          ),
+          icon: Icon(icon),
+          onPressed: enabled
+              ? () => onAdjust((readValue() + delta).clamp(min, max))
+              : null,
         ),
-        icon: Icon(icon),
-        onPressed: enabled
-            ? () => onAdjust((readValue() + delta).clamp(min, max))
-            : null,
       );
     }
 
@@ -196,17 +199,23 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child:   Text(tr('取消')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child:   Text(tr('取消')),
+            ),
           ),
-          TextButton(
-            onPressed: () {
-              final v = int.tryParse(controller.text.trim());
-              chosen = (v ?? 500).clamp(_kMinMB, _kMaxMB);
-              Navigator.of(ctx).pop();
-            },
-            child:   Text(tr('确定')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () {
+                final v = int.tryParse(controller.text.trim());
+                chosen = (v ?? 500).clamp(_kMinMB, _kMaxMB);
+                Navigator.of(ctx).pop();
+              },
+              child:   Text(tr('确定')),
+            ),
           ),
         ],
       ),
@@ -239,22 +248,24 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
     final scheme = Theme.of(context).colorScheme;
     return _CardGroup(
       children: [
-        ListTile(
-          leading: const Icon(Icons.sd_storage_outlined),
-          title:   Text(tr('播放缓存上限')),
-          subtitle:   Text(tr('在线播放的临时音源文件最大缓存量')),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                '$limitMB MB',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 18, color: scheme.outline),
-            ],
+        PressableScale(
+          child: ListTile(
+            leading: const Icon(Icons.sd_storage_outlined),
+            title:   Text(tr('播放缓存上限')),
+            subtitle:   Text(tr('在线播放的临时音源文件最大缓存量')),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$limitMB MB',
+                  style: TextStyle(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 18, color: scheme.outline),
+              ],
+            ),
+            onTap: _pickLimit,
           ),
-          onTap: _pickLimit,
         ),
         ListTile(
           leading: const Icon(Icons.cleaning_services_outlined),
@@ -264,9 +275,12 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
                 ? tr('读取中…')
                 : tr('当前 {cur} / 上限 {max}', {'cur': _fmtBytes(cur), 'max': _fmtBytes(max)}),
           ),
-          trailing: TextButton(
-            onPressed: (cur ?? 0) == 0 ? null : _clear,
-            child: Text(_busy ? tr('清理中…') : tr('清理')),
+          trailing: PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: (cur ?? 0) == 0 ? null : _clear,
+              child: Text(_busy ? tr('清理中…') : tr('清理')),
+            ),
           ),
         ),
       ],
@@ -335,13 +349,19 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
         title:   Text(tr('清理日志')),
         content:   Text(tr('确定要清空全部应用日志吗？此操作不可恢复。')),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:   Text(tr('取消')),
+            ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('清理')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child:   Text(tr('清理')),
+            ),
           ),
         ],
       ),
@@ -358,12 +378,14 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
     VoidCallback? onTap,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      leading: Icon(icon, color: scheme.primary),
-      title: Text(title),
-      trailing: Icon(Icons.chevron_right,
-          size: 18, color: scheme.outline),
-      onTap: onTap,
+    return PressableScale(
+      child: ListTile(
+        leading: Icon(icon, color: scheme.primary),
+        title: Text(title),
+        trailing: Icon(Icons.chevron_right,
+            size: 18, color: scheme.outline),
+        onTap: onTap,
+      ),
     );
   }
 
@@ -487,14 +509,20 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: Text(tr('取消')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(tr('取消')),
+              ),
             ),
-            FilledButton(
-              onPressed: () =>
-                  Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
-              child: Text(tr('导出')),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: () =>
+                    Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
+                child: Text(tr('导出')),
+              ),
             ),
           ],
         ),
@@ -515,14 +543,20 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
           decoration: InputDecoration(hintText: tr('输入导出时设置的密码')),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(tr('取消')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('取消')),
+            ),
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(
-                ctx, controller.text.isEmpty ? null : controller.text),
-            child: Text(tr('确认')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(
+                  ctx, controller.text.isEmpty ? null : controller.text),
+              child: Text(tr('确认')),
+            ),
           ),
         ],
       ),
@@ -604,9 +638,12 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
               ),
             ),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child:   Text(tr('知道了')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child:   Text(tr('知道了')),
+                ),
               ),
             ],
           ),
@@ -666,14 +703,20 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
                   ],
                 ),
                 actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child:   Text(tr('取消')),
+                  PressableScale(
+                    pressScale: 0.92,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child:   Text(tr('取消')),
+                    ),
                   ),
-                  FilledButton(
-                    onPressed: () =>
-                        Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
-                    child:   Text(tr('导入')),
+                  PressableScale(
+                    pressScale: 0.92,
+                    child: FilledButton(
+                      onPressed: () =>
+                          Navigator.pop(ctx, (playlists, favorites, plugins, settings)),
+                      child:   Text(tr('导入')),
+                    ),
                   ),
                 ],
               ),
@@ -683,13 +726,15 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
 
   Widget _backupCheck(
       String label, bool value, bool enabled, ValueChanged<bool?> onChanged) {
-    return CheckboxListTile(
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      controlAffinity: ListTileControlAffinity.leading,
-      title: Text(label, style: const TextStyle(fontSize: 13.5)),
-      value: value,
-      onChanged: enabled ? onChanged : null,
+    return PressableScale(
+      child: CheckboxListTile(
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        title: Text(label, style: const TextStyle(fontSize: 13.5)),
+        value: value,
+        onChanged: enabled ? onChanged : null,
+      ),
     );
   }
 
@@ -706,19 +751,23 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
             size: 18, color: scheme.onSurfaceVariant);
     return _CardGroup(
       children: [
-        ListTile(
-          leading: const Icon(Icons.archive_outlined),
-          title:   Text(tr('导出应用备份')),
-          subtitle:   Text(tr('选择导出内容，每次指定文件夹保存')),
-          trailing: trailing,
-          onTap: _busy ? null : _exportBackup,
+        PressableScale(
+          child: ListTile(
+            leading: const Icon(Icons.archive_outlined),
+            title:   Text(tr('导出应用备份')),
+            subtitle:   Text(tr('选择导出内容，每次指定文件夹保存')),
+            trailing: trailing,
+            onTap: _busy ? null : _exportBackup,
+          ),
         ),
-        ListTile(
-          leading: const Icon(Icons.settings_backup_restore_outlined),
-          title:   Text(tr('导入应用备份')),
-          subtitle:   Text(tr('从备份文件恢复（支持选择导入内容）')),
-          trailing: trailing,
-          onTap: _busy ? null : _importBackup,
+        PressableScale(
+          child: ListTile(
+            leading: const Icon(Icons.settings_backup_restore_outlined),
+            title:   Text(tr('导入应用备份')),
+            subtitle:   Text(tr('从备份文件恢复（支持选择导入内容）')),
+            trailing: trailing,
+            onTap: _busy ? null : _importBackup,
+          ),
         ),
       ],
     );

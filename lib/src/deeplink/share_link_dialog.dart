@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../widgets/online_cover.dart';
 import '../widgets/modern_dialog.dart';
 import '../widgets/predictive_dialog_route.dart';
+import '../widgets/press_scale.dart';
 import '../i18n/i18n.dart';
 
 enum ShareLinkPreviewAction { play, playNext, cancel, import }
@@ -135,7 +136,9 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: TextButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.cancel),
                       style: TextButton.styleFrom(
@@ -148,9 +151,12 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                         ),
                       ),
                       child: Text(tr('取消')),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    OutlinedButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: OutlinedButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.playNext),
                       style: OutlinedButton.styleFrom(
@@ -167,9 +173,12 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                         ),
                       ),
                       child: Text(tr('下一首播放')),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: FilledButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.play),
                       style: FilledButton.styleFrom(
@@ -184,6 +193,7 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                         ),
                       ),
                       child: Text(tr('播放')),
+                      ),
                     ),
                   ],
                 )
@@ -191,7 +201,9 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: TextButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.cancel),
                       style: TextButton.styleFrom(
@@ -204,9 +216,12 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                         ),
                       ),
                       child: Text(tr('取消')),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: FilledButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.play),
                       style: FilledButton.styleFrom(
@@ -222,6 +237,7 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                       ),
                       child: Text(
                           onlineActionLabel ?? tr('本地无音源，前往在线播放')),
+                      ),
                     ),
                   ],
                 )
@@ -229,7 +245,9 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: TextButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.cancel),
                       style: TextButton.styleFrom(
@@ -242,9 +260,12 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                         ),
                       ),
                       child: Text(tr('取消')),
+                      ),
                     ),
                     const SizedBox(width: 8),
-                    FilledButton(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: FilledButton(
                       onPressed: () =>
                           Navigator.of(ctx).pop(ShareLinkPreviewAction.import),
                       style: FilledButton.styleFrom(
@@ -259,6 +280,7 @@ Future<ShareLinkPreviewAction> showShareLinkPreviewDialog({
                         ),
                       ),
                       child: Text(tr('前往导入音源')),
+                      ),
                     ),
                   ],
                 ),

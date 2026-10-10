@@ -308,54 +308,58 @@ class _LandscapeRail extends ConsumerWidget {
     // 字重/颜色对齐设置页 _CategoryTile（ListTile 默认）：常规粗细，
     // 非选中用 onSurface（不用淡化灰）
     final color = selected ? scheme.primary : scheme.onSurface;
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 4, vertical: 2),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          padding: EdgeInsets.symmetric(
-            horizontal: collapsed ? 0 : 12,
-            vertical: 11,
-          ),
-          decoration: BoxDecoration(
-            color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: collapsed
-                ? MainAxisAlignment.center
-                : MainAxisAlignment.start,
-            children: [
-              themeSlotIcon(
-                ref,
-                themeSlot,
-                fallback: icon,
-                size: 22,
-                color: color,
-              ),
-              if (!collapsed) ...[
-                const SizedBox(width: 10),
-                // 弹性截断：侧栏宽可拖拽收窄（下限仅 icon 档），固定宽
-                // 文本在窄列下会把 Row 挤溢出（RenderFlex overflow）
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w400,
-                      color: color,
+    return PressableScale(
+      pressScale: 0.92,
+      child: Padding(
+        padding:
+            EdgeInsets.symmetric(horizontal: collapsed ? 0 : 4, vertical: 2),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: EdgeInsets.symmetric(
+              horizontal: collapsed ? 0 : 12,
+              vertical: 11,
+            ),
+            decoration: BoxDecoration(
+              color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: collapsed
+                  ? MainAxisAlignment.center
+                  : MainAxisAlignment.start,
+              children: [
+                themeSlotIcon(
+                  ref,
+                  themeSlot,
+                  fallback: icon,
+                  size: 22,
+                  color: color,
+                ),
+                if (!collapsed) ...[
+                  const SizedBox(width: 10),
+                  // 弹性截断：侧栏宽可拖拽收窄（下限仅 icon 档），固定宽
+                  // 文本在窄列下会把 Row 挤溢出（RenderFlex overflow）
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400,
+                        color: color,
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

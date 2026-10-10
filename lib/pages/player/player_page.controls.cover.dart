@@ -72,7 +72,7 @@ class _SegmentSwitcher extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < items.length; i++)
-            GestureDetector(
+            PressableScale(child: GestureDetector(
               onTap: () => onChanged(i),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
@@ -98,7 +98,7 @@ class _SegmentSwitcher extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
+            )),
         ],
       ),
     );
@@ -677,11 +677,11 @@ class _TraditionalCover extends StatelessWidget {
     );
 
     if (onTap == null) return cover;
-    return GestureDetector(
+    return PressableScale(child: GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: cover,
-    );
+    ));
   }
 }
 

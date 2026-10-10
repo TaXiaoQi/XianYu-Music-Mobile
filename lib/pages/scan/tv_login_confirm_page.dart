@@ -7,6 +7,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/user_agreement.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 
 class TvLoginConfirmPage extends ConsumerStatefulWidget {
@@ -156,23 +157,26 @@ class _TvLoginConfirmPageState extends ConsumerState<TvLoginConfirmPage> {
                       onChanged: (v) => setState(() => _agreed = v),
                     ),
                     const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: _agreed && !_loading ? _confirm : null,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: scheme.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14)),
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: FilledButton(
+                        onPressed: _agreed && !_loading ? _confirm : null,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: scheme.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                        child: _loading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white))
+                            : Text(tr('确认登录'),
+                                style: const TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w600)),
                       ),
-                      child: _loading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white))
-                          : Text(tr('确认登录'),
-                              style: const TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600)),
                     ),
                   ],
                 ),

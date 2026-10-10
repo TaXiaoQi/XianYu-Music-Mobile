@@ -35,6 +35,7 @@ import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
@@ -133,11 +134,14 @@ class _SearchPageState extends ConsumerState<SearchPage>
                   showClear: _ctrl.text.isNotEmpty,
                   onClear: _clearInput,
                 ),
-                action: BiliPaiIconButton(
-                  icon: Icons.search,
-                  tooltip: tr('搜索'),
-                  color: scheme.primary,
-                  onTap: () => _submitSearch(_ctrl.text),
+                action: PressableScale(
+                  pressScale: 0.88,
+                  child: BiliPaiIconButton(
+                    icon: Icons.search,
+                    tooltip: tr('搜索'),
+                    color: scheme.primary,
+                    onTap: () => _submitSearch(_ctrl.text),
+                  ),
                 ),
               ),
             )
@@ -171,25 +175,31 @@ class _SearchPageState extends ConsumerState<SearchPage>
                     border: InputBorder.none,
                     suffixIcon: _ctrl.text.isEmpty
                         ? null
-                        : IconButton(
-                            icon: const Icon(Icons.clear, size: 20),
-                            padding: EdgeInsets.zero,
-                            constraints:
-                                const BoxConstraints.tightFor(width: 32, height: 40),
-                            onPressed: _clearInput,
+                        : PressableScale(
+                            pressScale: 0.88,
+                            child: IconButton(
+                              icon: const Icon(Icons.clear, size: 20),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                  width: 32, height: 40),
+                              onPressed: _clearInput,
+                            ),
                           ),
                   ),
                 ),
               ),
               actions: [
-                IconButton(
-                  tooltip: tr('搜索'),
-                  icon: const Icon(Icons.search),
-                  style: IconButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: scheme.onPrimary,
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    tooltip: tr('搜索'),
+                    icon: const Icon(Icons.search),
+                    style: IconButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                    ),
+                    onPressed: () => _submitSearch(_ctrl.text),
                   ),
-                  onPressed: () => _submitSearch(_ctrl.text),
                 ),
               ],
             ),
@@ -357,11 +367,14 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                   onTap: _goToSearchPage,
                   hint: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
                 ),
-                action: BiliPaiIconButton(
-                  icon: Icons.search,
-                  tooltip: tr('返回搜索'),
-                  color: scheme.primary,
-                  onTap: _goToSearchPage,
+                action: PressableScale(
+                  pressScale: 0.88,
+                  child: BiliPaiIconButton(
+                    icon: Icons.search,
+                    tooltip: tr('返回搜索'),
+                    color: scheme.primary,
+                    onTap: _goToSearchPage,
+                  ),
                 ),
                 tabPill: FloatingTabPill(child: tabBar),
                 bottomPill: _buildSourceBar(floating: true),
@@ -398,14 +411,17 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
                 ),
               ),
               actions: [
-                IconButton(
-                  tooltip: tr('返回搜索'),
-                  icon: const Icon(Icons.search),
-                  style: IconButton.styleFrom(
-                    backgroundColor: scheme.primary,
-                    foregroundColor: scheme.onPrimary,
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    tooltip: tr('返回搜索'),
+                    icon: const Icon(Icons.search),
+                    style: IconButton.styleFrom(
+                      backgroundColor: scheme.primary,
+                      foregroundColor: scheme.onPrimary,
+                    ),
+                    onPressed: _goToSearchPage,
                   ),
-                  onPressed: _goToSearchPage,
                 ),
               ],
               bottom: chromeBottom,
@@ -478,9 +494,12 @@ Widget _emptyHint(String message, ColorScheme scheme,
         ),
         if (actionLabel != null && onAction != null) ...[
           const SizedBox(height: 12),
-          FilledButton.tonal(
-            onPressed: onAction,
-            child: Text(actionLabel),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton.tonal(
+              onPressed: onAction,
+              child: Text(actionLabel),
+            ),
           ),
         ],
       ],

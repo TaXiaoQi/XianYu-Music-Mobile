@@ -5,6 +5,7 @@ import '../i18n/i18n.dart';
 import '../plugin/plugin_provider.dart';
 import '../theme/theme_icon.dart';
 import 'glass_settings.dart';
+import 'press_scale.dart';
 
 class PageSearchBarBottom extends StatelessWidget implements PreferredSizeWidget {
   const PageSearchBarBottom({
@@ -39,53 +40,60 @@ class PageSearchBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: searchBoxFill(context, ref),
-      borderRadius: BorderRadius.circular(999),
-      child: InkWell(
-        onTap: onTap,
+    return PressableScale(
+      pressScale: 0.92,
+      child: Material(
+        color: searchBoxFill(context, ref),
         borderRadius: BorderRadius.circular(999),
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
-          child: Row(
-            children: [
-              themeSlotIcon(ref, 'entry.search',
-                  fallback: Icons.search,
-                  size: 18,
-                  color: scheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  tr('搜索歌曲、歌手、专辑'),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  ),
-                ),
-              ),
-              if (onRecognize != null &&
-                  ref.watch(pluginManagerProvider
-                      .select((s) => s.sources.any((p) => p.enabled)))) ...[
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: onRecognize,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEC4141).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.fromLTRB(18, 0, 6, 0),
+            child: Row(
+              children: [
+                themeSlotIcon(ref, 'entry.search',
+                    fallback: Icons.search,
+                    size: 18,
+                    color: scheme.onSurfaceVariant),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    tr('搜索歌曲、歌手、专辑'),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
                     ),
-                    child: themeSlotIcon(ref, 'entry.mic',
-                        fallback: Icons.mic_none,
-                        size: 17,
-                        color: const Color(0xFFEC4141)),
                   ),
                 ),
+                if (onRecognize != null &&
+                    ref.watch(pluginManagerProvider
+                        .select((s) => s.sources.any((p) => p.enabled)))) ...[
+                  const SizedBox(width: 8),
+                  PressableScale(
+                    pressScale: 0.88,
+                    child: GestureDetector(
+                      onTap: onRecognize,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 5),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFFEC4141).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: themeSlotIcon(ref, 'entry.mic',
+                            fallback: Icons.mic_none,
+                            size: 17,
+                            color: const Color(0xFFEC4141)),
+                      ),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

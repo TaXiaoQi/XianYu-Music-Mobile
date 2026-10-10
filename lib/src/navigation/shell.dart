@@ -28,6 +28,7 @@ import '../sync/auto_sync.dart';
 import '../sync/sync_provider.dart' show syncProvider;
 import '../widgets/mini_player_bar.dart' show LiveLiquidSurface;
 import '../widgets/page_search_bar.dart';
+import '../widgets/press_scale.dart';
 import '../widgets/bilipai_glass.dart';
 import '../widgets/chrome_glass_frame.dart';
 import '../widgets/custom_background.dart' show PageWallpaperScope;

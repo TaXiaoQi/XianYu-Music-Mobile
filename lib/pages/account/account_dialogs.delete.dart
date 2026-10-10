@@ -115,16 +115,22 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
         title:   Text(tr('确认注销账号')),
         content:   Text(tr('注销后账号数据将被清除且无法恢复，确定要注销当前账号吗？')),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(ctx).colorScheme.error,
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:   Text(tr('取消')),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('确认注销')),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child:   Text(tr('确认注销')),
+            ),
           ),
         ],
       ),
@@ -159,9 +165,12 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
                 hintText: tr('请输入当前登录密码'),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12)),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-                  onPressed: () => setState(() => _obscure = !_obscure),
+                suffixIcon: PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
                 ),
               ),
             ),
@@ -185,16 +194,19 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
                   padding: const EdgeInsets.only(top: 8),
                   child: SizedBox(
                     height: 56,
-                    child: OutlinedButton(
-                      onPressed:
-                          (_codeLoading || _loading || _countdown > 0)
-                              ? null
-                              : _sendCode,
-                      child: Text(_codeLoading
-                          ? tr('发送中…')
-                          : _countdown > 0
-                              ? tr('重新发送({n}s)', {'n': _countdown})
-                              : tr('发送验证码')),
+                    child: PressableScale(
+                      pressScale: 0.92,
+                      child: OutlinedButton(
+                        onPressed:
+                            (_codeLoading || _loading || _countdown > 0)
+                                ? null
+                                : _sendCode,
+                        child: Text(_codeLoading
+                            ? tr('发送中…')
+                            : _countdown > 0
+                                ? tr('重新发送({n}s)', {'n': _countdown})
+                                : tr('发送验证码')),
+                      ),
                     ),
                   ),
                 ),
@@ -204,22 +216,28 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: _loading ? null : () => Navigator.pop(context, false),
-          child:   Text(tr('取消')),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: scheme.error,
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: _loading ? null : () => Navigator.pop(context, false),
+            child:   Text(tr('取消')),
           ),
-          onPressed: _loading ? null : _submit,
-          child: _loading
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              :   Text(tr('注销账号')),
+        ),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.error,
+            ),
+            onPressed: _loading ? null : _submit,
+            child: _loading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                :   Text(tr('注销账号')),
+          ),
         ),
       ],
     );

@@ -26,6 +26,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
+import '../../src/widgets/press_scale.dart';
 import '../settings/folder_picker_page.dart';
 import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';

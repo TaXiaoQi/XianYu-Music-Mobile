@@ -18,6 +18,7 @@ import '../../src/widgets/app_logo.dart';
 import '../../src/widgets/user_agreement.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/app_toast.dart';
+import '../../src/widgets/press_scale.dart';
 import 'account_dialogs.dart';
 import 'human_captcha_dialog.dart';
 import '../../src/i18n/i18n.dart';
@@ -281,47 +282,49 @@ class _ProfileViewState extends ConsumerState<_ProfileView> {
 
         const SizedBox(height: 28),
 
-        Container(
-          decoration: BoxDecoration(
-            color: scheme.error.withValues(alpha: isDark ? 0.12 : 0.08),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: scheme.error.withValues(alpha: isDark ? 0.25 : 0.18),
-            ),
-          ),
-          child: ListTile(
-            onTap: widget.onLogout,
-            shape: RoundedRectangleBorder(
+        PressableScale(
+          child: Container(
+            decoration: BoxDecoration(
+              color: scheme.error.withValues(alpha: isDark ? 0.12 : 0.08),
               borderRadius: BorderRadius.circular(18),
-            ),
-            leading: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: scheme.error.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.logout_rounded, size: 20, color: scheme.error),
-            ),
-            title: Text(
-              tr('退出登录'),
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: scheme.error,
+              border: Border.all(
+                color: scheme.error.withValues(alpha: isDark ? 0.25 : 0.18),
               ),
             ),
-            subtitle: Text(
-              tr('注销当前设备上的身份凭据'),
-              style: TextStyle(
-                fontSize: 12,
+            child: ListTile(
+              onTap: widget.onLogout,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+              ),
+              leading: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: scheme.error.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.logout_rounded, size: 20, color: scheme.error),
+              ),
+              title: Text(
+                tr('退出登录'),
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: scheme.error,
+                ),
+              ),
+              subtitle: Text(
+                tr('注销当前设备上的身份凭据'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: scheme.error.withValues(alpha: 0.7),
+                ),
+              ),
+              trailing: Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 15,
                 color: scheme.error.withValues(alpha: 0.7),
               ),
-            ),
-            trailing: Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 15,
-              color: scheme.error.withValues(alpha: 0.7),
             ),
           ),
         ),

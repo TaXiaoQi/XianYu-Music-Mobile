@@ -10,6 +10,7 @@ import 'bilipai_glass.dart';
 import 'blur_budget.dart';
 import 'glass_settings.dart';
 import 'page_search_bar.dart';
+import 'press_scale.dart';
 
 class FloatingSearchBar extends ConsumerWidget {
   const FloatingSearchBar({
@@ -58,20 +59,23 @@ class FloatingSearchBar extends ConsumerWidget {
                   ref.watch(pluginManagerProvider
                       .select((s) => s.sources.any((p) => p.enabled)))) ...[
                 const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: onRecognize,
-                  behavior: HitTestBehavior.opaque,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEC4141).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.mic_none,
-                      size: 17,
-                      color: Color(0xFFEC4141),
+                PressableScale(
+                  pressScale: 0.88,
+                  child: GestureDetector(
+                    onTap: onRecognize,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEC4141).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.mic_none,
+                        size: 17,
+                        color: Color(0xFFEC4141),
+                      ),
                     ),
                   ),
                 ),
@@ -82,7 +86,10 @@ class FloatingSearchBar extends ConsumerWidget {
       ),
     );
 
-    return FloatingGlassSurface(chromeFrame: chromeFrame, child: content);
+    return PressableScale(
+      pressScale: 0.92,
+      child: FloatingGlassSurface(chromeFrame: chromeFrame, child: content),
+    );
   }
 }
 
@@ -213,16 +220,23 @@ class BiliPaiPill extends ConsumerWidget {
         saturation: bilipaiSaturationOf(quality),
         child: content,
       );
-      return liquidGlassShell(context, child: glass, radius: radius);
+      // 可点胶囊整体按压缩放；无 onTap 的标题/装饰胶囊不参与
+      return PressableScale(
+        pressScale: 0.92,
+        child: liquidGlassShell(context, child: glass, radius: radius),
+      );
     }
-    return pseudoLiquidSurface(
-      context: context,
-      ref: ref,
-      radius: radius,
-      child: content,
-      surfaceType: BlurSurfaceType.header,
-      budget: budget,
-      frostedScale: frostedBlurScale(ref),
+    return PressableScale(
+      pressScale: 0.92,
+      child: pseudoLiquidSurface(
+        context: context,
+        ref: ref,
+        radius: radius,
+        child: content,
+        surfaceType: BlurSurfaceType.header,
+        budget: budget,
+        frostedScale: frostedBlurScale(ref),
+      ),
     );
   }
 }
@@ -441,12 +455,15 @@ class FloatingGlassSearchField extends ConsumerWidget {
             prefixIconConstraints:
                 const BoxConstraints(minWidth: 40, minHeight: 44),
             suffixIcon: showClear
-                ? IconButton(
-                    icon: const Icon(Icons.clear, size: 19),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                        width: 32, height: 44),
-                    onPressed: onClear,
+                ? PressableScale(
+                    pressScale: 0.88,
+                    child: IconButton(
+                      icon: const Icon(Icons.clear, size: 19),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                          width: 32, height: 44),
+                      onPressed: onClear,
+                    ),
                   )
                 : null,
           ),

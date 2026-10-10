@@ -1098,7 +1098,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   onMeasured: _onLineMeasured,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: lineChild,
+                    child: PressableScale(child: lineChild),
                   ),
                 );
               },
@@ -1182,7 +1182,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     ...List.generate(4, (i) {
                       final labels = [tr('小'), tr('标准'), tr('大'), tr('特大')];
                       return Expanded(
-                        child: InkWell(
+                        child: PressableScale(child: InkWell(
                           onTap: () {
                             setSheetState(() => current = i);
                             notifier.setLyricFontSize(i);
@@ -1214,7 +1214,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                               ),
                             ),
                           ),
-                        ),
+                        )),
                       );
                     }),
                   ],
@@ -1276,13 +1276,13 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                   tr('歌词偏移'),
                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                 ),
-                TextButton(
+                PressableScale(child: TextButton(
                   onPressed: () {
                     notifier.setLyricOffsetMs(0);
                     Navigator.of(sheetCtx).pop();
                   },
                   child: Text(tr('重置')),
-                ),
+                )),
               ],
             ),
             StatefulBuilder(
@@ -1386,7 +1386,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     ColorScheme scheme,
     VoidCallback onTap,
   ) {
-    return InkWell(
+    return PressableScale(child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -1403,7 +1403,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
             color: scheme.onSurface,
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -1525,7 +1525,7 @@ class _DraggingPlayButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return PressableScale(pressScale: 0.88, child: Material(
       color: const Color(0xFFEC4141),
       shape: const CircleBorder(),
       elevation: 3,
@@ -1538,6 +1538,6 @@ class _DraggingPlayButton extends StatelessWidget {
           child: Icon(Icons.play_arrow, size: 20, color: Colors.white),
         ),
       ),
-    );
+    ));
   }
 }

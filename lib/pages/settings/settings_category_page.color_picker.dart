@@ -120,64 +120,66 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
                   if (widget.autoLabel != null) MapEntry(0, widget.autoLabel!),
                   ...(widget.presets ?? _AccentColorSheet._defaultPresets).entries,
                 ])
-                  InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => Navigator.pop(context, entry.key),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
+                  PressableScale(
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => Navigator.pop(context, entry.key),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: widget.current == entry.key
+                                ? scheme.primary
+                                : scheme.outlineVariant.withValues(alpha: 0.6),
+                            width: widget.current == entry.key ? 2 : 1,
+                          ),
                           color: widget.current == entry.key
-                              ? scheme.primary
-                              : scheme.outlineVariant.withValues(alpha: 0.6),
-                          width: widget.current == entry.key ? 2 : 1,
+                              ? scheme.primary.withValues(alpha: 0.08)
+                              : null,
                         ),
-                        color: widget.current == entry.key
-                            ? scheme.primary.withValues(alpha: 0.08)
-                            : null,
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 26,
-                              height: 26,
-                              decoration: BoxDecoration(
-                                color: entry.key == 0
-                                    ? (widget.autoColor ?? Colors.transparent)
-                                    : Color(entry.key),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.15),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 26,
+                                height: 26,
+                                decoration: BoxDecoration(
+                                  color: entry.key == 0
+                                      ? (widget.autoColor ?? Colors.transparent)
+                                      : Color(entry.key),
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.15),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: widget.current == entry.key
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 16,
+                                      )
+                                    : null,
                               ),
-                              child: widget.current == entry.key
-                                  ? const Icon(
-                                      Icons.check,
-                                      color: Colors.white,
-                                      size: 16,
-                                    )
-                                  : null,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              entry.value,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: scheme.onSurfaceVariant,
+                              const SizedBox(height: 4),
+                              Text(
+                                entry.value,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: scheme.onSurfaceVariant,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -236,9 +238,12 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, _color.toARGB32()),
-                  child:   Text(tr('应用')),
+                PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(context, _color.toARGB32()),
+                    child:   Text(tr('应用')),
+                  ),
                 ),
               ],
             ),

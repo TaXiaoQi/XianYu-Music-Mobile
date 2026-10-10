@@ -34,6 +34,7 @@ import 'src/widgets/custom_background.dart';
 import 'src/widgets/chrome_glass_frame.dart';
 import 'src/widgets/liquid_wave.dart';
 import 'src/widgets/bilipai_glass.dart';
+import 'src/widgets/press_scale.dart';
 import 'src/widgets/blur_budget.dart'
     show BlurSurfaceType, blurBudgetProvider, surfaceBlurSigma,
         globalIsTransitioning, globalIsTabSwitching;
@@ -555,7 +556,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   Theme.of(context).scaffoldBackgroundColor,
                 );
               }
-              return MediaQuery(
+              // 全局按压缩放宿主：罩住全部路由与系统 chrome
+              return PressScaleHost(
+                child: MediaQuery(
                 data: baseMq.copyWith(textScaler: textScaler),
                 child: NotificationListener<NavigationNotification>(
                   onNotification: (_) {
@@ -671,6 +674,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                       ],
                     ),
                   ],
+                ),
                 ),
                 ),
               );

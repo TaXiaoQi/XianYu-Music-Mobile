@@ -7,6 +7,7 @@ import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/widgets/press_scale.dart';
 
 Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
   BuildContext context, {
@@ -153,9 +154,12 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
         children: [
           Expanded(child: Text(widget.title)),
           if (isProvider && !_loading)
-            TextButton(
-              onPressed: _refresh,
-              child: Text(tr('刷新')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: _refresh,
+                child: Text(tr('刷新')),
+              ),
             ),
         ],
       ),
@@ -175,20 +179,26 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
               ? _buildProviderBody(context, scheme)
               : _buildArithmeticBody(context, scheme)),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: Text(tr('取消')),
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: () => Navigator.pop(context, null),
+            child: Text(tr('取消')),
+          ),
         ),
         if (!isProvider)
-          FilledButton(
-            onPressed: (_loading || _verifying || _captcha == null) ? null : _submit,
-            child: _verifying
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(tr('验证并继续')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: (_loading || _verifying || _captcha == null) ? null : _submit,
+              child: _verifying
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(tr('验证并继续')),
+            ),
           ),
       ],
     );
@@ -272,9 +282,12 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
                       fontSize: 18, fontWeight: FontWeight.w700),
                 ),
               ),
-              TextButton(
-                onPressed: _verifying ? null : _refresh,
-                child: Text(tr('换一题')),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: _verifying ? null : _refresh,
+                  child: Text(tr('换一题')),
+                ),
               ),
             ],
           ),

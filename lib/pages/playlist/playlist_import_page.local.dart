@@ -177,10 +177,11 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
-        InkWell(
-          onTap: _importing ? null : _pickFolder,
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
+        PressableScale(
+          child: InkWell(
+            onTap: _importing ? null : _pickFolder,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
             height: 92,
             decoration: BoxDecoration(
               color: appCardColor(context),
@@ -235,6 +236,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
                     ],
                   ),
           ),
+          ),
         ),
         const SizedBox(height: 10),
         Text(
@@ -251,16 +253,19 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           ),
         ],
         const SizedBox(height: 18),
-        FilledButton.icon(
-          onPressed: (_importing || _treeUri == null) ? null : _import,
-          icon: _importing
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.library_add_check_outlined, size: 18),
-          label: Text(_importing ? tr('导入中…') : tr('读取并创建')),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton.icon(
+            onPressed: (_importing || _treeUri == null) ? null : _import,
+            icon: _importing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.library_add_check_outlined, size: 18),
+            label: Text(_importing ? tr('导入中…') : tr('读取并创建')),
+          ),
         ),
       ],
     );

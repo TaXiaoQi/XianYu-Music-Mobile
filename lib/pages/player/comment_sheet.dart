@@ -7,6 +7,7 @@ import '../../src/plugin/plugin_comments.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/widgets/press_scale.dart';
 
 class CommentSheet extends ConsumerStatefulWidget {
   const CommentSheet({super.key, required this.songJson});
@@ -196,11 +197,11 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
                   ],
                   const Spacer(),
                   _buildSortToggle(scheme),
-                  IconButton(
+                  PressableScale(pressScale: 0.88, child: IconButton(
                     icon: Icon(Icons.close,
                         size: 20, color: scheme.onSurfaceVariant),
                     onPressed: () => Navigator.of(context).pop(),
-                  ),
+                  )),
                 ],
               ),
             ),
@@ -225,7 +226,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
         mainAxisSize: MainAxisSize.min,
         children: List.generate(labels.length, (i) {
           final selected = _sortMode == i;
-          return GestureDetector(
+          return PressableScale(child: GestureDetector(
             onTap: () => setState(() => _sortMode = i),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -243,7 +244,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
                 ),
               ),
             ),
-          );
+          ));
         }),
       ),
     );
@@ -267,10 +268,10 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
           children: [
             Text(_error!, style: TextStyle(color: scheme.error)),
             const SizedBox(height: 12),
-            FilledButton.tonal(
+            PressableScale(child: FilledButton.tonal(
               onPressed: () => _fetch(1),
               child:   Text(tr('重试')),
-            ),
+            )),
           ],
         ),
       );
@@ -425,7 +426,7 @@ class _CommentTile extends StatelessWidget {
                 ),
                 if (item.replies.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  GestureDetector(
+                  PressableScale(child: GestureDetector(
                     onTap: onToggleReply,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -446,7 +447,7 @@ class _CommentTile extends StatelessWidget {
                         ),
                       ],
                     ),
-                  ),
+                  )),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,

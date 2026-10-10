@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'predictive_dialog_route.dart';
 import 'sheet_dialog.dart';
 import '../i18n/i18n.dart';
+import 'press_scale.dart';
 
 class ModernChoiceOption<T> {
   final String label;
@@ -104,7 +105,7 @@ Future<bool> showModernConfirmDialog({
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
+                  PressableScale(child: TextButton(
                     onPressed: () => Navigator.of(ctx).pop(false),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
@@ -116,9 +117,9 @@ Future<bool> showModernConfirmDialog({
                       ),
                     ),
                     child: Text(tr(cancelText)),
-                  ),
+                  )),
                   const SizedBox(width: 8),
-                  FilledButton(
+                  PressableScale(child: FilledButton(
                     onPressed: () => Navigator.of(ctx).pop(true),
                     style: FilledButton.styleFrom(
                       backgroundColor: accentColor,
@@ -132,7 +133,7 @@ Future<bool> showModernConfirmDialog({
                       ),
                     ),
                     child: Text(tr(confirmText)),
-                  ),
+                  )),
                 ],
               ),
             ],
@@ -212,7 +213,7 @@ Future<String?> showModernInputDialog({
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
+                  PressableScale(child: TextButton(
                     onPressed: () => Navigator.of(ctx).pop(),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
@@ -224,9 +225,9 @@ Future<String?> showModernInputDialog({
                       ),
                     ),
                     child: Text(tr(cancelText)),
-                  ),
+                  )),
                   const SizedBox(width: 8),
-                  FilledButton(
+                  PressableScale(child: FilledButton(
                     onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
@@ -238,7 +239,7 @@ Future<String?> showModernInputDialog({
                       ),
                     ),
                     child: Text(tr(confirmText)),
-                  ),
+                  )),
                 ],
               ),
             ],
@@ -372,7 +373,7 @@ class ModernOptionTile<T> extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final primary = scheme.primary;
 
-    return Material(
+    return PressableScale(child: Material(
       color: isSelected
           ? primary.withValues(alpha: 0.12)
           : Colors.transparent,
@@ -437,7 +438,7 @@ class ModernOptionTile<T> extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      )),
     );
   }
 }

@@ -18,6 +18,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/flat_top_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 
 class FeedbackPage extends ConsumerStatefulWidget {
@@ -248,9 +249,12 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         title: Text(tr('提示')),
         content: Text(msg, style: const TextStyle(fontSize: 14, height: 1.5)),
         actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(tr('确定')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('确定')),
+            ),
           ),
         ],
       ),
@@ -413,23 +417,26 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             _buildLogOptions(context, scheme, logs),
           ],
           const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _submitting || _compressing ? null : _submit,
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: _submitting || _compressing ? null : _submit,
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  :   Text(tr('提交反馈'),
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
-            child: _submitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                :   Text(tr('提交反馈'),
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -520,23 +527,26 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             const SizedBox(height: 8),
             _buildImageGrid(_betaImages),
             const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _submitting || _compressing ? null : _submitBeta,
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: _submitting || _compressing ? null : _submitBeta,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
+                child: _submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(tr('提交申请'),
+                        style:
+                            TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
               ),
-              child: _submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(tr('提交申请'),
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
           ],
         ],
@@ -610,9 +620,11 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     final scheme = Theme.of(context).colorScheme;
     final selected = _feedbackType == type;
     return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _feedbackType = type),
-        child: AnimatedContainer(
+      child: PressableScale(
+        pressScale: 0.92,
+        child: GestureDetector(
+          onTap: () => setState(() => _feedbackType = type),
+          child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
@@ -630,6 +642,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -662,43 +675,49 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               Positioned(
                 top: 2,
                 right: 2,
-                child: GestureDetector(
-                  onTap: () => setState(() => images.removeAt(i)),
-                  child: Container(
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      shape: BoxShape.circle,
+                child: PressableScale(
+                  pressScale: 0.88,
+                  child: GestureDetector(
+                    onTap: () => setState(() => images.removeAt(i)),
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close,
+                          size: 14, color: Colors.white),
                     ),
-                    child: const Icon(Icons.close,
-                        size: 14, color: Colors.white),
                   ),
                 ),
               ),
             ],
           ),
         if (images.length < _maxImages)
-          GestureDetector(
-            onTap: _compressing ? null : () => _pickImages(images),
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: appCardColor(context),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: scheme.outlineVariant),
+          PressableScale(
+            pressScale: 0.92,
+            child: GestureDetector(
+              onTap: _compressing ? null : () => _pickImages(images),
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: appCardColor(context),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: _compressing
+                    ? const Center(
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : Icon(Icons.add_a_photo_outlined,
+                        color: scheme.onSurfaceVariant),
               ),
-              child: _compressing
-                  ? const Center(
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  : Icon(Icons.add_a_photo_outlined,
-                      color: scheme.onSurfaceVariant),
             ),
           ),
       ],
@@ -757,8 +776,11 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           Text(text,
               style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 12),
-          OutlinedButton(
-              onPressed: action, child: Text(actionLabel ?? tr('刷新'))),
+          PressableScale(
+            pressScale: 0.92,
+            child: OutlinedButton(
+                onPressed: action, child: Text(actionLabel ?? tr('刷新'))),
+          ),
         ],
       ),
     );
@@ -819,10 +841,11 @@ class _FeedbackCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: appCardColor(context),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
+    return PressableScale(
+      child: Material(
+        color: appCardColor(context),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
@@ -891,6 +914,7 @@ class _FeedbackCard extends ConsumerWidget {
           ),
         ),
       ),
+      ),
     );
   }
 
@@ -958,21 +982,24 @@ class _FeedbackDetailDialog extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   for (final url in item.resolveImages)
-                    GestureDetector(
-                      onTap: () => _showImageViewer(context, url),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          url,
-                          width: 90,
-                          height: 90,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: GestureDetector(
+                        onTap: () => _showImageViewer(context, url),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            url,
                             width: 90,
                             height: 90,
-                            color: appCardColor(context),
-                            child: Icon(Icons.broken_image,
-                                color: scheme.outline),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => Container(
+                              width: 90,
+                              height: 90,
+                              color: appCardColor(context),
+                              child: Icon(Icons.broken_image,
+                                  color: scheme.outline),
+                            ),
                           ),
                         ),
                       ),
@@ -984,9 +1011,12 @@ class _FeedbackDetailDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child:   Text(tr('关闭')),
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
+            onPressed: () => Navigator.pop(context),
+            child:   Text(tr('关闭')),
+          ),
         ),
       ],
     );
@@ -1005,9 +1035,12 @@ class _FeedbackDetailDialog extends StatelessWidget {
             Positioned(
               top: 8,
               right: 8,
-              child: IconButton(
-                onPressed: () => Navigator.pop(ctx),
-                icon: const Icon(Icons.close, color: Colors.white),
+              child: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  icon: const Icon(Icons.close, color: Colors.white),
+                ),
               ),
             ),
           ],

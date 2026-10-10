@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
 import 'floating_search_bar.dart';
+import 'press_scale.dart';
 
 class FlatTopBar extends ConsumerWidget {
   const FlatTopBar({
@@ -62,7 +63,8 @@ class FlatTopBar extends ConsumerWidget {
             height: kToolbarHeight,
             child: Row(
               children: [
-                ?leading,
+                if (leading != null)
+                  PressableScale(pressScale: 0.92, child: leading!),
                 Expanded(
                   child: Padding(
                     padding: EdgeInsets.only(
@@ -81,7 +83,12 @@ class FlatTopBar extends ConsumerWidget {
                     ),
                   ),
                 ),
-                ...actions,
+                // SizedBox 是列表里的占位间距，不参与按压
+                ...actions.map(
+                  (w) => w is SizedBox
+                      ? w
+                      : PressableScale(pressScale: 0.92, child: w),
+                ),
               ],
             ),
           ),

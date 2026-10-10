@@ -14,6 +14,7 @@ import '../../src/responsive/landscape.dart';
 import '../../src/theme/theme_icon.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/press_scale.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 
@@ -321,7 +322,7 @@ class _TopListsBody extends ConsumerWidget {
   }
 
   Widget _boardTile(BuildContext context, ColorScheme scheme, MfSheetItem b) {
-    return GestureDetector(
+    final tile = GestureDetector(
       onTap: () => context.push(
         '/online-detail',
         extra: OnlineDetailArgs(
@@ -357,6 +358,7 @@ class _TopListsBody extends ConsumerWidget {
         ),
       ),
     );
+    return PressableScale(child: tile);
   }
 }
 
@@ -371,7 +373,7 @@ class _CardContainer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return frostedCardSurface(
+    final card = frostedCardSurface(
       context: context,
       ref: ref,
       themeSlot: themeSlot,
@@ -389,5 +391,7 @@ class _CardContainer extends ConsumerWidget {
         ),
       ),
     );
+    // loading 骨架不可点，不挂按压反馈
+    return onTap == null ? card : PressableScale(child: card);
   }
 }

@@ -26,6 +26,7 @@ import '../../src/widgets/user_agreement.dart';
 import '../../src/watch_link/watch_link_provider.dart';
 import '../../pages/account/account_dialogs.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/widgets/press_scale.dart';
 
 class DebugPage extends ConsumerWidget {
   const DebugPage({super.key});
@@ -93,20 +94,25 @@ class DebugPage extends ConsumerWidget {
               _sectionHeader(context, tr('开发者模式')),
               _CardGroup(
                 children: [
-                  ListTile(
+                  PressableScale(
+                    child: ListTile(
                     title:   Text(tr('开发者模式')),
                     subtitle: Text(
                       tr('当前已开启，退出后设置页将隐藏调试入口'),
                       style: TextStyle(
                           fontSize: 12, color: scheme.onSurfaceVariant),
                     ),
-                    trailing: FilledButton(
+                    trailing: PressableScale(
+                      pressScale: 0.92,
+                      child: FilledButton(
                       onPressed: () {
                         ref.read(developerModeProvider.notifier).disable();
                         showXianYuToast(context, tr('已退出调试模式'));
                       },
                       child:   Text(tr('退出')),
+                      ),
                     ),
+                  ),
                   ),
                 ],
               ),
@@ -378,19 +384,25 @@ class DebugPage extends ConsumerWidget {
             style: const TextStyle(fontSize: 14, height: 1.5),
           ),
           actions: [
-            TextButton(
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
                 showXianYuToast(context, tr('模拟：退出软件'));
               },
               child: Text(tr('退出软件')),
+              ),
             ),
-            FilledButton(
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
               onPressed: () {
                 Navigator.of(ctx).pop();
                 showXianYuToast(context, tr('模拟：申请资格'));
               },
               child: Text(tr('申请资格')),
+              ),
             ),
           ],
         ),
@@ -413,7 +425,8 @@ class _DebugRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
+    return PressableScale(
+      child: ListTile(
       title: Text(title, style: const TextStyle(fontSize: 15)),
       subtitle: Text(
         subtitle,
@@ -435,6 +448,7 @@ class _DebugRow extends StatelessWidget {
         ),
       ),
       onTap: onTap,
+      ),
     );
   }
 }

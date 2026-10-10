@@ -85,7 +85,8 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
         final title = (w['title'] as String?) ?? '';
         final path = (w['localPath'] as String?) ?? '';
         final exists = File(path).existsSync();
-        return ListTile(
+        return PressableScale(
+          child: ListTile(
           leading: ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: thumb.isNotEmpty
@@ -113,9 +114,12 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
             overflow: TextOverflow.ellipsis,
             style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
           ),
-          trailing: IconButton(
-            icon: Icon(Icons.delete_outline, color: scheme.error),
-            onPressed: () => _remove(i),
+          trailing: PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: Icon(Icons.delete_outline, color: scheme.error),
+              onPressed: () => _remove(i),
+            ),
           ),
           onTap: () {
             if (exists) {
@@ -127,6 +131,7 @@ class _MyDownloadsTabState extends State<_MyDownloadsTab>
               );
             }
           },
+          ),
         );
       },
     );

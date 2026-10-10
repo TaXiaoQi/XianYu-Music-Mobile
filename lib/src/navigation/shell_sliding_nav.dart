@@ -700,16 +700,22 @@ class _NavTab extends ConsumerWidget {
       ),
     );
     if (suppressSplash) {
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: tab,
+      return PressableScale(
+        pressScale: 0.92,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: tab,
+        ),
       );
     }
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: tab,
+    return PressableScale(
+      pressScale: 0.92,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: tab,
+      ),
     );
   }
 }

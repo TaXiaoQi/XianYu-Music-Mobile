@@ -9,6 +9,7 @@ import 'app_toast.dart';
 import 'modern_dialog.dart';
 import 'predictive_dialog_route.dart';
 import '../i18n/i18n.dart';
+import 'press_scale.dart';
 
 Future<void> showDlnaDeviceDialog(BuildContext context, WidgetRef ref) async {
   await showPredictiveDialog<void>(
@@ -193,13 +194,13 @@ class _DlnaDeviceDialogState extends ConsumerState<_DlnaDeviceDialog> {
           const SizedBox(height: 14),
           SizedBox(
             width: double.infinity,
-            child: OutlinedButton(
+            child: PressableScale(child: OutlinedButton(
               onPressed: () {
                 Navigator.of(context).pop();
                 unawaited(ref.read(dlnaCastProvider.notifier).disconnect());
               },
               child: Text(tr('断开投屏')),
-            ),
+            )),
           ),
         ],
       ),
@@ -226,7 +227,7 @@ class _DlnaDeviceDialogState extends ConsumerState<_DlnaDeviceDialog> {
                       fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
-              TextButton.icon(
+              PressableScale(child: TextButton.icon(
                 onPressed: _scanning ? null : _scan,
                 icon: _scanning
                     ? SizedBox(
@@ -236,7 +237,7 @@ class _DlnaDeviceDialogState extends ConsumerState<_DlnaDeviceDialog> {
                             strokeWidth: 2, color: scheme.primary))
                     : const Icon(Icons.refresh, size: 14),
                 label: Text(tr('扫描'), style: const TextStyle(fontSize: 12)),
-              ),
+              )),
             ],
           ),
           const SizedBox(height: 6),
@@ -323,7 +324,7 @@ class _DeviceTile extends StatelessWidget {
     final model = device['model_name'] as String? ?? '';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
+      child: PressableScale(child: Material(
         color: scheme.onSurface.withValues(alpha: 0.03),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
@@ -374,7 +375,7 @@ class _DeviceTile extends StatelessWidget {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }

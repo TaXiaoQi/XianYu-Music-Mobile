@@ -8,6 +8,7 @@ import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../navigation/routes.dart';
 import '../widgets/app_toast.dart';
+import '../widgets/press_scale.dart';
 import 'plugin_models.dart';
 import 'plugin_provider.dart';
 import 'plugin_updates.dart';
@@ -227,13 +228,18 @@ class _LxUpdateAlertDialogState extends ConsumerState<_LxUpdateAlertDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        PressableScale(
+          pressScale: 0.92,
+          child: TextButton(
           onPressed:
               _updating ? null : () => Navigator.of(context).pop(),
           child: Text(tr('稍后')),
+          ),
         ),
         if (hasUrl)
-          FilledButton(
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
             onPressed:
                 _updating ? null : () => _applyUpdate(widget.alert),
             child: _updating
@@ -243,6 +249,7 @@ class _LxUpdateAlertDialogState extends ConsumerState<_LxUpdateAlertDialog> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(tr('立即更新')),
+            ),
           ),
       ],
     );

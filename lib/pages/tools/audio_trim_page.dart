@@ -14,6 +14,7 @@ import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/rust/api.dart' as frb;
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 
 class AudioTrimPage extends ConsumerStatefulWidget {
   const AudioTrimPage({super.key});
@@ -310,24 +311,33 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
         title: Text(tr('选择保存位置')),
         content: Text(tr('剪辑后的文件将保存在哪里？')),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: Text(tr('取消'))),
-          TextButton(
-            onPressed: () async {
-              final d = await FilePicker.getDirectoryPath();
-              if (d != null && ctx.mounted) {
-                choice = d;
-                Navigator.pop(ctx);
-              }
-            },
-            child: Text(tr('自定义…')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+                onPressed: () => Navigator.pop(ctx), child: Text(tr('取消'))),
           ),
-          FilledButton(
-            onPressed: () {
-              choice = defaultDir;
-              Navigator.pop(ctx);
-            },
-            child: Text(tr('原文件夹')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () async {
+                final d = await FilePicker.getDirectoryPath();
+                if (d != null && ctx.mounted) {
+                  choice = d;
+                  Navigator.pop(ctx);
+                }
+              },
+              child: Text(tr('自定义…')),
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () {
+                choice = defaultDir;
+                Navigator.pop(ctx);
+              },
+              child: Text(tr('原文件夹')),
+            ),
           ),
         ],
       ),
@@ -405,18 +415,21 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
               right: 16,
               bottom: 24,
               child: SafeArea(
-                child: FilledButton.icon(
-                  onPressed: _trimming ? null : _trim,
-                  icon: _trimming
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Icon(Icons.content_cut, size: 18),
-                  label: Text(_trimming
-                      ? tr('剪辑中…')
-                      : tr('导出剪辑 → {dur}s',
-                          {'dur': (_end - _start).toStringAsFixed(1)})),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton.icon(
+                    onPressed: _trimming ? null : _trim,
+                    icon: _trimming
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.content_cut, size: 18),
+                    label: Text(_trimming
+                        ? tr('剪辑中…')
+                        : tr('导出剪辑 → {dur}s',
+                            {'dur': (_end - _start).toStringAsFixed(1)})),
+                  ),
                 ),
               ),
             ),
@@ -462,10 +475,13 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
 
   Widget _buildFileCard(ColorScheme scheme) {
     if (_filePath == null) {
-      return OutlinedButton.icon(
-        onPressed: _trimming || _probing ? null : _pickFile,
-        icon: const Icon(Icons.audiotrack, size: 18),
-        label: Text(tr('选择音频文件')),
+      return PressableScale(
+        pressScale: 0.92,
+        child: OutlinedButton.icon(
+          onPressed: _trimming || _probing ? null : _pickFile,
+          icon: const Icon(Icons.audiotrack, size: 18),
+          label: Text(tr('选择音频文件')),
+        ),
       );
     }
     return Container(
@@ -500,10 +516,13 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
               ],
             ),
           ),
-          TextButton.icon(
-            onPressed: _trimming || _probing ? null : _pickFile,
-            icon: const Icon(Icons.refresh, size: 16),
-            label: Text(tr('换一个')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton.icon(
+              onPressed: _trimming || _probing ? null : _pickFile,
+              icon: const Icon(Icons.refresh, size: 16),
+              label: Text(tr('换一个')),
+            ),
           ),
         ],
       ),
@@ -642,43 +661,49 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
                   style: const TextStyle(
                       fontSize: 13.5, fontWeight: FontWeight.w600)),
               const Spacer(),
-              SegmentedButton<bool>(
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              PressableScale(
+                pressScale: 0.92,
+                child: SegmentedButton<bool>(
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  segments: [
+                    ButtonSegment(
+                      value: true,
+                      label: Text(tr('选区'), style: const TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment(
+                      value: false,
+                      label: Text(tr('全曲'), style: const TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  selected: {_previewRange},
+                  onSelectionChanged: running
+                      ? null
+                      : (sel) {
+                          _stopPreview();
+                          setState(() => _previewRange = sel.first);
+                        },
                 ),
-                segments: [
-                  ButtonSegment(
-                    value: true,
-                    label: Text(tr('选区'), style: const TextStyle(fontSize: 11)),
-                  ),
-                  ButtonSegment(
-                    value: false,
-                    label: Text(tr('全曲'), style: const TextStyle(fontSize: 11)),
-                  ),
-                ],
-                selected: {_previewRange},
-                onSelectionChanged: running
-                    ? null
-                    : (sel) {
-                        _stopPreview();
-                        setState(() => _previewRange = sel.first);
-                      },
               ),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              IconButton.filled(
-                onPressed: _togglePreview,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 20),
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton.filled(
+                  onPressed: _togglePreview,
+                  icon: _isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : Icon(_isPlaying ? Icons.pause : Icons.play_arrow, size: 20),
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -704,9 +729,12 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: _stopPreview,
-                icon: Icon(Icons.stop, size: 18, color: scheme.outline),
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  onPressed: _stopPreview,
+                  icon: Icon(Icons.stop, size: 18, color: scheme.outline),
+                ),
               ),
             ],
           ),
@@ -740,33 +768,40 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
             runSpacing: 6,
             children: _recodeFormats.map((f) {
               final selected = _recodeFmt == f;
-              return ChoiceChip(
-                label: Text(f.toUpperCase()),
-                selected: selected,
-                onSelected: (_) => setState(() => _recodeFmt = f),
+              return PressableScale(
+                pressScale: 0.92,
+                child: ChoiceChip(
+                  label: Text(f.toUpperCase()),
+                  selected: selected,
+                  onSelected: (_) => setState(() => _recodeFmt = f),
+                ),
               );
             }).toList(),
           ),
           const SizedBox(height: 4),
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            secondary: Icon(Icons.image_outlined, size: 18, color: scheme.primary),
-            title: Text(tr('保留内置封面'),
-                style: const TextStyle(fontSize: 13)),
-            value: _keepCover,
-            onChanged: _trimming ? null : (v) => setState(() => _keepCover = v),
+          PressableScale(
+            child: SwitchListTile.adaptive(
+              dense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              secondary: Icon(Icons.image_outlined, size: 18, color: scheme.primary),
+              title: Text(tr('保留内置封面'),
+                  style: const TextStyle(fontSize: 13)),
+              value: _keepCover,
+              onChanged: _trimming ? null : (v) => setState(() => _keepCover = v),
+            ),
           ),
-          SwitchListTile.adaptive(
-            dense: true,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            secondary: Icon(Icons.subtitles_outlined, size: 18, color: scheme.primary),
-            title: Text(tr('保留内置歌词 / 元数据'),
-                style: const TextStyle(fontSize: 13)),
-            value: _keepLyrics,
-            onChanged: _trimming ? null : (v) => setState(() => _keepLyrics = v),
+          PressableScale(
+            child: SwitchListTile.adaptive(
+              dense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              secondary: Icon(Icons.subtitles_outlined, size: 18, color: scheme.primary),
+              title: Text(tr('保留内置歌词 / 元数据'),
+                  style: const TextStyle(fontSize: 13)),
+              value: _keepLyrics,
+              onChanged: _trimming ? null : (v) => setState(() => _keepLyrics = v),
+            ),
           ),
         ],
       ),
@@ -824,10 +859,13 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
               ],
             ),
           ),
-          TextButton.icon(
-            onPressed: _share,
-            icon: const Icon(Icons.share_outlined, size: 17),
-            label: Text(tr('分享')),
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton.icon(
+              onPressed: _share,
+              icon: const Icon(Icons.share_outlined, size: 17),
+              label: Text(tr('分享')),
+            ),
           ),
         ],
       ),
@@ -862,16 +900,22 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(dctx);
-                await _share();
-              },
-              child: Text(tr('分享')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: () async {
+                  Navigator.pop(dctx);
+                  await _share();
+                },
+                child: Text(tr('分享')),
+              ),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(dctx),
-              child: Text(tr('完成')),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(dctx),
+                child: Text(tr('完成')),
+              ),
             ),
           ],
         );

@@ -8,6 +8,7 @@ import '../auth/auth_provider.dart';
 import '../auth/server_models.dart';
 import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
+import '../widgets/press_scale.dart';
 
 const _announcementDismissedKey = 'announcement_dismissed_id';
 
@@ -257,7 +258,9 @@ class _NotificationDialog extends StatelessWidget {
                 runSpacing: 8,
                 children: [
                   for (final url in images)
-                    GestureDetector(
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: GestureDetector(
                       onTap: () => _showImageViewer(context, url),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(8),
@@ -275,6 +278,7 @@ class _NotificationDialog extends StatelessWidget {
                           ),
                         ),
                       ),
+                      ),
                     ),
                 ],
               ),
@@ -283,9 +287,12 @@ class _NotificationDialog extends StatelessWidget {
         ),
       ),
       actions: [
-        FilledButton(
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton(
           onPressed: () => Navigator.pop(context),
           child:   Text(tr('知道了')),
+          ),
         ),
       ],
     );
@@ -304,9 +311,12 @@ class _NotificationDialog extends StatelessWidget {
             Positioned(
               top: 8,
               right: 8,
-              child: IconButton(
+              child: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
                 onPressed: () => Navigator.pop(ctx),
                 icon: const Icon(Icons.close, color: Colors.white),
+                ),
               ),
             ),
           ],

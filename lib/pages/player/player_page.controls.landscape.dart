@@ -1,4 +1,4 @@
-﻿part of 'player_page.dart';
+part of 'player_page.dart';
 
 class _LandscapeControlsRow extends ConsumerWidget {
   const _LandscapeControlsRow({
@@ -76,7 +76,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
             ),
           ),
         ),
-        IconButton(
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
           icon: dlActive
@@ -111,8 +111,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
             }
             _showDownloadQualitySheet(context, ref, item);
           },
-        ),
-        IconButton(
+        )),
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: tr('收藏'),
           icon: themeSlotIcon(
@@ -126,14 +126,14 @@ class _LandscapeControlsRow extends ConsumerWidget {
               ref.read(favoritesProvider.notifier).toggle(item);
             }
           },
-        ),
+        )),
       ],
     );
 
     final centerCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           icon: themeSlotWidget(
             ref,
@@ -142,12 +142,12 @@ class _LandscapeControlsRow extends ConsumerWidget {
             fallback: _PlayModeIcon(mode: playMode, color: idle, size: 28),
           ),
           onPressed: notifier.cyclePlayMode,
-        ),
-        IconButton(
+        )),
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           icon: Icon(Icons.skip_previous, color: idle),
           onPressed: notifier.previous,
-        ),
+        )),
         Container(
           width: 64,
           height: 64,
@@ -170,21 +170,21 @@ class _LandscapeControlsRow extends ConsumerWidget {
                     color: Colors.white,
                   ),
                 )
-              : IconButton(
+              : PressableScale(pressScale: 0.92, child: IconButton(
                   icon: Icon(
                     isPlaying ? Icons.pause : Icons.play_arrow,
                     color: Colors.white,
                   ),
                   iconSize: 34,
                   onPressed: notifier.toggle,
-                ),
+                )),
         ),
-        IconButton(
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           icon: Icon(Icons.skip_next, color: idle),
           onPressed: notifier.next,
-        ),
-        IconButton(
+        )),
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: tr('桌面歌词'),
           icon: Container(
@@ -213,7 +213,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
           onPressed: mvRequested
               ? null
               : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-        ),
+        )),
       ],
     );
 
@@ -222,7 +222,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
       children: [
         Tooltip(
           message: tr('音质'),
-          child: InkWell(
+          child: PressableScale(pressScale: 0.88, child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: () {
               if (item == null) return;
@@ -250,8 +250,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
               ),
             ),
           ),
-        ),
-        IconButton(
+        )),
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: tr('音效'),
           icon: Icon(
@@ -265,8 +265,8 @@ class _LandscapeControlsRow extends ConsumerWidget {
               : () => playerNavigatorKey.currentState?.push(
                   coverPageRoute<void>(context, (_) => const EffectsPage()),
                 ),
-        ),
-        IconButton(
+        )),
+        PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           icon: themeSlotIcon(
             ref,
@@ -279,9 +279,9 @@ class _LandscapeControlsRow extends ConsumerWidget {
             context,
             (_) => _QueueSheet(player: ref.read(playerProvider)),
           ),
-        ),
+        )),
         if (onLyricAdjust != null)
-          IconButton(
+          PressableScale(pressScale: 0.88, child: IconButton(
             iconSize: 28,
             tooltip: tr('歌词调节'),
             icon: Icon(
@@ -290,7 +290,7 @@ class _LandscapeControlsRow extends ConsumerWidget {
               color: Colors.white.withValues(alpha: 0.9),
             ),
             onPressed: onLyricAdjust,
-          ),
+          )),
       ],
     );
 

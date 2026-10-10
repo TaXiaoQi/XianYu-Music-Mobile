@@ -22,19 +22,25 @@ class _EqSection extends ConsumerWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.only(right: 8),
-                child: ActionChip(
-                  avatar: Icon(Icons.add, size: 18, color: scheme.primary),
-                  label:   Text(tr('保存')),
-                  onPressed: () => _savePreset(context, manager),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: ActionChip(
+                    avatar: Icon(Icons.add, size: 18, color: scheme.primary),
+                    label:   Text(tr('保存')),
+                    onPressed: () => _savePreset(context, manager),
+                  ),
                 ),
               ),
               for (final p in eqPresets)
                 Padding(
                   padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(p.name),
-                    selected: _isPresetActive(settings, p.gains),
-                    onSelected: (_) => notifier.applyEqPreset(p.name),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: ChoiceChip(
+                      label: Text(p.name),
+                      selected: _isPresetActive(settings, p.gains),
+                      onSelected: (_) => notifier.applyEqPreset(p.name),
+                    ),
                   ),
                 ),
               if (customPresets.isNotEmpty) ...[
@@ -45,20 +51,23 @@ class _EqSection extends ConsumerWidget {
                 for (final p in customPresets)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onLongPress: () => _editPreset(context, manager, p.name),
-                      child: ChoiceChip(
-                        label: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.person_pin, size: 14),
-                            const SizedBox(width: 4),
-                            Text(p.name),
-                          ],
+                    child: PressableScale(
+                      pressScale: 0.92,
+                      child: GestureDetector(
+                        onLongPress: () => _editPreset(context, manager, p.name),
+                        child: ChoiceChip(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.person_pin, size: 14),
+                              const SizedBox(width: 4),
+                              Text(p.name),
+                            ],
+                          ),
+                          selected: _isPresetActive(settings, p.gains),
+                          onSelected: (_) =>
+                              manager.applyCustomEqPreset(p.name),
                         ),
-                        selected: _isPresetActive(settings, p.gains),
-                        onSelected: (_) =>
-                            manager.applyCustomEqPreset(p.name),
                       ),
                     ),
                   ),
@@ -141,16 +150,22 @@ class _EqSection extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child:   Text(tr('取消')),
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child:   Text(tr('取消')),
+                  ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext, controller.text.trim());
-                  },
-                  child:   Text(tr('保存')),
+                PressableScale(
+                  pressScale: 0.92,
+                  child: FilledButton(
+                    onPressed: () {
+                      Navigator.pop(dialogContext, controller.text.trim());
+                    },
+                    child:   Text(tr('保存')),
+                  ),
                 ),
               ],
             ),
@@ -184,15 +199,19 @@ class _EqSection extends ConsumerWidget {
               dense: true,
             ),
             const Divider(height: 1),
-            ListTile(
-              leading: const Icon(Icons.drive_file_rename_outline),
-              title:   Text(tr('重命名')),
-              onTap: () => Navigator.pop(dialogContext, 'rename'),
+            PressableScale(
+              child: ListTile(
+                leading: const Icon(Icons.drive_file_rename_outline),
+                title:   Text(tr('重命名')),
+                onTap: () => Navigator.pop(dialogContext, 'rename'),
+              ),
             ),
-            ListTile(
-              leading: Icon(Icons.delete_outline, color: scheme.error),
-              title: Text(tr('删除'), style: TextStyle(color: scheme.error)),
-              onTap: () => Navigator.pop(dialogContext, 'delete'),
+            PressableScale(
+              child: ListTile(
+                leading: Icon(Icons.delete_outline, color: scheme.error),
+                title: Text(tr('删除'), style: TextStyle(color: scheme.error)),
+                onTap: () => Navigator.pop(dialogContext, 'delete'),
+              ),
             ),
           ],
         ),
@@ -227,15 +246,21 @@ class _EqSection extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child:   Text(tr('取消')),
+                  PressableScale(
+                    pressScale: 0.92,
+                    child: TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child:   Text(tr('取消')),
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () =>
-                        Navigator.pop(dialogContext, controller.text.trim()),
-                    child:   Text(tr('保存')),
+                  PressableScale(
+                    pressScale: 0.92,
+                    child: FilledButton(
+                      onPressed: () =>
+                          Navigator.pop(dialogContext, controller.text.trim()),
+                      child:   Text(tr('保存')),
+                    ),
                   ),
                 ],
               ),

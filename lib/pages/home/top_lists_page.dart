@@ -12,6 +12,7 @@ import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/online_cover.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/stagger_in.dart';
 import 'online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
@@ -386,47 +387,45 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
             itemCount: boards.length,
             itemBuilder: (context, i) {
               final b = boards[i];
-              return _stagger.wrap(
-                i ~/ cols,
-                InkWell(
-                  borderRadius: BorderRadius.circular(isEmbedded ? 10 : 12),
-                  onTap: () => _openBoard(b),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius:
-                              BorderRadius.circular(isEmbedded ? 10 : 12),
-                          child: OnlineCover(
-                            url: b.coverUrl,
-                            size: isEmbedded ? 92 : 200,
-                            radius: isEmbedded ? 10 : 12,
-                          ),
+              final card = InkWell(
+                borderRadius: BorderRadius.circular(isEmbedded ? 10 : 12),
+                onTap: () => _openBoard(b),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(isEmbedded ? 10 : 12),
+                        child: OnlineCover(
+                          url: b.coverUrl,
+                          size: isEmbedded ? 92 : 200,
+                          radius: isEmbedded ? 10 : 12,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      b.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: isEmbedded ? 12 : 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (b.subtitle.isNotEmpty)
                       Text(
-                        b.title,
+                        b.subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: isEmbedded ? 12 : 13,
-                          fontWeight: FontWeight.w600,
-                        ),
+                            fontSize: 11, color: scheme.onSurfaceVariant),
                       ),
-                      if (b.subtitle.isNotEmpty)
-                        Text(
-                          b.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 11, color: scheme.onSurfaceVariant),
-                        ),
-                    ],
-                  ),
+                  ],
                 ),
               );
+              return _stagger.wrap(i ~/ cols, PressableScale(child: card));
             },
           );
         },
@@ -464,10 +463,12 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
     return Center(
       child: onTap == null
           ? child
-          : InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(12),
-              child: child,
+          : PressableScale(
+              child: InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(12),
+                child: child,
+              ),
             ),
     );
   }

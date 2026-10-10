@@ -18,6 +18,7 @@ import '../../src/theme/theme_package.dart';
 import '../../src/theme/theme_store.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/press_scale.dart';
 
 /// 主题中心：本地导入 + 应用，并接入广场与我的上传。
 /// 「我的下载」已按产品决定删除——主题层无来源信息，做出来只会是「本地」的重复页。
@@ -222,10 +223,13 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
   Widget _importButton() => Padding(
         padding: const EdgeInsets.only(top: 8, bottom: 12),
         child: Center(
-          child: OutlinedButton.icon(
-            onPressed: _busy ? null : _import,
-            icon: const Icon(Icons.file_open_outlined, size: 18),
-            label: Text(tr('导入主题包')),
+          child: PressableScale(
+            pressScale: 0.92,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : _import,
+              icon: const Icon(Icons.file_open_outlined, size: 18),
+              label: Text(tr('导入主题包')),
+            ),
           ),
         ),
       );
@@ -301,9 +305,11 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
           : ListView.builder(
               padding: EdgeInsets.fromLTRB(8, 8 + topInset, 8, 24),
               itemCount: list.length,
-              itemBuilder: (context, i) => RemoteThemeTile(
-                theme: list[i],
-                onTap: () => _applyRemote(list[i]),
+              itemBuilder: (context, i) => PressableScale(
+                child: RemoteThemeTile(
+                  theme: list[i],
+                  onTap: () => _applyRemote(list[i]),
+                ),
               ),
             ),
     );
@@ -403,12 +409,24 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
                   spacing: 8,
                   children: [
                     if (isActive)
-                      TextButton(onPressed: _deactivate, child: Text(tr('取消应用')))
+                      PressableScale(
+                        pressScale: 0.92,
+                        child: TextButton(
+                            onPressed: _deactivate, child: Text(tr('取消应用'))),
+                      )
                     else
-                      FilledButton(onPressed: () => _activate(pkg), child: Text(tr('应用'))),
-                    TextButton(
-                      onPressed: () => _remove(pkg),
-                      child: Text(tr('删除'), style: TextStyle(color: scheme.error)),
+                      PressableScale(
+                        pressScale: 0.92,
+                        child: FilledButton(
+                            onPressed: () => _activate(pkg),
+                            child: Text(tr('应用'))),
+                      ),
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: TextButton(
+                        onPressed: () => _remove(pkg),
+                        child: Text(tr('删除'), style: TextStyle(color: scheme.error)),
+                      ),
                     ),
                   ],
                 ),

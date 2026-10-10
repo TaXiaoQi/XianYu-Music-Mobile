@@ -190,7 +190,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     final subtitle = [item.subtitle, item.sourceTag]
         .where((x) => x.isNotEmpty)
         .join(' · ');
-    return InkWell(
+    return PressableScale(
+      child: InkWell(
       borderRadius: BorderRadius.circular(compact ? 10 : 12),
       onTap: () => _open(item),
       child: Column(
@@ -220,6 +221,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
         ],
+      ),
       ),
     );
   }
@@ -253,7 +255,8 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     final subtitle = [item.subtitle, item.sourceTag]
         .where((x) => x.isNotEmpty)
         .join(' · ');
-    return InkWell(
+    return PressableScale(
+      child: InkWell(
       borderRadius: BorderRadius.circular(12),
       onTap: () => _open(item),
       child: Column(
@@ -280,6 +283,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
               style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
             ),
         ],
+      ),
       ),
     );
   }

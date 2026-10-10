@@ -10,6 +10,7 @@ import '../share/share_sheet.dart';
 import 'sheet_dialog.dart';
 import 'song_info_dialog.dart';
 import 'app_toast.dart';
+import 'press_scale.dart';
 import '../i18n/i18n.dart';
 
 Future<void> showSongActionsSheet(
@@ -47,7 +48,7 @@ Future<void> showSongActionsSheet(
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            ListTile(
+            PressableScale(child: ListTile(
               leading: Icon(isFav ? Icons.favorite : Icons.favorite_border,
                   color: scheme.primary, size: 22),
               title: Text(isFav ? tr('取消收藏') : tr('收藏')),
@@ -55,8 +56,8 @@ Future<void> showSongActionsSheet(
                 Navigator.pop(ctx);
                 favorites.toggle(item);
               },
-            ),
-            ListTile(
+            )),
+            PressableScale(child: ListTile(
               leading: Icon(Icons.playlist_play, color: scheme.primary, size: 22),
               title:   Text(tr('下一首播放')),
               onTap: () {
@@ -64,8 +65,8 @@ Future<void> showSongActionsSheet(
                 ref.read(playerProvider.notifier).playNextShare(item);
                 showXianYuToast(ctx, tr('已添加至下一首播放'));
               },
-            ),
-            ListTile(
+            )),
+            PressableScale(child: ListTile(
               leading: Icon(Icons.playlist_add, color: scheme.primary, size: 22),
               title:   Text(tr('添加到歌单')),
               onTap: () {
@@ -73,16 +74,16 @@ Future<void> showSongActionsSheet(
                 showAddToPlaylistSheet(
                     ctx, ref, [importedSongFromQueueItem(item)]);
               },
-            ),
-            ListTile(
+            )),
+            PressableScale(child: ListTile(
               leading: Icon(Icons.share_outlined, color: scheme.primary, size: 22),
               title:   Text(tr('分享')),
               onTap: () {
                 Navigator.pop(ctx);
                 showSongShareSheet(context, ref: ref, song: item);
               },
-            ),
-            ListTile(
+            )),
+            PressableScale(child: ListTile(
               leading: Icon(Icons.info_outline,
                   color: scheme.onSurfaceVariant, size: 22),
               title:   Text(tr('歌曲信息')),
@@ -90,9 +91,9 @@ Future<void> showSongActionsSheet(
                 Navigator.pop(ctx);
                 showSongInfoDialog(ctx, ref, item);
               },
-            ),
+            )),
             if (item.isOnline)
-              ListTile(
+              PressableScale(child: ListTile(
                 leading:
                     Icon(Icons.download_outlined, color: scheme.primary, size: 22),
                 title:   Text(tr('下载')),
@@ -127,16 +128,16 @@ Future<void> showSongActionsSheet(
                         {'title': item.title}),
                   );
                 },
-              ),
+              )),
             if (onPlay != null)
-              ListTile(
+              PressableScale(child: ListTile(
                 leading: Icon(Icons.play_arrow, color: scheme.primary, size: 22),
                 title:   Text(tr('播放')),
                 onTap: () {
                   Navigator.pop(ctx);
                   onPlay();
                 },
-              ),
+              )),
             const SizedBox(height: 8),
         ],
       ),
@@ -173,7 +174,7 @@ Future<String?> _pickDownloadQuality(BuildContext ctx, WidgetRef ref) async {
           mainAxisSize: MainAxisSize.min,
           children: [
             for (final (label, value, subtitle) in options)
-              ListTile(
+              PressableScale(child: ListTile(
                 title: Text(label),
                 subtitle: Text(subtitle),
                 trailing: value == current
@@ -182,7 +183,7 @@ Future<String?> _pickDownloadQuality(BuildContext ctx, WidgetRef ref) async {
                     : null,
                 selected: value == current,
                 onTap: () => Navigator.pop(dialogContext, value),
-              ),
+              )),
           ],
         ),
       ),

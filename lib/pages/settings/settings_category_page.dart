@@ -30,6 +30,7 @@ import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/committed_slider.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/audio/audio_devices.dart';
 import '../../src/lyrics/floating_lyrics.dart';
 import '../../src/rust/api.dart' as frb;

@@ -15,6 +15,7 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 
 /// 鸿蒙「批量移动」：把下载到沙盒的歌曲批量移动/导出到公共目录。
@@ -92,20 +93,23 @@ class _DownloadMovePageState extends ConsumerState<DownloadMovePage> {
                 title: Text(tr('批量移动')),
                 actions: [
                   if (entries.isNotEmpty)
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                                if (allSelected) {
-                                  _selected.clear();
-                                } else {
-                                  _selected
-                                    ..clear()
-                                    ..addAll(
-                                        entries.map((e) => e.songPath));
-                                }
-                              }),
-                      child: Text(allSelected ? tr('全不选') : tr('全选')),
+                    PressableScale(
+                      pressScale: 0.92,
+                      child: TextButton(
+                        onPressed: _busy
+                            ? null
+                            : () => setState(() {
+                                  if (allSelected) {
+                                    _selected.clear();
+                                  } else {
+                                    _selected
+                                      ..clear()
+                                      ..addAll(
+                                          entries.map((e) => e.songPath));
+                                  }
+                                }),
+                        child: Text(allSelected ? tr('全不选') : tr('全选')),
+                      ),
                     ),
                 ],
               ),
@@ -126,7 +130,7 @@ class _DownloadMovePageState extends ConsumerState<DownloadMovePage> {
   Widget _entryTile(
       BuildContext context, DownloadHistoryEntry e, ColorScheme scheme) {
     final selected = _selected.contains(e.songPath);
-    return InkWell(
+    final tile = InkWell(
       onTap: _busy
           ? null
           : () => setState(() {
@@ -178,6 +182,8 @@ class _DownloadMovePageState extends ConsumerState<DownloadMovePage> {
         ),
       ),
     );
+    // 忙碌期间整行不响应，不缩放避免误导
+    return _busy ? tile : PressableScale(child: tile);
   }
 
   Widget _bottomBar(BuildContext context, ColorScheme scheme) {
@@ -201,17 +207,20 @@ class _DownloadMovePageState extends ConsumerState<DownloadMovePage> {
                       fontSize: 13, color: scheme.onSurfaceVariant),
                 ),
               ),
-              FilledButton.icon(
-                onPressed: _busy || n == 0 ? null : _moveSelected,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child:
-                            CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.drive_file_move, size: 18),
-                label: Text(tr('移动到文件夹')),
+              PressableScale(
+                pressScale: 0.92,
+                child: FilledButton.icon(
+                  onPressed: _busy || n == 0 ? null : _moveSelected,
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.drive_file_move, size: 18),
+                  label: Text(tr('移动到文件夹')),
+                ),
               ),
             ],
           ),
@@ -239,20 +248,22 @@ class _DownloadMovePageState extends ConsumerState<DownloadMovePage> {
             children: [
               Text(tr('通过系统文件选择器选择目标文件夹，同名文件将跳过不覆盖。')),
               const SizedBox(height: 12),
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => setState(() => keep = !keep),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Checkbox(
-                        value: keep,
-                        onChanged: (v) => setState(() => keep = v ?? false),
-                      ),
-                      Text(tr('保留原文件（仅导出副本）')),
-                    ],
+              PressableScale(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => setState(() => keep = !keep),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: keep,
+                          onChanged: (v) => setState(() => keep = v ?? false),
+                        ),
+                        Text(tr('保留原文件（仅导出副本）')),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -269,13 +280,19 @@ class _DownloadMovePageState extends ConsumerState<DownloadMovePage> {
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(tr('取消')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(tr('取消')),
+              ),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(tr('选择文件夹')),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(tr('选择文件夹')),
+              ),
             ),
           ],
         ),

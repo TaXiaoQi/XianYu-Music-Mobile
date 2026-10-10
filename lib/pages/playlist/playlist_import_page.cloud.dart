@@ -397,16 +397,19 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 14),
-        FilledButton.icon(
-          onPressed: (_searching || _importing) ? null : _search,
-          icon: _searching
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.search, size: 18),
-          label: Text(tr('搜索歌单')),
+        PressableScale(
+          pressScale: 0.92,
+          child: FilledButton.icon(
+            onPressed: (_searching || _importing) ? null : _search,
+            icon: _searching
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.search, size: 18),
+            label: Text(tr('搜索歌单')),
+          ),
         ),
         if (_error != null) ...[
           const SizedBox(height: 14),
@@ -432,14 +435,15 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           for (final sheet in _sheets)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
-                color: appCardColor(context),
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide.none,
-                ),
-                child: InkWell(
+              child: PressableScale(
+                child: Material(
+                  color: appCardColor(context),
+                  clipBehavior: Clip.antiAlias,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide.none,
+                  ),
+                  child: InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: _importing ? null : () => _importSheet(sheet),
                   child: Padding(
@@ -489,6 +493,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
                       ],
                     ),
                   ),
+                ),
                 ),
               ),
             ),

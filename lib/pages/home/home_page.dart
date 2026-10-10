@@ -17,6 +17,7 @@ import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/page_search_bar.dart';
 import 'discover_section.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/widgets/press_scale.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -142,7 +143,9 @@ class _SectionHeader extends StatelessWidget {
 
 Widget _viewAllAction(BuildContext context, WidgetRef ref, String route) {
   final scheme = Theme.of(context).colorScheme;
-  return InkWell(
+  return PressableScale(
+    pressScale: 0.92,
+    child: InkWell(
     onTap: () => openDiscoverEntry(context, ref, route),
     borderRadius: BorderRadius.circular(6),
     child: Padding(
@@ -157,6 +160,7 @@ Widget _viewAllAction(BuildContext context, WidgetRef ref, String route) {
         ],
       ),
     ),
+      ),
   );
 }
 
@@ -223,7 +227,8 @@ class _MostPlayedRow extends ConsumerWidget {
     final artist = item?.artist ?? '';
     final path = song?.path ?? item?.path ?? '';
     BuildContext? coverCtx;
-    return frostedCardSurface(
+    return PressableScale(
+      child: frostedCardSurface(
       context: context,
       ref: ref,
       radius: 13,
@@ -320,6 +325,7 @@ class _MostPlayedRow extends ConsumerWidget {
             ],
           ),
         ),
+      ),
       ),
       ),
     );

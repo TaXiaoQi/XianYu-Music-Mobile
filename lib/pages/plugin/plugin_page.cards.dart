@@ -34,59 +34,61 @@ class _SubscriptionSection extends ConsumerWidget {
         for (final sub in subscriptions)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Material(
-              color: appCardFill(context, ref),
-              clipBehavior: Clip.antiAlias,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-                side: BorderSide.none,
-              ),
-              child: InkWell(
-                onTap: () => onReinstall(sub.url),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(9),
+            child: PressableScale(
+              child: Material(
+                color: appCardFill(context, ref),
+                clipBehavior: Clip.antiAlias,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: BorderSide.none,
+                ),
+                child: InkWell(
+                  onTap: () => onReinstall(sub.url),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Icon(Icons.link,
+                              size: 18, color: scheme.primary),
                         ),
-                        child: Icon(Icons.link,
-                            size: 18, color: scheme.primary),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              sub.name,
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w600),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              sub.url,
-                              style: TextStyle(
-                                  fontSize: 11, color: scheme.outline),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                sub.name,
+                                style: const TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                sub.url,
+                                style: TextStyle(
+                                    fontSize: 11, color: scheme.outline),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.delete_outline,
-                            size: 20, color: scheme.outline),
-                        tooltip: tr('移除订阅'),
-                        onPressed: () => ref
-                            .read(pluginSubscriptionsProvider.notifier)
-                            .remove(sub.id),
-                      ),
-                    ],
+                        IconButton(
+                          icon: Icon(Icons.delete_outline,
+                              size: 20, color: scheme.outline),
+                          tooltip: tr('移除订阅'),
+                          onPressed: () => ref
+                              .read(pluginSubscriptionsProvider.notifier)
+                              .remove(sub.id),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -471,21 +473,24 @@ class _PluginCard extends ConsumerWidget {
   }) {
     final scheme = Theme.of(context).colorScheme;
     final c = color ?? scheme.outline;
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 17, color: c),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(fontSize: 13, color: c),
-            ),
-          ],
+    return PressableScale(
+      pressScale: 0.88,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: c),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(fontSize: 13, color: c),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -99,10 +99,13 @@ extension _AccountPageAuthForms on _AccountPageState {
                 padding: const EdgeInsets.only(top: 8),
                 child: SizedBox(
                   height: 56,
-                  child: OutlinedButton(
-                    onPressed: _countdown > 0 ? null : _sendCode,
-                    child: Text(
-                      _countdown > 0 ? '${_countdown}s' : tr('发送验证码'),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: OutlinedButton(
+                      onPressed: _countdown > 0 ? null : _sendCode,
+                      child: Text(
+                        _countdown > 0 ? '${_countdown}s' : tr('发送验证码'),
+                      ),
                     ),
                   ),
                 ),
@@ -118,14 +121,17 @@ extension _AccountPageAuthForms on _AccountPageState {
         _submitButton(context, auth, tr('登录')),
         const SizedBox(height: 8),
         Center(
-          child: TextButton(
-            onPressed: auth.loading
-                ? null
-                : () => showForgotPasswordDialog(
-                    context,
-                    ref.read(authProvider.notifier),
-                  ),
-            child: Text(tr('忘记密码？')),
+          child: PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: auth.loading
+                  ? null
+                  : () => showForgotPasswordDialog(
+                      context,
+                      ref.read(authProvider.notifier),
+                    ),
+              child: Text(tr('忘记密码？')),
+            ),
           ),
         ),
       ],
@@ -135,22 +141,25 @@ extension _AccountPageAuthForms on _AccountPageState {
   Widget _loginMethodToggle(ColorScheme scheme) {
     Widget item(String label, bool selected, VoidCallback onTap) {
       return Expanded(
-        child: GestureDetector(
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: selected ? scheme.primary : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+        child: PressableScale(
+          pressScale: 0.92,
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: selected ? scheme.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
@@ -233,9 +242,12 @@ extension _AccountPageAuthForms on _AccountPageState {
               padding: const EdgeInsets.only(top: 8),
               child: SizedBox(
                 height: 56,
-                child: OutlinedButton(
-                  onPressed: _countdown > 0 ? null : _sendCode,
-                  child: Text(_countdown > 0 ? '${_countdown}s' : tr('发送验证码')),
+                child: PressableScale(
+                  pressScale: 0.92,
+                  child: OutlinedButton(
+                    onPressed: _countdown > 0 ? null : _sendCode,
+                    child: Text(_countdown > 0 ? '${_countdown}s' : tr('发送验证码')),
+                  ),
                 ),
               ),
             ),
@@ -335,11 +347,14 @@ extension _AccountPageAuthForms on _AccountPageState {
                 borderSide: BorderSide(color: scheme.primary, width: 1.5),
               ),
               suffixIcon: obscure
-                  ? IconButton(
-                      icon: Icon(
-                        _obscure ? Icons.visibility : Icons.visibility_off,
+                  ? PressableScale(
+                      pressScale: 0.88,
+                      child: IconButton(
+                        icon: Icon(
+                          _obscure ? Icons.visibility : Icons.visibility_off,
+                        ),
+                        onPressed: () => setState(() => _obscure = !_obscure),
                       ),
-                      onPressed: () => setState(() => _obscure = !_obscure),
                     )
                   : null,
             ),
@@ -357,22 +372,25 @@ extension _AccountPageAuthForms on _AccountPageState {
   }
 
   Widget _submitButton(BuildContext context, AuthState auth, String label) {
-    return FilledButton(
-      onPressed: auth.loading ? null : _submit,
-      style: FilledButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    return PressableScale(
+      pressScale: 0.92,
+      child: FilledButton(
+        onPressed: auth.loading ? null : _submit,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: auth.loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(
+                label,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
       ),
-      child: auth.loading
-          ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Text(
-              label,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-            ),
     );
   }
 }

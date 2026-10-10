@@ -15,6 +15,7 @@ import '../../src/i18n/i18n.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
+import '../../src/widgets/press_scale.dart';
 
 class ScanPage extends ConsumerStatefulWidget {
   const ScanPage({super.key});
@@ -225,19 +226,25 @@ class _ScanPageState extends ConsumerState<ScanPage>
             title: Text(title),
             content: Text(content),
             actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(cancel),
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(cancel),
+                ),
               ),
-              danger
-                  ? TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      child: Text(ok),
-                    )
-                  : FilledButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      child: Text(ok),
-                    ),
+              PressableScale(
+                pressScale: 0.92,
+                child: danger
+                    ? TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: Text(ok),
+                      )
+                    : FilledButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        child: Text(ok),
+                      ),
+              ),
             ],
           ),
         ) ??
@@ -269,13 +276,19 @@ class _ScanPageState extends ConsumerState<ScanPage>
           title: Text(tr('请先登录')),
           content: Text(tr('扫码确认登录桌面端，需要先登录你的弦予音乐账号。')),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dctx).pop(false),
-              child: Text(tr('取消')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: () => Navigator.of(dctx).pop(false),
+                child: Text(tr('取消')),
+              ),
             ),
-            FilledButton(
-              onPressed: () => Navigator.of(dctx).pop(true),
-              child: Text(tr('去登录')),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton(
+                onPressed: () => Navigator.of(dctx).pop(true),
+                child: Text(tr('去登录')),
+              ),
             ),
           ],
         ),
@@ -310,9 +323,12 @@ class _ScanPageState extends ConsumerState<ScanPage>
           title: Text(tr('扫码失败')),
           content: Text(scanError ?? tr('二维码无效或已过期')),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dctx).pop(),
-              child: Text(tr('知道了')),
+            PressableScale(
+              pressScale: 0.92,
+              child: TextButton(
+                onPressed: () => Navigator.of(dctx).pop(),
+                child: Text(tr('知道了')),
+              ),
             ),
           ],
         ),
@@ -343,12 +359,15 @@ class _ScanPageState extends ConsumerState<ScanPage>
         title: Text(tr('登录成功')),
         content: Text(tr('桌面端已登录你的弦予音乐账号。')),
         actions: [
-          FilledButton(
-            onPressed: () {
-              Navigator.of(dctx).pop();
-              if (mounted) context.pop();
-            },
-            child: Text(tr('完成')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () {
+                Navigator.of(dctx).pop();
+                if (mounted) context.pop();
+              },
+              child: Text(tr('完成')),
+            ),
           ),
         ],
       ),
@@ -391,10 +410,13 @@ class _ScanPageState extends ConsumerState<ScanPage>
             child: SafeArea(
               child: Row(
                 children: [
-                  IconButton(
-                    onPressed: () => context.pop(),
-                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
-                    tooltip: tr('返回'),
+                  PressableScale(
+                    pressScale: 0.88,
+                    child: IconButton(
+                      onPressed: () => context.pop(),
+                      icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+                      tooltip: tr('返回'),
+                    ),
                   ),
                   Expanded(
                     child: Text(
@@ -408,13 +430,16 @@ class _ScanPageState extends ConsumerState<ScanPage>
                     ),
                   ),
                   if (loggedIn)
-                    IconButton(
-                      onPressed: _toggleTorch,
-                      icon: Icon(
-                        _torchOn ? Icons.flash_on : Icons.flash_off,
-                        color: Colors.white,
+                    PressableScale(
+                      pressScale: 0.88,
+                      child: IconButton(
+                        onPressed: _toggleTorch,
+                        icon: Icon(
+                          _torchOn ? Icons.flash_on : Icons.flash_off,
+                          color: Colors.white,
+                        ),
+                        tooltip: tr('闪光灯'),
                       ),
-                      tooltip: tr('闪光灯'),
                     )
                   else
                     const SizedBox(width: 48),
@@ -446,13 +471,16 @@ class _ScanPageState extends ConsumerState<ScanPage>
                         ),
                       ),
                       const SizedBox(height: 6),
-                      TextButton.icon(
-                        onPressed: _pickFromGallery,
-                        icon: const Icon(Icons.photo_outlined, size: 18),
-                        label: Text(tr('相册识码')),
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          textStyle: const TextStyle(fontSize: 13),
+                      PressableScale(
+                        pressScale: 0.92,
+                        child: TextButton.icon(
+                          onPressed: _pickFromGallery,
+                          icon: const Icon(Icons.photo_outlined, size: 18),
+                          label: Text(tr('相册识码')),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white70,
+                            textStyle: const TextStyle(fontSize: 13),
+                          ),
                         ),
                       ),
                     ],
@@ -508,15 +536,18 @@ class _ScanPageState extends ConsumerState<ScanPage>
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 24),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+              ),
+              onPressed: () {
+                context.pop();
+                context.push('/account');
+              },
+              child: Text(tr('去登录')),
             ),
-            onPressed: () {
-              context.pop();
-              context.push('/account');
-            },
-            child: Text(tr('去登录')),
           ),
         ],
       ),
@@ -544,16 +575,19 @@ class _ScanPageState extends ConsumerState<ScanPage>
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 20),
-          FilledButton(
-            onPressed: () async {
-              final ok = await _confirm(tr('重新授权'), tr('前往系统设置开启相机权限？'), ok: tr('去设置'));
-              if (!mounted) return;
-              if (ok) {
-                await openAppSettings();
-                if (mounted) await _resume();
-              }
-            },
-            child: Text(tr('授权相机')),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () async {
+                final ok = await _confirm(tr('重新授权'), tr('前往系统设置开启相机权限？'), ok: tr('去设置'));
+                if (!mounted) return;
+                if (ok) {
+                  await openAppSettings();
+                  if (mounted) await _resume();
+                }
+              },
+              child: Text(tr('授权相机')),
+            ),
           ),
         ],
       ),
@@ -581,18 +615,21 @@ class _ScanPageState extends ConsumerState<ScanPage>
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 20),
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
-            onPressed: () async {
-              if (mounted) {
-                setState(() {
-                  _permissionDenied = false;
-                  _initFailed = false;
-                });
-                await _resume();
-              }
-            },
-            child: Text(tr('重试')),
+          PressableScale(
+            pressScale: 0.92,
+            child: OutlinedButton(
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.white),
+              onPressed: () async {
+                if (mounted) {
+                  setState(() {
+                    _permissionDenied = false;
+                    _initFailed = false;
+                  });
+                  await _resume();
+                }
+              },
+              child: Text(tr('重试')),
+            ),
           ),
         ],
       ),

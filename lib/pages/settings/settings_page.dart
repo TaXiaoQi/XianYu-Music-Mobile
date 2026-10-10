@@ -14,6 +14,7 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/landscape_page_fade.dart';
+import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/responsive/landscape.dart';
 import '../about/about_page.dart';
@@ -211,9 +212,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
             right: 12,
             child: Row(
               children: [
-                BiliPaiIconButton(
-                  icon: Icons.arrow_back,
-                  onTap: () => Navigator.of(context).maybePop(),
+                PressableScale(
+                  pressScale: 0.88,
+                  child: BiliPaiIconButton(
+                    icon: Icons.arrow_back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 BiliPaiPill(
@@ -291,14 +295,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
           ),
         ),
         if (_query.isNotEmpty)
-          IconButton(
-            icon: const Icon(Icons.clear, size: 18),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints.tightFor(width: 32, height: 40),
-            onPressed: () {
-              _searchCtrl.clear();
-              setState(() => _query = '');
-            },
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: const Icon(Icons.clear, size: 18),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 40),
+              onPressed: () {
+                _searchCtrl.clear();
+                setState(() => _query = '');
+              },
+            ),
           ),
       ],
     );
@@ -830,20 +837,22 @@ class _CategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: !compact,
-      contentPadding: compact
-          ? const EdgeInsets.symmetric(horizontal: 12)
-          : null,
-      selected: selected,
-      selectedTileColor: scheme.primary.withValues(alpha: 0.10),
-      selectedColor: scheme.primary,
-      leading: Icon(entry.icon, color: selected ? scheme.primary : null),
-      title: Text(entry.title, style: const TextStyle(fontSize: 15)),
-      subtitle: compact
-          ? null
-          : Text(entry.subtitle, style: Theme.of(context).textTheme.bodySmall),
-      onTap: onTapOverride ?? () => context.push(entry.path),
+    return PressableScale(
+      child: ListTile(
+        dense: !compact,
+        contentPadding: compact
+            ? const EdgeInsets.symmetric(horizontal: 12)
+            : null,
+        selected: selected,
+        selectedTileColor: scheme.primary.withValues(alpha: 0.10),
+        selectedColor: scheme.primary,
+        leading: Icon(entry.icon, color: selected ? scheme.primary : null),
+        title: Text(entry.title, style: const TextStyle(fontSize: 15)),
+        subtitle: compact
+            ? null
+            : Text(entry.subtitle, style: Theme.of(context).textTheme.bodySmall),
+        onTap: onTapOverride ?? () => context.push(entry.path),
+      ),
     );
   }
 }
@@ -921,24 +930,26 @@ class _SearchResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: compact,
-      contentPadding: compact
-          ? const EdgeInsets.symmetric(horizontal: 12)
-          : null,
-      leading: Icon(
-        item.isCategory ? Icons.category_outlined : Icons.settings_outlined,
-        size: 20,
-        color: scheme.primary,
+    return PressableScale(
+      child: ListTile(
+        dense: compact,
+        contentPadding: compact
+            ? const EdgeInsets.symmetric(horizontal: 12)
+            : null,
+        leading: Icon(
+          item.isCategory ? Icons.category_outlined : Icons.settings_outlined,
+          size: 20,
+          color: scheme.primary,
+        ),
+        title: Text(tr(item.label), style: const TextStyle(fontSize: 15)),
+        subtitle: Text(
+          item.isCategory
+              ? tr('设置分类')
+              : '${tr(item.section)} · ${tr(item.categoryName)}',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        onTap: onTapOverride ?? () => context.push(item.path),
       ),
-      title: Text(tr(item.label), style: const TextStyle(fontSize: 15)),
-      subtitle: Text(
-        item.isCategory
-            ? tr('设置分类')
-            : '${tr(item.section)} · ${tr(item.categoryName)}',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      onTap: onTapOverride ?? () => context.push(item.path),
     );
   }
 }

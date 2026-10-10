@@ -44,16 +44,19 @@ class _StatusBadge extends StatelessWidget {
             ),
             if (isPending) ...[
               const SizedBox(width: 4),
-              GestureDetector(
-                onTap: refreshing ? null : onRefresh,
-                child: refreshing
-                    ? SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 1.5, color: color),
-                      )
-                    : Icon(Icons.refresh, size: 13, color: color),
+              PressableScale(
+                pressScale: 0.88,
+                child: GestureDetector(
+                  onTap: refreshing ? null : onRefresh,
+                  child: refreshing
+                      ? SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 1.5, color: color),
+                        )
+                      : Icon(Icons.refresh, size: 13, color: color),
+                ),
               ),
             ],
           ],
@@ -91,62 +94,68 @@ class _ProfileHeaderCard extends ConsumerWidget {
       ),
       child: Column(
         children: [
-          GestureDetector(
-            onTap: onAvatarTap,
-            child: Stack(
-              children: [
-                _Avatar(user: user),
-                if (onAvatarTap != null)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: scheme.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: scheme.surface, width: 2),
+          PressableScale(
+            pressScale: 0.92,
+            child: GestureDetector(
+              onTap: onAvatarTap,
+              child: Stack(
+                children: [
+                  _Avatar(user: user),
+                  if (onAvatarTap != null)
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: scheme.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: scheme.surface, width: 2),
+                        ),
+                        child: avatarUploading
+                            ? Padding(
+                                padding: const EdgeInsets.all(6),
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: scheme.onPrimary),
+                              )
+                            : Icon(Icons.photo_camera,
+                                size: 15, color: scheme.onPrimary),
                       ),
-                      child: avatarUploading
-                          ? Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: scheme.onPrimary),
-                            )
-                          : Icon(Icons.photo_camera,
-                              size: 15, color: scheme.onPrimary),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 14),
-          InkWell(
-            onTap: onNicknameTap,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      user.nickname.isEmpty ? tr('弦予用户') : user.nickname,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.3,
+          PressableScale(
+            pressScale: 0.92,
+            child: InkWell(
+              onTap: onNicknameTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        user.nickname.isEmpty ? tr('弦予用户') : user.nickname,
+                        style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
+                        ),
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  if (onNicknameTap != null) ...[
-                    const SizedBox(width: 6),
-                    Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
+                    if (onNicknameTap != null) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -186,33 +195,36 @@ class _ProfileHeaderCard extends ConsumerWidget {
               ),
               if (user.ciyuanxiId != null && user.ciyuanxiId!.isNotEmpty) ...[
                 const SizedBox(width: 8),
-                InkWell(
-                  onTap: () => onCopy(context, user.ciyuanxiId!, tr('弦予号')),
-                  borderRadius: BorderRadius.circular(999),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: scheme.onSurface.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'ID: ${user.ciyuanxiId}',
-                          style: TextStyle(
-                            fontSize: 12,
+                PressableScale(
+                  pressScale: 0.92,
+                  child: InkWell(
+                    onTap: () => onCopy(context, user.ciyuanxiId!, tr('弦予号')),
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: scheme.onSurface.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'ID: ${user.ciyuanxiId}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.copy_rounded,
+                            size: 12,
                             color: scheme.onSurfaceVariant,
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Icon(
-                          Icons.copy_rounded,
-                          size: 12,
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

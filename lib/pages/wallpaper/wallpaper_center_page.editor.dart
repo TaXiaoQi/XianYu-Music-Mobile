@@ -355,25 +355,33 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickImage,
-                    icon: const Icon(Icons.photo_library_outlined, size: 18),
-                    label: Text(
-                      hasImage && _draft.mediaType == WallpaperMediaType.image
-                          ? tr('更换图片')
-                          : tr('选择图片'),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: OutlinedButton.icon(
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.photo_library_outlined, size: 18),
+                      label: Text(
+                        hasImage &&
+                                _draft.mediaType == WallpaperMediaType.image
+                            ? tr('更换图片')
+                            : tr('选择图片'),
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _pickVideo,
-                    icon: const Icon(Icons.video_library_outlined, size: 18),
-                    label: Text(
-                      hasImage && _draft.mediaType == WallpaperMediaType.video
-                          ? tr('更换视频')
-                          : tr('选择视频'),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: OutlinedButton.icon(
+                      onPressed: _pickVideo,
+                      icon: const Icon(Icons.video_library_outlined, size: 18),
+                      label: Text(
+                        hasImage &&
+                                _draft.mediaType == WallpaperMediaType.video
+                            ? tr('更换视频')
+                            : tr('选择视频'),
+                      ),
                     ),
                   ),
                 ),
@@ -520,24 +528,30 @@ class _CustomWallpaperEditorState extends ConsumerState<CustomWallpaperEditor> {
                 ),
               ),
               const SizedBox(height: 20),
-              FilledButton.icon(
-                onPressed: _apply,
-                icon: const Icon(Icons.check, size: 18),
-                label: Text(tr('保存并使用')),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46),
-                  textStyle: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+              PressableScale(
+                pressScale: 0.92,
+                child: FilledButton.icon(
+                  onPressed: _apply,
+                  icon: const Icon(Icons.check, size: 18),
+                  label: Text(tr('保存并使用')),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(46),
+                    textStyle: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
               if (_draft.active) ...[
                 const SizedBox(height: 8),
                 Center(
-                  child: TextButton(
-                    onPressed: _restore,
-                    child: Text(tr('恢复默认')),
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: TextButton(
+                      onPressed: _restore,
+                      child: Text(tr('恢复默认')),
+                    ),
                   ),
                 ),
               ],

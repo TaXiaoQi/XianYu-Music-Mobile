@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../i18n/i18n.dart';
+import '../widgets/press_scale.dart';
 import 'sleep_timer.dart';
 
 /// 常用时长的快捷档（分钟）。用户也可在下方自定义任意时长。
@@ -83,11 +84,11 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
             ),
             const SizedBox(height: 12),
             for (final m in kSleepTimerMinutes)
-              ListTile(
+              PressableScale(child: ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(tr('{n} 分钟', {'n': m})),
                 onTap: () => _start(m),
-              ),
+              )),
             const Divider(height: 20),
             Row(
               children: [
@@ -109,23 +110,23 @@ class _SleepTimerSheetState extends ConsumerState<_SleepTimerSheet> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                FilledButton(
+                PressableScale(child: FilledButton(
                   // 输入非法时禁用，避免提交出 0 分钟或负数这类无效定时。
                   onPressed: custom == null ? null : () => _start(custom),
                   child: Text(tr('确定')),
-                ),
+                )),
               ],
             ),
             if (state.active) ...[
               const SizedBox(height: 8),
-              TextButton.icon(
+              PressableScale(child: TextButton.icon(
                 onPressed: () {
                   ref.read(sleepTimerProvider.notifier).cancel();
                   Navigator.pop(context);
                 },
                 icon: const Icon(Icons.timer_off_outlined, size: 18),
                 label: Text(tr('取消睡眠定时')),
-              ),
+              )),
             ],
           ],
         ),

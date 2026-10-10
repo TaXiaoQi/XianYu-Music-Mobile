@@ -54,7 +54,9 @@ class _TransferConfirmDialog extends StatelessWidget {
             const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
+              child: PressableScale(
+                pressScale: 0.92,
+                child: FilledButton.icon(
                 onPressed: () => Navigator.of(context).pop('device'),
                 icon: const Icon(Icons.check_circle_outline, size: 18),
                 label: Text(tr('允许该设备')),
@@ -66,12 +68,15 @@ class _TransferConfirmDialog extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+                ),
               ),
             ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
+              child: PressableScale(
+                pressScale: 0.92,
+                child: OutlinedButton.icon(
                 onPressed: () => Navigator.of(context).pop('once'),
                 icon: const Icon(Icons.schedule, size: 18),
                 label: Text(tr('允许本次')),
@@ -83,12 +88,15 @@ class _TransferConfirmDialog extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+                ),
               ),
             ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              child: TextButton(
+              child: PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
                 onPressed: () => Navigator.of(context).pop('never'),
                 style: TextButton.styleFrom(
                   foregroundColor: scheme.onSurfaceVariant,
@@ -98,6 +106,7 @@ class _TransferConfirmDialog extends StatelessWidget {
                   ),
                 ),
                 child: Text(tr('不允许')),
+                ),
               ),
             ),
           ],
@@ -278,7 +287,9 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
             Row(
               children: [
                 Expanded(
-                  child: FilledButton.icon(
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: FilledButton.icon(
                     onPressed: _busy ? null : _save,
                     icon: _saving
                         ? SizedBox(
@@ -296,11 +307,14 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: OutlinedButton.icon(
+                  child: PressableScale(
+                    pressScale: 0.92,
+                    child: OutlinedButton.icon(
                     onPressed: _busy ? null : _share,
                     icon: _sharing
                         ? SizedBox(
@@ -317,6 +331,7 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
+                    ),
                   ),
                 ),
               ],
@@ -324,7 +339,9 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              child: TextButton(
+              child: PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
                 onPressed: _busy ? null : _cancel,
                 style: TextButton.styleFrom(
                   foregroundColor: scheme.onSurfaceVariant,
@@ -334,6 +351,7 @@ class _IncomingBackupDialogState extends State<_IncomingBackupDialog> {
                   ),
                 ),
                 child: Text(tr('取消')),
+                ),
               ),
             ),
           ],
@@ -474,7 +492,9 @@ class _IncomingLogDialogState extends State<_IncomingLogDialog> {
             const SizedBox(height: 18),
             SizedBox(
               width: double.infinity,
-              child: FilledButton.icon(
+              child: PressableScale(
+                pressScale: 0.92,
+                child: FilledButton.icon(
                 onPressed: _sharing ? null : _share,
                 icon: _sharing
                     ? SizedBox(
@@ -492,12 +512,15 @@ class _IncomingLogDialogState extends State<_IncomingLogDialog> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
+                ),
               ),
             ),
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
-              child: TextButton(
+              child: PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
                 onPressed: _sharing ? null : _cancel,
                 style: TextButton.styleFrom(
                   foregroundColor: scheme.onSurfaceVariant,
@@ -507,6 +530,7 @@ class _IncomingLogDialogState extends State<_IncomingLogDialog> {
                   ),
                 ),
                 child: Text(tr('取消')),
+                ),
               ),
             ),
           ],

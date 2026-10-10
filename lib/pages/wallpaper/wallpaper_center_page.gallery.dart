@@ -60,7 +60,10 @@ class _WallpaperBrowseTabState extends ConsumerState<_WallpaperBrowseTab>
           children: [
             Text(_error!, style: TextStyle(color: scheme.error)),
             const SizedBox(height: 12),
-            FilledButton.tonal(onPressed: _load, child: Text(tr('重试'))),
+            PressableScale(
+              pressScale: 0.92,
+              child: FilledButton.tonal(onPressed: _load, child: Text(tr('重试'))),
+            ),
           ],
         ),
       );
@@ -110,7 +113,8 @@ class _WallpaperCard extends ConsumerWidget {
     final thumb = (wallpaper['thumbnailUrl'] as String?) ?? '';
     final title = (wallpaper['title'] as String?) ?? '';
     final uploader = (wallpaper['uploaderNickname'] as String?) ?? '';
-    return Material(
+    return PressableScale(
+      child: Material(
       clipBehavior: Clip.antiAlias,
       color: appCardColor(context),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -240,6 +244,7 @@ class _WallpaperCard extends ConsumerWidget {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -674,32 +679,41 @@ class _WallpaperPreviewPageState extends ConsumerState<_WallpaperPreviewPage> {
                   if (!hasLocal) ...[
                     SizedBox(
                       width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _busy ? null : _saveAndApply,
-                        icon: _busy ? _spinner() : const Icon(Icons.check),
-                        label: Text(_busy ? tr('保存并应用中…') : tr('保存并应用')),
+                      child: PressableScale(
+                        pressScale: 0.92,
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _saveAndApply,
+                          icon: _busy ? _spinner() : const Icon(Icons.check),
+                          label: Text(_busy ? tr('保存并应用中…') : tr('保存并应用')),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _busy ? null : _saveOnly,
-                        icon: const Icon(Icons.download_outlined),
-                        label: Text(tr('仅保存到本地')),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white54),
+                      child: PressableScale(
+                        pressScale: 0.92,
+                        child: OutlinedButton.icon(
+                          onPressed: _busy ? null : _saveOnly,
+                          icon: const Icon(Icons.download_outlined),
+                          label: Text(tr('仅保存到本地')),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                          ),
                         ),
                       ),
                     ),
                   ] else ...[
                     SizedBox(
                       width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _busy ? null : _apply,
-                        icon: const Icon(Icons.tune),
-                        label: Text(tr('应用壁纸')),
+                      child: PressableScale(
+                        pressScale: 0.92,
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _apply,
+                          icon: const Icon(Icons.tune),
+                          label: Text(tr('应用壁纸')),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 10),
