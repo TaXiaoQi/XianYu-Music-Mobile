@@ -36,9 +36,11 @@ class _PlayerCoverPage extends Page<void> {
                 PredictiveCoverReturn.instance.targetRect,
           );
           PredictiveCoverReturn.instance.returning.value = true;
-          unawaited(flight.whenComplete(() {
-            PredictiveCoverReturn.instance.returning.value = false;
-          }));
+          unawaited(
+            flight.whenComplete(() {
+              PredictiveCoverReturn.instance.returning.value = false;
+            }),
+          );
         },
         child: builder(context),
       ),
@@ -58,7 +60,9 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   final bool predictiveBack;
 
   @override
-  bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
+  // 系统返回手势不应被“预测动画开关”禁用；播放页是独立 Navigator，
+  // 必须由当前路由认领手势后才能提交 maybePop() 返回上一页。
+  bool get popGestureEnabled => isCurrent;
 
   @override
   bool get opaque => false;
