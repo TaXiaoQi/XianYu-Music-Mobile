@@ -305,9 +305,16 @@ class _LogGroupState extends ConsumerState<_LogGroup> {
       await file.writeAsString(content, flush: true);
       if (!mounted) return;
       _toast(tr('日志已导出'));
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(file.path)], text: tr('弦予音乐日志')),
-      );
+      try {
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)], text: tr('弦予音乐日志')),
+        );
+      } on MissingPluginException {
+        // 分享实现缺失（如鸿蒙未挂 ohos 插件的旧包）：日志是纯文本，
+        // 整份复制剪贴板，用户可直接粘贴给开发者
+        await Clipboard.setData(ClipboardData(text: content));
+        if (mounted) _toast(tr('分享面板不可用，日志已复制到剪贴板'));
+      }
     } catch (e) {
       if (mounted) _toast(tr('导出失败：{e}', {'e': e}));
     } finally {
@@ -433,9 +440,15 @@ class _AppBackupGroupState extends ConsumerState<_AppBackupGroup> {
       final path = await writeBackupFile(docs.path, json);
       if (!mounted) return;
       _toast(tr('备份已导出'));
-      await SharePlus.instance.share(
-        ShareParams(files: [XFile(path)], text: tr('弦予音乐应用备份')),
-      );
+      try {
+        await SharePlus.instance.share(
+          ShareParams(files: [XFile(path)], text: tr('弦予音乐应用备份')),
+        );
+      } on MissingPluginException {
+        // 分享实现缺失：备份 JSON 已落盘，复制路径供用户自取
+        await Clipboard.setData(ClipboardData(text: path));
+        if (mounted) _toast(tr('分享面板不可用，文件已保存，路径已复制'));
+      }
     } catch (e) {
       if (!mounted) return;
       _toast(tr('导出失败：{e}', {'e': e}));
