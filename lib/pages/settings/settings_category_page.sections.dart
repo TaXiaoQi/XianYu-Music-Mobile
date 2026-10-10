@@ -400,6 +400,14 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
           ),
           _switchTile(
             context,
+            icon: Icons.panorama_wide_angle_select_outlined,
+            title: tr('沉浸式封面'),
+            subtitle: tr('竖屏播放页用大幅封面铺满顶部，向下渐变融入播放信息'),
+            value: s?.immersiveCover ?? false,
+            onChanged: (v) => n.setImmersiveCover(v),
+          ),
+          _switchTile(
+            context,
             icon: Icons.flip_outlined,
             title: tr('横屏自动隐藏顶栏/底栏'),
             subtitle: tr('横屏播放页无操作 3.5 秒后收起，触摸屏幕唤回'),

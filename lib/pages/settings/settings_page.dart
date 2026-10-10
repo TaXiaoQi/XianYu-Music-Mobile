@@ -29,8 +29,7 @@ class SettingsPage extends ConsumerStatefulWidget {
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends ConsumerState<SettingsPage>
-    with HideMiniBar {
+class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
   String _query = '';
   final _searchCtrl = TextEditingController();
 
@@ -80,8 +79,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   @override
   Widget build(BuildContext context) {
     final isDeveloperMode = ref.watch(developerModeProvider);
-    final hasPlugin = ref.watch(pluginManagerProvider
-        .select((s) => s.sources.any((p) => p.enabled)));
+    final hasPlugin = ref.watch(
+      pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
+    );
     final groups = _buildGroups(isDeveloperMode, hasPlugin);
 
     return LandscapeGate(
@@ -90,14 +90,19 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     );
   }
 
-  Widget _buildPortrait(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
+  Widget _buildPortrait(
+    BuildContext context,
+    List<(String, List<_CategoryEntry>)> groups,
+  ) {
     // 悬浮口径与主题/壁纸中心一致:竖屏且开了悬浮搜索条时表头悬浮
     final floating =
         MediaQuery.of(context).orientation != Orientation.landscape &&
-            (ref.watch(settingsProvider.select(
-                  (s) => s.valueOrNull?.floatingSearchBar ?? false,
-                )) ==
-                true);
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
+            true);
     // 悬浮态走主页同款一行式顶栏(返回钮+标题胶囊+搜索胶囊同行)
     if (floating) return _buildPortraitFloating(context, groups);
     final searchBox = PreferredSize(
@@ -163,7 +168,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   /// 悬浮态顶栏:主页 FloatingTopBar 同款一行式——返回钮+「设置」标题胶囊+
   /// 玻璃搜索胶囊(Expanded)同行,搜索框不再单独占一行;列表顶距按一行算
   Widget _buildPortraitFloating(
-      BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
+    BuildContext context,
+    List<(String, List<_CategoryEntry>)> groups,
+  ) {
     final statusBar = MediaQuery.of(context).padding.top;
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
@@ -329,8 +336,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
             _SearchResultTile(
               item: r,
               compact: compact,
-              onTapOverride:
-                  onTapOverride == null ? null : () => onTapOverride(r),
+              onTapOverride: onTapOverride == null
+                  ? null
+                  : () => onTapOverride(r),
             ),
         ],
       ),
@@ -340,8 +348,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   List<_SearchItem> _searchSettings(String q, BuildContext context) {
     final qn = q.trim().toLowerCase();
     if (qn.isEmpty) return const [];
-    final tokens =
-        qn.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final tokens = qn.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
     if (tokens.isEmpty) return const [];
 
     final scored = <(int, _SearchItem)>[];
@@ -393,8 +400,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     return true;
   }
 
-  Widget _buildLandscape(BuildContext context, List<(String, List<_CategoryEntry>)> groups) {
-    final sel = ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
+  Widget _buildLandscape(
+    BuildContext context,
+    List<(String, List<_CategoryEntry>)> groups,
+  ) {
+    final sel =
+        ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
     final detail = _detailFor(sel);
     final selTitle = _titleOf(groups, sel) ?? tr('设置');
     _scheduleCenterSelected(sel);
@@ -406,7 +417,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Material(
-            color: themeTintOrNull(ref, 'ls-settings.nav') ?? Colors.transparent,
+            color:
+                themeTintOrNull(ref, 'ls-settings.nav') ?? Colors.transparent,
             child: SizedBox(
               width: _navWidth,
               child: SafeArea(
@@ -454,20 +466,26 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                                   for (var i = 0; i < entries.length; i++)
                                     KeyedSubtree(
                                       key: _tileKeys.putIfAbsent(
-                                          entries[i].path, GlobalKey.new),
+                                        entries[i].path,
+                                        GlobalKey.new,
+                                      ),
                                       child: _CategoryTile(
                                         entry: entries[i],
                                         compact: true,
                                         selected:
                                             _isEmbeddable(entries[i].path) &&
-                                                sel == entries[i].path,
+                                            sel == entries[i].path,
                                         onTapOverride:
                                             _isEmbeddable(entries[i].path)
-                                                ? () => ref
-                                                    .read(landscapeSettingsCategoryProvider
-                                                        .notifier)
-                                                    .state = entries[i].path
-                                                : null,
+                                            ? () =>
+                                                  ref
+                                                      .read(
+                                                        landscapeSettingsCategoryProvider
+                                                            .notifier,
+                                                      )
+                                                      .state = entries[i]
+                                                      .path
+                                            : null,
                                       ),
                                     ),
                                 ],
@@ -480,9 +498,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
                               onTapOverride: (r) {
                                 if (_isEmbeddable(r.path)) {
                                   ref
-                                      .read(landscapeSettingsCategoryProvider
-                                          .notifier)
-                                      .state = r.path;
+                                          .read(
+                                            landscapeSettingsCategoryProvider
+                                                .notifier,
+                                          )
+                                          .state =
+                                      r.path;
                                 } else {
                                   context.push(r.path);
                                 }
@@ -540,25 +561,45 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     return switch (path) {
       '/settings/account' => const AccountSettingsPage(embedded: true),
       '/settings/general' => const SettingsCategoryPage(
-          category: SettingsCategory.general, embedded: true),
+        category: SettingsCategory.general,
+        embedded: true,
+      ),
       '/settings/appearance' => const SettingsCategoryPage(
-          category: SettingsCategory.appearance, embedded: true),
+        category: SettingsCategory.appearance,
+        embedded: true,
+      ),
       '/settings/lyrics' => const SettingsCategoryPage(
-          category: SettingsCategory.lyrics, embedded: true),
+        category: SettingsCategory.lyrics,
+        embedded: true,
+      ),
       '/settings/playback' => const SettingsCategoryPage(
-          category: SettingsCategory.playback, embedded: true),
+        category: SettingsCategory.playback,
+        embedded: true,
+      ),
       '/settings/download' => const SettingsCategoryPage(
-          category: SettingsCategory.download, embedded: true),
+        category: SettingsCategory.download,
+        embedded: true,
+      ),
       '/settings/watch' => const SettingsCategoryPage(
-          category: SettingsCategory.watch, embedded: true),
+        category: SettingsCategory.watch,
+        embedded: true,
+      ),
       '/settings/dlna' => const SettingsCategoryPage(
-          category: SettingsCategory.dlna, embedded: true),
+        category: SettingsCategory.dlna,
+        embedded: true,
+      ),
       '/settings/desktop' => const SettingsCategoryPage(
-          category: SettingsCategory.desktop, embedded: true),
+        category: SettingsCategory.desktop,
+        embedded: true,
+      ),
       '/settings/tools' => const SettingsCategoryPage(
-          category: SettingsCategory.tools, embedded: true),
+        category: SettingsCategory.tools,
+        embedded: true,
+      ),
       '/settings/advanced' => const SettingsCategoryPage(
-          category: SettingsCategory.advanced, embedded: true),
+        category: SettingsCategory.advanced,
+        embedded: true,
+      ),
       '/plugin' => const PluginPage(embedded: true),
       '/feedback' => const FeedbackPage(embedded: true),
       '/about' => const AboutPage(embedded: true),
@@ -615,19 +656,21 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     return groups;
   }
 
-  Widget _sectionHeader(BuildContext context, String title,
-          {bool compact = false}) =>
-      Padding(
-        padding: EdgeInsets.fromLTRB(compact ? 12 : 16, 20, compact ? 12 : 16, 8),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 13,
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      );
+  Widget _sectionHeader(
+    BuildContext context,
+    String title, {
+    bool compact = false,
+  }) => Padding(
+    padding: EdgeInsets.fromLTRB(compact ? 12 : 16, 20, compact ? 12 : 16, 8),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 13,
+        color: Theme.of(context).colorScheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+  );
 
   static List<(String, List<_CategoryEntry>)> get _groups => [
     (
@@ -644,7 +687,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
     (
       tr('偏好'),
       [
-        _CategoryEntry(tr('常规'), Icons.tune, tr('语言、反馈、常亮、存储'), '/settings/general'),
+        _CategoryEntry(
+          tr('常规'),
+          Icons.tune,
+          tr('语言、反馈、常亮、存储'),
+          '/settings/general',
+        ),
         _CategoryEntry(
           tr('外观'),
           Icons.palette_outlined,
@@ -790,20 +838,11 @@ class _CategoryTile extends StatelessWidget {
       selected: selected,
       selectedTileColor: scheme.primary.withValues(alpha: 0.10),
       selectedColor: scheme.primary,
-      leading: Icon(
-        entry.icon,
-        color: selected ? scheme.primary : null,
-      ),
-      title: Text(
-        entry.title,
-        style: const TextStyle(fontSize: 15),
-      ),
+      leading: Icon(entry.icon, color: selected ? scheme.primary : null),
+      title: Text(entry.title, style: const TextStyle(fontSize: 15)),
       subtitle: compact
           ? null
-          : Text(
-              entry.subtitle,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
+          : Text(entry.subtitle, style: Theme.of(context).textTheme.bodySmall),
       onTap: onTapOverride ?? () => context.push(entry.path),
     );
   }
@@ -892,10 +931,7 @@ class _SearchResultTile extends StatelessWidget {
         size: 20,
         color: scheme.primary,
       ),
-      title: Text(
-        tr(item.label),
-        style: const TextStyle(fontSize: 15),
-      ),
+      title: Text(tr(item.label), style: const TextStyle(fontSize: 15)),
       subtitle: Text(
         item.isCategory
             ? tr('设置分类')
@@ -908,111 +944,733 @@ class _SearchResultTile extends StatelessWidget {
 }
 
 const _settingsSearchItems = <_SearchItem>[
-  _SearchItem(label: '账号', section: '设置分类', path: '/settings/account', categoryName: '账号', isCategory: true, keywords: '账户 登录 服务端'),
-  _SearchItem(label: '常规', section: '设置分类', path: '/settings/general', categoryName: '常规', isCategory: true, keywords: '语言 反馈 存储 常亮'),
-  _SearchItem(label: '外观', section: '设置分类', path: '/settings/appearance', categoryName: '外观', isCategory: true, keywords: '主题 壁纸 材质 皮肤 皮肤配色'),
-  _SearchItem(label: '歌词', section: '设置分类', path: '/settings/lyrics', categoryName: '歌词', isCategory: true, keywords: '桌面歌词 悬浮歌词 卡拉OK 歌词页'),
-  _SearchItem(label: '播放', section: '设置分类', path: '/settings/playback', categoryName: '播放', isCategory: true, keywords: '音量 音质 输出 播放设置'),
-  _SearchItem(label: '下载', section: '设置分类', path: '/settings/download', categoryName: '下载', isCategory: true, keywords: '路径 音质 歌词'),
-  _SearchItem(label: '高级设置', section: '设置分类', path: '/settings/advanced', categoryName: '高级设置', isCategory: true, keywords: '备份 日志 高级'),
-  _SearchItem(label: '工具', section: '设置分类', path: '/settings/tools', categoryName: '工具', isCategory: true, keywords: '音频 转换 剪辑 解密 重命名'),
-  _SearchItem(label: '插件', section: '设置分类', path: '/plugin', categoryName: '插件', isCategory: true, keywords: '插件 音乐源 音源 落雪'),
-  _SearchItem(label: '意见反馈', section: '设置分类', path: '/feedback', categoryName: '意见反馈', isCategory: true, keywords: '反馈 建议 问题'),
-  _SearchItem(label: '关于', section: '设置分类', path: '/about', categoryName: '关于', isCategory: true, keywords: '版本 信息 项目 主页'),
-  _SearchItem(label: '调试', section: '设置分类', path: '/debug', categoryName: '调试', isCategory: true, keywords: 'debug 测试 弹窗'),
+  _SearchItem(
+    label: '账号',
+    section: '设置分类',
+    path: '/settings/account',
+    categoryName: '账号',
+    isCategory: true,
+    keywords: '账户 登录 服务端',
+  ),
+  _SearchItem(
+    label: '常规',
+    section: '设置分类',
+    path: '/settings/general',
+    categoryName: '常规',
+    isCategory: true,
+    keywords: '语言 反馈 存储 常亮',
+  ),
+  _SearchItem(
+    label: '外观',
+    section: '设置分类',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    isCategory: true,
+    keywords: '主题 壁纸 材质 皮肤 皮肤配色',
+  ),
+  _SearchItem(
+    label: '歌词',
+    section: '设置分类',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    isCategory: true,
+    keywords: '桌面歌词 悬浮歌词 卡拉OK 歌词页',
+  ),
+  _SearchItem(
+    label: '播放',
+    section: '设置分类',
+    path: '/settings/playback',
+    categoryName: '播放',
+    isCategory: true,
+    keywords: '音量 音质 输出 播放设置',
+  ),
+  _SearchItem(
+    label: '下载',
+    section: '设置分类',
+    path: '/settings/download',
+    categoryName: '下载',
+    isCategory: true,
+    keywords: '路径 音质 歌词',
+  ),
+  _SearchItem(
+    label: '高级设置',
+    section: '设置分类',
+    path: '/settings/advanced',
+    categoryName: '高级设置',
+    isCategory: true,
+    keywords: '备份 日志 高级',
+  ),
+  _SearchItem(
+    label: '工具',
+    section: '设置分类',
+    path: '/settings/tools',
+    categoryName: '工具',
+    isCategory: true,
+    keywords: '音频 转换 剪辑 解密 重命名',
+  ),
+  _SearchItem(
+    label: '插件',
+    section: '设置分类',
+    path: '/plugin',
+    categoryName: '插件',
+    isCategory: true,
+    keywords: '插件 音乐源 音源 落雪',
+  ),
+  _SearchItem(
+    label: '意见反馈',
+    section: '设置分类',
+    path: '/feedback',
+    categoryName: '意见反馈',
+    isCategory: true,
+    keywords: '反馈 建议 问题',
+  ),
+  _SearchItem(
+    label: '关于',
+    section: '设置分类',
+    path: '/about',
+    categoryName: '关于',
+    isCategory: true,
+    keywords: '版本 信息 项目 主页',
+  ),
+  _SearchItem(
+    label: '调试',
+    section: '设置分类',
+    path: '/debug',
+    categoryName: '调试',
+    isCategory: true,
+    keywords: 'debug 测试 弹窗',
+  ),
 
-  _SearchItem(label: '语言', section: '语言', path: '/settings/general', categoryName: '常规', keywords: '简体中文 繁體中文 English 跟随系统'),
-  _SearchItem(label: '触觉反馈力度', section: '反馈', path: '/settings/general', categoryName: '常规', keywords: '震动 力度 手感'),
-  _SearchItem(label: '检测更新模式', section: '检测更新', path: '/settings/general', categoryName: '常规', keywords: '启动 检查 版本 更新'),
-  _SearchItem(label: '腕上联动', section: '设置分类', path: '/settings/watch', categoryName: '腕上联动', isCategory: true, keywords: '手表 蓝牙 遥控 连接'),
-  _SearchItem(label: '腕上联动', section: '腕上联动', path: '/settings/watch', categoryName: '腕上联动', keywords: '手表 蓝牙 遥控 播放 连接'),
-  _SearchItem(label: '传递给腕上设备', section: '腕上联动', path: '/settings/watch', categoryName: '腕上联动', keywords: '手表 传递 询问 记住 默认 自动'),
-  _SearchItem(label: 'DLNA 投放', section: '设置分类', path: '/settings/dlna', categoryName: 'DLNA 投放', isCategory: true, keywords: 'DLNA 投屏 投放 电视 音箱 局域网'),
-  _SearchItem(label: 'DLNA 投放', section: 'DLNA 投放', path: '/settings/dlna', categoryName: 'DLNA 投放', keywords: 'DLNA 投屏 投放 电视 音箱 局域网 选择设备'),
-  _SearchItem(label: '桌面联动', section: '设置分类', path: '/settings/desktop', categoryName: '桌面联动', isCategory: true, keywords: '桌面 电脑 遥控 局域网 配对 连接'),
-  _SearchItem(label: '桌面联动', section: '桌面联动', path: '/settings/desktop', categoryName: '桌面联动', keywords: '桌面 电脑 遥控 播放 配对 扫描'),
-  _SearchItem(label: '存储设置', section: '存储空间', path: '/settings/general', categoryName: '常规', keywords: '缓存 空间 清理'),
+  _SearchItem(
+    label: '语言',
+    section: '语言',
+    path: '/settings/general',
+    categoryName: '常规',
+    keywords: '简体中文 繁體中文 English 跟随系统',
+  ),
+  _SearchItem(
+    label: '触觉反馈力度',
+    section: '反馈',
+    path: '/settings/general',
+    categoryName: '常规',
+    keywords: '震动 力度 手感',
+  ),
+  _SearchItem(
+    label: '检测更新模式',
+    section: '检测更新',
+    path: '/settings/general',
+    categoryName: '常规',
+    keywords: '启动 检查 版本 更新',
+  ),
+  _SearchItem(
+    label: '腕上联动',
+    section: '设置分类',
+    path: '/settings/watch',
+    categoryName: '腕上联动',
+    isCategory: true,
+    keywords: '手表 蓝牙 遥控 连接',
+  ),
+  _SearchItem(
+    label: '腕上联动',
+    section: '腕上联动',
+    path: '/settings/watch',
+    categoryName: '腕上联动',
+    keywords: '手表 蓝牙 遥控 播放 连接',
+  ),
+  _SearchItem(
+    label: '传递给腕上设备',
+    section: '腕上联动',
+    path: '/settings/watch',
+    categoryName: '腕上联动',
+    keywords: '手表 传递 询问 记住 默认 自动',
+  ),
+  _SearchItem(
+    label: 'DLNA 投放',
+    section: '设置分类',
+    path: '/settings/dlna',
+    categoryName: 'DLNA 投放',
+    isCategory: true,
+    keywords: 'DLNA 投屏 投放 电视 音箱 局域网',
+  ),
+  _SearchItem(
+    label: 'DLNA 投放',
+    section: 'DLNA 投放',
+    path: '/settings/dlna',
+    categoryName: 'DLNA 投放',
+    keywords: 'DLNA 投屏 投放 电视 音箱 局域网 选择设备',
+  ),
+  _SearchItem(
+    label: '桌面联动',
+    section: '设置分类',
+    path: '/settings/desktop',
+    categoryName: '桌面联动',
+    isCategory: true,
+    keywords: '桌面 电脑 遥控 局域网 配对 连接',
+  ),
+  _SearchItem(
+    label: '桌面联动',
+    section: '桌面联动',
+    path: '/settings/desktop',
+    categoryName: '桌面联动',
+    keywords: '桌面 电脑 遥控 播放 配对 扫描',
+  ),
+  _SearchItem(
+    label: '存储设置',
+    section: '存储空间',
+    path: '/settings/general',
+    categoryName: '常规',
+    keywords: '缓存 空间 清理',
+  ),
 
-  _SearchItem(label: '主题模式', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '深色 浅色 跟随系统 暗色 明亮'),
-  _SearchItem(label: '主题色', section: '主题', path: '/settings/appearance', categoryName: '外观', keywords: '品牌色 强调色 颜色 HEX 预设 自定义 红色'),
-  _SearchItem(label: '壁纸中心', section: '主题', path: '/wallpaper', categoryName: '外观', keywords: '自定义背景 动态壁纸 图片'),
-  _SearchItem(label: '主题中心', section: '主题', path: '/theme', categoryName: '外观', keywords: '主题包 导入 应用 JSON 图标 贴纸 色块'),
-  _SearchItem(label: '毛玻璃材质', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: '磨砂 模糊 frosted 透明'),
-  _SearchItem(label: '毛玻璃效果', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: '模糊强度 档位'),
-  _SearchItem(label: '液态玻璃', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: 'liquid 悬浮底栏 shader 折射'),
-  _SearchItem(label: '液态玻璃效果', section: '材质', path: '/settings/appearance', categoryName: '外观', keywords: '渲染强度 耗电'),
-  _SearchItem(label: '导航栏位置', section: '导航栏与底栏', path: '/settings/appearance', categoryName: '外观', keywords: '底部 侧边'),
-  _SearchItem(label: '悬浮式底栏', section: '导航栏与底栏', path: '/settings/appearance', categoryName: '外观', keywords: '悬浮 底栏'),
-  _SearchItem(label: '悬浮搜索框', section: '导航栏与底栏', path: '/settings/appearance', categoryName: '外观', keywords: '搜索 悬浮 首页'),
-  _SearchItem(label: '侧边栏展开方向', section: '导航栏与底栏', path: '/settings/appearance', categoryName: '外观', keywords: '抽屉 方向'),
-  _SearchItem(label: '播放页样式', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '正在播放 布局 风格'),
-  _SearchItem(label: '播放页液态玻璃', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '控制卡 液态'),
-  _SearchItem(label: '横屏自动隐藏顶栏/底栏', section: '播放页', path: '/settings/appearance', categoryName: '外观', keywords: '横屏 自动隐藏 隐藏 唤回 常显'),
-  _SearchItem(label: '列表大小', section: '列表', path: '/settings/appearance', categoryName: '外观', keywords: '歌曲 歌手 专辑 歌单 尺寸'),
-  _SearchItem(label: '字体大小', section: '字体', path: '/settings/appearance', categoryName: '外观', keywords: '字号 字体 文字 大小 缩放 跟随系统'),
+  _SearchItem(
+    label: '主题模式',
+    section: '主题',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '深色 浅色 跟随系统 暗色 明亮',
+  ),
+  _SearchItem(
+    label: '主题色',
+    section: '主题',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '品牌色 强调色 颜色 HEX 预设 自定义 红色',
+  ),
+  _SearchItem(
+    label: '壁纸中心',
+    section: '主题',
+    path: '/wallpaper',
+    categoryName: '外观',
+    keywords: '自定义背景 动态壁纸 图片',
+  ),
+  _SearchItem(
+    label: '主题中心',
+    section: '主题',
+    path: '/theme',
+    categoryName: '外观',
+    keywords: '主题包 导入 应用 JSON 图标 贴纸 色块',
+  ),
+  _SearchItem(
+    label: '毛玻璃材质',
+    section: '材质',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '磨砂 模糊 frosted 透明',
+  ),
+  _SearchItem(
+    label: '毛玻璃效果',
+    section: '材质',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '模糊强度 档位',
+  ),
+  _SearchItem(
+    label: '液态玻璃',
+    section: '材质',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: 'liquid 悬浮底栏 shader 折射',
+  ),
+  _SearchItem(
+    label: '液态玻璃效果',
+    section: '材质',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '渲染强度 耗电',
+  ),
+  _SearchItem(
+    label: '导航栏位置',
+    section: '导航栏与底栏',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '底部 侧边',
+  ),
+  _SearchItem(
+    label: '悬浮式底栏',
+    section: '导航栏与底栏',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '悬浮 底栏',
+  ),
+  _SearchItem(
+    label: '悬浮搜索框',
+    section: '导航栏与底栏',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '搜索 悬浮 首页',
+  ),
+  _SearchItem(
+    label: '侧边栏展开方向',
+    section: '导航栏与底栏',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '抽屉 方向',
+  ),
+  _SearchItem(
+    label: '播放页样式',
+    section: '播放页',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '正在播放 布局 风格',
+  ),
+  _SearchItem(
+    label: '沉浸式封面',
+    section: '播放页',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '封面 大图 沉浸 竖屏 渐变',
+  ),
+  _SearchItem(
+    label: '播放页液态玻璃',
+    section: '播放页',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '控制卡 液态',
+  ),
+  _SearchItem(
+    label: '横屏自动隐藏顶栏/底栏',
+    section: '播放页',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '横屏 自动隐藏 隐藏 唤回 常显',
+  ),
+  _SearchItem(
+    label: '列表大小',
+    section: '列表',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '歌曲 歌手 专辑 歌单 尺寸',
+  ),
+  _SearchItem(
+    label: '字体大小',
+    section: '字体',
+    path: '/settings/appearance',
+    categoryName: '外观',
+    keywords: '字号 字体 文字 大小 缩放 跟随系统',
+  ),
 
-  _SearchItem(label: '显示翻译', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '翻译 translation'),
-  _SearchItem(label: '逐字动效', section: '歌词显示', path: '/settings/lyrics', categoryName: '歌词', keywords: '卡拉OK 逐字 动画'),
-  _SearchItem(label: '桌面歌词窗', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '桌面 悬浮 卡拉OK 逐字 歌词窗'),
-  _SearchItem(label: '文字颜色', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '歌词颜色'),
-  _SearchItem(label: '未播放颜色', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '未播放 歌词颜色'),
-  _SearchItem(label: '不透明度', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '透明度 opacity'),
-  _SearchItem(label: '字号', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体大小'),
-  _SearchItem(label: '副行字号', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体'),
-  _SearchItem(label: '使用歌词字体', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '字体 播放页'),
-  _SearchItem(label: '显示罗马音', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '罗马音 romaji'),
-  _SearchItem(label: '显示背景歌词', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '背景 歌词'),
-  _SearchItem(label: '暂停时隐藏', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '隐藏 暂停'),
-  _SearchItem(label: '横屏时隐藏', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '横屏 隐藏'),
-  _SearchItem(label: '宽度', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '宽'),
-  _SearchItem(label: '水平位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '左右 位置'),
-  _SearchItem(label: '垂直位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '上下 位置'),
-  _SearchItem(label: '锁定位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '锁定 拖动'),
-  _SearchItem(label: '重置位置', section: '桌面歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '重置 还原'),
-  _SearchItem(label: '车机歌词', section: '车机歌词', path: '/settings/lyrics', categoryName: '歌词', keywords: '通知栏 锁屏 车机 蓝牙 状态栏'),
+  _SearchItem(
+    label: '显示翻译',
+    section: '歌词显示',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '翻译 translation',
+  ),
+  _SearchItem(
+    label: '逐字动效',
+    section: '歌词显示',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '卡拉OK 逐字 动画',
+  ),
+  _SearchItem(
+    label: '桌面歌词窗',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '桌面 悬浮 卡拉OK 逐字 歌词窗',
+  ),
+  _SearchItem(
+    label: '文字颜色',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '歌词颜色',
+  ),
+  _SearchItem(
+    label: '未播放颜色',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '未播放 歌词颜色',
+  ),
+  _SearchItem(
+    label: '不透明度',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '透明度 opacity',
+  ),
+  _SearchItem(
+    label: '字号',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '字体大小',
+  ),
+  _SearchItem(
+    label: '副行字号',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '字体',
+  ),
+  _SearchItem(
+    label: '使用歌词字体',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '字体 播放页',
+  ),
+  _SearchItem(
+    label: '显示罗马音',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '罗马音 romaji',
+  ),
+  _SearchItem(
+    label: '显示背景歌词',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '背景 歌词',
+  ),
+  _SearchItem(
+    label: '暂停时隐藏',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '隐藏 暂停',
+  ),
+  _SearchItem(
+    label: '横屏时隐藏',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '横屏 隐藏',
+  ),
+  _SearchItem(
+    label: '宽度',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '宽',
+  ),
+  _SearchItem(
+    label: '水平位置',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '左右 位置',
+  ),
+  _SearchItem(
+    label: '垂直位置',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '上下 位置',
+  ),
+  _SearchItem(
+    label: '锁定位置',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '锁定 拖动',
+  ),
+  _SearchItem(
+    label: '重置位置',
+    section: '桌面歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '重置 还原',
+  ),
+  _SearchItem(
+    label: '车机歌词',
+    section: '车机歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '通知栏 锁屏 车机 蓝牙 状态栏',
+  ),
 
-  _SearchItem(label: '音量', section: '播放', path: '/settings/playback', categoryName: '播放', keywords: 'volume 声音'),
-  _SearchItem(label: '双击播放歌曲', section: '播放', path: '/settings/playback', categoryName: '播放', keywords: '双击 单击 播放'),
-  _SearchItem(label: '音量平衡', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: 'ReplayGain 响度 标准化'),
-  _SearchItem(label: '整体增益偏移', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: 'ReplayGain dB 增益'),
-  _SearchItem(label: '防削波破音保护', section: '音量平衡', path: '/settings/playback', categoryName: '播放', keywords: '峰值 clipping 破音'),
-  _SearchItem(label: '播放默认音质', section: '播放行为', path: '/settings/playback', categoryName: '播放', keywords: '无损 Hi-Res 320k 音质'),
-  _SearchItem(label: '起播失败行为', section: '播放行为', path: '/settings/playback', categoryName: '播放', keywords: '播放失败 换源'),
-  _SearchItem(label: '音质回退行为', section: '播放行为', path: '/settings/playback', categoryName: '播放', keywords: '降级 回退 音质'),
-  _SearchItem(label: '分享链接有效时长', section: '分享', path: '/settings/playback', categoryName: '播放', keywords: '分享 过期'),
-  _SearchItem(label: '分享链接播放失败行为', section: '分享', path: '/settings/playback', categoryName: '播放', keywords: '分享 失败'),
-  _SearchItem(label: '输出设备', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: 'USB DAC 声卡 扬声器 耳机'),
-  _SearchItem(label: 'USB 独占输出 (Bit-perfect)', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: '独占 绕过混音 位完美'),
-  _SearchItem(label: 'Bit-perfect 直出', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: '位完美 直出 DAC 独占'),
-  _SearchItem(label: 'DSD 原生直出', section: '输出', path: '/settings/playback', categoryName: '播放', keywords: 'DSD DoP 直通 独占'),
+  _SearchItem(
+    label: '音量',
+    section: '播放',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: 'volume 声音',
+  ),
+  _SearchItem(
+    label: '双击播放歌曲',
+    section: '播放',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '双击 单击 播放',
+  ),
+  _SearchItem(
+    label: '音量平衡',
+    section: '音量平衡',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: 'ReplayGain 响度 标准化',
+  ),
+  _SearchItem(
+    label: '整体增益偏移',
+    section: '音量平衡',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: 'ReplayGain dB 增益',
+  ),
+  _SearchItem(
+    label: '防削波破音保护',
+    section: '音量平衡',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '峰值 clipping 破音',
+  ),
+  _SearchItem(
+    label: '播放默认音质',
+    section: '播放行为',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '无损 Hi-Res 320k 音质',
+  ),
+  _SearchItem(
+    label: '起播失败行为',
+    section: '播放行为',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '播放失败 换源',
+  ),
+  _SearchItem(
+    label: '音质回退行为',
+    section: '播放行为',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '降级 回退 音质',
+  ),
+  _SearchItem(
+    label: '分享链接有效时长',
+    section: '分享',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '分享 过期',
+  ),
+  _SearchItem(
+    label: '分享链接播放失败行为',
+    section: '分享',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '分享 失败',
+  ),
+  _SearchItem(
+    label: '输出设备',
+    section: '输出',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: 'USB DAC 声卡 扬声器 耳机',
+  ),
+  _SearchItem(
+    label: 'USB 独占输出 (Bit-perfect)',
+    section: '输出',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '独占 绕过混音 位完美',
+  ),
+  _SearchItem(
+    label: 'Bit-perfect 直出',
+    section: '输出',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: '位完美 直出 DAC 独占',
+  ),
+  _SearchItem(
+    label: 'DSD 原生直出',
+    section: '输出',
+    path: '/settings/playback',
+    categoryName: '播放',
+    keywords: 'DSD DoP 直通 独占',
+  ),
 
-  _SearchItem(label: '下载路径', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '保存 文件夹 目录'),
-  _SearchItem(label: '下载音质', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '无损 Hi-Res 320k'),
-  _SearchItem(label: '下载独立歌词', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '歌词 lrc 独立 内嵌'),
-  _SearchItem(label: '批量并发数', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '并发 数量'),
-  _SearchItem(label: '文件名样式', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '命名 歌手 歌名'),
-  _SearchItem(label: '覆盖同名文件', section: '下载', path: '/settings/download', categoryName: '下载', keywords: '覆盖 重复 序号'),
-  _SearchItem(label: '下载管理', section: '下载', path: '/download', categoryName: '下载', keywords: '下载任务 列表'),
-  _SearchItem(label: '嵌入元数据', section: '下载后嵌入', path: '/settings/download', categoryName: '下载', keywords: '标签 tag 写入'),
-  _SearchItem(label: '嵌入歌词', section: '下载后嵌入', path: '/settings/download', categoryName: '下载', keywords: '内嵌 歌词'),
-  _SearchItem(label: '嵌入封面', section: '下载后嵌入', path: '/settings/download', categoryName: '下载', keywords: '封面 图片'),
+  _SearchItem(
+    label: '下载路径',
+    section: '下载',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '保存 文件夹 目录',
+  ),
+  _SearchItem(
+    label: '下载音质',
+    section: '下载',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '无损 Hi-Res 320k',
+  ),
+  _SearchItem(
+    label: '下载独立歌词',
+    section: '下载',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '歌词 lrc 独立 内嵌',
+  ),
+  _SearchItem(
+    label: '批量并发数',
+    section: '下载',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '并发 数量',
+  ),
+  _SearchItem(
+    label: '文件名样式',
+    section: '下载',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '命名 歌手 歌名',
+  ),
+  _SearchItem(
+    label: '覆盖同名文件',
+    section: '下载',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '覆盖 重复 序号',
+  ),
+  _SearchItem(
+    label: '下载管理',
+    section: '下载',
+    path: '/download',
+    categoryName: '下载',
+    keywords: '下载任务 列表',
+  ),
+  _SearchItem(
+    label: '嵌入元数据',
+    section: '下载后嵌入',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '标签 tag 写入',
+  ),
+  _SearchItem(
+    label: '嵌入歌词',
+    section: '下载后嵌入',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '内嵌 歌词',
+  ),
+  _SearchItem(
+    label: '嵌入封面',
+    section: '下载后嵌入',
+    path: '/settings/download',
+    categoryName: '下载',
+    keywords: '封面 图片',
+  ),
 
-  _SearchItem(label: '导出应用备份', section: '应用备份', path: '/settings/advanced', categoryName: '高级设置', keywords: '备份 导出 恢复'),
-  _SearchItem(label: '导入应用备份', section: '应用备份', path: '/settings/advanced', categoryName: '高级设置', keywords: '备份 导入 恢复'),
-  _SearchItem(label: '导出日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '日志 导出 全部'),
-  _SearchItem(label: '清理日志', section: '日志', path: '/settings/advanced', categoryName: '高级设置', keywords: '删除 清空 日志'),
-  _SearchItem(label: '保持屏幕常亮', section: '系统', path: '/settings/general', categoryName: '常规', keywords: '屏幕 常亮 唤醒'),
-  _SearchItem(label: '预测返回手势', section: '导航', path: '/settings/advanced', categoryName: '高级设置', keywords: '返回 手势 预测'),
+  _SearchItem(
+    label: '导出应用备份',
+    section: '应用备份',
+    path: '/settings/advanced',
+    categoryName: '高级设置',
+    keywords: '备份 导出 恢复',
+  ),
+  _SearchItem(
+    label: '导入应用备份',
+    section: '应用备份',
+    path: '/settings/advanced',
+    categoryName: '高级设置',
+    keywords: '备份 导入 恢复',
+  ),
+  _SearchItem(
+    label: '导出日志',
+    section: '日志',
+    path: '/settings/advanced',
+    categoryName: '高级设置',
+    keywords: '日志 导出 全部',
+  ),
+  _SearchItem(
+    label: '清理日志',
+    section: '日志',
+    path: '/settings/advanced',
+    categoryName: '高级设置',
+    keywords: '删除 清空 日志',
+  ),
+  _SearchItem(
+    label: '保持屏幕常亮',
+    section: '系统',
+    path: '/settings/general',
+    categoryName: '常规',
+    keywords: '屏幕 常亮 唤醒',
+  ),
+  _SearchItem(
+    label: '预测返回手势',
+    section: '导航',
+    path: '/settings/advanced',
+    categoryName: '高级设置',
+    keywords: '返回 手势 预测',
+  ),
 
-  _SearchItem(label: '账号状态', section: '账号状态', path: '/settings/account', categoryName: '账号', keywords: '登录 用户 资料 退出'),
-  _SearchItem(label: '服务器 API', section: '服务端设置', path: '/settings/account', categoryName: '账号', keywords: '后端 地址 服务器 根地址'),
-  _SearchItem(label: '服务器密钥', section: '服务端设置', path: '/settings/account', categoryName: '账号', keywords: '密钥 签名 签名密钥'),
-  _SearchItem(label: '上传歌单', section: '上传', path: '/settings/account', categoryName: '账号', keywords: '同步 云端 歌单'),
-  _SearchItem(label: '上传收藏', section: '上传', path: '/settings/account', categoryName: '账号', keywords: '同步 云端 收藏'),
-  _SearchItem(label: '上传插件', section: '上传', path: '/settings/account', categoryName: '账号', keywords: '同步 插件'),
-  _SearchItem(label: '上传本地设置', section: '上传', path: '/settings/account', categoryName: '账号', keywords: '同步 设置 偏好'),
-  _SearchItem(label: '手动同步', section: '手动同步', path: '/settings/account', categoryName: '账号', keywords: '上传 下载 云端 同步'),
-  _SearchItem(label: '启用自动同步', section: '自动同步', path: '/settings/account', categoryName: '账号', keywords: '定时 后台 同步'),
-  _SearchItem(label: '同步间隔', section: '自动同步', path: '/settings/account', categoryName: '账号', keywords: '小时 分钟 自动 间隔'),
-  _SearchItem(label: '繁忙延后上限', section: '自动同步', path: '/settings/account', categoryName: '账号', keywords: '繁忙 延后 延迟'),
+  _SearchItem(
+    label: '账号状态',
+    section: '账号状态',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '登录 用户 资料 退出',
+  ),
+  _SearchItem(
+    label: '服务器 API',
+    section: '服务端设置',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '后端 地址 服务器 根地址',
+  ),
+  _SearchItem(
+    label: '服务器密钥',
+    section: '服务端设置',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '密钥 签名 签名密钥',
+  ),
+  _SearchItem(
+    label: '上传歌单',
+    section: '上传',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '同步 云端 歌单',
+  ),
+  _SearchItem(
+    label: '上传收藏',
+    section: '上传',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '同步 云端 收藏',
+  ),
+  _SearchItem(
+    label: '上传插件',
+    section: '上传',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '同步 插件',
+  ),
+  _SearchItem(
+    label: '上传本地设置',
+    section: '上传',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '同步 设置 偏好',
+  ),
+  _SearchItem(
+    label: '手动同步',
+    section: '手动同步',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '上传 下载 云端 同步',
+  ),
+  _SearchItem(
+    label: '启用自动同步',
+    section: '自动同步',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '定时 后台 同步',
+  ),
+  _SearchItem(
+    label: '同步间隔',
+    section: '自动同步',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '小时 分钟 自动 间隔',
+  ),
+  _SearchItem(
+    label: '繁忙延后上限',
+    section: '自动同步',
+    path: '/settings/account',
+    categoryName: '账号',
+    keywords: '繁忙 延后 延迟',
+  ),
 ];

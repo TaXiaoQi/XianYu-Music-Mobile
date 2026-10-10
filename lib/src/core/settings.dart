@@ -242,6 +242,7 @@ class AppSettings {
     this.shareLinkValidityMinutes = 120,
     this.sharePlaybackFailureBehavior = 'pause',
     this.playerStyle = PlayerStyle.traditional,
+    this.immersiveCover = false,
     this.landscapeAutoHideChrome = true,
     this.landscapeTapToHideChrome = true,
     this.floatingLyricsEnabled = false,
@@ -425,6 +426,7 @@ class AppSettings {
   final String sharePlaybackFailureBehavior;
 
   final PlayerStyle playerStyle;
+  final bool immersiveCover;
 
   final bool landscapeAutoHideChrome;
 
@@ -570,6 +572,7 @@ class AppSettings {
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
+    bool? immersiveCover,
     bool? landscapeAutoHideChrome,
     bool? landscapeTapToHideChrome,
     bool? floatingLyricsEnabled,
@@ -706,6 +709,7 @@ class AppSettings {
       sharePlaybackFailureBehavior:
           sharePlaybackFailureBehavior ?? this.sharePlaybackFailureBehavior,
       playerStyle: playerStyle ?? this.playerStyle,
+      immersiveCover: immersiveCover ?? this.immersiveCover,
       landscapeAutoHideChrome:
           landscapeAutoHideChrome ?? this.landscapeAutoHideChrome,
       landscapeTapToHideChrome:
@@ -847,8 +851,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
       navBarPosition:
-          NavBarPosition.values.asNameMap()[prefs.getString('navBarPosition')] ??
-              NavBarPosition.bottom,
+          NavBarPosition.values.asNameMap()[prefs.getString(
+            'navBarPosition',
+          )] ??
+          NavBarPosition.bottom,
       pageTransitionStyle:
           (prefs.getString('pageTransitionStyle') ?? 'cover') == 'smooth'
           ? PageTransitionStyle.smooth
@@ -898,6 +904,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       playerStyle: _playerStyleFromString(
         prefs.getString('playerStyle') ?? 'traditional',
       ),
+      immersiveCover: prefs.getBool('immersiveCover') ?? false,
       landscapeAutoHideChrome: prefs.getBool('landscapeAutoHideChrome') ?? true,
       landscapeTapToHideChrome:
           prefs.getBool('landscapeTapToHideChrome') ?? true,

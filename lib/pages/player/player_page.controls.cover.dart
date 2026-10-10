@@ -453,13 +453,11 @@ class _SwitchCoverRecord {
   DateTime? at;
 }
 
-
 const Duration _switchCoverGrace = Duration(seconds: 5);
 final Map<String, _SwitchCoverRecord> _switchCoverRecords = {};
 
 _SwitchCoverRecord _switchCoverRecordOf(String role) =>
     _switchCoverRecords.putIfAbsent(role, () => _SwitchCoverRecord());
-
 
 class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
     with SingleTickerProviderStateMixin {
@@ -731,6 +729,105 @@ class _EqStrip extends StatelessWidget {
   }
 }
 
+/// 沉浸式封面：竖屏播放页顶部大幅清晰封面。
+///
+/// 与桌面端一致的「大图铺满 + 向下渐变」观感：封面自身透明度沿纵向递减
+/// （dstIn 遮罩），自然过渡到下方的封面模糊底图，不做二次调色以避免偏色。
+/// 顶部另叠一层轻微压暗，保证顶栏图标与标题在浅色封面上依旧可读。
+class _ImmersiveCoverBackdrop extends StatelessWidget {
+  const _ImmersiveCoverBackdrop({required this.current, required this.height});
+
+  final QueueItem? current;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final item = current;
+    return SizedBox(
+      height: height,
+      child: LayoutBuilder(
+        builder: (context, cons) {
+          final w = cons.maxWidth;
+          final h = cons.maxHeight;
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              if (item != null)
+                ShaderMask(
+                  blendMode: BlendMode.dstIn,
+                  shaderCallback: (rect) => const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.white, Colors.white, Colors.transparent],
+                    stops: [0.0, 0.52, 1.0],
+                  ).createShader(rect),
+                  child: _AnimatedPlayerCover(
+                    current: item,
+                    role: 'immersive',
+                    builder: (context, cur) => cur == null
+                        ? const SizedBox.shrink()
+                        : Hero(
+                            tag: 'player-cover',
+                            flightShuttleBuilder:
+                                (ctx, animation, direction, fromCtx, toCtx) {
+                                  final scheme = Theme.of(context).colorScheme;
+                                  return PlayerCoverShuttle(
+                                    animation: animation,
+                                    songPath: cur.path,
+                                    networkUrl: cur.coverUrl,
+                                    fromRadius: 23,
+                                    toRadius: 23,
+                                    borderColor: Colors.white.withValues(
+                                      alpha: 0.14,
+                                    ),
+                                    shadow: BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      blurRadius: 28,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                    gradient: [
+                                      scheme.primary,
+                                      scheme.primary.withValues(alpha: 0.72),
+                                    ],
+                                  );
+                                },
+                            child: FlyingCoverAnchor(
+                              child: CoverReturnSource(
+                                songPath: cur.path,
+                                networkUrl: cur.coverUrl,
+                                child: CoverImage(
+                                  songPath: cur.path,
+                                  networkUrl: cur.coverUrl,
+                                  width: w,
+                                  height: h,
+                                  radius: 0,
+                                  highQuality: true,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x66000000), Color(0x00000000)],
+                    stops: [0.0, 0.32],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _BlurredCoverBackground extends ConsumerWidget {
   const _BlurredCoverBackground({required this.current});
 
@@ -979,4 +1076,3 @@ class _BigCover extends StatelessWidget {
     );
   }
 }
-

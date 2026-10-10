@@ -233,6 +233,7 @@ class AppBackupService {
     'liquidGlass': s.liquidGlass,
     'playerLiquidGlass': s.playerLiquidGlass,
     'playerFlowingBackground': s.playerFlowingBackground,
+    'immersiveCover': s.immersiveCover,
     'scanFormats': s.scanFormats,
     'floatingNavBar': s.floatingNavBar,
     'navBarPosition': s.navBarPosition.name,
@@ -522,6 +523,7 @@ class AppBackupService {
       liquidGlass: asBool('liquidGlass'),
       playerLiquidGlass: asBool('playerLiquidGlass'),
       playerFlowingBackground: asBool('playerFlowingBackground'),
+      immersiveCover: asBool('immersiveCover'),
       scanFormats: j['scanFormats'] is List
           ? (j['scanFormats'] as List).cast<String>()
           : null,

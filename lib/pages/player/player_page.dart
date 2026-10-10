@@ -1043,7 +1043,20 @@ class _TraditionalPlayerLayoutState
 
   Widget _buildTraditionalPortrait(BuildContext context, QueueItem? current) {
     final mvReady = ref.watch(mvProvider.select((s) => s.ready));
-    return _PlayerShell(
+    final immersive =
+        !mvReady &&
+        (ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.immersiveCover),
+            ) ??
+            false);
+    final media = MediaQuery.of(context);
+    // 封面占屏幕上部约六成；标题落在渐变过渡带内，与截图观感一致
+    final coverHeight = media.size.height * 0.62;
+    final captionGap = math.max(
+      16.0,
+      media.size.height * 0.55 - media.padding.top - 60,
+    );
+    final shell = _PlayerShell(
       current: current,
       top: [_buildTopBar(context)],
       flexible: mvReady
@@ -1075,7 +1088,13 @@ class _TraditionalPlayerLayoutState
                   },
                   itemBuilder: (context, i) {
                     if (i == 0) {
-                      return _KeepAliveWrap(child: _buildCoverSection(context));
+                      return _KeepAliveWrap(
+                        child: _buildCoverSection(
+                          context,
+                          immersive: immersive,
+                          immersiveTopGap: captionGap,
+                        ),
+                      );
                     }
                     return _KeepAliveWrap(child: _buildLyricsPage(current));
                   },
@@ -1095,6 +1114,20 @@ class _TraditionalPlayerLayoutState
         const SizedBox(height: 32),
       ],
       overlay: null,
+    );
+    if (!immersive) return shell;
+    // 封面层铺到状态栏下方并盖住顶栏区域；下方内容仍由 shell 正常排布
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: _ImmersiveCoverBackdrop(current: current, height: coverHeight),
+        ),
+        shell,
+      ],
     );
   }
 
@@ -1390,8 +1423,37 @@ class _TraditionalPlayerLayoutState
   Widget _buildCoverSection(
     BuildContext context, {
     bool showLyricPreview = true,
+    bool immersive = false,
+    double immersiveTopGap = 0,
   }) {
     final isPlaying = ref.watch(playerProvider.select((s) => s.isPlaying));
+    if (immersive) {
+      // 沉浸封面：真封面已由背景层承担，这里只留标题、歌手与歌词预览
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(height: immersiveTopGap),
+          _buildCaption(context, inset: 22),
+          const SizedBox(height: 26),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: Align(
+                alignment: switch (_coverLyricAlign) {
+                  'center' => Alignment.center,
+                  'right' => Alignment.centerRight,
+                  _ => Alignment.centerLeft,
+                },
+                child: _LyricPreview(
+                  current: widget.current,
+                  align: _coverLyricAlign,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return LayoutBuilder(
       builder: (context, cons) {
         final coverTierScale = switch (_coverSizeTier) {

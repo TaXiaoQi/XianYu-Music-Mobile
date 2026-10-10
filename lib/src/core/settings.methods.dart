@@ -136,6 +136,7 @@ class SettingsStore {
         next.sharePlaybackFailureBehavior,
       ),
       prefs.setString('playerStyle', next.playerStyle.name),
+      prefs.setBool('immersiveCover', next.immersiveCover),
       prefs.setBool('landscapeAutoHideChrome', next.landscapeAutoHideChrome),
       prefs.setBool('landscapeTapToHideChrome', next.landscapeTapToHideChrome),
       prefs.setBool('floatingLyricsEnabled', next.floatingLyricsEnabled),
@@ -507,6 +508,8 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(sharePlaybackFailureBehavior: v));
   Future<void> setPlayerStyle(PlayerStyle v) =>
       _settingsStore.update((s) => s.copyWith(playerStyle: v));
+  Future<void> setImmersiveCover(bool v) =>
+      _settingsStore.update((s) => s.copyWith(immersiveCover: v));
 
   Future<void> setLandscapeAutoHideChrome(bool v) =>
       _settingsStore.update((s) => s.copyWith(landscapeAutoHideChrome: v));

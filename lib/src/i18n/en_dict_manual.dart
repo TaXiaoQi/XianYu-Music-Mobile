@@ -12,7 +12,8 @@ const Map<String, String> enDictManual = {
   '更换视频': 'Change video',
   '请先选择视频': 'Please choose a video first',
   '请先选择图片或视频': 'Please choose an image or video first',
-  '从相册选择图片或视频作为应用背景': 'Pick an image or video from your gallery to use as the app background',
+  '从相册选择图片或视频作为应用背景':
+      'Pick an image or video from your gallery to use as the app background',
   '保存并使用': 'Save & apply',
   '模糊': 'Blur',
   '遮罩': 'Mask',
@@ -24,7 +25,8 @@ const Map<String, String> enDictManual = {
   '暗色字体': 'Dark text',
   '亮字': 'Light text',
   '暗字': 'Dark text',
-  '从相册选择一张图片作为应用背景': 'Pick an image from your gallery to use as the app background',
+  '从相册选择一张图片作为应用背景':
+      'Pick an image from your gallery to use as the app background',
   '请先选择图片': 'Please choose an image first',
   '已应用自定义壁纸': 'Custom wallpaper applied',
   '已恢复默认背景': 'Restored the default background',
@@ -33,13 +35,15 @@ const Map<String, String> enDictManual = {
   '更换图片': 'Change image',
   '压暗': 'Darker',
   '自定义壁纸图片保存失败：{e}': 'Failed to save the custom wallpaper image: {e}',
-  '自定义壁纸图片已失效，请重新选择': 'The custom wallpaper image is unavailable, please choose again',
+  '自定义壁纸图片已失效，请重新选择':
+      'The custom wallpaper image is unavailable, please choose again',
   '已连接：{name}': 'Connected: {name}',
   '腕上联动': 'Watch linkage',
   '云端兜底通道': 'Cloud fallback channel',
   '蓝牙不可用时经服务器中继保持连接': 'Relay through the server when Bluetooth is unavailable',
   '关闭后手表仅在蓝牙连接时可用': 'Watch works only over Bluetooth while this is off',
-  '连接手机时可用手表遥控播放': 'Control playback from your watch while the phone is connected',
+  '连接手机时可用手表遥控播放':
+      'Control playback from your watch while the phone is connected',
   '关闭后手表将无法遥控播放': 'Your watch cannot control playback while this is off',
   '传递给腕上设备': 'Send to watch',
   '每次询问': 'Ask every time',
@@ -47,7 +51,8 @@ const Map<String, String> enDictManual = {
   '不传递': "Don't send",
   '传递': 'Send',
   '腕上设备': 'your watch',
-  '每次开始播放时询问是否传递': 'Ask before playback starts; "Never" skips the rest of the day',
+  '每次开始播放时询问是否传递':
+      'Ask before playback starts; "Never" skips the rest of the day',
   '允许该设备': 'Always allow this device',
   '允许本次': 'Allow this time',
   '不允许': "Don't allow",
@@ -57,9 +62,11 @@ const Map<String, String> enDictManual = {
   '唤醒手表应用': 'Wake watch app',
   '通过华为运动健康远程启动腕上端': 'Remotely launch the watch app via Huawei Health',
   '未检测到华为运动健康': 'Huawei Health not found',
-  '唤醒腕上端需要华为运动健康提供 Wear Engine 服务，是否前往安装？': 'Waking the watch app requires Huawei Health (the Wear Engine host). Install it now?',
+  '唤醒腕上端需要华为运动健康提供 Wear Engine 服务，是否前往安装？':
+      'Waking the watch app requires Huawei Health (the Wear Engine host). Install it now?',
   '同步到手表？': 'Sync to watch?',
-  '将在手表端启动弦予音乐；首次使用需完成 Wear Engine 授权': 'XianYu Music will be launched on the watch; Wear Engine authorization is required on first use',
+  '将在手表端启动弦予音乐；首次使用需完成 Wear Engine 授权':
+      'XianYu Music will be launched on the watch; Wear Engine authorization is required on first use',
   'Wear Engine 授权未完成': 'Wear Engine authorization not completed',
   'Wear Engine 授权失败：{m}': 'Wear Engine authorization failed: {m}',
   '未检测到已绑定的华为手表': 'No bound Huawei watch found',
@@ -80,20 +87,25 @@ const Map<String, String> enDictManual = {
   '主动连接手表': 'Connect to watch',
   '从已配对设备列表选择手表发起连接': 'Pick a paired watch to start a connection',
   '未发现可连接的手表': 'No connectable watch found',
-  '请先开启腕上联动并授予蓝牙权限': 'Turn on watch linkage and grant Bluetooth permission first',
-  '请在蓝牙设置中与手表完成配对后重试': 'Pair with the watch in Bluetooth settings and try again',
+  '请先开启腕上联动并授予蓝牙权限':
+      'Turn on watch linkage and grant Bluetooth permission first',
+  '请在蓝牙设置中与手表完成配对后重试':
+      'Pair with the watch in Bluetooth settings and try again',
   '选择要连接的手表': 'Choose a watch to connect',
   '点击连接，手表端需确认': 'Tap to connect; confirm on the watch',
   '已发起连接，请在手表端确认': 'Connection requested; confirm on the watch',
   '断开连接': 'Disconnect',
-  '断开当前手表连接，手表可随时重新连接': 'Disconnect the current watch; it can reconnect anytime',
+  '断开当前手表连接，手表可随时重新连接':
+      'Disconnect the current watch; it can reconnect anytime',
   '当前无已连接的手表': 'No watch connected',
   '已断开手表连接': 'Watch disconnected',
   '重置联动授权': 'Reset linkage authorization',
-  '清除记住的选择，恢复每次起播前询问': 'Clear the remembered choice and ask before each playback',
+  '清除记住的选择，恢复每次起播前询问':
+      'Clear the remembered choice and ask before each playback',
   '当前为每次询问，无需重置': 'Already set to ask every time',
   '联动授权已重置': 'Linkage authorization reset',
-  '起播前询问；选「不允许」当天不再询问': "Ask before playback starts; \"Don't allow\" skips the rest of the day",
+  '起播前询问；选「不允许」当天不再询问':
+      "Ask before playback starts; \"Don't allow\" skips the rest of the day",
   '15 分钟': '15 min',
   '30 分钟': '30 min',
   '1 小时': '1 hour',
@@ -103,8 +115,10 @@ const Map<String, String> enDictManual = {
   '3D 环绕': '3D Surround',
   '8D 环绕': '8D Surround',
   '96k · 极速云端试听': '96k · Instant cloud preview',
-  'Bit-perfect / DSD 直出中，音量由 DAC 控制': 'Bit-perfect / DSD direct output: volume is controlled by the DAC',
-  'Bit-perfect / DSD 直出中，音效已锁定': 'Bit-perfect / DSD direct output: sound effects are locked',
+  'Bit-perfect / DSD 直出中，音量由 DAC 控制':
+      'Bit-perfect / DSD direct output: volume is controlled by the DAC',
+  'Bit-perfect / DSD 直出中，音效已锁定':
+      'Bit-perfect / DSD direct output: sound effects are locked',
   '回到顶部': 'Back to top',
   '定位当前播放歌曲': 'Locate the current song',
   '列表显示': 'List display',
@@ -121,23 +135,28 @@ const Map<String, String> enDictManual = {
   'Hi-Res 高解析无损': 'Hi-Res lossless',
   'Lo-Fi 低保真': 'Lo-Fi',
   'LX 插件初始化失败': 'LX plugin initialization failed',
-  'lxmc 备份解压失败：不是有效的 gzip 数据': 'Failed to decompress lxmc backup: not valid gzip data',
+  'lxmc 备份解压失败：不是有效的 gzip 数据':
+      'Failed to decompress lxmc backup: not valid gzip data',
   'M3U 文件中未找到有效的歌曲条目': 'No valid song entries found in the M3U file',
   'MusicFree 插件': 'MusicFree plugin',
   'QMC 文件解密': 'QMC file decryption',
   'QQ 空间支持网页分享，不支持音乐卡片': 'Qzone supports web sharing only, not music cards',
   'qq音乐': 'QQ Music',
-  'Rust 引擎初始化失败，无法播放分享歌曲': 'Rust engine failed to initialize; cannot play the shared song',
-  '独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式': 'Exclusive / shared DSP pipeline outputs to the selected device; supported formats are shown',
+  'Rust 引擎初始化失败，无法播放分享歌曲':
+      'Rust engine failed to initialize; cannot play the shared song',
+  '独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式':
+      'Exclusive / shared DSP pipeline outputs to the selected device; supported formats are shown',
   'USB 独占输出 (Bit-perfect)': 'USB exclusive output (Bit-perfect)',
   'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」':
       'With USB exclusive output, audio is sent to the DAC at the source bit depth, bypassing loudness normalization, EQ, effects and volume, keeping only safety limiting; DSD still requires "DSD native passthrough" above',
-  'USB 独占输出启动失败，无法播放 DSD': 'USB exclusive output failed to start; cannot play DSD',
+  'USB 独占输出启动失败，无法播放 DSD':
+      'USB exclusive output failed to start; cannot play DSD',
   'V4A 组合音效': 'V4A combined effects',
   'VIP歌曲': 'VIP song',
   '安装插件': 'Install plugin',
   '安装音源': 'Install music source',
-  '安装音源插件后生成推荐': 'Recommendations are generated after a source plugin is installed',
+  '安装音源插件后生成推荐':
+      'Recommendations are generated after a source plugin is installed',
   '每日推荐获取失败，点击重试': 'Failed to load daily picks, tap to retry',
   '按标题': 'By title',
   '按歌手': 'By artist',
@@ -147,8 +166,10 @@ const Map<String, String> enDictManual = {
   '按时长过滤': 'Filter by duration',
   '按标题内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量':
       'Adjusts gain from the ReplayGain tag in each file so songs play at a consistent loudness; files without tags keep their original volume',
-  '按来源信息走插件换源重播同一首歌': 'Replay the same song by switching sources via the plugin, based on origin info',
-  '把当前歌词行推送到系统通知栏 / 锁屏展示': 'Pushes the current lyric line to the system notification / lock screen',
+  '按来源信息走插件换源重播同一首歌':
+      'Replay the same song by switching sources via the plugin, based on origin info',
+  '把当前歌词行推送到系统通知栏 / 锁屏展示':
+      'Pushes the current lyric line to the system notification / lock screen',
   '版本信息、项目主页': 'Version info and project homepage',
   '榜单': 'Charts',
   '薄荷': 'Mint',
@@ -156,7 +177,8 @@ const Map<String, String> enDictManual = {
   '保存壁纸': 'Save wallpaper',
   '本地无音源': 'Source not available locally',
   '本地无音源，前往在线播放': 'No local source, play online',
-  '保存后插件将重新加载并应用新的变量值': 'After saving, the plugin reloads and applies the new variable values',
+  '保存后插件将重新加载并应用新的变量值':
+      'After saving, the plugin reloads and applies the new variable values',
   '保存均衡器预设': 'Save equalizer preset',
   '保存失败': 'Save failed',
   '备份文件 / 本地文件夹 / 云端导入': 'Backup file / local folder / cloud import',
@@ -193,6 +215,9 @@ const Map<String, String> enDictManual = {
   '播放页控制卡使用液态玻璃材质': 'The player control card uses liquid glass material',
   '播放页样式': 'Player page style',
   '播放页液态玻璃': 'Player page liquid glass',
+  '沉浸式封面': 'Immersive cover',
+  '竖屏播放页用大幅封面铺满顶部，向下渐变融入播放信息':
+      'A large cover fills the top of the portrait player page and fades into the playback info',
   '沉浸流光背景': 'Immersive flowing background',
   '使用随封面颜色缓慢流动的多边形背景':
       'A slowly flowing polygon background based on the cover colors',
@@ -208,14 +233,16 @@ const Map<String, String> enDictManual = {
   '测试 ModernDialogCard 通用确认弹窗': 'Test ModernDialogCard confirm dialog',
   '测试 ModernDialogCard 通用输入弹窗': 'Test ModernDialogCard input dialog',
   '测试歌单': 'Test playlist',
-  '测试歌单重命名/删除操作菜单（假歌单）': 'Test playlist rename/delete action menu (fake playlist)',
+  '测试歌单重命名/删除操作菜单（假歌单）':
+      'Test playlist rename/delete action menu (fake playlist)',
   '测试歌曲': 'Test song',
   '测试歌曲信息/标签/歌词查看弹窗（假歌曲）': 'Test song info/tags/lyrics dialog (fake song)',
   '测试歌手': 'Test artist',
   '测试红色危险操作的确认弹窗': 'Test red dangerous-action confirm dialog',
   '测试居中单选列表弹窗': 'Test centered choice-list dialog',
   '测试连接': 'Test connection',
-  '测试收藏/加歌单/歌曲信息/下载操作弹窗（假歌曲）': 'Test favorite/playlist/song-info/download action sheet (fake song)',
+  '测试收藏/加歌单/歌曲信息/下载操作弹窗（假歌曲）':
+      'Test favorite/playlist/song-info/download action sheet (fake song)',
   '测试修改资料前的次数限制与审核提示': 'Test pre-change limits and review notices',
   '测试选择歌单并添加歌曲的弹窗（假歌曲）': 'Test pick-playlist-and-add dialog (fake song)',
   '测试中…': 'Testing…',
@@ -259,7 +286,8 @@ const Map<String, String> enDictManual = {
   '导入音频文件': 'Import audio files',
   '导入完成': 'Import complete',
   '导入为歌单': 'Import as playlist',
-  '到「广场」挑选主题，下载后会出现在这里': 'Pick a theme from the Square; downloaded themes will appear here',
+  '到「广场」挑选主题，下载后会出现在这里':
+      'Pick a theme from the Square; downloaded themes will appear here',
   '地区限制': 'Region restricted',
   '未选择有效音频文件': 'No valid audio file selected',
   '沙盒目录（下载/导入的音乐）会自动扫描；也可点击右上角「+」导入音频文件':
@@ -271,7 +299,8 @@ const Map<String, String> enDictManual = {
   '登录后即可提交反馈': 'Sign in to submit feedback',
   '登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制':
       'Sign in to unlock daily mixes\nPersonalized every day from your listening history',
-  '登录后可上传壁纸并在多端同步展示': 'Sign in to upload wallpapers and show them across devices',
+  '登录后可上传壁纸并在多端同步展示':
+      'Sign in to upload wallpapers and show them across devices',
   '登录后同步你的歌单与设置': 'Sign in to sync your playlists and settings',
   '登录后同步你的音乐与设置': 'Sign in to sync your music and settings',
   '登录前验证': 'Pre-login verification',
@@ -287,18 +316,21 @@ const Map<String, String> enDictManual = {
   '切换动画': 'Transition animation',
   '覆盖': 'Cover',
   '平滑': 'Smooth',
-  '覆盖：新页盖住旧页；平滑：新旧两页平行平移': 'Cover: new page slides over the old one; Smooth: both pages translate in parallel',
+  '覆盖：新页盖住旧页；平滑：新旧两页平行平移':
+      'Cover: new page slides over the old one; Smooth: both pages translate in parallel',
   '底部居中胶囊成功提示': 'Bottom-center capsule success toast',
   '底部居中胶囊普通提示': 'Bottom-center capsule info toast',
   '底部居中胶囊失败提示': 'Bottom-center capsule error toast',
   '底栏与工具栏': 'Bottom bar and toolbar',
   '第二个选项': 'Second option',
   '第一个选项': 'First option',
-  '点击底部导航等操作的手感震动强度': 'Haptic intensity for taps on the bottom navigation and other actions',
+  '点击底部导航等操作的手感震动强度':
+      'Haptic intensity for taps on the bottom navigation and other actions',
   '点击停止': 'Tap to stop',
   '点击下方按钮添加 WebDAV 服务器': 'Tap the button below to add a WebDAV server',
   '点击选择包含音乐的文件夹': 'Tap to choose a folder containing music',
-  '点击选择图片（JPG / PNG / WEBP，30MB 以内）': 'Tap to choose an image (JPG / PNG / WEBP, up to 30MB)',
+  '点击选择图片（JPG / PNG / WEBP，30MB 以内）':
+      'Tap to choose an image (JPG / PNG / WEBP, up to 30MB)',
   '点击右上角新建，或在歌曲菜单中选择「添加到歌单」\n也可通过导入歌单页从备份文件、本地文件夹或云端导入':
       'Tap "New" in the top right, or use "Add to playlist" in the song menu.\nYou can also import from a backup file, local folder or the cloud on the import page',
   '电子': 'Electronic',
@@ -332,7 +364,8 @@ const Map<String, String> enDictManual = {
   '分享到 QQ 好友': 'Share to QQ friends',
   '分享到 QQ 空间': 'Share to Qzone',
   '分享到更多应用': 'Share to more apps',
-  '分享歌曲起播失败时停止并显示错误': 'Stop and show an error when a shared song fails to start',
+  '分享歌曲起播失败时停止并显示错误':
+      'Stop and show an error when a shared song fails to start',
   '分享链接过期后即被服务端丢弃，他人将无法打开（5 分钟 ~ 24 小时）':
       'Once a share link expires it is discarded by the server and can no longer be opened (5 min to 24 h)',
   '分享失败，链接已复制': 'Share failed; the link was copied',
@@ -341,7 +374,8 @@ const Map<String, String> enDictManual = {
   '封面': 'Cover',
   '封装': 'Container',
   '服务端设置、手动同步、自动同步': 'Server settings, manual sync, auto sync',
-  '服务器地址需以 http:// 或 https:// 开头': 'The server address must start with http:// or https://',
+  '服务器地址需以 http:// 或 https:// 开头':
+      'The server address must start with http:// or https://',
   '付费歌曲': 'Paid song',
   '附带诊断日志，便于定位问题': 'Attach diagnostic logs to help locate the issue',
   '复制分享链接': 'Copy share link',
@@ -364,19 +398,22 @@ const Map<String, String> enDictManual = {
   '歌词显示、桌面歌词窗': 'Lyrics display and desktop lyrics window',
   '歌词已保存': 'Lyrics saved',
   '歌词字号': 'Lyrics font size',
-  '歌单、收藏、插件、设置备份为 JSON 并分享': 'Back up playlists, favorites, plugins and settings as JSON and share',
+  '歌单、收藏、插件、设置备份为 JSON 并分享':
+      'Back up playlists, favorites, plugins and settings as JSON and share',
   '歌单操作': 'Playlist actions',
   '歌单操作菜单': 'Playlist action menu',
   '歌单创建失败': 'Playlist creation failed',
   '歌单分享链接或歌单 ID': 'Playlist share link or ID',
   '歌单名称 *': 'Playlist name *',
-  '歌单为空，可在歌曲菜单中选择「添加到歌单」': 'This playlist is empty. Use "Add to playlist" in the song menu',
+  '歌单为空，可在歌曲菜单中选择「添加到歌单」':
+      'This playlist is empty. Use "Add to playlist" in the song menu',
   '歌单为空或获取失败': 'Playlist is empty or failed to load',
   '歌单已不存在': 'Playlist no longer exists',
   '歌单重命名（可选）': 'Rename playlist (optional)',
   '歌名 - 歌手': 'Title - Artist',
   '歌名不能为空': 'Title cannot be empty',
-  '歌曲 / 歌手 / 专辑 / 歌单列表项尺寸': 'List item size for songs / artists / albums / playlists',
+  '歌曲 / 歌手 / 专辑 / 歌单列表项尺寸':
+      'List item size for songs / artists / albums / playlists',
   '歌曲不存在': 'Song not found',
   '歌曲操作弹层': 'Song action sheet',
   '歌曲缺少标题': 'Song is missing its title',
@@ -390,7 +427,8 @@ const Map<String, String> enDictManual = {
   '歌手 - 标题': 'Artist - Title',
   '歌手 - 歌名': 'Artist - Title',
   '格式应为 #RRGGBB': 'Format should be #RRGGBB',
-  '根据你常听的 {artists} 生成': 'Generated from artists you listen to often: {artists}',
+  '根据你常听的 {artists} 生成':
+      'Generated from artists you listen to often: {artists}',
   '根据你的听歌记录生成': 'Generated from your listening history',
   '跟随设备性能': 'Follow device performance',
   '更多信息': 'More info',
@@ -404,7 +442,8 @@ const Map<String, String> enDictManual = {
   '挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放':
       'Mounts music from a WebDAV server; after syncing, remote songs join the local library. Playback prefers cache and streams online when not cached',
   '关闭常驻模糊': 'Disable persistent blur',
-  '关闭时同名文件自动追加序号，避免覆盖': 'Duplicate filenames get a number appended instead of being overwritten',
+  '关闭时同名文件自动追加序号，避免覆盖':
+      'Duplicate filenames get a number appended instead of being overwritten',
   '关联插件：': 'Linked plugins:',
   '管理插件的自动化行为': 'Manage plugin automation',
   '管理员': 'Admin',
@@ -418,13 +457,15 @@ const Map<String, String> enDictManual = {
   '还没有歌单': 'No playlists yet',
   '还没有扫描目录，点击右上角「+」选择包含音乐的文件夹\n（仅首次需要授予音乐读取权限）':
       'No scan folders yet. Tap "+" in the top right to choose a folder with music\n(music read permission is requested only once)',
-  '含唱片光芒、沉浸流光背景与动感频谱': 'Vinyl glow, immersive flowing background and dynamic spectrum',
+  '含唱片光芒、沉浸流光背景与动感频谱':
+      'Vinyl glow, immersive flowing background and dynamic spectrum',
   '好的': 'OK',
   '核心初始化失败': 'Core initialization failed',
   '黑胶': 'Vinyl',
   '黑胶音色 · 无损': 'Vinyl tone · lossless',
   '横屏自动隐藏顶栏/底栏': 'Auto-hide top/bottom bars in landscape',
-  '横屏播放页无操作 3.5 秒后收起，触摸屏幕唤回': 'Landscape player hides bars after 3.5s idle, touch to bring back',
+  '横屏播放页无操作 3.5 秒后收起，触摸屏幕唤回':
+      'Landscape player hides bars after 3.5s idle, touch to bring back',
   '横屏时隐藏': 'Hide in landscape',
   '后端连接配置保存失败，请重试': 'Failed to save backend connection settings; please retry',
   '后端连接配置已更新': 'Backend connection settings updated',
@@ -454,7 +495,8 @@ const Map<String, String> enDictManual = {
   '鸿蒙版请通过官网获取新版本': 'For HarmonyOS, get new versions from the official site',
   '检查中…': 'Checking…',
   '简介': 'Bio',
-  '将当前 EQ 增益保存为自定义预设，同名将覆盖': 'Save current EQ gains as a custom preset; same-name presets are overwritten',
+  '将当前 EQ 增益保存为自定义预设，同名将覆盖':
+      'Save current EQ gains as a custom preset; same-name presets are overwritten',
   '将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入本地库扫描目录。':
       'Reads music files in the chosen folder recursively and creates a standalone playlist; the folder is not added to library scan folders.',
   '椒盐音乐': 'SaltPlayer',
@@ -479,7 +521,8 @@ const Map<String, String> enDictManual = {
   '开发者名单（排名不分先后）': 'Developers (in no particular order)',
   '开启后歌词窗可显示在其他应用上层。需要前往系统设置授予「显示在其他应用上层」权限。':
       'The lyrics window can show above other apps. Grant the "Display over other apps" permission in system settings.',
-  '开启后双击歌曲播放，关闭后单击播放': 'On: double-tap a song to play. Off: single tap to play.',
+  '开启后双击歌曲播放，关闭后单击播放':
+      'On: double-tap a song to play. Off: single tap to play.',
   '开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）':
       'All pages support the Android predictive back animation (requires Android 13+ with gesture navigation)',
   '开启全部动效': 'Enable all effects',
@@ -522,7 +565,8 @@ const Map<String, String> enDictManual = {
   '没有插件被恢复': 'No plugins were restored',
   '没有插件被上传': 'No plugins were uploaded',
   '没有匹配的歌曲': 'No matching songs',
-  '没有识别到匹配的歌曲，请靠近音源重试': 'No match found; move closer to the audio source and retry',
+  '没有识别到匹配的歌曲，请靠近音源重试':
+      'No match found; move closer to the audio source and retry',
   '没有需要重命名的文件': 'No files to rename',
   '每日推荐': 'Daily mixes',
   '每月限一次': 'Once per month',
@@ -537,7 +581,8 @@ const Map<String, String> enDictManual = {
   '默认后端连接配置保存失败，请重试': 'Failed to save default backend settings; please retry',
   '默认排序': 'Default sort',
   '默认设备': 'Default device',
-  '默认音质播放失败时如何切换音质档位': 'How to switch quality tiers when the default quality fails',
+  '默认音质播放失败时如何切换音质档位':
+      'How to switch quality tiers when the default quality fails',
   '母带级无损臻品': 'Master-grade lossless',
   '内嵌歌词': 'Embedded lyrics',
   '内容不能超过 1000 字': 'Content must be under 1000 characters',
@@ -597,7 +642,8 @@ const Map<String, String> enDictManual = {
   '登录后即可申请内测': 'Sign in to apply for the beta',
   '内测申请': 'Beta application',
   '申请已提交，请留意审核结果': 'Application submitted. Please watch for the review result.',
-  '内测版本包含尚未正式发布的新功能，可能存在不稳定情况。提交申请后请留意审核结果，同意后你的设备将自动加入内测名单。': 'Beta versions contain unreleased features and may be unstable. After submitting, please watch for the review result. Once approved, your device will be added to the beta list automatically.',
+  '内测版本包含尚未正式发布的新功能，可能存在不稳定情况。提交申请后请留意审核结果，同意后你的设备将自动加入内测名单。':
+      'Beta versions contain unreleased features and may be unstable. After submitting, please watch for the review result. Once approved, your device will be added to the beta list automatically.',
   '请先登录后再查看反馈': 'Sign in to view feedback',
   '请先登录后再提交反馈': 'Sign in to submit feedback',
   '请先登录后再同步播放历史': 'Sign in to sync play history',
@@ -667,14 +713,17 @@ const Map<String, String> enDictManual = {
   '收藏榜单': 'Favorite charts',
   '收藏歌单': 'Favorite playlists',
   '收藏专辑': 'Favorite albums',
-  '收到一首分享歌曲，可立即播放或加入队列': 'Received a shared song. Play it now or add it to the queue',
+  '收到一首分享歌曲，可立即播放或加入队列':
+      'Received a shared song. Play it now or add it to the queue',
   '手动输入 ekey': 'Enter ekey manually',
   '授权已失效，点击钥匙重新授权': 'Access expired; tap the key to re-authorize',
   '输出': 'Output',
   '输入 1 - 10240 MB': 'Enter 1 - 10240 MB',
-  '输入 URL 安装，支持单个插件或插件集（JSON）批量': 'Install from a URL; supports a single plugin or a plugin set (JSON)',
+  '输入 URL 安装，支持单个插件或插件集（JSON）批量':
+      'Install from a URL; supports a single plugin or a plugin set (JSON)',
   '输入关键词搜索音乐': 'Search music by keyword',
-  '输入注册邮箱，验证通过后设置新密码。': 'Enter your registration email to set a new password after verification.',
+  '输入注册邮箱，验证通过后设置新密码。':
+      'Enter your registration email to set a new password after verification.',
   '刷新中…': 'Refreshing…',
   '双击播放歌曲': 'Double-tap to play',
   '水平位置': 'Horizontal position',
@@ -689,7 +738,8 @@ const Map<String, String> enDictManual = {
   '算法弹簧': 'Spring',
   '算法房间': 'Room',
   '算法数据无效': 'Invalid algorithm data',
-  '随插件同步到云端，点击可重新导入最新版本': 'Synced to the cloud with plugins; tap to re-import the latest version',
+  '随插件同步到云端，点击可重新导入最新版本':
+      'Synced to the cloud with plugins; tap to re-import the latest version',
   '隧道': 'Tunnel',
   '所选文件夹中没有支持的音乐文件': 'No supported music files in the selected folder',
   '锁定后不可拖动，通知栏解锁': 'Locked and immovable; unlock from the notification bar',
@@ -738,9 +788,12 @@ const Map<String, String> enDictManual = {
       'After verification, a password-change code will be sent to this account\'s registration email.',
   '完成验证后将向当前账号的注册邮箱发送注销验证码。':
       'After verification, an account-deletion code will be sent to this account\'s registration email.',
-  '完成验证后将向该邮箱发送绑定验证码。': 'A binding code will be sent to this email after verification.',
-  '完成验证后将向该邮箱发送重置密码验证码。': 'A password-reset code will be sent to this email after verification.',
-  '完成验证后将向邮箱发送注册验证码。': 'A registration code will be sent to your email after verification.',
+  '完成验证后将向该邮箱发送绑定验证码。':
+      'A binding code will be sent to this email after verification.',
+  '完成验证后将向该邮箱发送重置密码验证码。':
+      'A password-reset code will be sent to this email after verification.',
+  '完成验证后将向邮箱发送注册验证码。':
+      'A registration code will be sent to your email after verification.',
   '网络异常，请检查网络连接': 'Network error; check your connection',
   '网易': 'NetEase',
   '网易云': 'NetEase Cloud',
@@ -759,9 +812,11 @@ const Map<String, String> enDictManual = {
   '未发现包含音频的文件夹': 'No folders with audio found',
   '未获取到当前弦予号，请重新登录': 'XianYu ID unavailable; please sign in again',
   '未获取到当前账号信息，请重新登录': 'Account info unavailable; please sign in again',
-  '未获取到弦予号，无法修改密码，请重新登录': 'XianYu ID unavailable; cannot change the password. Please sign in again.',
+  '未获取到弦予号，无法修改密码，请重新登录':
+      'XianYu ID unavailable; cannot change the password. Please sign in again.',
   '未获取到注册邮箱，请重新登录': 'Registration email unavailable; please sign in again',
-  '未检测到加密信息（已是普通音频或缺密钥）': 'No encryption detected (already plain audio, or the key is missing)',
+  '未检测到加密信息（已是普通音频或缺密钥）':
+      'No encryption detected (already plain audio, or the key is missing)',
   '未检测到可用的输出设备': 'No available output device detected',
   '未命名': 'Untitled',
   '未命名反馈': 'Untitled feedback',
@@ -769,12 +824,14 @@ const Map<String, String> enDictManual = {
   '未命名歌曲': 'Untitled song',
   '未命名用户': 'Unnamed user',
   '未能解析出任何歌曲': 'No songs could be parsed',
-  '未授予存储权限，无法扫描本地文件夹': 'Storage permission not granted; cannot scan local folders',
+  '未授予存储权限，无法扫描本地文件夹':
+      'Storage permission not granted; cannot scan local folders',
   '未选择文件': 'No file selected',
   '未找到分享的歌曲': 'Shared song not found',
   '未找到可导入的歌单': 'No importable playlists found',
   '未找到匹配的歌单，换个关键词或链接试试': 'No matching playlist; try another keyword or link',
-  '未找到支持该平台的音源插件，请先安装对应插件': 'No source plugin supports this platform; install one first',
+  '未找到支持该平台的音源插件，请先安装对应插件':
+      'No source plugin supports this platform; install one first',
   '未知插件': 'Unknown plugin',
   '未知格式': 'Unknown format',
   '未知来源': 'Unknown source',
@@ -790,12 +847,14 @@ const Map<String, String> enDictManual = {
   '无法打开链接': 'Cannot open the link',
   '无法读取所选文件': 'Cannot read the selected file',
   '无法获取播放链接': 'Cannot get the playback URL',
-  '无法获取插件脚本，请检查 URL 与网络': 'Cannot fetch the plugin script; check the URL and network',
+  '无法获取插件脚本，请检查 URL 与网络':
+      'Cannot fetch the plugin script; check the URL and network',
   '无法获取更新脚本': 'Could not fetch the update script',
   '无法解析图片': 'Cannot parse the image',
   '无法识别备份格式，请选择 BakaMusic、MusicFree 或洛雪音乐导出的备份文件':
       'Unrecognized backup format; choose a backup exported by BakaMusic, MusicFree or LX Music',
-  '无法识别的备份格式，请选择本应用导出的备份文件': 'Unrecognized backup format; choose a backup exported by this app',
+  '无法识别的备份格式，请选择本应用导出的备份文件':
+      'Unrecognized backup format; choose a backup exported by this app',
   '无法识别歌单链接，请选择对应音源后重试，或直接粘贴分享链接':
       'Cannot parse the playlist link. Pick the matching source and retry, or paste the share link directly',
   '无可用的导航上下文，跳过分享预览窗': 'No navigator context; skipping the share preview',
@@ -820,7 +879,8 @@ const Map<String, String> enDictManual = {
   '先在 设置 → 音源 安装并启用插件，再回来导入在线歌单':
       'First install and enable a plugin under Settings → Sources, then import online playlists here',
   '弦予': 'XianYu',
-  '弦予号仅支持纯数字、纯字母或数字字母组合': 'XianYu ID supports digits only, letters only, or a mix',
+  '弦予号仅支持纯数字、纯字母或数字字母组合':
+      'XianYu ID supports digits only, letters only, or a mix',
   '弦予号修改成功': 'XianYu ID updated',
   '弦予号修改失败': 'Failed to update the XianYu ID',
   '弦予号需 6-20 位': 'XianYu ID must be 6-20 characters',
@@ -849,7 +909,8 @@ const Map<String, String> enDictManual = {
   '性能优先': 'Performance first',
   '修改成功后需要重新登录，验证码将发送到注册邮箱：{email}':
       'You will be signed out after the change. A code will be sent to {email}',
-  '修改将写入音频文件标签（ID3/Vorbis/MP4）': 'Changes are written to audio file tags (ID3/Vorbis/MP4)',
+  '修改将写入音频文件标签（ID3/Vorbis/MP4）':
+      'Changes are written to audio file tags (ID3/Vorbis/MP4)',
   '修改密码失败': 'Failed to change the password',
   '修改昵称提示': 'Nickname change notice',
   '修改弦予号提示': 'XianYu ID change notice',
@@ -858,10 +919,13 @@ const Map<String, String> enDictManual = {
   '播放优先匹配本地曲库，在线按可用音源解析':
       'Playback prefers your local library; online resolves via available sources',
   '已匹配本地歌曲': 'Matched a local song',
-  '额外保存一份 .lrc 文件，歌词默认已嵌入音频': 'Saves an extra .lrc file; lyrics are embedded by default',
+  '额外保存一份 .lrc 文件，歌词默认已嵌入音频':
+      'Saves an extra .lrc file; lyrics are embedded by default',
   '将歌词数据写入音频文件': 'Writes lyric data into the audio file',
-  '需要麦克风权限，请在系统设置中授权': 'Microphone permission required; grant it in system settings',
-  '悬浮导航 shader 折射光影，关闭时默认透明磨砂': 'Floating navigation shader refraction; translucent frost when off',
+  '需要麦克风权限，请在系统设置中授权':
+      'Microphone permission required; grant it in system settings',
+  '悬浮导航 shader 折射光影，关闭时默认透明磨砂':
+      'Floating navigation shader refraction; translucent frost when off',
   '需开启悬浮底栏才可启用': 'Enable the floating nav bar first',
   '液态玻璃效果': 'Liquid glass level',
   '调整玻璃透亮与磨砂程度': 'Adjust glass clarity vs. frosted look',
@@ -898,7 +962,8 @@ const Map<String, String> enDictManual = {
   '验证题加载失败': 'Failed to load the verification question',
   '验证题加载失败，请稍后重试': 'Failed to load the verification question; retry later',
   '正在加载验证…': 'Loading verification…',
-  '验证组件加载失败，请检查网络后重试': 'Failed to load the verification widget; check your network and retry',
+  '验证组件加载失败，请检查网络后重试':
+      'Failed to load the verification widget; check your network and retry',
   '摇滚': 'Rock',
   '液态玻璃': 'Liquid glass',
   '一': '1',
@@ -942,9 +1007,11 @@ const Map<String, String> enDictManual = {
   '手表遥控、云端兜底、传递策略': 'Watch remote, cloud fallback, transfer policy',
   '投放歌曲到电视、音箱等 DLNA 设备': 'Cast songs to TVs, speakers and other DLNA devices',
   '选择设备投放': 'Choose a device to cast',
-  '将当前播放投送到电视、音箱等 DLNA 设备': 'Send the current playback to a TV, speaker or other DLNA device',
+  '将当前播放投送到电视、音箱等 DLNA 设备':
+      'Send the current playback to a TV, speaker or other DLNA device',
   '同一局域网': 'Same local network',
-  '接收设备需与手机连接同一 Wi-Fi；播放页分享面板中也可发起投放': 'The receiver must be on the same Wi-Fi as the phone; casting is also available from the share panel on the player page',
+  '接收设备需与手机连接同一 Wi-Fi；播放页分享面板中也可发起投放':
+      'The receiver must be on the same Wi-Fi as the phone; casting is also available from the share panel on the player page',
   '自动换源': 'Auto switch source',
   '音频转换、剪辑、解密、重命名': 'Convert, trim, decrypt, batch rename audio',
   '音量平衡 (ReplayGain)': 'Volume balance (ReplayGain)',
@@ -1067,8 +1134,7 @@ const Map<String, String> enDictManual = {
       'Supports .ttf / .otf fonts; applied to lyrics immediately after import',
   '支持 BakaMusic / MusicFree / 洛雪音乐备份（JSON、ZIP、lxmc）与 M3U/M3U8 播放列表、椒盐音乐 TXT 导出。':
       'Supports BakaMusic / MusicFree / LX Music backups (JSON, ZIP, lxmc), M3U/M3U8 playlists, and Jiayan Music TXT exports.',
-  '支持 LX / MusicFree 格式插件':
-      'Supports LX and MusicFree plugins',
+  '支持 LX / MusicFree 格式插件': 'Supports LX and MusicFree plugins',
   '支持 LX（落雪）与 MusicFree 格式，链接可为单个插件或插件集（JSON）':
       'Supports LX and MusicFree formats; the link can be a single plugin or a plugin set (JSON)',
   '直链解析失败': 'Failed to resolve the direct link',
@@ -1086,8 +1152,10 @@ const Map<String, String> enDictManual = {
   '逐字动效': 'Word-by-word animation',
   '歌词同步': 'Lyrics sync',
   '同步偏移': 'Sync offset',
-  '正值让歌词更晚显示，负值让歌词更早显示，用于修正歌词与音频的对齐差异': 'Positive values delay lyrics, negative values advance them, for correcting offset between lyrics and audio.',
-  '主题、主题色、壁纸、液态玻璃、导航栏': 'Theme, accent color, wallpaper, liquid glass, navigation bar',
+  '正值让歌词更晚显示，负值让歌词更早显示，用于修正歌词与音频的对齐差异':
+      'Positive values delay lyrics, negative values advance them, for correcting offset between lyrics and audio.',
+  '主题、主题色、壁纸、液态玻璃、导航栏':
+      'Theme, accent color, wallpaper, liquid glass, navigation bar',
   '主题模式': 'Theme mode',
   '主题色': 'Accent color',
   '注册前验证': 'Pre-registration verification',
@@ -1140,7 +1208,8 @@ const Map<String, String> enDictManual = {
   '{count} 个跳过）': '{count} skipped)',
   '· {name}（{count} 首）': '· {name} ({count} songs)',
   '「{name}」已是最新版本': '"{name}" is already the latest version',
-  '「{name}」发现新版本 v{ver}，再次点击更新': '"{name}" found new version v{ver}, tap update again',
+  '「{name}」发现新版本 v{ver}，再次点击更新':
+      '"{name}" found new version v{ver}, tap update again',
   '「{name}」有新版本': '"{name}" has a new version',
   '「{name}」暂无榜单': 'No charts for "{name}"',
   '「{name}」为必填项': '"{name}" is required',
@@ -1179,14 +1248,16 @@ const Map<String, String> enDictManual = {
   '共 {count} 个文件：成功 {ok}': '{count} files: {ok} succeeded',
   '成功 {count} 个，失败 {fail} 个': '{count} succeeded, {fail} failed',
   '成功重命名 {count} 个文件': 'Renamed {count} files',
-  '将重命名 {count} 个文件，此操作不可撤销。': 'About to rename {count} files. This cannot be undone.',
+  '将重命名 {count} 个文件，此操作不可撤销。':
+      'About to rename {count} files. This cannot be undone.',
   '扫描完成，共 {count} 首': 'Scan complete: {count} songs',
   '添加 {count} 个目录并扫描': 'Add {count} folders and scan',
   '已恢复 {count} 条播放历史': 'Restored {count} play history entries',
   '已上传 {count} 首收藏歌曲': 'Uploaded {count} favorite songs',
   '已上传 {count} 条播放记录': 'Uploaded {count} play history entries',
   '已将 {count} 首歌曲导入到歌单「{name}」': 'Imported {count} songs into "{name}"',
-  '已创建歌单「{name}」，共导入 {count} 首歌曲': 'Playlist "{name}" created with {count} songs imported',
+  '已创建歌单「{name}」，共导入 {count} 首歌曲':
+      'Playlist "{name}" created with {count} songs imported',
   '已导入「{name}」，共 {count} 首歌曲': 'Imported "{name}" with {count} songs',
   '已添加到「{name}」({count} 首)': 'Added to "{name}" ({count} songs)',
   '已导入 {count} 个歌单 / {songs} 首': 'Imported {count} playlists / {songs} songs',
@@ -1198,7 +1269,8 @@ const Map<String, String> enDictManual = {
   '已取消收藏：{title}': 'Removed from favorites: {title}',
   '已收藏：{title}': 'Favorited: {title}',
   '已保存：{path}': 'Saved: {path}',
-  '已过滤时长小于 {seconds} 秒的音频文件': 'Filtered out audio files shorter than {seconds}s',
+  '已过滤时长小于 {seconds} 秒的音频文件':
+      'Filtered out audio files shorter than {seconds}s',
   '识别到 {count} 首匹配': '{count} matches found',
   '发现 {count} 个插件可更新': '{count} plugin updates available',
   '启动自动更新：已更新 {count} 个插件': 'Startup auto-update: {count} plugins updated',
@@ -1207,10 +1279,12 @@ const Map<String, String> enDictManual = {
   '已添加扫描目录，扫描到 {count} 首': 'Scan folder added; {count} songs found',
   '成功导入 {count} 首歌曲，': '{count} songs imported,',
   '新增 {count} 个歌单，': '{count} playlists added,',
-  '{count} 个目录授权已失效，可在下方重新授权': '{count} folder authorizations expired; re-authorize below',
+  '{count} 个目录授权已失效，可在下方重新授权':
+      '{count} folder authorizations expired; re-authorize below',
   '备份时间：{time}': 'Backup time: {time}',
   '歌单 {count} 个（{songs} 首）\n': '{count} playlists ({songs} songs)\n',
-  '收藏 {count} 首、收藏集 {collections} 个\n': '{count} favorite songs, {collections} collections\n',
+  '收藏 {count} 首、收藏集 {collections} 个\n':
+      '{count} favorite songs, {collections} collections\n',
   '插件 {count} 个{extra}': '{count} plugins{extra}',
   '{value}s/圈': '{value}s/rev',
   '采样率 {rates}': 'Sample rate {rates}',
@@ -1237,12 +1311,14 @@ const Map<String, String> enDictManual = {
   '{month}月{day}日 · 周{week}': '{month}/{day} · {week}',
   '{year}年{month}月{day}日': '{year}/{month}/{day}',
   '{month}月{day}日 {time}': '{month}/{day} {time}',
-  '{user}邀请你去弦予音乐听《{song}》': '{user} invites you to listen to "{song}" on XianYu Music',
+  '{user}邀请你去弦予音乐听《{song}》':
+      '{user} invites you to listen to "{song}" on XianYu Music',
   '{value} dB': '{value} dB',
   '提前 {value}ms': '{value}ms early',
   '延后 {value}ms': '{value}ms late',
   '最多上传 {count} 张图片': 'Up to {count} images',
-  '可上传截图辅助说明（最多 {count} 张）': 'Attach screenshots to help explain (up to {count})',
+  '可上传截图辅助说明（最多 {count} 张）':
+      'Attach screenshots to help explain (up to {count})',
   '{h}小时': '{h} h',
   '{h}小时{m}分': '{h} h {m} min',
   '{m}分钟': '{m} min',
@@ -1268,7 +1344,8 @@ const Map<String, String> enDictManual = {
   '{m}月{d}日 {hm}': '{m}/{d} {hm}',
   '{m}月{d}日 · 周{w}': '{m}/{d} · {w}',
   '{n} 次': '{n} times',
-  '{n} 个目录授权已失效，可在下方重新授权': '{n} folder authorizations expired, re-authorize below',
+  '{n} 个目录授权已失效，可在下方重新授权':
+      '{n} folder authorizations expired, re-authorize below',
   '{n} 首': '{n} songs',
   '{n} 首歌曲': '{n} songs',
   '{n} 首未导入。': '{n} not imported.',
@@ -1282,14 +1359,17 @@ const Map<String, String> enDictManual = {
   '{skip} 个跳过）': '{skip} skipped)',
   '{status}。\n\n': '{status}.\n\n',
   '{sub} · {n} 首': '{sub} · {n} songs',
-  '{title} · {artist}\n来自弦予音乐\n{url}': '{title} · {artist}\nFrom XianYu Music\n{url}',
+  '{title} · {artist}\n来自弦予音乐\n{url}':
+      '{title} · {artist}\nFrom XianYu Music\n{url}',
   '{v}s/圈': '{v}s/rev',
   '{y}年{m}月{d}日': '{y}/{m}/{d}',
-  '「{name}」\n当前版本：v{cur}\n新版本：v{new}\n\n是否立即更新？': '"{name}"\nCurrent: v{cur}\nNew: v{new}\n\nUpdate now?',
+  '「{name}」\n当前版本：v{cur}\n新版本：v{new}\n\n是否立即更新？':
+      '"{name}"\nCurrent: v{cur}\nNew: v{new}\n\nUpdate now?',
   '当前版本 v{ver}': 'Current version v{ver}',
   '立即更新': 'Update now',
   '稍后': 'Later',
-  '© 2026 弦予音乐 · 源码可见协议 XSAL-1.0': '© 2026 XianYu Music · Source-Available License XSAL-1.0',
+  '© 2026 弦予音乐 · 源码可见协议 XSAL-1.0':
+      '© 2026 XianYu Music · Source-Available License XSAL-1.0',
   '· {platform}（{n} 首）': '· {platform} ({n} songs)',
   '· {plugin} → {platform}（{n} 首）': '· {plugin} → {platform} ({n} songs)',
   '6-20 位数字/字母': '6-20 alphanumeric characters',
@@ -1299,9 +1379,11 @@ const Map<String, String> enDictManual = {
   'onlineDefaultQuality': 'Online default quality',
   'organizeRule': 'Organize rule',
   'sideBarExpandDirection': 'Sidebar expand direction',
-  'ZIP 中未找到 End of Central Directory Record': 'End of Central Directory Record not found in ZIP',
+  'ZIP 中未找到 End of Central Directory Record':
+      'End of Central Directory Record not found in ZIP',
   '安装失败：{msg}': 'Install failed: {msg}',
-  '按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量': 'Adjust gain using built-in ReplayGain tags for consistent loudness; songs without tags keep original volume',
+  '按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量':
+      'Adjust gain using built-in ReplayGain tags for consistent loudness; songs without tags keep original volume',
   '版本 {v}': 'Version {v}',
   '保存失败：{e}': 'Save failed: {e}',
   '本地设置尚未加载完成': 'Local settings not yet loaded',
@@ -1326,14 +1408,16 @@ const Map<String, String> enDictManual = {
   '大厅': 'Lobby',
   '大图标大字号': 'Large icons & font',
   '当前 {cur} / 上限 {max}': 'Current {cur} / Limit {max}',
-  '当前已开启，退出后设置页将隐藏调试入口': 'Currently enabled; debug entry will be hidden after leaving',
+  '当前已开启，退出后设置页将隐藏调试入口':
+      'Currently enabled; debug entry will be hidden after leaving',
   '当前已是最新版本（{v}）': 'Already the latest version ({v})',
   '当前音源': 'Current source',
   '当前音源不支持评论': 'Current source does not support comments',
   '导出失败：{e}': 'Export failed: {e}',
   '导入失败：{e}': 'Import failed: {e}',
   '导入完成：{parts}': 'Import complete: {parts}',
-  '登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：{url}': 'Root URL and signing key for login, registration, and password recovery. For self-hosted backends, copy Server API and API signing key from the dashboard. Default: {url}',
+  '登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：{url}':
+      'Root URL and signing key for login, registration, and password recovery. For self-hosted backends, copy Server API and API signing key from the dashboard. Default: {url}',
   '订阅链接 · {n}': 'Subscriptions · {n}',
   '读取「{name}」失败：{e}': 'Failed to read "{name}": {e}',
   '读取「{name}」失败或文件为空': 'Failed to read "{name}" or file is empty',
@@ -1351,14 +1435,17 @@ const Map<String, String> enDictManual = {
   '歌单 {n} 个（{songs} 首）\n': '{n} playlists ({songs} songs)\n',
   '共 {total} 个文件：成功 {ok}': '{total} files: {ok} succeeded',
   '共{n}首歌': '{n} songs total',
-  '管理员已将您的昵称修改为「{nickname}」。\n\n': 'An admin changed your nickname to "{nickname}".\n\n',
+  '管理员已将您的昵称修改为「{nickname}」。\n\n':
+      'An admin changed your nickname to "{nickname}".\n\n',
   '加载失败：{e}': 'Load failed: {e}',
   '检查更新失败：{e}': 'Update check failed: {e}',
   '简体中文': '简体中文',
-  '将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。': 'This will delete all cached remote audio files (remote source configs and library records are unaffected). The currently playing remote song may be interrupted.',
+  '将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。':
+      'This will delete all cached remote audio files (remote source configs and library records are unaffected). The currently playing remote song may be interrupted.',
   '将重命名 {n} 个文件，此操作不可撤销。': 'Will rename {n} files. This cannot be undone.',
   '解密成功（{crypto}{renamed}）': 'Decryption successful ({crypto}{renamed})',
-  '今日剩余修改机会：0 次。头像修改需管理员审核，审核通过后生效。': 'No changes left today. Avatar changes require admin approval.',
+  '今日剩余修改机会：0 次。头像修改需管理员审核，审核通过后生效。':
+      'No changes left today. Avatar changes require admin approval.',
   '今天 {hm}': 'Today {hm}',
   '开始下载：{title}': 'Downloading: {title}',
   '开始下载：{title}（{quality}）': 'Downloading: {title} ({quality})',
@@ -1389,8 +1476,10 @@ const Map<String, String> enDictManual = {
   '全部日志（{n} 条）': 'All logs ({n})',
   '缺失插件：': 'Missing plugins:',
   '确定要清空全部播放记录吗？': 'Clear all play history?',
-  '确定要清空全部收藏歌曲吗？收藏的歌单与专辑不受影响。': 'Clear all favorited songs? Playlists and albums are unaffected.',
-  '确定要清空全部下载记录吗？（不会删除已下载的文件）': 'Clear all download records? (Downloaded files will not be deleted)',
+  '确定要清空全部收藏歌曲吗？收藏的歌单与专辑不受影响。':
+      'Clear all favorited songs? Playlists and albums are unaffected.',
+  '确定要清空全部下载记录吗？（不会删除已下载的文件）':
+      'Clear all download records? (Downloaded files will not be deleted)',
   '确定要清空全部应用日志吗？此操作不可恢复。': 'Clear all app logs? This cannot be undone.',
   '确定要退出当前账号吗？': 'Log out of current account?',
   '扫描目录加载失败：{e}': 'Failed to load scan directories: {e}',
@@ -1424,7 +1513,8 @@ const Map<String, String> enDictManual = {
   '修改原因：{reason}': 'Reason: {reason}',
   '延后 {v}ms': '{v}ms late',
   '移除失败：{e}': 'Remove failed: {e}',
-  '已创建歌单「{name}」，共导入 {n} 首歌曲': 'Playlist "{name}" created with {n} songs imported',
+  '已创建歌单「{name}」，共导入 {n} 首歌曲':
+      'Playlist "{name}" created with {n} songs imported',
   '已导入「{name}」，共 {n} 首歌曲': 'Imported "{name}" with {n} songs',
   '已导入单曲「{name}」': 'Imported single song "{name}"',
   '{name}收藏夹': '{name} Favorites',
@@ -1450,10 +1540,12 @@ const Map<String, String> enDictManual = {
   '最新版本：{v}': 'Latest version: {v}',
   '昨天 {hm}': 'Yesterday {hm}',
   '成功导入备份：包含 {n} 首收藏曲目': 'Backup imported: {n} favorite songs',
-  '导入成功（{note}）：共新增 {pcount} 个歌单，包含 {scount} 首歌曲': 'Import successful ({note}): {pcount} new playlists, {scount} songs',
+  '导入成功（{note}）：共新增 {pcount} 个歌单，包含 {scount} 首歌曲':
+      'Import successful ({note}): {pcount} new playlists, {scount} songs',
   '文件格式不匹配或无法解析: {msg}': 'File format mismatch or unparseable: {msg}',
   '导入本地备份失败: {e}': 'Local backup import failed: {e}',
-  '已上传 {pcount} 个歌单 / {scount} 首': 'Uploaded {pcount} playlists / {scount} songs',
+  '已上传 {pcount} 个歌单 / {scount} 首':
+      'Uploaded {pcount} playlists / {scount} songs',
   '歌单上传失败: {e}': 'Playlist upload failed: {e}',
   '已导入 {n} 个歌单 / {scount} 首': 'Imported {n} playlists / {scount} songs',
   '歌单下载失败: {e}': 'Playlist download failed: {e}',
@@ -1495,7 +1587,8 @@ const Map<String, String> enDictManual = {
   '{n} 分钟前同步': 'Synced {n} min ago',
   '{n} 小时前同步': 'Synced {n} hr ago',
   '{n} 天前同步': 'Synced {n} days ago',
-  '同步完成：解析 {parsed} 首（共 {total} 个音频文件）': 'Sync complete: parsed {parsed} songs ({total} audio files)',
+  '同步完成：解析 {parsed} 首（共 {total} 个音频文件）':
+      'Sync complete: parsed {parsed} songs ({total} audio files)',
   'plugin://demo/测试歌曲': 'plugin://demo/test-song',
   '本地音乐 · {source}': 'Local music · {source}',
   '{date} 同步': 'Synced {date}',
@@ -1506,7 +1599,8 @@ const Map<String, String> enDictManual = {
   '未命名歌单 {n}': 'Untitled playlist {n}',
   '缺少可处理“{platform}”的插件': 'No plugin to handle "{platform}"',
   '{name} 备份（未标注版本）': '{name} backup (version unknown)',
-  '{label} 旧版备份，已还原 {n} 首歌曲 ID 以恢复逐字歌词': '{label} legacy backup, restored {n} song IDs for lyrics sync',
+  '{label} 旧版备份，已还原 {n} 首歌曲 ID 以恢复逐字歌词':
+      '{label} legacy backup, restored {n} song IDs for lyrics sync',
   '{label} 旧版备份': '{label} legacy backup',
   '{label} 新版备份': '{label} new backup',
   '插件「{name}」导入失败：{e}': 'Plugin "{name}" import failed: {e}',
@@ -1527,15 +1621,19 @@ const Map<String, String> enDictManual = {
   '登录账号': 'Account',
   '设备ID': 'Device ID',
   '位置': 'Location',
-  '扫描到二维码，确认后该设备将登录你的账号': 'A sign-in was requested on this device. Confirm to sign in.',
-  '请登录你的弦予音乐账号后，再扫描桌面端二维码确认登录。': 'Sign in to your XianYu Music account, then scan the desktop QR code to confirm sign-in.',
+  '扫描到二维码，确认后该设备将登录你的账号':
+      'A sign-in was requested on this device. Confirm to sign in.',
+  '请登录你的弦予音乐账号后，再扫描桌面端二维码确认登录。':
+      'Sign in to your XianYu Music account, then scan the desktop QR code to confirm sign-in.',
   '扫码登录': 'Scan to sign in',
   '闪光灯': 'Flashlight',
-  '将桌面端登录页的二维码对准取景框': 'Point the viewfinder at the QR code on the desktop sign-in page',
+  '将桌面端登录页的二维码对准取景框':
+      'Point the viewfinder at the QR code on the desktop sign-in page',
   '扫码失败': 'Scan failed',
   '二维码无效或已过期': 'Invalid or expired QR code',
   '登录成功': 'Sign-in successful',
-  '桌面端已登录你的弦予音乐账号。': 'The desktop app is signed in to your XianYu Music account.',
+  '桌面端已登录你的弦予音乐账号。':
+      'The desktop app is signed in to your XianYu Music account.',
   '知道了': 'Got it',
   '弦予.桌面版': 'XianYu Desktop',
   '搜索设置': 'Search settings',
@@ -1556,7 +1654,8 @@ const Map<String, String> enDictManual = {
   '投屏设备连接已断开': 'Casting device connection lost',
   '连接「{name}」失败': 'Failed to connect to "{name}"',
   '扫描': 'Scan',
-  '设备扫描失败，请检查防火墙与网络设置': 'Device scan failed. Check firewall and network settings',
+  '设备扫描失败，请检查防火墙与网络设置':
+      'Device scan failed. Check firewall and network settings',
   '本端播放将自动投到设备，播放/暂停/进度/音量即遥控该设备。':
       'Playback will automatically cast to the device. Play/pause/progress/volume remote control it.',
   'DLNA 渲染器': 'DLNA Renderer',
@@ -1575,11 +1674,9 @@ const Map<String, String> enDictManual = {
   '仅删除本机，云端与其他设备保留':
       'Remove from this device only; cloud and other devices are unaffected',
   '删除全部': 'Delete everywhere',
-  '本机、云端、其他设备一起删除':
-      'Delete from this device, the cloud, and all other devices',
+  '本机、云端、其他设备一起删除': 'Delete from this device, the cloud, and all other devices',
   '仅保留本地': 'Keep local only',
-  '云端与其他设备删除，本机保留':
-      'Delete from cloud and other devices; keep on this device',
+  '云端与其他设备删除，本机保留': 'Delete from cloud and other devices; keep on this device',
   '云端删除失败，请稍后重试': 'Cloud deletion failed. Try again later.',
   '全部启用': 'Enable all',
   '全部禁用': 'Disable all',
@@ -1608,14 +1705,18 @@ const Map<String, String> enDictManual = {
   '需要配对': 'Pairing required',
   '重连中…': 'Reconnecting…',
   '输入配对码': 'Enter pairing code',
-  '在电脑端「设置 → 联动 → 桌面联动」中查看 6 位配对码': 'Find the 6-digit code on the desktop app under Settings → Linkage → Desktop link',
+  '在电脑端「设置 → 联动 → 桌面联动」中查看 6 位配对码':
+      'Find the 6-digit code on the desktop app under Settings → Linkage → Desktop link',
   '6 位数字': '6-digit code',
   '手动连接桌面端': 'Connect to desktop manually',
-  '输入电脑端显示的地址，如 192.168.1.5:9979': 'Enter the address shown on the desktop app, e.g. 192.168.1.5:9979',
+  '输入电脑端显示的地址，如 192.168.1.5:9979':
+      'Enter the address shown on the desktop app, e.g. 192.168.1.5:9979',
   '地址格式不正确': 'Invalid address format',
   '连接失败，请检查地址与网络': 'Connection failed. Check the address and network',
-  '需要配对码，请在桌面端「设置 → 桌面联动」查看': 'Pairing code required. See Settings → Desktop link on the desktop app',
-  '扫描失败，请确认手机与电脑在同一网络': 'Scan failed. Make sure the phone and computer are on the same network',
+  '需要配对码，请在桌面端「设置 → 桌面联动」查看':
+      'Pairing code required. See Settings → Desktop link on the desktop app',
+  '扫描失败，请确认手机与电脑在同一网络':
+      'Scan failed. Make sure the phone and computer are on the same network',
   '电脑端未在播放': 'Nothing playing on the desktop',
   '上一首': 'Previous',
   '下一首': 'Next',
