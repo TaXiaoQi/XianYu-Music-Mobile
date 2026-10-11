@@ -807,13 +807,32 @@ class _ImmersiveCoverBackdrop extends StatelessWidget {
                                 songPath: cur.path,
                                 networkUrl: cur.coverUrl,
                                 radiusHint: 0,
-                                child: CoverImage(
-                                  songPath: cur.path,
-                                  networkUrl: cur.coverUrl,
-                                  width: w,
-                                  height: h,
-                                  radius: 0,
-                                  highQuality: true,
+                                child: ValueListenableBuilder<bool>(
+                                  valueListenable:
+                                      FlyingCover.instance.targetHidden,
+                                  builder: (context, hidden, _) =>
+                                      AnimatedOpacity(
+                                    // 正向飞行在途：封面图让位给飞行副本，
+                                    // 上半屏露出页面级专辑取色底（与下半
+                                    // 部分同源同色）；落地恢复淡入，与副本
+                                    // 展开淡出同步——副本「嵌入」背景，全程
+                                    // 单一封面。预测性返回同理由
+                                    // CoverReturnSource 的 returning 隐藏
+                                    // 真图，只留返回副本 + 取色底
+                                    opacity: hidden ? 0 : 1,
+                                    duration: hidden
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 300),
+                                    curve: Curves.easeOut,
+                                    child: CoverImage(
+                                      songPath: cur.path,
+                                      networkUrl: cur.coverUrl,
+                                      width: w,
+                                      height: h,
+                                      radius: 0,
+                                      highQuality: true,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
