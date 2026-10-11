@@ -83,6 +83,22 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       }
       if (playable.isEmpty) return false;
 
+      // 上次该源重搜命中的插件置顶优先：跨平台兜底成功后，
+      // 同源后续歌曲直达命中插件，免去逐首全量重搜
+      final sourceKey = _onlineSourceKey(item);
+      final learnedId =
+          sourceKey == null ? null : _reSearchPluginForSource[sourceKey];
+      if (learnedId != null) {
+        final li = playable.indexWhere((s) => s.id == learnedId);
+        if (li > 0) {
+          final p = playable.removeAt(li);
+          playable.insert(0, p);
+          AppLog.info('autoswitch', '学习映射直达: $sourceKey -> $learnedId');
+        } else if (li < 0) {
+          _reSearchPluginForSource.remove(sourceKey!);
+        }
+      }
+
       final keyword = item.artist.trim().isEmpty
           ? item.title.trim()
           : '${item.title.trim()} ${item.artist.trim()}';
@@ -222,6 +238,14 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         statsReporter.noteTrackStart();
         _syncToSystemMediaSession();
         AppLog.info('autoswitch', '重搜换源命中: ${plugin.name}');
+        final sk = _onlineSourceKey(item);
+        if (sk != null) {
+          _reSearchPluginForSource[sk] = plugin.id;
+          if (_reSearchPluginForSource.length > 32) {
+            _reSearchPluginForSource
+                .remove(_reSearchPluginForSource.keys.first);
+          }
+        }
         _showPlaybackToast(
             tr('已切换到 {source} 音源', {'source': plugin.name}));
         return true;
@@ -379,6 +403,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
           tr('已自动切换到 {source} 音源', {'source': sourceLabels[srcId] ?? srcId}));
       return true;
     }
+    // 兄弟插件与落雪换源均无果：最后用「歌名+歌手」重搜全部可用插件，
+    // 兜底「插件 A 挂掉、新装跨平台插件 B」的收藏/歌单场景
+    if (await _reSearchOnlineSource(item)) return true;
     return false;
   }
 

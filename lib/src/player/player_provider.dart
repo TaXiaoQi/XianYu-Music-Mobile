@@ -192,6 +192,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   int _stallTicks = 0;
   final Map<String, DateTime> _failedOnlineSources = {};
 
+  /// 重搜换源学习映射：源键（plugin:xxx / lx:xxx）→ 上次重搜命中的插件 id。
+  /// 跨平台兜底成功后，同源后续歌曲直达命中插件，免去逐首全量重搜
+  final Map<String, String> _reSearchPluginForSource = {};
+
   int _playEpoch = 0;
   final Set<String> _failedSources = {};
   String? _switchCtxKey;
@@ -509,25 +513,38 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (item.isOnline &&
         _skipDepth < state.queue.length &&
         _isOnlineSourceFailed(item)) {
-      AppLog.info('play', '[playAt] 快速跳过已失败音源歌曲 path=${item.path}');
-      _skipDepth++;
-      final next = _pickNextIndex();
-      if (next >= 0 && next != index) {
-        await _playAt(next);
+      // 「自动换源」模式下失败标记不拦截：标记只代表「当时的源」失败过，
+      // 插件更新/换装后必须重新尝试解析与换源，否则整源歌曲被盲目跳过，
+      // 自动换源永远没有出场机会
+      final failBehavior = _ref
+              .read(settingsProvider)
+              .valueOrNull
+              ?.onlineFailureBehavior ??
+          'skip';
+      if (failBehavior != 'autoswitch') {
+        AppLog.info(
+            'play', '[playAt] 快速跳过已失败音源歌曲 path=${item.path}');
+        _skipDepth++;
+        final next = _pickNextIndex();
+        if (next >= 0 && next != index) {
+          await _playAt(next);
+          return;
+        }
+        _skipDepth = 0;
+        state = state.copyWith(
+          queueIndex: index,
+          current: item,
+          isPlaying: false,
+          resolving: false,
+          error: tr('该音源的歌曲在当前设备上无法播放，请更换音源或重新搜索添加'),
+        );
+        _syncToSystemMediaSession();
+        _showPlaybackToast(tr('该音源的歌曲均无法播放，已停止'));
+        _replayAnchorSecs = null;
         return;
       }
-      _skipDepth = 0;
-      state = state.copyWith(
-        queueIndex: index,
-        current: item,
-        isPlaying: false,
-        resolving: false,
-        error: tr('该音源的歌曲在当前设备上无法播放，请更换音源或重新搜索添加'),
-      );
-      _syncToSystemMediaSession();
-      _showPlaybackToast(tr('该音源的歌曲均无法播放，已停止'));
-      _replayAnchorSecs = null;
-      return;
+      AppLog.info('play',
+          '[playAt] 自动换源模式重试已失败音源歌曲 path=${item.path}');
     }
     final prev = state.current;
     if (_activeProbeKey != null && (prev == null || prev.path != item.path)) {
