@@ -9,6 +9,7 @@ import 'dart:convert';
 import '../cloud_credentials_store.dart';
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
+import '../cloud_remote.dart';
 import '../cloud_types.dart';
 import '../share_link_parser.dart';
 import 'http_login_support.dart';
@@ -72,6 +73,12 @@ class BaiduProvider extends CloudProvider {
 
   @override
   Future<bool> validate(Map<String, String> cred) async {
+    final remote = await tryRemoteValidate(id, cred);
+    if (remote != null) return remote;
+    return _validateLocal(cred);
+  }
+
+  Future<bool> _validateLocal(Map<String, String> cred) async {
     try {
       final resp = await cloudGet(
         'https://pan.baidu.com/api/quota?checkfree=1&checkexpire=1'
@@ -89,6 +96,16 @@ class BaiduProvider extends CloudProvider {
 
   @override
   Future<CloudListResult> listDir(
+    Map<String, String> cred,
+    String path, {
+    String? cursor,
+  }) async {
+    final remote = await tryRemoteListDir(id, cred, path, cursor: cursor);
+    if (remote != null) return remote;
+    return _listDirLocal(cred, path, cursor: cursor);
+  }
+
+  Future<CloudListResult> _listDirLocal(
     Map<String, String> cred,
     String path, {
     String? cursor,
@@ -128,6 +145,14 @@ class BaiduProvider extends CloudProvider {
 
   @override
   Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
+    // 解析需登录态（BDUSS）；未绑定账号时在此抛出，行为与原实现一致。
+    final cred = await _soleCredOrThrow();
+    final remote = await tryRemoteParseShare(id, url, pwd, cred: cred);
+    if (remote != null) return remote;
+    return _parseShareLinkLocal(url, pwd);
+  }
+
+  Future<CloudShareParse> _parseShareLinkLocal(String url, String? pwd) async {
     final info = parseUrlToProvider(url);
     final surl = info?.shareId ?? url;
     // verify 换 randsk（BDCLND）；无提取码的分享 verify 也走一遍拿空 sekey。
@@ -196,6 +221,15 @@ class BaiduProvider extends CloudProvider {
 
   @override
   Future<List<CloudFile>> transferShareFiles(
+    Map<String, String> cred,
+    CloudShareParse share,
+  ) async {
+    final remote = await tryRemoteTransferShare(id, cred, share);
+    if (remote != null) return remote;
+    return _transferShareFilesLocal(cred, share);
+  }
+
+  Future<List<CloudFile>> _transferShareFilesLocal(
     Map<String, String> cred,
     CloudShareParse share,
   ) async {
@@ -285,6 +319,13 @@ class BaiduProvider extends CloudProvider {
 
   @override
   Future<CloudDirectLink> getDirectLink(
+      Map<String, String> cred, CloudFile file) async {
+    final remote = await tryRemoteDirectLink(id, cred, file);
+    if (remote != null) return remote;
+    return _getDirectLinkLocal(cred, file);
+  }
+
+  Future<CloudDirectLink> _getDirectLinkLocal(
       Map<String, String> cred, CloudFile file) async {
     final metaResp = await cloudGet(
       'https://pan.baidu.com/rest/2.0/xpan/multimedia?method=filemetas'

@@ -99,19 +99,21 @@ Future<CloudListResult?> tryRemoteListDir(
   }
 }
 
-/// 分享链接解析（不需要登录态；服务端同样免凭据）。
+/// 分享链接解析。绝大多数盘免凭据；需登录态的盘（如百度）经 [cred] 携带。
 Future<CloudShareParse?> tryRemoteParseShare(
   String provider,
   String url,
-  String? pwd,
-) async {
+  String? pwd, {
+  Map<String, String>? cred,
+}) async {
   try {
     final data = await CloudRemote.call(
-        provider, 'parse_share', const <String, String>{}, {
+        provider, 'parse_share', cred ?? const <String, String>{}, {
       'url': url,
       if (pwd != null && pwd.isNotEmpty) 'pwd': pwd,
     });
     if (data == null) return null;
+    if (cred != null) await _applyRotatedCred(provider, cred, data);
     final result = data['result'];
     if (result is! Map<String, dynamic>) return null;
     final files = ((result['files'] as List?) ?? const [])

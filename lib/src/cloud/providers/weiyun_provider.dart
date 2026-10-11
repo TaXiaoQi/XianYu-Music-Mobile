@@ -7,6 +7,7 @@ import 'dart:convert';
 
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
+import '../cloud_remote.dart';
 import '../cloud_types.dart';
 import '../share_link_parser.dart';
 import 'http_login_support.dart';
@@ -95,6 +96,12 @@ class WeiyunProvider extends CloudProvider {
 
   @override
   Future<bool> validate(Map<String, String> cred) async {
+    final remote = await tryRemoteValidate(id, cred);
+    if (remote != null) return remote;
+    return _validateLocal(cred);
+  }
+
+  Future<bool> _validateLocal(Map<String, String> cred) async {
     try {
       final resp = await cloudPostJson(
         'https://weiyun.com/webapp/json/weiyunShareNetdisk/WeiyunNetdiskDirList',
@@ -125,6 +132,16 @@ class WeiyunProvider extends CloudProvider {
 
   @override
   Future<CloudListResult> listDir(
+    Map<String, String> cred,
+    String path, {
+    String? cursor,
+  }) async {
+    final remote = await tryRemoteListDir(id, cred, path, cursor: cursor);
+    if (remote != null) return remote;
+    return _listDirLocal(cred, path, cursor: cursor);
+  }
+
+  Future<CloudListResult> _listDirLocal(
     Map<String, String> cred,
     String path, {
     String? cursor,
@@ -182,6 +199,12 @@ class WeiyunProvider extends CloudProvider {
 
   @override
   Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
+    final remote = await tryRemoteParseShare(id, url, pwd);
+    if (remote != null) return remote;
+    return _parseShareLinkLocal(url, pwd);
+  }
+
+  Future<CloudShareParse> _parseShareLinkLocal(String url, String? pwd) async {
     final info = parseUrlToProvider(url);
     final shareKey = info?.shareId ?? url;
     // 分享页提取 shareKey 兜底（页面 JS 变量，脆弱）。
@@ -232,6 +255,15 @@ class WeiyunProvider extends CloudProvider {
     Map<String, String> cred,
     CloudShareParse share,
   ) async {
+    final remote = await tryRemoteTransferShare(id, cred, share);
+    if (remote != null) return remote;
+    return _transferShareFilesLocal(cred, share);
+  }
+
+  Future<List<CloudFile>> _transferShareFilesLocal(
+    Map<String, String> cred,
+    CloudShareParse share,
+  ) async {
     final resp = await cloudPostJson(
       'https://weiyun.com/webapp/json/weiyunNetdiskClient/CopySaveFile',
       body: {
@@ -259,6 +291,13 @@ class WeiyunProvider extends CloudProvider {
 
   @override
   Future<CloudDirectLink> getDirectLink(
+      Map<String, String> cred, CloudFile file) async {
+    final remote = await tryRemoteDirectLink(id, cred, file);
+    if (remote != null) return remote;
+    return _getDirectLinkLocal(cred, file);
+  }
+
+  Future<CloudDirectLink> _getDirectLinkLocal(
       Map<String, String> cred, CloudFile file) async {
     final resp = await cloudPostJson(
       'https://weiyun.com/webapp/json/weiyunNetdiskClient/WebdiskDownloadRedirect',

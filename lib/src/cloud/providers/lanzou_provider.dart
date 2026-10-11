@@ -6,6 +6,7 @@
 
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
+import '../cloud_remote.dart';
 import '../cloud_types.dart';
 import '../share_link_parser.dart';
 import 'http_login_support.dart';
@@ -94,6 +95,12 @@ class LanzouProvider extends CloudProvider {
 
   @override
   Future<bool> validate(Map<String, String> cred) async {
+    final remote = await tryRemoteValidate(id, cred);
+    if (remote != null) return remote;
+    return _validateLocal(cred);
+  }
+
+  Future<bool> _validateLocal(Map<String, String> cred) async {
     try {
       final resp = await cloudGet(
         'https://pc.woozooo.com/mydisk.php?item=files&action=index',
@@ -109,6 +116,16 @@ class LanzouProvider extends CloudProvider {
 
   @override
   Future<CloudListResult> listDir(
+    Map<String, String> cred,
+    String path, {
+    String? cursor,
+  }) async {
+    final remote = await tryRemoteListDir(id, cred, path, cursor: cursor);
+    if (remote != null) return remote;
+    return _listDirLocal(cred, path, cursor: cursor);
+  }
+
+  Future<CloudListResult> _listDirLocal(
     Map<String, String> cred,
     String path, {
     String? cursor,
@@ -172,9 +189,15 @@ class LanzouProvider extends CloudProvider {
 
   // ── 分享 ──────────────────────────────────────────────
 
-  /// 免登录免转存：每个文件解析出直链塞 token。
   @override
   Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
+    final remote = await tryRemoteParseShare(id, url, pwd);
+    if (remote != null) return remote;
+    return _parseShareLinkLocal(url, pwd);
+  }
+
+  /// 免登录免转存：每个文件解析出直链塞 token。
+  Future<CloudShareParse> _parseShareLinkLocal(String url, String? pwd) async {
     final info = parseUrlToProvider(url);
     final shareUrl = info?.url ?? url;
     final files = await _resolveSharePageFiles(shareUrl);
@@ -190,6 +213,16 @@ class LanzouProvider extends CloudProvider {
 
   @override
   Future<CloudDirectLink> getShareDirectLink(
+    Map<String, String>? cred,
+    CloudShareParse share,
+    CloudFile file,
+  ) async {
+    final remote = await tryRemoteShareDirectLink(id, cred, share, file);
+    if (remote != null) return remote;
+    return _getShareDirectLinkLocal(cred, share, file);
+  }
+
+  Future<CloudDirectLink> _getShareDirectLinkLocal(
     Map<String, String>? cred,
     CloudShareParse share,
     CloudFile file,
@@ -222,9 +255,18 @@ class LanzouProvider extends CloudProvider {
     throw const CloudException('分享已失效');
   }
 
-  // directPlayable=true，不支持转存。
   @override
   Future<List<CloudFile>> transferShareFiles(
+    Map<String, String> cred,
+    CloudShareParse share,
+  ) async {
+    final remote = await tryRemoteTransferShare(id, cred, share);
+    if (remote != null) return remote;
+    return _transferShareFilesLocal(cred, share);
+  }
+
+  // directPlayable=true，不支持转存。
+  Future<List<CloudFile>> _transferShareFilesLocal(
     Map<String, String> cred,
     CloudShareParse share,
   ) {
@@ -233,9 +275,16 @@ class LanzouProvider extends CloudProvider {
 
   // ── 直链 ──────────────────────────────────────────────
 
-  /// 我的网盘文件：file.token 为分享页地址（浏览页入口解析时写入）。
   @override
   Future<CloudDirectLink> getDirectLink(
+      Map<String, String> cred, CloudFile file) async {
+    final remote = await tryRemoteDirectLink(id, cred, file);
+    if (remote != null) return remote;
+    return _getDirectLinkLocal(cred, file);
+  }
+
+  /// 我的网盘文件：file.token 为分享页地址（浏览页入口解析时写入）。
+  Future<CloudDirectLink> _getDirectLinkLocal(
       Map<String, String> cred, CloudFile file) async {
     final link = file.token ?? '';
     if (link.startsWith('http')) {
