@@ -199,13 +199,48 @@ class _MostPlayedList extends ConsumerWidget {
             ),
           );
         }
-        return Column(
-          children: [
-            for (var i = 0; i < entries.length; i++) ...[
-              _MostPlayedRow(entry: entries[i], themeSlot: themeSlot),
-              if (i != entries.length - 1) const SizedBox(height: 8),
-            ],
-          ],
+        return LayoutBuilder(
+          builder: (context, cons) {
+            // 横屏下与日推一致按宽度铺 2~3 列，避免单列留大片空白
+            final columns = useLandscape(ref)
+                ? (cons.maxWidth / 200).floor().clamp(1, 3).toInt()
+                : 1;
+            if (columns <= 1) {
+              return Column(
+                children: [
+                  for (var i = 0; i < entries.length; i++) ...[
+                    _MostPlayedRow(entry: entries[i], themeSlot: themeSlot),
+                    if (i != entries.length - 1) const SizedBox(height: 8),
+                  ],
+                ],
+              );
+            }
+            final per = (entries.length / columns).ceil();
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var c = 0; c < columns; c++) ...[
+                  if (c > 0) const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        for (var i = c * per;
+                            i < (c + 1) * per && i < entries.length;
+                            i++)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: i == entries.length - 1 ? 0 : 8,
+                            ),
+                            child: _MostPlayedRow(
+                                entry: entries[i], themeSlot: themeSlot),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
         );
       },
     );

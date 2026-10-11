@@ -195,13 +195,48 @@ class _DailyCard extends ConsumerWidget {
                 ),
               ),
             )
-          : Column(
-              children: [
-                for (var i = 0; i < items.length; i++) ...[
-                  _dailyRow(scheme, items[i]),
-                  if (i != items.length - 1) const SizedBox(height: 8),
-                ],
-              ],
+          : LayoutBuilder(
+              builder: (context, cons) {
+                // 横屏下卡片全宽，单列会留大片空白：按可用宽度铺 2~3 列
+                final columns = useLandscape(ref)
+                    ? (cons.maxWidth / 200).floor().clamp(1, 3).toInt()
+                    : 1;
+                if (columns <= 1) {
+                  return Column(
+                    children: [
+                      for (var i = 0; i < items.length; i++) ...[
+                        _dailyRow(scheme, items[i]),
+                        if (i != items.length - 1) const SizedBox(height: 8),
+                      ],
+                    ],
+                  );
+                }
+                // 按列填充（列内自上而下），各列高度尽量均衡
+                final per = (items.length / columns).ceil();
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (var c = 0; c < columns; c++) ...[
+                      if (c > 0) const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            for (var i = c * per;
+                                i < (c + 1) * per && i < items.length;
+                                i++)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: i == items.length - 1 ? 0 : 8,
+                                ),
+                                child: _dailyRow(scheme, items[i]),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
     );
   }
