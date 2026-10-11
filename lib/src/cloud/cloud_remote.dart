@@ -34,17 +34,20 @@ class CloudRemote {
       await gateway?.call(provider, op, cred, params);
 }
 
-/// rotated_cred 回写：云端刷新的凭据落盘（按 accountId 定位账号）。
+/// rotated_cred 回写：云端刷新的凭据落盘。
+/// accountId 定位规则：cred 内冗余的 accountId 键（阿里登录时存入）；
+/// 免登录分享直链无凭据，跳过回写。
 Future<void> _applyRotatedCred(
   String provider,
-  String accountId,
+  Map<String, String> cred,
   Map<String, dynamic> data,
 ) async {
   final rotated = data['rotated_cred'];
   if (rotated is! Map<String, dynamic> || rotated.isEmpty) return;
+  final accountId = cred['accountId'] ?? '';
   if (accountId.isEmpty || accountId == '_') return;
-  final cred = rotated.map((k, v) => MapEntry(k, v.toString()));
-  await CloudCredentialsStore.instance.updateCred(provider, accountId, cred);
+  await CloudCredentialsStore.instance
+      .updateCred(provider, accountId, rotated.map((k, v) => MapEntry(k, v.toString())));
 }
 
 CloudFile _fileFromJson(Map<String, dynamic> j) => CloudFile.fromJson(j);
@@ -52,14 +55,13 @@ CloudFile _fileFromJson(Map<String, dynamic> j) => CloudFile.fromJson(j);
 /// 凭据有效性检查。null = 远程不可用；true/false = 云端判定。
 Future<bool?> tryRemoteValidate(
   String provider,
-  String accountId,
   Map<String, String> cred,
 ) async {
   try {
     final data = await CloudRemote.call(
         provider, 'validate', cred, const <String, dynamic>{});
     if (data == null) return null;
-    await _applyRotatedCred(provider, accountId, data);
+    await _applyRotatedCred(provider, cred, data);
     final result = data['result'];
     return result is Map<String, dynamic> && result['valid'] == true;
   } catch (_) {
@@ -70,7 +72,6 @@ Future<bool?> tryRemoteValidate(
 /// 列目录。null = 远程不可用（调用方走本地直连）。
 Future<CloudListResult?> tryRemoteListDir(
   String provider,
-  String accountId,
   Map<String, String> cred,
   String path, {
   String? cursor,
@@ -81,7 +82,7 @@ Future<CloudListResult?> tryRemoteListDir(
       if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
     });
     if (data == null) return null;
-    await _applyRotatedCred(provider, accountId, data);
+    await _applyRotatedCred(provider, cred, data);
     final result = data['result'];
     if (result is! Map<String, dynamic>) return null;
     final files = ((result['files'] as List?) ?? const [])
@@ -133,7 +134,6 @@ Future<CloudShareParse?> tryRemoteParseShare(
 /// 转存分享文件。null = 远程不可用。
 Future<List<CloudFile>?> tryRemoteTransferShare(
   String provider,
-  String accountId,
   Map<String, String> cred,
   CloudShareParse share,
 ) async {
@@ -147,7 +147,7 @@ Future<List<CloudFile>?> tryRemoteTransferShare(
       },
     });
     if (data == null) return null;
-    await _applyRotatedCred(provider, accountId, data);
+    await _applyRotatedCred(provider, cred, data);
     final result = data['result'];
     if (result is! Map<String, dynamic>) return null;
     final files = ((result['files'] as List?) ?? const [])
@@ -164,7 +164,6 @@ Future<List<CloudFile>?> tryRemoteTransferShare(
 /// 我的网盘文件直链。null = 远程不可用。
 Future<CloudDirectLink?> tryRemoteDirectLink(
   String provider,
-  String accountId,
   Map<String, String> cred,
   CloudFile file,
 ) async {
@@ -173,7 +172,7 @@ Future<CloudDirectLink?> tryRemoteDirectLink(
       'file': file.toJson(),
     });
     if (data == null) return null;
-    await _applyRotatedCred(provider, accountId, data);
+    await _applyRotatedCred(provider, cred, data);
     final result = data['result'];
     if (result is! Map<String, dynamic>) return null;
     final headers = ((result['headers'] as Map<String, dynamic>?) ?? const {})
@@ -197,7 +196,6 @@ Future<CloudDirectLink?> tryRemoteDirectLink(
 /// 分享文件免转存直链。null = 远程不可用。
 Future<CloudDirectLink?> tryRemoteShareDirectLink(
   String provider,
-  String accountId,
   Map<String, String>? cred,
   CloudShareParse share,
   CloudFile file,
@@ -214,7 +212,7 @@ Future<CloudDirectLink?> tryRemoteShareDirectLink(
       'file': file.toJson(),
     });
     if (data == null) return null;
-    await _applyRotatedCred(provider, accountId, data);
+    await _applyRotatedCred(provider, cred ?? const <String, String>{}, data);
     final result = data['result'];
     if (result is! Map<String, dynamic>) return null;
     final headers = ((result['headers'] as Map<String, dynamic>?) ?? const {})
