@@ -664,6 +664,7 @@ class _TraditionalCover extends StatelessWidget {
                 height: size,
                 radius: 23,
                 highQuality: true,
+                cacheWidth: CoverImage.fullCoverDecodePx(),
                 gradient: [
                   scheme.primary,
                   scheme.primary.withValues(alpha: 0.72),
@@ -831,6 +832,8 @@ class _ImmersiveCoverBackdrop extends StatelessWidget {
                                       height: h,
                                       radius: 0,
                                       highQuality: true,
+                                      cacheWidth:
+                                          CoverImage.fullCoverDecodePx(),
                                     ),
                                   ),
                                 ),
@@ -1076,6 +1079,7 @@ class _BigCover extends StatelessWidget {
                     height: coverSize,
                     radius: 31,
                     highQuality: true,
+                    cacheWidth: CoverImage.fullCoverDecodePx(),
                     gradient: [
                       scheme.primary,
                       scheme.primary.withValues(alpha: 0.72),

@@ -964,6 +964,13 @@ const _settingsSearchItems = <_SearchItem>[
     keywords: '账户 登录 服务端',
   ),
   _SearchItem(
+    label: '网盘',
+    section: '账号',
+    path: '/cloud',
+    categoryName: '网盘账号绑定',
+    keywords: '网盘 百度 阿里 夸克 UC 天翼 迅雷 123 PikPak 蓝奏 微云 绑定 分享链接 导入',
+  ),
+  _SearchItem(
     label: '常规',
     section: '设置分类',
     path: '/settings/general',

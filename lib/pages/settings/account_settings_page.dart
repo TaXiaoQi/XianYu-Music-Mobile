@@ -64,6 +64,9 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
         onLogout: user != null ? _confirmLogout : null,
       ),
       const SizedBox(height: 24),
+      _sectionTitle(context, tr('网盘')),
+      const _CloudEntryCard(),
+      const SizedBox(height: 24),
       _sectionTitle(context, tr('服务端设置')),
       const _ServerConfigCard(),
       const SizedBox(height: 24),
@@ -257,6 +260,63 @@ class _AccountStatusCard extends ConsumerWidget {
             fontSize: 20,
             fontWeight: FontWeight.bold,
             color: scheme.onPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CloudEntryCard extends ConsumerWidget {
+  const _CloudEntryCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.push('/cloud'),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.cloud_rounded, size: 22, color: scheme.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tr('网盘账号绑定'),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      tr('绑定百度、阿里、夸克等网盘，播放网盘内的音乐'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 22,
+                color: scheme.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
       ),
@@ -538,6 +598,13 @@ class _UploadConfigCard extends ConsumerWidget {
           onChanged: (v) =>
               notifier.updateUploadConfig(config.copyWith(settings: v)),
         ),
+        _SwitchTile(
+          title: tr('网盘账号'),
+          subtitle: tr('加密同步已绑定的网盘登录状态'),
+          value: config.cloudCreds,
+          onChanged: (v) =>
+              notifier.updateUploadConfig(config.copyWith(cloudCreds: v)),
+        ),
       ],
     );
   }
@@ -553,6 +620,7 @@ class _ManualSyncCard extends ConsumerWidget {
           s.favoritesSync,
           s.pluginSync,
           s.settingsSync,
+          s.cloudCredsSync,
         )));
     final notifier = ref.read(syncProvider.notifier);
 
@@ -581,6 +649,12 @@ class _ManualSyncCard extends ConsumerWidget {
           state: sync.$4,
           onUpload: notifier.syncSettingsUpload,
           onDownload: notifier.syncSettingsDownload,
+        ),
+        _SyncActionTile(
+          title: tr('网盘账号'),
+          state: sync.$5,
+          onUpload: notifier.syncCloudCredsUpload,
+          onDownload: notifier.syncCloudCredsDownload,
         ),
       ],
     );

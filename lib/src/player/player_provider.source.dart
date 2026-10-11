@@ -284,6 +284,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
     if (_switchCtxKey != key) {
       _switchCtxKey = key;
       _failedSources.clear();
+      _urlFailedPlugins.clear();
     }
     if (item.title.trim().isEmpty) return false;
     AppLog.info('autoswitch', '起播失败自动换源: ${item.title}');
@@ -504,8 +505,14 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         error: null,
       );
       _skipDepth = 0;
-      await _startOnlineUrl(hit.url,
-          headers: hit.headers, item: item, ekey: hit.ekey, cek: hit.cek);
+      try {
+        await _startOnlineUrl(hit.url,
+            headers: hit.headers, item: item, ekey: hit.ekey, cek: hit.cek);
+      } catch (_) {
+        // 换源直链播放失败：标记提供者，下一轮换源跳过它避免死循环
+        _markPluginUrlFailed(_lastSiblingHitPluginId);
+        return false;
+      }
       state = state.copyWith(resolving: false, error: null);
       statsReporter.resetCounters();
       statsReporter.recordRecentPlay(item);
@@ -638,6 +645,24 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
     }
   }
 
+  /// 近期「URL 播放失败」的插件标记与兄弟换源排除逻辑。
+  /// 存储字段（_urlFailedPlugins/_lastSiblingHitPluginId）在主类中声明。
+
+  void _markPluginUrlFailed(String pluginId) {
+    if (pluginId.isEmpty) return;
+    _urlFailedPlugins[pluginId] = DateTime.now();
+  }
+
+  bool _isPluginUrlFailed(String pluginId) {
+    final t = _urlFailedPlugins[pluginId];
+    if (t == null) return false;
+    if (DateTime.now().isBefore(t.add(const Duration(minutes: 10)))) {
+      return true;
+    }
+    _urlFailedPlugins.remove(pluginId);
+    return false;
+  }
+
   Future<ResolvedMediaUrl?> _resolveViaSiblingPlugin({
     required String failedId,
     required String format,
@@ -663,9 +688,12 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         format: pluginFormat,
         excludeId: failedId,
       ).take(3).toList();
+      final fresh =
+          candidates.where((p) => !_isPluginUrlFailed(p.id)).toList();
+      final usable = fresh.isNotEmpty ? fresh : candidates;
       AppLog.info('autoswitch',
-          '兄弟插件换源 label=$platformLabel failedId=$failedId candidates=${candidates.length}');
-      for (final plugin in candidates) {
+          '兄弟插件换源 label=$platformLabel failedId=$failedId candidates=${candidates.length} 可用=${usable.length}');
+      for (final plugin in usable) {
         final ResolvedMediaUrl? hit;
         if (plugin.format.isMfCompatible) {
           hit = await engine
@@ -700,8 +728,10 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         if (hit == null) {
           continue;
         }
+        _lastSiblingHitPluginId = plugin.id;
         return hit;
       }
+      _lastSiblingHitPluginId = '';
       return null;
     } catch (e) {
       return null;

@@ -74,6 +74,10 @@ dependencies:
   crypto: ^3.0.0
   # 插件同步：用户变量（API key / Cookie）AES-256-CBC 加密（对齐桌面端）
   encrypt: ^5.0.3
+  # 网盘登录：天翼 logbox RSA-PKCS1 加密（encrypt 未导出 RSA 原语）
+  pointycastle: ^3.9.1
+  # 网盘扫码登录：123 盘二维码渲染
+  qr_flutter: ^4.1.0
   # 敏感凭据安全存储（Android Keystore / iOS Keychain）：
   # 登录 token 加密密钥、桌面联动 token。鸿蒙由下方 vendored 插件提供
   # 真安全存储（HUKS），插件缺失时 SecureStore 回退 SharedPreferences

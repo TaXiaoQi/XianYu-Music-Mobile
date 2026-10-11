@@ -377,17 +377,11 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     final bottom = MediaQuery.of(context).padding.bottom;
     _fallbackRect = Rect.fromLTWH(20, size.height - bottom - 64, 46, 46);
 
-    // 飞行副本解码宽度按目的地大封面计算，并与真封面一样走 highQuality
-    // 全图：与播放页同文件同解码宽度 → FileImage 缓存命中同一条目，飞行
-    // 全程清晰且落地无二次解码跳变。传统播放页竖屏 coverSize = 屏宽×0.68；
-    // 沉浸式封面目标为全宽矩形，按锚点实时矩形宽度取值（未就绪回落屏宽）。
-    final t0 = widget.targetProvider?.call();
-    final targetW = (t0 != null && !t0.isEmpty && t0.width > 0)
-        ? t0.width
-        : size.shortestSide * 0.68;
-    _cacheWidth = (targetW * MediaQuery.of(context).devicePixelRatio)
-        .round()
-        .clamp(1, 1600);
+    // 飞行副本解码宽度与真封面/预取预热统一（CoverImage.fullCoverDecodePx），
+    // 与播放页同文件同解码宽度 → ImageCache 命中同一条目，飞行首帧即高清、
+    // 落地无二次解码跳变。旧逻辑按目标矩形宽计算，与预热条目分键不命中，
+    // 飞行前段只能显示缩略图占位（观感为模糊封面）。
+    _cacheWidth = CoverImage.fullCoverDecodePx();
 
     _p0 = widget.fromRect.center;
 

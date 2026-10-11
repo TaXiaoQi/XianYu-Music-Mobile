@@ -1162,9 +1162,14 @@ class _TraditionalPlayerLayoutState
                 opacity: _showLyrics ? 0 : 1,
                 duration: const Duration(milliseconds: 320),
                 curve: Curves.easeOut,
-                child: _ImmersiveCoverBackdrop(
-                  current: current,
-                  height: coverHeight,
+                // 图层边界：切页淡出/淡入期间整块内容（ShaderMask+大图）
+                // 缓存为独立合成层，位移与透明度由合成器插值，
+                // 不再逐帧重栅格化 saveLayer——沉浸模式滑歌词页的主要掉帧源
+                child: RepaintBoundary(
+                  child: _ImmersiveCoverBackdrop(
+                    current: current,
+                    height: coverHeight,
+                  ),
                 ),
               ),
             ),

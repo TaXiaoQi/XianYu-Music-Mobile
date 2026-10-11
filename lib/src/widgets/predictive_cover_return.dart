@@ -322,6 +322,7 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
                       height: h,
                       radius: radius,
                       highQuality: true,
+                      cacheWidth: CoverImage.fullCoverDecodePx(),
                     ),
                   ),
                 ),

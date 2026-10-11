@@ -16,6 +16,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../auth/account_api.dart';
+import '../cloud/cloud_credentials_store.dart';
+import '../cloud/cloud_registry.dart';
+import '../cloud/cloud_types.dart';
+import '../cloud/direct_link_cache.dart';
 import '../core/application_logger.dart';
 import '../core/diagnostics.dart';
 import '../core/db_path.dart';
@@ -60,6 +64,7 @@ part 'player_provider.quality.dart';
 part 'player_provider.online.dart';
 part 'player_provider.source.dart';
 part 'player_provider.cast.dart';
+part 'player_provider.cloud.dart';
 part 'player_provider.types.dart';
 part 'player_provider.media_handler.dart';
 
@@ -198,6 +203,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   int _playEpoch = 0;
   final Set<String> _failedSources = {};
+
+  /// 近期「URL 播放失败」的插件（id → 失败时间，10 分钟 TTL）。
+  /// 兄弟换源候选排除这些插件：解析成功≠可播（如返回已 404 的直链），
+  /// 不排除会导致每轮换源都选中同一失效插件形成死循环。
+  final Map<String, DateTime> _urlFailedPlugins = {};
+
+  /// 最近一次兄弟换源命中直链的插件 id；播放失败时据此标记
+  String _lastSiblingHitPluginId = '';
   String? _switchCtxKey;
   DateTime? _lastAutoSwitchAt;
   String? _lastAutoSwitchPath;
@@ -592,6 +605,23 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           }
           if (epoch != _playEpoch) return;
           await _playOnline(
+            item,
+            startAtSecs: startAtSecs,
+            startPlayback: !continueStatsSession || wasPlaying,
+          );
+          if (epoch != _playEpoch) return;
+        } else if (item.path.startsWith('cloud://')) {
+          // 网盘曲目：解析直链后复用在线 URL 管线（代理/DSP/ExoPlayer 全复用）
+          await _stopExclusive();
+          if (epoch != _playEpoch) return;
+          try {
+            await _player.stop();
+          } catch (e) {
+            AppLog.warn('player', '播放器停止失败: $e');
+          }
+          if (epoch != _playEpoch) return;
+          state = state.copyWith(resolving: true);
+          await _playCloud(
             item,
             startAtSecs: startAtSecs,
             startPlayback: !continueStatsSession || wasPlaying,

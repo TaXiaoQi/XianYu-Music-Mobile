@@ -33,6 +33,12 @@ import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
 import '../../pages/settings/settings_category_page.dart';
 import '../../pages/settings/account_settings_page.dart';
+import '../../pages/cloud/cloud_bind_page.dart';
+import '../../pages/cloud/cloud_browser_page.dart';
+import '../../pages/cloud/cloud_link_import_page.dart';
+import '../../pages/cloud/cloud_password_login_page.dart';
+import '../../pages/cloud/cloud_qrcode_login_page.dart';
+import '../../pages/cloud/cloud_webview_login_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/feedback/feedback_page.dart';
@@ -237,6 +243,65 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _coverPage(
         context,
         (_) => const AccountSettingsPage(),
+        key: state.pageKey,
+        location: state.matchedLocation,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const CloudBindPage(),
+        key: state.pageKey,
+        location: state.matchedLocation,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud/webview-login/:id',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => CloudWebviewLoginPage(
+          providerId: state.pathParameters['id'] ?? '',
+        ),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud/password-login/:id',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => CloudPasswordLoginPage(
+          providerId: state.pathParameters['id'] ?? '',
+        ),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud/qrcode-login/:id',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => CloudQrcodeLoginPage(
+          providerId: state.pathParameters['id'] ?? '',
+        ),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud/browser/:id',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => CloudBrowserPage(
+          providerId: state.pathParameters['id'] ?? '',
+          accountId: state.uri.queryParameters['account'],
+        ),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud/link-import',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const CloudLinkImportPage(),
         key: state.pageKey,
         location: state.matchedLocation,
       ),

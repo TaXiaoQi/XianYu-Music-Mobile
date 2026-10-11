@@ -1,4 +1,4 @@
-﻿part of 'player_provider.dart';
+part of 'player_provider.dart';
 
 class QueueItem {
   final String path;
@@ -15,6 +15,8 @@ class QueueItem {
   final bool fromDailyRecommend;
   /// DLNA 直传歌词地址（桌面端经 httpd 伺服的 xianyu:lyric），仅被投曲目携带
   final String? lyricUrl;
+  /// 网盘播放上下文（CloudPlayContext JSON），仅网盘曲目携带
+  final String? cloudInfoJson;
   const QueueItem({
     required this.path,
     required this.title,
@@ -29,12 +31,16 @@ class QueueItem {
     this.onlineInfoJson,
     this.fromDailyRecommend = false,
     this.lyricUrl,
+    this.cloudInfoJson,
   });
 
   bool get isOnline =>
       path.startsWith('lx://') ||
       path.startsWith('plugin://') ||
       onlineInfoJson != null;
+
+  /// 网盘曲目（cloud:// 播放标识 + cloudInfoJson 上下文）
+  bool get isCloud => path.startsWith('cloud://') && cloudInfoJson != null;
 
   /// 本地优先：播链歌已下载到本地时，把播放源换成对应本地文件。
   /// 清空在线信息使 isOnline 判定走本地播放管线（不再在线解析），
@@ -50,6 +56,7 @@ class QueueItem {
         coverPath: coverPath,
         fromDailyRecommend: fromDailyRecommend,
         lyricUrl: lyricUrl,
+        cloudInfoJson: cloudInfoJson,
       );
 
   QueueItem copyWith({String? coverPath}) => QueueItem(
@@ -66,6 +73,7 @@ class QueueItem {
         onlineInfoJson: onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
         lyricUrl: lyricUrl,
+        cloudInfoJson: cloudInfoJson,
       );
 
   QueueItem copyWithQuality(String quality) => QueueItem(
@@ -82,6 +90,7 @@ class QueueItem {
         onlineInfoJson: onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
         lyricUrl: lyricUrl,
+        cloudInfoJson: cloudInfoJson,
       );
 
   QueueItem copyWithOnlineSource({
@@ -103,6 +112,7 @@ class QueueItem {
         onlineInfoJson: onlineInfoJson ?? this.onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
         lyricUrl: lyricUrl,
+        cloudInfoJson: cloudInfoJson,
       );
 }
 

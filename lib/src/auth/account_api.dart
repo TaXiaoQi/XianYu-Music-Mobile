@@ -445,6 +445,32 @@ class AccountApi {
         .toList();
   }
 
+  /// 上传本地密封的网盘凭据串（`xy1:<iv>:<密文>`，服务端只见密文）。
+  Future<void> uploadCloudCreds(String sealed) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录后再同步网盘账号'));
+    }
+    await _action('cloud_creds_upload', {
+      'user_id': ciyuanxiId,
+      'sealed': sealed,
+    }, fetchTimeoutMs: 20000);
+  }
+
+  /// 拉取云端网盘凭据串；云端无数据返回 null。
+  Future<String?> downloadCloudCreds() async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录后再同步网盘账号'));
+    }
+    final data = await _action('cloud_creds_download', {
+      'user_id': ciyuanxiId,
+    }, fetchTimeoutMs: 15000);
+    final sealed = data['sealed'];
+    if (sealed is String && sealed.isNotEmpty) return sealed;
+    return null;
+  }
+
   Future<int> uploadHistory(List<Map<String, dynamic>> history) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {

@@ -242,6 +242,7 @@ extension PlayerNotifierSession on PlayerNotifier {
             onlineSongJson: meta['onlineSongJson'] as String?,
             onlineQuality: meta['onlineQuality'] as String?,
             onlineInfoJson: meta['onlineInfoJson'] as String?,
+            cloudInfoJson: meta['cloudInfoJson'] as String?,
             fromDailyRecommend: meta['fromDailyRecommend'] as bool? ?? false,
           ));
         } else {
@@ -419,6 +420,7 @@ extension PlayerNotifierSession on PlayerNotifier {
           'onlineSongJson': q.onlineSongJson,
           'onlineQuality': q.onlineQuality,
           'onlineInfoJson': q.onlineInfoJson,
+          'cloudInfoJson': q.cloudInfoJson,
         };
       }
 

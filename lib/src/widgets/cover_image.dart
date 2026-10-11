@@ -59,6 +59,21 @@ class CoverImage extends ConsumerStatefulWidget {
           dbPath: dbPath,
           cacheRoot: cacheRoot);
 
+  /// 大封面统一解码宽度（物理屏宽，封顶 1600）。
+  ///
+  /// 飞行副本、播放页真封面、返回副本与预取预热全部使用同一宽度，
+  /// ImageCache 按 (源, 解码宽) 分键——宽度一致才能命中同一条目：
+  /// 预热阶段解码完成后，飞行副本/真封面首帧即高清，
+  /// 不再出现「飞行中缩略图占位、落地才变清晰」的二次过渡。
+  static int fullCoverDecodePx() {
+    try {
+      final view = WidgetsBinding.instance.platformDispatcher.views.first;
+      return view.physicalSize.width.round().clamp(480, 1600);
+    } catch (_) {
+      return 1080;
+    }
+  }
+
   @override
   ConsumerState<CoverImage> createState() => _CoverImageState();
 }
@@ -334,7 +349,8 @@ class _CoverImageState extends ConsumerState<CoverImage> {
         await CoverProxy.fetch(url);
         return;
       }
-      await _warmNetworkImage(url);
+      // 按统一大图宽度预热解码，与飞行副本/真封面命中同一条目
+      await _warmNetworkImage(url, CoverImage.fullCoverDecodePx());
       return;
     }
     final fullKey = '$songPath\u0000full';
@@ -345,16 +361,49 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     try {
       final p = await getSongCover(
           dbPath: dbPath, cacheRoot: cacheRoot, path: songPath);
-      if (p.isNotEmpty) _cache[fullKey] = p;
+      if (p.isNotEmpty) {
+        _cache[fullKey] = p;
+        // 文件就绪后立即按大图宽度解码进 ImageCache：
+        // 飞行副本/真封面首帧直接命中，飞行全程高清
+        unawaited(_warmLocalImage(p));
+      }
     } catch (e) {
       AppLog.debug('ui', '预取封面失败: $e');
     }
   }
 
-  static Future<void> _warmNetworkImage(String url) async {
+  static Future<void> _warmLocalImage(String path) async {
+    try {
+      final provider = ResizeImage.resizeIfNeeded(
+        CoverImage.fullCoverDecodePx(),
+        null,
+        FileImage(File(path)),
+      );
+      await _warmProvider(provider);
+    } catch (e) {
+      AppLog.debug('ui', '预解码封面失败: $e');
+    }
+  }
+
+  static Future<void> _warmNetworkImage(String url, int decodePx) async {
+    // 与 CachedNetworkImage(memCacheWidth:) 内部路径一致：
+    // OctoImage 用 ResizeImage.resizeIfNeeded 包 provider —— 键完全一致才命中
+    await _warmProvider(
+      ResizeImage.resizeIfNeeded(
+        decodePx,
+        null,
+        CachedNetworkImageProvider(url),
+      ),
+      timeout: const Duration(seconds: 15),
+    );
+  }
+
+  static Future<void> _warmProvider(
+    ImageProvider provider, {
+    Duration timeout = const Duration(seconds: 4),
+  }) async {
     final c = Completer<void>();
-    final stream =
-        CachedNetworkImageProvider(url).resolve(const ImageConfiguration());
+    final stream = provider.resolve(const ImageConfiguration());
     final listener = ImageStreamListener(
       (_, _) {
         if (!c.isCompleted) c.complete();
@@ -365,9 +414,9 @@ class _CoverImageState extends ConsumerState<CoverImage> {
     );
     stream.addListener(listener);
     try {
-      await c.future.timeout(const Duration(seconds: 15));
+      await c.future.timeout(timeout);
     } catch (e) {
-      AppLog.debug('ui', '网络封面预热超时或失败: $e');
+      AppLog.debug('ui', '封面预热超时或失败: $e');
     } finally {
       stream.removeListener(listener);
     }

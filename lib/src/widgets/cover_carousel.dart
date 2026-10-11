@@ -141,6 +141,7 @@ class _NowPlayingCard extends StatelessWidget {
               radius: 0,
               icon: Icons.album,
               highQuality: true,
+              cacheWidth: CoverImage.fullCoverDecodePx(),
             ),
             const DecoratedBox(
               decoration: BoxDecoration(

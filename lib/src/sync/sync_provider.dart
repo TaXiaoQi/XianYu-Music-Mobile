@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -8,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
+import '../cloud/cloud_credentials_store.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -36,6 +38,7 @@ part 'sync_provider.favorites.dart';
 part 'sync_provider.plugins.dart';
 part 'sync_provider.settings.dart';
 part 'sync_provider.history.dart';
+part 'sync_provider.cloud.dart';
 
 class UploadConfig {
   final bool playlists;
@@ -43,6 +46,7 @@ class UploadConfig {
   final bool plugins;
   final bool settings;
   final bool history;
+  final bool cloudCreds;
 
   const UploadConfig({
     this.playlists = true,
@@ -50,6 +54,7 @@ class UploadConfig {
     this.plugins = true,
     this.settings = true,
     this.history = false,
+    this.cloudCreds = true,
   });
 
   UploadConfig copyWith({
@@ -58,6 +63,7 @@ class UploadConfig {
     bool? plugins,
     bool? settings,
     bool? history,
+    bool? cloudCreds,
   }) {
     return UploadConfig(
       playlists: playlists ?? this.playlists,
@@ -65,6 +71,7 @@ class UploadConfig {
       plugins: plugins ?? this.plugins,
       settings: settings ?? this.settings,
       history: history ?? this.history,
+      cloudCreds: cloudCreds ?? this.cloudCreds,
     );
   }
 
@@ -74,6 +81,7 @@ class UploadConfig {
         'plugins': plugins,
         'settings': settings,
         'history': history,
+        'cloudCreds': cloudCreds,
       };
 
   factory UploadConfig.fromJson(Map<String, dynamic> j) => UploadConfig(
@@ -82,6 +90,7 @@ class UploadConfig {
         plugins: j['plugins'] as bool? ?? true,
         settings: j['settings'] as bool? ?? true,
         history: false,
+        cloudCreds: j['cloudCreds'] as bool? ?? true,
       );
 }
 
@@ -150,6 +159,7 @@ class SyncState {
   final SyncItemState pluginSync;
   final SyncItemState settingsSync;
   final SyncItemState historySync;
+  final SyncItemState cloudCredsSync;
 
   const SyncState({
     this.uploadConfig = const UploadConfig(),
@@ -159,6 +169,7 @@ class SyncState {
     this.pluginSync = const SyncItemState(),
     this.settingsSync = const SyncItemState(),
     this.historySync = const SyncItemState(),
+    this.cloudCredsSync = const SyncItemState(),
   });
 
   SyncState copyWith({
@@ -169,6 +180,7 @@ class SyncState {
     SyncItemState? pluginSync,
     SyncItemState? settingsSync,
     SyncItemState? historySync,
+    SyncItemState? cloudCredsSync,
   }) {
     return SyncState(
       uploadConfig: uploadConfig ?? this.uploadConfig,
@@ -178,6 +190,7 @@ class SyncState {
       pluginSync: pluginSync ?? this.pluginSync,
       settingsSync: settingsSync ?? this.settingsSync,
       historySync: historySync ?? this.historySync,
+      cloudCredsSync: cloudCredsSync ?? this.cloudCredsSync,
     );
   }
 }
@@ -208,6 +221,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
         if (prev == true && next == false) _resetLoginSyncFlag();
       },
     );
+    // 网盘凭据变更（绑定/解绑/轮换）→ 防抖后自动上传
+    CloudCredentialsStore.onPersisted = _scheduleCloudCredsUpload;
   }
 
   final Ref _ref;
@@ -217,6 +232,19 @@ class SyncNotifier extends StateNotifier<SyncState> {
 
   bool _loginSyncCompleted = false;
   bool _loginSyncInProgress = false;
+  Timer? _cloudCredsUploadTimer;
+
+  /// 凭据落盘触发：防抖 3s 合并短时间内的多次变更（如连续绑定多盘）。
+  void _scheduleCloudCredsUpload() {
+    if (_loginSyncInProgress) return; // 登录同步流程内会统一上传，避免重复
+    _cloudCredsUploadTimer?.cancel();
+    _cloudCredsUploadTimer = Timer(const Duration(seconds: 3), () {
+      final loggedIn = _ref.read(authProvider.select((s) => s.user != null));
+      if (!loggedIn) return;
+      if (!state.uploadConfig.cloudCreds) return;
+      _cloudCredsSyncSvc.upload();
+    });
+  }
 
   // ---- 域同步服务装配 ----
   /// 状态写权限收口：透镜在类体内创建，域同步服务类经注入读写各域状态。
@@ -250,6 +278,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   HistorySyncService get _historySyncSvc => HistorySyncService(
       _ref, _lens((s) => s.historySync, (s, v) => s.copyWith(historySync: v)));
 
+  CloudCredsSyncService get _cloudCredsSyncSvc => CloudCredsSyncService(
+      _ref,
+      _lens((s) => s.cloudCredsSync, (s, v) => s.copyWith(cloudCredsSync: v)));
+
   // ---- 对外同步入口（薄委托，公共 API 不变）----
 
   Future<void> syncPlaylistsUpload() => _playlistSyncSvc.upload();
@@ -274,6 +306,10 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> syncHistoryUpload() => _historySyncSvc.upload();
 
   Future<void> syncHistoryDownload() => _historySyncSvc.download();
+
+  Future<void> syncCloudCredsUpload() => _cloudCredsSyncSvc.upload();
+
+  Future<void> syncCloudCredsDownload() => _cloudCredsSyncSvc.download();
 
   Future<void> syncListenStats() async {
     // 快照双向同步已废弃，听歌时长由 delta 增量上报统一维护；此处只做纯
@@ -336,6 +372,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
       if (upload.favorites) {
         await syncFavoritesDownload();
         await syncFavoritesUpload();
+      }
+      if (upload.cloudCreds) {
+        // 先拉后推：把云端绑定合并进本地，再把合并结果推回云端
+        await syncCloudCredsDownload();
+        await syncCloudCredsUpload();
       }
       await syncListenStats();
       if (context.mounted) {

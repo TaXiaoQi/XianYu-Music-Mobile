@@ -205,6 +205,8 @@ extension PlayerNotifierOnline on PlayerNotifier {
     double startAtSecs = 0,
     bool isPlaying = true,
     bool castPlayback = false,
+    // 网盘直链不走在线预缓存调度（预缓存面向插件音源候选解析）
+    bool cloudSource = false,
   }) async {
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
@@ -239,7 +241,7 @@ extension PlayerNotifierOnline on PlayerNotifier {
           streamCacheHeaders: h,
           startAtSecs: startAtSecs, isPlaying: isPlaying, castPlayback: castPlayback);
       if (ok) {
-        _triggerOnlinePrecache(item);
+        if (!cloudSource) _triggerOnlinePrecache(item);
         return;
       }
     }
@@ -297,7 +299,7 @@ extension PlayerNotifierOnline on PlayerNotifier {
     if (isPlaying) {
       await _player.play();
     }
-    _triggerOnlinePrecache(item);
+    if (!cloudSource) _triggerOnlinePrecache(item);
   }
 
   Future<void> _startEncryptedFile(

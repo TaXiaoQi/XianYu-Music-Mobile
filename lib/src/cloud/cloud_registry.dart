@@ -1,0 +1,36 @@
+// 网盘注册表：集中注册 11 盘实现，提供按 id 查找与分享链接归属识别。
+
+import 'cloud_provider.dart';
+import 'providers/aliyun_provider.dart';
+import 'providers/baidu_provider.dart';
+import 'providers/ecloud189_provider.dart';
+import 'providers/lanzou_provider.dart';
+import 'providers/mobile139_provider.dart';
+import 'providers/pan123_provider.dart';
+import 'providers/pikpak_provider.dart';
+import 'providers/quark_provider.dart';
+import 'providers/thunder_provider.dart';
+import 'providers/uc_provider.dart';
+import 'providers/weiyun_provider.dart';
+
+final List<CloudProvider> cloudProviders = [
+  BaiduProvider(),
+  AliyunProvider(),
+  QuarkProvider(),
+  UcProvider(),
+  Ecloud189Provider(),
+  Mobile139Provider(),
+  ThunderProvider(),
+  Pan123Provider(),
+  PikpakProvider(),
+  LanzouProvider(),
+  WeiyunProvider(),
+];
+
+/// 按 id 查找；未注册返回 null。
+CloudProvider? cloudProviderById(String id) {
+  for (final p in cloudProviders) {
+    if (p.id == id) return p;
+  }
+  return null;
+}
