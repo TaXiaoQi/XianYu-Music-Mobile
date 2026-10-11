@@ -259,26 +259,29 @@ class _TitleRow extends ConsumerWidget {
                     horizontal: 6,
                     vertical: 4,
                   ),
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: !mvRequested && lyricsEnabled
-                          ? scheme.primary.withValues(alpha: 0.14)
-                          : Colors.transparent,
-                    ),
-                    child: Text(
-                      tr('词'),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: mvRequested
-                            ? Colors.white.withValues(alpha: 0.32)
-                            : lyricsEnabled
-                            ? scheme.primary
-                            : Colors.white.withValues(alpha: 0.72),
+                  child: _StateSwapIcon(
+                    stateKey: lyricsEnabled,
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: !mvRequested && lyricsEnabled
+                            ? scheme.primary.withValues(alpha: 0.14)
+                            : Colors.transparent,
+                      ),
+                      child: Text(
+                        tr('词'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: mvRequested
+                              ? Colors.white.withValues(alpha: 0.32)
+                              : lyricsEnabled
+                              ? scheme.primary
+                              : Colors.white.withValues(alpha: 0.72),
+                        ),
                       ),
                     ),
                   ),
@@ -295,14 +298,17 @@ class _TitleRow extends ConsumerWidget {
               PressableScale(pressScale: 0.88, child: IconButton(
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
                 padding: EdgeInsets.zero,
-                icon: themeSlotIcon(
-                  ref,
-                  'action.favorite',
-                  fallback: isFav ? Icons.favorite : Icons.favorite_border,
-                  size: 22,
-                  color: isFav
-                      ? const Color(0xFFEC4141)
-                      : Colors.white.withValues(alpha: 0.85),
+                icon: _StateSwapIcon(
+                  stateKey: isFav,
+                  child: themeSlotIcon(
+                    ref,
+                    'action.favorite',
+                    fallback: isFav ? Icons.favorite : Icons.favorite_border,
+                    size: 22,
+                    color: isFav
+                        ? const Color(0xFFEC4141)
+                        : Colors.white.withValues(alpha: 0.85),
+                  ),
                 ),
                 tooltip: tr('收藏'),
                 onPressed: () =>
@@ -984,6 +990,33 @@ String _qualityAbbr(String? q) {
   }
 }
 
+
+/// 状态切换图标的统一形变动效，与播放顺序图标同款：
+/// 旧态反向旋转收缩淡出，新态四分之一圈回弹摆入。
+/// [stateKey] 变化即触发切换动画，[child] 为当前态图标。
+class _StateSwapIcon extends StatelessWidget {
+  const _StateSwapIcon({required this.stateKey, required this.child});
+
+  final Object stateKey;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => RotationTransition(
+        turns: Tween<double>(begin: 0.75, end: 1.0).animate(animation),
+        child: FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        ),
+      ),
+      child: KeyedSubtree(key: ValueKey(stateKey), child: child),
+    );
+  }
+}
 
 class _PlayModeIcon extends StatelessWidget {
   const _PlayModeIcon({

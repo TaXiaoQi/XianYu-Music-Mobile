@@ -79,23 +79,26 @@ class _LandscapeControlsRow extends ConsumerWidget {
         PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
-          icon: dlActive
-              ? SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white.withValues(alpha: 0.8),
+          icon: _StateSwapIcon(
+            stateKey: (dlActive, dlDone),
+            child: dlActive
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  )
+                : themeSlotIcon(
+                    ref,
+                    'action.download',
+                    fallback: dlDone
+                        ? Icons.check_circle_outline
+                        : Icons.download_outlined,
+                    color: dlDone ? const Color(0xFF07C160) : idle,
                   ),
-                )
-              : themeSlotIcon(
-                  ref,
-                  'action.download',
-                  fallback: dlDone
-                      ? Icons.check_circle_outline
-                      : Icons.download_outlined,
-                  color: dlDone ? const Color(0xFF07C160) : idle,
-                ),
+          ),
           onPressed: () {
             if (item == null) return;
             if (dlActive) {
@@ -115,11 +118,14 @@ class _LandscapeControlsRow extends ConsumerWidget {
         PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: tr('收藏'),
-          icon: themeSlotIcon(
-            ref,
-            'action.favorite',
-            fallback: isFav ? Icons.favorite : Icons.favorite_border,
-            color: isFav ? const Color(0xFFEC4141) : idle,
+          icon: _StateSwapIcon(
+            stateKey: isFav,
+            child: themeSlotIcon(
+              ref,
+              'action.favorite',
+              fallback: isFav ? Icons.favorite : Icons.favorite_border,
+              color: isFav ? const Color(0xFFEC4141) : idle,
+            ),
           ),
           onPressed: () {
             if (item != null) {
@@ -192,22 +198,30 @@ class _LandscapeControlsRow extends ConsumerWidget {
             width: 28,
             height: 28,
             alignment: Alignment.center,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: !mvRequested && lyricsEnabled
-                  ? accent.withValues(alpha: 0.14)
-                  : Colors.transparent,
-            ),
-            child: Text(
-              tr('词'),
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-                color: mvRequested
-                    ? Colors.white.withValues(alpha: 0.32)
-                    : lyricsEnabled
-                    ? accent
-                    : idle,
+            child: _StateSwapIcon(
+              stateKey: lyricsEnabled,
+              child: Container(
+                width: 28,
+                height: 28,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: !mvRequested && lyricsEnabled
+                      ? accent.withValues(alpha: 0.14)
+                      : Colors.transparent,
+                ),
+                child: Text(
+                  tr('词'),
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: mvRequested
+                        ? Colors.white.withValues(alpha: 0.32)
+                        : lyricsEnabled
+                        ? accent
+                        : idle,
+                  ),
+                ),
               ),
             ),
           ),
@@ -255,11 +269,14 @@ class _LandscapeControlsRow extends ConsumerWidget {
         PressableScale(pressScale: 0.88, child: IconButton(
           iconSize: 28,
           tooltip: tr('音效'),
-          icon: Icon(
-            Icons.graphic_eq,
-            color: mvRequested
-                ? Colors.white.withValues(alpha: 0.32)
-                : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
+          icon: _StateSwapIcon(
+            stateKey: !bypass && _hasPlayerEffects(sfx),
+            child: Icon(
+              Icons.graphic_eq,
+              color: mvRequested
+                  ? Colors.white.withValues(alpha: 0.32)
+                  : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
+            ),
           ),
           onPressed: mvRequested
               ? null

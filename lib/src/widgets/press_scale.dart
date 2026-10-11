@@ -101,21 +101,28 @@ class PressableScale extends SingleChildRenderObjectWidget {
 }
 
 class RenderPressableScale extends RenderProxyBox {
-  RenderPressableScale({required double pressScale}) : _pressScale = pressScale;
+  RenderPressableScale({required double pressScale}) {
+    this.pressScale = pressScale;
+  }
 
-  // 欠阻尼物理弹簧（Telegram/iOS 手感）：过冲后振荡衰减，
+  // 欠阻尼物理弹簧（Telegram/iOS 手感）：下压快而深、回弹过冲振出，
   // 中途打断（连按/快速抬起）带着速度续算，天然连续
-  static const double _stiffness = 220; // 刚度 k：决定响应快慢
-  static const double _dampingRatio = 0.42; // 阻尼比 ζ：越小越 Q 弹
+  static const double _stiffnessDown = 520; // 下压刚度：几十毫秒内沉到位
+  static const double _dampingDown = 0.55; // 下压阻尼比：底部轻微顿挫
+  static const double _stiffnessUp = 240; // 回弹刚度：稍缓释放
+  static const double _dampingUp = 0.32; // 回弹阻尼比：明显过冲 Q 弹
+  static const double _depthBoost = 1.3; // 全局按压深度增益：起伏更可感
 
-  double _pressScale;
+  double _pressScale = 1.0;
   set pressScale(double value) {
-    if (value == _pressScale) return;
-    _pressScale = value;
+    final effective = 1.0 - (1.0 - value) * _depthBoost;
+    if (effective == _pressScale) return;
+    _pressScale = effective;
     if (_isPressed) _springTo(_pressScale);
   }
 
   bool _isPressed = false;
+  bool _pulseReturn = false; // 快速点按：先把下沉脉冲走完再回弹
   double _scale = 1.0;
   double _velocity = 0.0;
   double _target = 1.0;
@@ -125,13 +132,23 @@ class RenderPressableScale extends RenderProxyBox {
   void pressDown() {
     if (!attached) return;
     _isPressed = true;
+    _pulseReturn = false;
     _springTo(_pressScale);
   }
 
   void pressUp() {
     if (!attached) return;
     _isPressed = false;
-    _springTo(1.0);
+    // 快速点按时下沉常未过半，直接回弹会"没感觉"——
+    // 先把下沉脉冲走完再交给回弹弹簧，保证每次点击都有完整起伏
+    final gap = 1.0 - _pressScale;
+    final progress = gap > 0 ? (1.0 - _scale) / gap : 1.0;
+    if (progress < 0.6) {
+      _pulseReturn = true;
+      _springTo(_pressScale);
+    } else {
+      _springTo(1.0);
+    }
   }
 
   void _springTo(double target) {
@@ -152,9 +169,18 @@ class RenderPressableScale extends RenderProxyBox {
         : ((elapsed - _lastElapsed!).inMicroseconds / 1e6)
             .clamp(0.0, 0.032);
     _lastElapsed = elapsed;
-    final damping = 2 * _dampingRatio * math.sqrt(_stiffness); // c = 2ζ√k
-    _velocity += (_stiffness * (_target - _scale) - damping * _velocity) * dt;
+    // 下压与回弹用不同手感参数：快沉、弹回
+    final pressing = _target < 1.0;
+    final stiffness = pressing ? _stiffnessDown : _stiffnessUp;
+    final damping =
+        2 * (pressing ? _dampingDown : _dampingUp) * math.sqrt(stiffness);
+    _velocity += (stiffness * (_target - _scale) - damping * _velocity) * dt;
     _scale += _velocity * dt;
+    if (_pulseReturn && _scale <= _pressScale + 0.015) {
+      // 下沉脉冲到位，转入回弹
+      _pulseReturn = false;
+      _springTo(1.0);
+    }
     if ((_target - _scale).abs() < 0.0005 && _velocity.abs() < 0.005) {
       _scale = _target;
       _velocity = 0.0;
@@ -203,6 +229,7 @@ class RenderPressableScale extends RenderProxyBox {
     _ticker?.dispose();
     _ticker = null;
     _isPressed = false;
+    _pulseReturn = false;
     _scale = 1.0;
     super.detach();
   }

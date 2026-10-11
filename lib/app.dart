@@ -274,6 +274,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final lightBase = ThemeData(
       colorScheme: lightScheme,
       scaffoldBackgroundColor: Colors.transparent,
+      // 按压反馈统一交给 PressableScale 弹簧，去掉 Material 灰色 ink 框
+      highlightColor: Colors.transparent,
+      splashColor: Colors.transparent,
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFFF4F4F6),
         elevation: 0,
@@ -308,6 +311,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         surfaceContainerHighest: const Color(0xFF3a3a3a),
       ),
       scaffoldBackgroundColor: Colors.transparent,
+      // 按压反馈统一交给 PressableScale 弹簧，去掉 Material 灰色 ink 框
+      highlightColor: Colors.transparent,
+      splashColor: Colors.transparent,
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF222222),
         elevation: 0,
