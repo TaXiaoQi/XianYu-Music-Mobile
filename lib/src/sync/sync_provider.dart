@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../cloud/cloud_credentials_store.dart';
+import '../cloud/cloud_remote.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -223,6 +224,32 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
     // 网盘凭据变更（绑定/解绑/轮换）→ 防抖后自动上传
     CloudCredentialsStore.onPersisted = _scheduleCloudCredsUpload;
+    // 网盘业务云端代理网关：provider 层「远程优先、本地回退」的注入点
+    CloudRemote.gateway = _cloudProxyCall;
+  }
+
+  /// cloud_proxy 转发：未登录返回 null（provider 回退本地直连）。
+  Future<Map<String, dynamic>?> _cloudProxyCall(
+    String provider,
+    String op,
+    Map<String, String> cred,
+    Map<String, dynamic> params,
+  ) async {
+    final auth = _ref.read(authProvider.notifier);
+    final user = _ref.read(authProvider).user;
+    if (user == null) return null;
+    try {
+      return await auth.requestAction('cloud_proxy', {
+        'user_id': user.ciyuanxiId ?? user.id,
+        'provider': provider,
+        'op': op,
+        'cred': cred,
+        'params': params,
+      }, fetchTimeoutMs: 12000);
+    } catch (e) {
+      AppLog.debug('cloud', '云端代理不可用，回退本地直连: $e');
+      return null;
+    }
   }
 
   final Ref _ref;
