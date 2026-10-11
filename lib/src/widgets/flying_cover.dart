@@ -27,6 +27,11 @@ class FlyingCover {
   /// 锚点上报 0，飞行副本落成直角与真封面形状对齐。
   double? outboundTargetRadius;
 
+  /// 目标端落地展开：沉浸式真封面是整块背景（全宽非方形），飞行副本
+  /// 落点是居中全宽方形，与铺满背景尺寸不同；锚点声明 expandOnLand 后
+  /// 落地段副本从落地方形展开铺满整个目标矩形再淡出融入。
+  bool outboundExpandOnLand = false;
+
   /// true = 目标端真封面在飞行期间隐藏（飞行副本是唯一封面），
   /// 落地瞬间恢复显示，副本 0.92→0 淡出正好叠回真封面。
   /// 沉浸式封面的「真封面」是页面背景层（不可藏），锚点声明
@@ -100,6 +105,7 @@ class FlyingCover {
         thumbPath: thumbPath,
         radius: radius,
         targetRadius: outboundTargetRadius,
+        expandOnLand: outboundExpandOnLand,
         onLanded: () {
           if (id == _flyId) {
             // 落地：真封面恢复显示，副本随后淡出叠回
@@ -204,6 +210,8 @@ Future<bool> launchFlyCover(
 /// [hideOnFly]=false：飞行期间不隐藏 child——沉浸式封面的 child 就是
 /// 页面背景层，藏掉会让上半屏在飞行期间空白。
 /// [targetRadius]：上报目标圆角（沉浸式全宽直角 = 0）。
+/// [expandOnLand]：落地段副本从落地方形展开铺满整个锚点矩形再淡出，
+/// 供「真封面是整块背景、落点方形小于背景」的沉浸式封面补嵌入动画。
 class FlyingCoverAnchor extends StatefulWidget {
   const FlyingCoverAnchor({
     super.key,
@@ -211,12 +219,14 @@ class FlyingCoverAnchor extends StatefulWidget {
     this.rectOverride,
     this.hideOnFly = true,
     this.targetRadius,
+    this.expandOnLand = false,
   });
 
   final Widget child;
   final Rect Function()? rectOverride;
   final bool hideOnFly;
   final double? targetRadius;
+  final bool expandOnLand;
 
   @override
   State<FlyingCoverAnchor> createState() => _FlyingCoverAnchorState();
@@ -243,6 +253,7 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
     super.initState();
     FlyingCover.instance.outboundTargetProvider = _provider;
     FlyingCover.instance.outboundTargetRadius = widget.targetRadius;
+    FlyingCover.instance.outboundExpandOnLand = widget.expandOnLand;
   }
 
   @override
@@ -250,6 +261,7 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
     if (identical(FlyingCover.instance.outboundTargetProvider, _provider)) {
       FlyingCover.instance.outboundTargetProvider = null;
       FlyingCover.instance.outboundTargetRadius = null;
+      FlyingCover.instance.outboundExpandOnLand = false;
     }
     super.dispose();
   }
@@ -277,6 +289,7 @@ class _FlyingCoverOverlay extends StatefulWidget {
     required this.thumbPath,
     required this.radius,
     required this.targetRadius,
+    required this.expandOnLand,
     required this.onLanded,
     required this.onDone,
   });
@@ -291,6 +304,10 @@ class _FlyingCoverOverlay extends StatefulWidget {
   /// 目标端封面圆角：null = 旧行为（圆形唱片，起点宽度/2）；
   /// 沉浸式锚点上报 0（全宽直角图）。
   final double? targetRadius;
+
+  /// 落地段展开：副本从落地方形放大铺满整个目标矩形再淡出（沉浸式
+  /// 背景「真封面比落点大」，展开即嵌入）。false = 旧行为原位淡出。
+  final bool expandOnLand;
   final VoidCallback onLanded;
   final VoidCallback onDone;
 
@@ -321,7 +338,13 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     super.initState();
     _flyCtrl = AnimationController(vsync: this, duration: _flyDuration);
     _t = CurvedAnimation(parent: _flyCtrl, curve: Curves.fastOutSlowIn);
-    _fadeCtrl = AnimationController(vsync: this, duration: _fadeDuration);
+    // 展开段比纯淡出略长，铺满过程可见（easeOutCubic 前快后缓）
+    _fadeCtrl = AnimationController(
+      vsync: this,
+      duration: widget.expandOnLand
+          ? const Duration(milliseconds: 300)
+          : _fadeDuration,
+    );
   }
 
   @override
@@ -397,8 +420,15 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                 _p0 * (u * u) + ctrl * (2 * u * t) + toCenter * (t * t);
             final sx = toRect.width / widget.fromRect.width;
             final scale = 1.0 + (sx - 1.0) * t;
-            final w = widget.fromRect.width * scale;
-            final h = widget.fromRect.height * scale;
+            var w = widget.fromRect.width * scale;
+            var h = widget.fromRect.height * scale;
+            // 落地展开段：t=1 时副本是宽满、居中的方形，按渐出进度把
+            // 高度长到目标矩形高（中心不变，上下对称铺满），与淡出同步
+            // ——副本「放大嵌入」整块背景，替代方形与背景的硬接切换。
+            if (_fading && widget.expandOnLand) {
+              final tf = Curves.easeOutCubic.transform(_fadeCtrl.value);
+              h = h + (toRect.height - h) * tf;
+            }
             final topLeft = center - Offset(w / 2, h / 2);
 
             final opacity = _fading

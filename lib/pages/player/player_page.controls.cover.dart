@@ -749,21 +749,6 @@ class _ImmersiveCoverBackdrop extends StatelessWidget {
         builder: (context, cons) {
           final w = cons.maxWidth;
           final h = cons.maxHeight;
-          // 飞封面目标/源矩形：沉浸式真封面是整块背景（全宽非方形、中心
-          // 落在渐变过渡带），飞行动画改取上半屏顶部全宽正方形
-          //（宽 = 屏宽、高 = min(宽, 背景高)、左上对齐），与封面可见主体
-          // 对齐。闭包实时取全局坐标，转场/旋转后仍准确。
-          Rect flyRect() {
-            final ro = context.findRenderObject();
-            if (ro is RenderBox && ro.attached && ro.hasSize) {
-              final o = ro.localToGlobal(Offset.zero);
-              final bw = ro.size.width;
-              final bh = ro.size.height;
-              return Rect.fromLTWH(o.dx, o.dy, bw, math.min(bw, bh));
-            }
-            return Rect.zero;
-          }
-
           return Stack(
             fit: StackFit.expand,
             children: [
@@ -810,16 +795,17 @@ class _ImmersiveCoverBackdrop extends StatelessWidget {
                                   );
                                 },
                             child: FlyingCoverAnchor(
-                              // 沉浸式真封面即页面背景层（不可藏），飞行期间
-                              // 保持可见，副本落地后淡出融入；圆角 0 与
-                              // 全宽直角图对齐
-                              rectOverride: flyRect,
+                              // 沉浸式真封面即页面背景层（不可藏）：飞行
+                              // 目标取锚点整块矩形（初版居中落点观感），
+                              // 飞行期间背景保持可见（hideOnFly=false）；
+                              // 圆角 0 对齐全宽直角图；落点方形与铺满背景
+                              // 的尺寸差由落地展开段补齐（expandOnLand）
                               hideOnFly: false,
                               targetRadius: 0,
+                              expandOnLand: true,
                               child: CoverReturnSource(
                                 songPath: cur.path,
                                 networkUrl: cur.coverUrl,
-                                rectOverride: flyRect,
                                 radiusHint: 0,
                                 child: CoverImage(
                                   songPath: cur.path,
