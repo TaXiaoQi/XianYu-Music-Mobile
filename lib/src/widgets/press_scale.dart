@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -82,7 +84,7 @@ class _PressScaleHostState extends State<PressScaleHost> {
 /// PressableScale(pressScale: 0.88, child: IconButton(...))
 /// ```
 class PressableScale extends SingleChildRenderObjectWidget {
-  const PressableScale({super.key, this.pressScale = 0.96, required super.child});
+  const PressableScale({super.key, this.pressScale = 0.94, required super.child});
 
   /// 按下时的目标缩放；大卡片/行/瓦片用默认，小图标按钮建议 0.88~0.92
   final double pressScale;
@@ -101,69 +103,68 @@ class PressableScale extends SingleChildRenderObjectWidget {
 class RenderPressableScale extends RenderProxyBox {
   RenderPressableScale({required double pressScale}) : _pressScale = pressScale;
 
-  static const _downDuration = Duration(milliseconds: 100);
-  static const _upDuration = Duration(milliseconds: 320);
-  // 回弹用 easeOutBack（轻微过冲），iOS 弹簧手感
-  static const _downCurve = Curves.easeOutCubic;
-  static const _upCurve = Curves.easeOutBack;
+  // 欠阻尼物理弹簧（Telegram/iOS 手感）：过冲后振荡衰减，
+  // 中途打断（连按/快速抬起）带着速度续算，天然连续
+  static const double _stiffness = 220; // 刚度 k：决定响应快慢
+  static const double _dampingRatio = 0.42; // 阻尼比 ζ：越小越 Q 弹
 
   double _pressScale;
   set pressScale(double value) {
     if (value == _pressScale) return;
     _pressScale = value;
-    if (_isPressed) _animateTo(_pressScale, _downDuration, _downCurve);
+    if (_isPressed) _springTo(_pressScale);
   }
 
   bool _isPressed = false;
   double _scale = 1.0;
-  double _from = 1.0;
-  double _to = 1.0;
-  Curve _curve = Curves.linear;
-  Duration _duration = _downDuration;
+  double _velocity = 0.0;
+  double _target = 1.0;
   Ticker? _ticker;
-  Duration? _startTime;
+  Duration? _lastElapsed;
 
   void pressDown() {
     if (!attached) return;
     _isPressed = true;
-    _animateTo(_pressScale, _downDuration, _downCurve);
+    _springTo(_pressScale);
   }
 
   void pressUp() {
     if (!attached) return;
     _isPressed = false;
-    _animateTo(1.0, _upDuration, _upCurve);
+    _springTo(1.0);
   }
 
-  void _animateTo(double target, Duration duration, Curve curve) {
-    if (_scale == target) {
+  void _springTo(double target) {
+    if (_scale == target && _velocity == 0.0) {
       _stopTicker();
       return;
     }
-    // 中途换向（快速按下-抬起）从当前值续算，避免跳变
-    _from = _scale;
-    _to = target;
-    _curve = curve;
-    _duration = duration;
-    _startTime = null;
+    _target = target;
+    _lastElapsed = null;
     final ticker = _ticker ??= Ticker(_onTick, debugLabel: 'pressScale');
     if (!ticker.isActive) ticker.start();
   }
 
   void _onTick(Duration elapsed) {
-    _startTime ??= elapsed;
-    final t = ((elapsed - _startTime!).inMicroseconds /
-            _duration.inMicroseconds)
-        .clamp(0.0, 1.0);
-    _scale = _from + (_to - _from) * _curve.transform(t);
-    if (t >= 1.0) {
-      _scale = _to;
+    // 半隐式欧拉积分；dt 夹到单帧上限防卡帧后爆炸
+    final dt = _lastElapsed == null
+        ? 0.0
+        : ((elapsed - _lastElapsed!).inMicroseconds / 1e6)
+            .clamp(0.0, 0.032);
+    _lastElapsed = elapsed;
+    final damping = 2 * _dampingRatio * math.sqrt(_stiffness); // c = 2ζ√k
+    _velocity += (_stiffness * (_target - _scale) - damping * _velocity) * dt;
+    _scale += _velocity * dt;
+    if ((_target - _scale).abs() < 0.0005 && _velocity.abs() < 0.005) {
+      _scale = _target;
+      _velocity = 0.0;
       _stopTicker();
     }
     markNeedsPaint();
   }
 
   void _stopTicker() {
+    _lastElapsed = null;
     _ticker?.stop();
   }
 

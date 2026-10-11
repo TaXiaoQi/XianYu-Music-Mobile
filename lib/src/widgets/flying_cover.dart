@@ -27,10 +27,11 @@ class FlyingCover {
   /// 锚点上报 0，飞行副本落成直角与真封面形状对齐。
   double? outboundTargetRadius;
 
-  /// 目标端落地展开：沉浸式真封面是整块背景（全宽非方形），飞行副本
-  /// 落点是居中全宽方形，与铺满背景尺寸不同；锚点声明 expandOnLand 后
-  /// 落地段副本从落地方形展开铺满整个目标矩形再淡出融入。
-  bool outboundExpandOnLand = false;
+  /// 目标端整块矩形形变：沉浸式真封面是整块背景（全宽非方形），锚点
+  /// 声明 rectMorph 后飞行副本全程形变为目标矩形（宽高独立插值），
+  /// 落地即与真封面同位同形，淡出完成嵌入；同时落地段淡出放缓到
+  /// 300ms 与真封面淡入同步，阴影随贴合退场。
+  bool outboundRectMorph = false;
 
   /// true = 目标端真封面在飞行期间隐藏（飞行副本是唯一封面），
   /// 落地瞬间恢复显示，副本 0.92→0 淡出正好叠回真封面。
@@ -74,6 +75,7 @@ class FlyingCover {
     String? networkUrl,
     String? thumbPath,
     double radius = 6,
+    double? targetRadius,
     Rect? Function()? targetProvider,
     bool hideTarget = false,
   }) {
@@ -104,8 +106,12 @@ class FlyingCover {
         networkUrl: networkUrl,
         thumbPath: thumbPath,
         radius: radius,
+        // targetRadius 为发射时快照（出向飞行中锚点可能 dispose，实例值
+        // 会被复位，快照保底）；targetRadiusOverride 为调用方显式指定
+        // （返回飞行落到迷你条圆形），两者在副本内按优先级解析
         targetRadius: outboundTargetRadius,
-        expandOnLand: outboundExpandOnLand,
+        targetRadiusOverride: targetRadius,
+        rectMorph: outboundRectMorph,
         onLanded: () {
           if (id == _flyId) {
             // 落地：真封面恢复显示，副本随后淡出叠回
@@ -210,8 +216,8 @@ Future<bool> launchFlyCover(
 /// [hideOnFly]=false：飞行期间不隐藏 child——沉浸式封面的 child 就是
 /// 页面背景层，藏掉会让上半屏在飞行期间空白。
 /// [targetRadius]：上报目标圆角（沉浸式全宽直角 = 0）。
-/// [expandOnLand]：落地段副本从落地方形展开铺满整个锚点矩形再淡出，
-/// 供「真封面是整块背景、落点方形小于背景」的沉浸式封面补嵌入动画。
+/// [rectMorph]：飞行副本全程宽高独立形变到锚点整块矩形（沉浸式背景
+/// 「真封面是非方形整块图」），落地即与真封面同位同形，淡出嵌入。
 class FlyingCoverAnchor extends StatefulWidget {
   const FlyingCoverAnchor({
     super.key,
@@ -219,14 +225,14 @@ class FlyingCoverAnchor extends StatefulWidget {
     this.rectOverride,
     this.hideOnFly = true,
     this.targetRadius,
-    this.expandOnLand = false,
+    this.rectMorph = false,
   });
 
   final Widget child;
   final Rect Function()? rectOverride;
   final bool hideOnFly;
   final double? targetRadius;
-  final bool expandOnLand;
+  final bool rectMorph;
 
   @override
   State<FlyingCoverAnchor> createState() => _FlyingCoverAnchorState();
@@ -253,7 +259,7 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
     super.initState();
     FlyingCover.instance.outboundTargetProvider = _provider;
     FlyingCover.instance.outboundTargetRadius = widget.targetRadius;
-    FlyingCover.instance.outboundExpandOnLand = widget.expandOnLand;
+    FlyingCover.instance.outboundRectMorph = widget.rectMorph;
   }
 
   @override
@@ -261,7 +267,7 @@ class _FlyingCoverAnchorState extends State<FlyingCoverAnchor> {
     if (identical(FlyingCover.instance.outboundTargetProvider, _provider)) {
       FlyingCover.instance.outboundTargetProvider = null;
       FlyingCover.instance.outboundTargetRadius = null;
-      FlyingCover.instance.outboundExpandOnLand = false;
+      FlyingCover.instance.outboundRectMorph = false;
     }
     super.dispose();
   }
@@ -289,7 +295,8 @@ class _FlyingCoverOverlay extends StatefulWidget {
     required this.thumbPath,
     required this.radius,
     required this.targetRadius,
-    required this.expandOnLand,
+    required this.targetRadiusOverride,
+    required this.rectMorph,
     required this.onLanded,
     required this.onDone,
   });
@@ -301,13 +308,18 @@ class _FlyingCoverOverlay extends StatefulWidget {
   final String? thumbPath;
   final double radius;
 
-  /// 目标端封面圆角：null = 旧行为（圆形唱片，起点宽度/2）；
-  /// 沉浸式锚点上报 0（全宽直角图）。
+  /// 目标端封面圆角：发射时的锚点上报快照（沉浸式全宽直角 = 0）；
+  /// null = 旧行为（圆形唱片，起点宽度/2）。
   final double? targetRadius;
 
-  /// 落地段展开：副本从落地方形放大铺满整个目标矩形再淡出（沉浸式
-  /// 背景「真封面比落点大」，展开即嵌入）。false = 旧行为原位淡出。
-  final bool expandOnLand;
+  /// 调用方显式指定的目标圆角，优先于 [targetRadius] 与锚点实时值
+  /// （返回飞行落到迷你条圆形封面时使用）。
+  final double? targetRadiusOverride;
+
+  /// 整块矩形形变：副本全程宽高独立插值到目标矩形（沉浸式背景
+  /// 「真封面比方形大」），落地即贴合真封面，淡出即嵌入；同时落地
+  /// 淡出放缓到 300ms 与真封面淡入同步。false = 旧行为方形插值。
+  final bool rectMorph;
   final VoidCallback onLanded;
   final VoidCallback onDone;
 
@@ -324,6 +336,20 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
   late final Animation<double> _t;
   late final AnimationController _fadeCtrl;
 
+  /// 目标圆角解析：调用方显式指定 > 锚点实时上报（入向首飞锚点晚于
+  /// 副本挂载，实时值补首飞快照缺失）> 发射快照 > 起点宽度/2（圆形
+  /// 唱片旧行为）
+  double get _effectiveTargetRadius {
+    final over = widget.targetRadiusOverride;
+    if (over != null) return over;
+    final live = FlyingCover.instance.outboundTargetRadius;
+    return live ?? widget.targetRadius ?? widget.fromRect.width / 2;
+  }
+
+  /// 整块矩形形变解析：锚点实时值与发射快照任一为真即生效
+  bool get _effectiveRectMorph =>
+      FlyingCover.instance.outboundRectMorph || widget.rectMorph;
+
   late final Rect _fallbackRect;
 
   late final Offset _p0;
@@ -338,13 +364,8 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
     super.initState();
     _flyCtrl = AnimationController(vsync: this, duration: _flyDuration);
     _t = CurvedAnimation(parent: _flyCtrl, curve: Curves.fastOutSlowIn);
-    // 展开段比纯淡出略长，铺满过程可见（easeOutCubic 前快后缓）
-    _fadeCtrl = AnimationController(
-      vsync: this,
-      duration: widget.expandOnLand
-          ? const Duration(milliseconds: 300)
-          : _fadeDuration,
-    );
+    // 嵌入段时长在起飞时按锚点实时声明决定（见 _fadeOut）
+    _fadeCtrl = AnimationController(vsync: this, duration: _fadeDuration);
   }
 
   @override
@@ -389,14 +410,15 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
   void _fadeOut() {
     if (_fading || !mounted) return;
     _fading = true;
+    // 整块矩形嵌入段放缓到 300ms，与真封面淡入同步（easeOut 前快后缓）
+    _fadeCtrl.duration =
+        _effectiveRectMorph ? const Duration(milliseconds: 300) : _fadeDuration;
     _fadeCtrl.forward().whenComplete(widget.onDone);
   }
 
   double _radius(double t) {
-    // 目标圆角：锚点上报值优先（沉浸式全宽直角 = 0）；无上报按旧行为
-    // 走圆形唱片（起点宽度/2）。
-    final targetRadius =
-        widget.targetRadius ?? widget.fromRect.width / 2;
+    // 目标圆角：见 _effectiveTargetRadius 的解析顺序
+    final targetRadius = _effectiveTargetRadius;
     return widget.radius + (targetRadius - widget.radius) * t;
   }
 
@@ -418,17 +440,12 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
             final u = 1 - t;
             final center =
                 _p0 * (u * u) + ctrl * (2 * u * t) + toCenter * (t * t);
-            final sx = toRect.width / widget.fromRect.width;
-            final scale = 1.0 + (sx - 1.0) * t;
-            var w = widget.fromRect.width * scale;
-            var h = widget.fromRect.height * scale;
-            // 落地展开段：t=1 时副本是宽满、居中的方形，按渐出进度把
-            // 高度长到目标矩形高（中心不变，上下对称铺满），与淡出同步
-            // ——副本「放大嵌入」整块背景，替代方形与背景的硬接切换。
-            if (_fading && widget.expandOnLand) {
-              final tf = Curves.easeOutCubic.transform(_fadeCtrl.value);
-              h = h + (toRect.height - h) * tf;
-            }
+            // 宽高独立插值：方形源到整块矩形目标（沉浸式背景）全程
+            // 形变贴合，t=1 时副本与真封面同位同形，落地纯淡出嵌入
+            final w = widget.fromRect.width +
+                (toRect.width - widget.fromRect.width) * t;
+            final h = widget.fromRect.height +
+                (toRect.height - widget.fromRect.height) * t;
             final topLeft = center - Offset(w / 2, h / 2);
 
             final opacity = _fading
@@ -436,6 +453,12 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                 : (1.0 - 0.08 * t);
 
             final radius = _radius(t);
+            // 整块矩形端无阴影：飞向整块背景时阴影随贴合退场，从整块
+            // 背景飞出时起飞即无阴影、卡片化过程中逐渐成形
+            final shadowAlpha = _effectiveRectMorph
+                ? 0.25 *
+                    (toRect.height >= widget.fromRect.height ? 1 - t : t)
+                : 0.25;
 
             return Transform.translate(
               offset: topLeft,
@@ -448,7 +471,7 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                     borderRadius: BorderRadius.circular(radius),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.25),
+                        color: Colors.black.withValues(alpha: shadowAlpha),
                         blurRadius: 20,
                         offset: const Offset(0, 6),
                       ),

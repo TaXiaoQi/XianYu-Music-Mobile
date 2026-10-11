@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -241,9 +239,22 @@ class _AboutPageState extends ConsumerState<AboutPage> {
           ),
           const SizedBox(height: 4),
           Center(
-            child: _VersionTapBadge(
-              label: tr('版本 {v}', {'v': appVersion}),
-              onTap: _handleVersionTap,
+            // 连点彩蛋入口：走全局弹簧按压缩放（渲染层动画，连点不卡）
+            child: PressableScale(
+              pressScale: 0.92,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _handleVersionTap,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 6),
+                  child: Text(
+                    tr('版本 {v}', {'v': appVersion}),
+                    style: TextStyle(
+                        fontSize: 13, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -441,79 +452,6 @@ class _DeveloperChipState extends ConsumerState<_DeveloperChip> {
               fontSize: 13,
               fontWeight: FontWeight.w500,
               color: _pressed ? scheme.primary : scheme.onSurface,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _VersionTapBadge extends StatefulWidget {
-  const _VersionTapBadge({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  State<_VersionTapBadge> createState() => _VersionTapBadgeState();
-}
-
-class _VersionTapBadgeState extends State<_VersionTapBadge> {
-  bool _pressed = false;
-  Timer? _releaseTimer;
-
-  @override
-  void dispose() {
-    _releaseTimer?.cancel();
-    super.dispose();
-  }
-
-  void _press() {
-    _releaseTimer?.cancel();
-    setState(() => _pressed = true);
-  }
-
-  void _release() {
-    _releaseTimer?.cancel();
-    _releaseTimer = Timer(const Duration(milliseconds: 180), () {
-      if (mounted) setState(() => _pressed = false);
-    });
-  }
-
-  void _cancel() {
-    _releaseTimer?.cancel();
-    setState(() => _pressed = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _press(),
-      onTapUp: (_) => _release(),
-      onTapCancel: _cancel,
-      onTap: widget.onTap,
-      child: AnimatedScale(
-        scale: _pressed ? 0.88 : 1.0,
-        duration: Duration(milliseconds: _pressed ? 120 : 280),
-        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: _pressed
-                ? scheme.primary.withValues(alpha: 0.14)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 13,
-              color: _pressed ? scheme.primary : scheme.onSurfaceVariant,
-              fontWeight: _pressed ? FontWeight.w600 : FontWeight.w400,
             ),
           ),
         ),

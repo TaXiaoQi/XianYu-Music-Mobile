@@ -796,13 +796,13 @@ class _ImmersiveCoverBackdrop extends StatelessWidget {
                                 },
                             child: FlyingCoverAnchor(
                               // 沉浸式真封面即页面背景层（不可藏）：飞行
-                              // 目标取锚点整块矩形（初版居中落点观感），
-                              // 飞行期间背景保持可见（hideOnFly=false）；
-                              // 圆角 0 对齐全宽直角图；落点方形与铺满背景
-                              // 的尺寸差由落地展开段补齐（expandOnLand）
+                              // 目标取锚点整块矩形，飞行期间背景保持可见
+                              // （hideOnFly=false）；圆角 0 对齐全宽直角图；
+                              // rectMorph 让副本飞行全程宽高形变到整块矩
+                              // 形，落地即与真封面同位同形，淡出完成嵌入
                               hideOnFly: false,
                               targetRadius: 0,
-                              expandOnLand: true,
+                              rectMorph: true,
                               child: CoverReturnSource(
                                 songPath: cur.path,
                                 networkUrl: cur.coverUrl,

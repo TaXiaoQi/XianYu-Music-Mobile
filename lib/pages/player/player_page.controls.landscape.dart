@@ -171,8 +171,9 @@ class _LandscapeControlsRow extends ConsumerWidget {
                   ),
                 )
               : PressableScale(pressScale: 0.92, child: IconButton(
-                  icon: Icon(
-                    isPlaying ? Icons.pause : Icons.play_arrow,
+                  icon: PlayPauseMorphIcon(
+                    playing: isPlaying,
+                    size: 34,
                     color: Colors.white,
                   ),
                   iconSize: 34,

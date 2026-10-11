@@ -23,6 +23,12 @@ class _PlayerCoverPage extends Page<void> {
           final src = PredictiveCoverReturn.instance.sourceRect;
           if (src.isEmpty) return;
           final (sp, nu, tp) = PredictiveCoverReturn.instance.coverSource;
+          // 沉浸式源为全宽直角整块图（radiusHint=0）：副本以直角全矩
+          // 形起飞（与真封面同位同形），落到迷你条圆形封面；传统源
+          // 维持卡片圆角估算与默认圆形落点
+          final srcRadius = PredictiveCoverReturn.instance.sourceRadius;
+          final dstRect = FlyingCover.instance.targetRect ??
+              PredictiveCoverReturn.instance.targetRect;
           // 普通返回：飞行期间同样隐藏播放页真封面（避免双封面），
           // flight 在落地瞬间完成，真封面恢复、副本淡出叠回
           final flight = FlyingCover.instance.launch(
@@ -30,7 +36,12 @@ class _PlayerCoverPage extends Page<void> {
             songPath: sp,
             networkUrl: nu,
             thumbPath: tp,
-            radius: (src.width * 0.08).clamp(6.0, 32.0).toDouble(),
+            radius: srcRadius ?? (src.width * 0.08).clamp(6.0, 32.0).toDouble(),
+            targetRadius: srcRadius == null
+                ? null
+                : (dstRect != null && dstRect.width > 0
+                    ? dstRect.width / 2
+                    : null),
             targetProvider: () =>
                 FlyingCover.instance.targetRect ??
                 PredictiveCoverReturn.instance.targetRect,

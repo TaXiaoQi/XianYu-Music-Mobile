@@ -270,13 +270,19 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
                 ? 0.0
                 : (raw - startProgress) / (1 - startProgress);
             final center = Offset.lerp(p0, p2, t)!;
+            // 宽高独立插值：沉浸式源是整块非方形背景，副本起飞即与真
+            // 封面同位同形，飞行中逐渐形变为目标方形（无起手尺寸硬切）
             final w = s0 + (s1 - s0) * t;
-            final h = w;
+            final h = src.height + (target.height - src.height) * t;
             final radius = srcRadius + (dstRadius - srcRadius) * t;
             final topLeft = center - Offset(w / 2, h / 2);
             double opacity = 1.0;
             if (t > 0.94) opacity = 1 - (t - 0.94) / 0.06;
             opacity = opacity.clamp(0.0, 1.0);
+            // 整块背景源（radiusHint=0）无阴影：起飞即与真封面全同，
+            // 飞离过程中阴影随卡片化逐渐成形
+            final fullBleedSource =
+                PredictiveCoverReturn.instance.sourceRadius == 0.0;
 
             return Positioned(
               left: topLeft.dx,
@@ -293,7 +299,8 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
                       borderRadius: BorderRadius.circular(radius),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.25),
+                          color: Colors.black
+                              .withValues(alpha: fullBleedSource ? 0.25 * t : 0.25),
                           blurRadius: 20,
                           offset: const Offset(0, 6),
                         ),

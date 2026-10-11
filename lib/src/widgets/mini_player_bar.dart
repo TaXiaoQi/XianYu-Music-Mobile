@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import '../theme/theme_icon.dart';
+import '../theme/theme_store.dart' show themeLibraryProvider;
 import '../theme/theme_tint.dart';
 import 'bilipai_glass.dart';
 import 'blur_budget.dart';
@@ -21,11 +22,16 @@ import 'cover_hero.dart';
 import 'cover_image.dart';
 import 'flying_cover.dart';
 import 'predictive_cover_return.dart';
+import 'play_pause_icon.dart';
 import 'press_scale.dart';
 import 'glass_settings.dart';
 import 'liquid_wave.dart';
 
 final batchBarLiftProvider = StateProvider<double>((ref) => 0.0);
+
+/// 播放槽是否配置了自定义主题图（配置了就走平滑切换，未配置走形变）
+bool _hasCustomPlayIcon(WidgetRef ref) =>
+    ref.watch(themeLibraryProvider).themeIcon('player.play') != null;
 
 Widget playbarGlassSurface(
   BuildContext context,
@@ -528,10 +534,30 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
           PressableScale(
             pressScale: 0.88,
             child: IconButton(
-              icon: themeSlotIcon(ref, 'player.play',
-                  fallback: isPlaying ? Icons.pause : Icons.play_arrow,
-                  size: 26,
-                  color: scheme.primary),
+              // 播放/暂停切换：无自定义主题图走形变过渡；有自定义图
+              // 无法形变，退回缩小淡入的平滑切换
+              icon: _hasCustomPlayIcon(ref)
+                  ? AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 250),
+                      switchInCurve: Curves.easeOutBack,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder: (child, animation) => FadeTransition(
+                        opacity: animation,
+                        child: ScaleTransition(scale: animation, child: child),
+                      ),
+                      child: KeyedSubtree(
+                        key: ValueKey(isPlaying),
+                        child: themeSlotIcon(ref, 'player.play',
+                            fallback: isPlaying ? Icons.pause : Icons.play_arrow,
+                            size: 26,
+                            color: scheme.primary),
+                      ),
+                    )
+                  : PlayPauseMorphIcon(
+                      playing: isPlaying,
+                      size: 26,
+                      color: scheme.primary,
+                    ),
               iconSize: 26,
               onPressed: () =>
                   ref.read(playerProvider.notifier).toggle(origin: 'miniBar'),

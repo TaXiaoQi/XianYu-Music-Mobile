@@ -902,8 +902,9 @@ class _Controls extends ConsumerWidget {
                         ),
                       )
                     : PressableScale(pressScale: 0.92, child: IconButton(
-                        icon: Icon(
-                          isPlaying ? Icons.pause : Icons.play_arrow,
+                        icon: PlayPauseMorphIcon(
+                          playing: isPlaying,
+                          size: 34,
                           color: Colors.white,
                         ),
                         iconSize: 34,
@@ -997,9 +998,25 @@ class _PlayModeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size.square(size),
-      painter: _PlayModePainter(mode: mode, color: color),
+    // 模式切换：旧图标反向旋转收缩淡出，新图标四分之一圈旋转回弹淡入
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 280),
+      switchInCurve: Curves.easeOutBack,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) => RotationTransition(
+        turns: Tween<double>(begin: 0.75, end: 1.0).animate(animation),
+        child: FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(scale: animation, child: child),
+        ),
+      ),
+      child: KeyedSubtree(
+        key: ValueKey(mode),
+        child: CustomPaint(
+          size: Size.square(size),
+          painter: _PlayModePainter(mode: mode, color: color),
+        ),
+      ),
     );
   }
 }

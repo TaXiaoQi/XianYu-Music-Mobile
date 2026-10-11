@@ -43,6 +43,7 @@ import '../../src/widgets/committed_slider.dart';
 import '../../src/widgets/cover_hero.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/auto_hide_chrome.dart';
+import '../../src/widgets/play_pause_icon.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/theme/page_wallpaper.dart' show themedPageWallpaperProvider;
 import '../../src/widgets/glass_settings.dart';
@@ -1123,7 +1124,9 @@ class _TraditionalPlayerLayoutState
       overlay: null,
     );
     if (!immersive) return shell;
-    // 封面层铺到状态栏下方并盖住顶栏区域；下方内容仍由 shell 正常排布
+    // 封面层铺到状态栏下方并盖住顶栏区域；下方内容仍由 shell 正常排布。
+    // 歌词模式：清晰封面层淡出+上滑退场，让位页面级模糊取色底，
+    // 切回封面模式反向淡入
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1131,7 +1134,23 @@ class _TraditionalPlayerLayoutState
           top: 0,
           left: 0,
           right: 0,
-          child: _ImmersiveCoverBackdrop(current: current, height: coverHeight),
+          child: IgnorePointer(
+            ignoring: _showLyrics,
+            child: AnimatedSlide(
+              offset: _showLyrics ? const Offset(0, -0.35) : Offset.zero,
+              duration: const Duration(milliseconds: 380),
+              curve: Curves.easeOutCubic,
+              child: AnimatedOpacity(
+                opacity: _showLyrics ? 0 : 1,
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOut,
+                child: _ImmersiveCoverBackdrop(
+                  current: current,
+                  height: coverHeight,
+                ),
+              ),
+            ),
+          ),
         ),
         shell,
       ],
