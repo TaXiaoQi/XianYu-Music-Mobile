@@ -201,7 +201,7 @@ class _MostPlayedList extends ConsumerWidget {
         }
         return LayoutBuilder(
           builder: (context, cons) {
-            // 横屏下与日推一致按宽度铺 2~3 列，避免单列留大片空白
+            // 横屏与日推一致按卡宽自适应 2~3 列塞满；竖屏单列
             final columns = useLandscape(ref)
                 ? (cons.maxWidth / 200).floor().clamp(1, 3).toInt()
                 : 1;

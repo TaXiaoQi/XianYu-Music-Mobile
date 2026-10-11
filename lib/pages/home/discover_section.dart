@@ -178,11 +178,13 @@ class _DailyCard extends ConsumerWidget {
         ),
       );
     }
-    final items = state?.items.take(5).toList() ?? const [];
+    final landscape = useLandscape(ref);
+    // 横屏 3 列 × 4 行 = 12 首塞满卡片（列数仍按卡宽自适应）；竖屏单列 5 首
+    final items = state?.items.take(landscape ? 12 : 5).toList() ?? const [];
     return _CardContainer(
       // 该区块在竖屏首页与横屏发现页共用（_discoverBlocks 两处渲染），
       // 而槽位是横屏专属，必须按方向判定，不能写死 ls- 槽。
-      themeSlot: useLandscape(ref) ? 'ls-home.daily' : null,
+      themeSlot: landscape ? 'ls-home.daily' : null,
       onTap: () => openDiscoverEntry(context, ref, '/home/daily'),
       child: async.isLoading && items.isEmpty
           ? const Padding(
@@ -196,48 +198,50 @@ class _DailyCard extends ConsumerWidget {
               ),
             )
           : LayoutBuilder(
-              builder: (context, cons) {
-                // 横屏下卡片全宽，单列会留大片空白：按可用宽度铺 2~3 列
-                final columns = useLandscape(ref)
-                    ? (cons.maxWidth / 200).floor().clamp(1, 3).toInt()
-                    : 1;
-                if (columns <= 1) {
-                  return Column(
-                    children: [
-                      for (var i = 0; i < items.length; i++) ...[
-                        _dailyRow(scheme, items[i]),
-                        if (i != items.length - 1) const SizedBox(height: 8),
-                      ],
-                    ],
-                  );
-                }
-                // 按列填充（列内自上而下），各列高度尽量均衡
-                final per = (items.length / columns).ceil();
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (var c = 0; c < columns; c++) ...[
-                      if (c > 0) const SizedBox(width: 18),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            for (var i = c * per;
-                                i < (c + 1) * per && i < items.length;
-                                i++)
-                              Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: i == items.length - 1 ? 0 : 8,
-                                ),
-                                child: _dailyRow(scheme, items[i]),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              },
+              builder: (context, cons) =>
+                  _dailyRows(scheme, items, landscape, cons.maxWidth),
             ),
+    );
+  }
+
+  Widget _dailyRows(ColorScheme scheme, List<DailyRecommendItem> items,
+      bool landscape, double maxWidth) {
+    // 列宽自适应（约 200 逻辑像素一列，1~3 列封顶），按列填充各列高度均衡
+    final columns =
+        landscape ? (maxWidth / 200).floor().clamp(1, 3).toInt() : 1;
+    if (columns <= 1) {
+      return Column(
+        children: [
+          for (var i = 0; i < items.length; i++) ...[
+            _dailyRow(scheme, items[i]),
+            if (i != items.length - 1) const SizedBox(height: 8),
+          ],
+        ],
+      );
+    }
+    final per = (items.length / columns).ceil();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var c = 0; c < columns; c++) ...[
+          if (c > 0) const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              children: [
+                for (var i = c * per;
+                    i < (c + 1) * per && i < items.length;
+                    i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: i == items.length - 1 ? 0 : 8,
+                    ),
+                    child: _dailyRow(scheme, items[i]),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 
