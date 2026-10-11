@@ -211,7 +211,10 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
 
   double get _barWidth {
     final w = MediaQuery.of(context).size.width;
-    return _isLandscape ? math.min(w * 0.55, 520.0) : w - 36.0;
+    if (!_isLandscape) return w - 36.0;
+    // 档位等比：宽度随高度同系数放大，并夹紧到屏幕可容纳宽度
+    final scaled = math.min(w * 0.55, 520.0) * (_barH / 58.0);
+    return math.min(scaled, w - 12.0);
   }
 
   double get _defaultLeft {
