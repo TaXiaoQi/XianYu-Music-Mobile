@@ -105,34 +105,60 @@ class RenderPressableScale extends RenderProxyBox {
     this.pressScale = pressScale;
   }
 
-  // 欠阻尼物理弹簧（Telegram/iOS 手感）：下压快而深、回弹过冲振出，
-  // 中途打断（连按/快速抬起）带着速度续算，天然连续
+  // 欠阻尼物理弹簧（Telegram/iOS 手感），大小控件分档：
+  // 小件（图标按钮）沉得深、回弹 Q 弹，松手左右轻摆一次补足表现力；
+  // 大件（卡片/行/播放条）浅按压、回弹利落几乎不过冲，一点不晃
   static const double _stiffnessDown = 520; // 下压刚度：几十毫秒内沉到位
   static const double _dampingDown = 0.55; // 下压阻尼比：底部轻微顿挫
-  static const double _stiffnessUp = 240; // 回弹刚度：稍缓释放
-  static const double _dampingUp = 0.32; // 回弹阻尼比：明显过冲 Q 弹
-  static const double _depthBoost = 1.3; // 全局按压深度增益：起伏更可感
+  static const double _stiffnessUpSmall = 240; // 小件回弹：稍缓释放
+  static const double _dampingUpSmall = 0.32; // 小件回弹：明显过冲 Q 弹
+  static const double _stiffnessUpLarge = 300; // 大件回弹：更快收敛
+  static const double _dampingUpLarge = 0.62; // 大件回弹：几乎无过冲
+  static const double _boostSmall = 1.35; // 小件按压深度增益
+  static const double _boostLarge = 1.0; // 大件保持原始深度，不再加深
+  static const double _smallSideMax = 56; // 短边阈值：图标按钮 vs 卡片/条
+  // 小件松手摇摆：旋转弹簧参数与交替方向的激励初速
+  static const double _stiffnessSwing = 220;
+  static const double _dampingSwing = 0.35;
+  static const double _swingKick = 1.25;
 
-  double _pressScale = 1.0;
+  double _rawPressScale = 0.94;
   set pressScale(double value) {
-    final effective = 1.0 - (1.0 - value) * _depthBoost;
+    if (value == _rawPressScale) return;
+    _rawPressScale = value;
+    _applyPressScale();
+  }
+
+  bool _small = true;
+  bool _isPressed = false;
+  bool _pulseReturn = false; // 快速点按：先把下沉脉冲走完再回弹
+  bool _swingFlip = false; // 摇摆方向交替，避免每次同向
+  double _scale = 1.0;
+  double _velocity = 0.0;
+  double _target = 1.0;
+  double _angle = 0.0; // 摇摆角（弧度）
+  double _angleVel = 0.0;
+  double _pressScale = 1.0;
+  Ticker? _ticker;
+  Duration? _lastElapsed;
+
+  double get _boost => _small ? _boostSmall : _boostLarge;
+
+  void _applyPressScale() {
+    final effective = 1.0 - (1.0 - _rawPressScale) * _boost;
     if (effective == _pressScale) return;
     _pressScale = effective;
     if (_isPressed) _springTo(_pressScale);
   }
 
-  bool _isPressed = false;
-  bool _pulseReturn = false; // 快速点按：先把下沉脉冲走完再回弹
-  double _scale = 1.0;
-  double _velocity = 0.0;
-  double _target = 1.0;
-  Ticker? _ticker;
-  Duration? _lastElapsed;
-
   void pressDown() {
     if (!attached) return;
     _isPressed = true;
     _pulseReturn = false;
+    _small = size.shortestSide <= _smallSideMax;
+    _applyPressScale();
+    _angle = 0.0;
+    _angleVel = 0.0;
     _springTo(_pressScale);
   }
 
@@ -147,7 +173,16 @@ class RenderPressableScale extends RenderProxyBox {
       _pulseReturn = true;
       _springTo(_pressScale);
     } else {
-      _springTo(1.0);
+      _startReturn();
+    }
+  }
+
+  void _startReturn() {
+    _springTo(1.0);
+    // 小件松手左右轻摆（播放队列切换那种晃感）；大件不摇
+    if (_small) {
+      _swingFlip = !_swingFlip;
+      _angleVel += _swingFlip ? _swingKick : -_swingKick;
     }
   }
 
@@ -171,17 +206,34 @@ class RenderPressableScale extends RenderProxyBox {
     _lastElapsed = elapsed;
     // 下压与回弹用不同手感参数：快沉、弹回
     final pressing = _target < 1.0;
-    final stiffness = pressing ? _stiffnessDown : _stiffnessUp;
-    final damping =
-        2 * (pressing ? _dampingDown : _dampingUp) * math.sqrt(stiffness);
+    final stiffness = pressing
+        ? _stiffnessDown
+        : (_small ? _stiffnessUpSmall : _stiffnessUpLarge);
+    final dampingRatio = pressing
+        ? _dampingDown
+        : (_small ? _dampingUpSmall : _dampingUpLarge);
+    final damping = 2 * dampingRatio * math.sqrt(stiffness);
     _velocity += (stiffness * (_target - _scale) - damping * _velocity) * dt;
     _scale += _velocity * dt;
     if (_pulseReturn && _scale <= _pressScale + 0.015) {
       // 下沉脉冲到位，转入回弹
       _pulseReturn = false;
-      _springTo(1.0);
+      _startReturn();
     }
-    if ((_target - _scale).abs() < 0.0005 && _velocity.abs() < 0.005) {
+    // 旋转弹簧（小件摇摆）：目标 0，衰减振荡
+    if (_angle != 0.0 || _angleVel != 0.0) {
+      final dSwing = 2 * _dampingSwing * math.sqrt(_stiffnessSwing);
+      _angleVel += (-_stiffnessSwing * _angle - dSwing * _angleVel) * dt;
+      _angle += _angleVel * dt;
+      if (_angle.abs() < 0.0008 && _angleVel.abs() < 0.008) {
+        _angle = 0.0;
+        _angleVel = 0.0;
+      }
+    }
+    final scaleSettled =
+        (_target - _scale).abs() < 0.0005 && _velocity.abs() < 0.005;
+    final swingSettled = _angle == 0.0 && _angleVel == 0.0;
+    if (scaleSettled && swingSettled) {
       _scale = _target;
       _velocity = 0.0;
       _stopTicker();
@@ -194,17 +246,21 @@ class RenderPressableScale extends RenderProxyBox {
     _ticker?.stop();
   }
 
-  // 以缩放中心（1 - s）· c 补偿平移，等效于绕中心缩放
+  // 绕中心缩放 + 旋转（摇摆）
   Matrix4 _transform() {
     final c = size.center(Offset.zero);
-    return Matrix4.translationValues(c.dx * (1 - _scale), c.dy * (1 - _scale), 0)
-        .multiplied(Matrix4.diagonal3Values(_scale, _scale, 1));
+    return Matrix4.translationValues(c.dx, c.dy, 0)
+        .multiplied(Matrix4.diagonal3Values(_scale, _scale, 1))
+        .multiplied(Matrix4.rotationZ(_angle))
+        .multiplied(Matrix4.translationValues(-c.dx, -c.dy, 0));
   }
 
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
-    // 按压缩放期间命中位置按逆变换映射回子坐标系
-    if (_scale == 1.0) return super.hitTest(result, position: position);
+    // 按压缩放期间命中位置按逆变换映射回子坐标系（摇摆角极小，忽略不计）
+    if (_scale == 1.0 && _angle == 0.0) {
+      return super.hitTest(result, position: position);
+    }
     final c = size.center(Offset.zero);
     final mapped = Offset(
       c.dx + (position.dx - c.dx) / _scale,
@@ -215,7 +271,7 @@ class RenderPressableScale extends RenderProxyBox {
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    if (_scale == 1.0) {
+    if (_scale == 1.0 && _angle == 0.0) {
       super.paint(context, offset);
       return;
     }
@@ -231,6 +287,9 @@ class RenderPressableScale extends RenderProxyBox {
     _isPressed = false;
     _pulseReturn = false;
     _scale = 1.0;
+    _velocity = 0.0;
+    _angle = 0.0;
+    _angleVel = 0.0;
     super.detach();
   }
 }
