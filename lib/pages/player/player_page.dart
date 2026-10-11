@@ -410,6 +410,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
             GestureDetector(
               onTap: () {
                 setState(() => _showLyrics = true);
+                PredictiveCoverReturn.instance.lyricsActive.value = true;
               },
               child: Center(
                 child: PressableScale(child: Hero(
@@ -459,6 +460,7 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                     visible: _showLyrics,
                     onTap: () {
                       setState(() => _showLyrics = false);
+                      PredictiveCoverReturn.instance.lyricsActive.value = false;
                     },
                     onRomajiAvailable: (has) {
                       if (_lyricsViewHasRomaji != has) {
@@ -603,8 +605,14 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                 : cons.maxHeight * 0.8;
                             return Center(
                               child: GestureDetector(
-                                onTap: () =>
-                                    setState(() => _showLyrics = !_showLyrics),
+                                onTap: () {
+                                  setState(
+                                      () => _showLyrics = !_showLyrics);
+                                  PredictiveCoverReturn
+                                          .instance
+                                          .lyricsActive
+                                          .value = _showLyrics;
+                                },
                                 child: PressableScale(child: Hero(
                                   tag: 'player-cover',
                                   flightShuttleBuilder:
@@ -663,8 +671,13 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                               key: _lyricsKey,
                               current: current,
                               visible: _showLyrics,
-                              onTap: () =>
-                                  setState(() => _showLyrics = !_showLyrics),
+                              onTap: () {
+                                setState(() => _showLyrics = !_showLyrics);
+                                PredictiveCoverReturn
+                                        .instance
+                                        .lyricsActive
+                                        .value = _showLyrics;
+                              },
                               onRomajiAvailable: (has) {
                                 if (_lyricsViewHasRomaji != has) {
                                   setState(() => _lyricsViewHasRomaji = has);
@@ -961,6 +974,7 @@ class _TraditionalPlayerLayoutState
       );
     }
     if (_showLyrics != (i == 1)) setState(() => _showLyrics = i == 1);
+    PredictiveCoverReturn.instance.lyricsActive.value = i == 1;
     _notifyHideMv(
       ref.read(mvProvider).ready &&
           _showLyrics &&
@@ -995,6 +1009,7 @@ class _TraditionalPlayerLayoutState
       _wasLandscape = false;
       if (_showLyrics) {
         _showLyrics = false;
+        PredictiveCoverReturn.instance.lyricsActive.value = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _pageController.jumpToPage(0);
         });
@@ -1013,6 +1028,7 @@ class _TraditionalPlayerLayoutState
     }
     if (mvReady && !_wasMvReady && _showLyrics) {
       _showLyrics = false;
+      PredictiveCoverReturn.instance.lyricsActive.value = false;
     }
     _wasMvReady = mvReady;
     final hideMv = mvReady && _showLyrics && !isLandscape;
@@ -1093,6 +1109,8 @@ class _TraditionalPlayerLayoutState
                     if (_showLyrics != (i == 1)) {
                       setState(() => _showLyrics = i == 1);
                     }
+                    PredictiveCoverReturn
+                        .instance.lyricsActive.value = i == 1;
                   },
                   itemBuilder: (context, i) {
                     if (i == 0) {
@@ -1652,14 +1670,17 @@ class _TraditionalPlayerLayoutState
             },
             child: Padding(
               padding: const EdgeInsets.all(6),
-              child: themeSlotIcon(
-                ref,
-                'action.favorite',
-                fallback: isFav ? Icons.favorite : Icons.favorite_border,
-                size: 28,
-                color: isFav
-                    ? const Color(0xFFEC4141)
-                    : Colors.white.withValues(alpha: 0.9),
+              child: _StateSwapIcon(
+                stateKey: isFav,
+                child: themeSlotIcon(
+                  ref,
+                  'action.favorite',
+                  fallback: isFav ? Icons.favorite : Icons.favorite_border,
+                  size: 28,
+                  color: isFav
+                      ? const Color(0xFFEC4141)
+                      : Colors.white.withValues(alpha: 0.9),
+                ),
               ),
             ),
           )),
@@ -1731,6 +1752,17 @@ class _TraditionalPlayerLayoutState
                 tooltip: tr('音效'),
                 active: !bypass && _hasPlayerEffects(sfx),
                 enabled: !mvRequested,
+                iconWidget: _StateSwapIcon(
+                  stateKey: !bypass && _hasPlayerEffects(sfx),
+                  child: Icon(
+                    Icons.graphic_eq,
+                    color: mvRequested
+                        ? Colors.white.withValues(alpha: 0.32)
+                        : (!bypass && _hasPlayerEffects(sfx)
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.white.withValues(alpha: 0.85)),
+                  ),
+                ),
                 onTap: () => playerNavigatorKey.currentState?.push(
                   coverPageRoute<void>(context, (_) => const EffectsPage()),
                 ),
@@ -1821,10 +1853,13 @@ class _TraditionalPlayerLayoutState
       return PressableScale(pressScale: 0.88, child: IconButton(
         iconSize: 28,
         tooltip: tr('歌词调节'),
-        icon: Icon(
-          Icons.tune_rounded,
-          size: 22,
-          color: Colors.white.withValues(alpha: 0.9),
+        icon: _StateSwapIcon(
+          stateKey: _showLyrics,
+          child: Icon(
+            Icons.tune_rounded,
+            size: 22,
+            color: Colors.white.withValues(alpha: 0.9),
+          ),
         ),
         onPressed: () => _showLyricAdjustMenu(
           context,
@@ -1837,12 +1872,15 @@ class _TraditionalPlayerLayoutState
     return PressableScale(pressScale: 0.88, child: IconButton(
       iconSize: 28,
       tooltip: tr('更多'),
-      icon: themeSlotIcon(
-        ref,
-        'action.more',
-        fallback: Icons.more_horiz,
-        size: 24,
-        color: Colors.white.withValues(alpha: 0.85),
+      icon: _StateSwapIcon(
+        stateKey: _showLyrics,
+        child: themeSlotIcon(
+          ref,
+          'action.more',
+          fallback: Icons.more_horiz,
+          size: 24,
+          color: Colors.white.withValues(alpha: 0.85),
+        ),
       ),
       onPressed: () => _showCoverMoreSheet(context, lyricsEnabled),
     ));
@@ -2056,25 +2094,28 @@ class _TraditionalPlayerLayoutState
     return PressableScale(pressScale: 0.88, child: IconButton(
       iconSize: 28,
       tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
-      icon: dlActive
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white.withValues(alpha: 0.8),
+      icon: _StateSwapIcon(
+        stateKey: (dlActive, dlDone),
+        child: dlActive
+            ? SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white.withValues(alpha: 0.8),
+                ),
+              )
+            : themeSlotIcon(
+                ref,
+                'action.download',
+                fallback: dlDone
+                    ? Icons.check_circle_outline
+                    : Icons.download_outlined,
+                color: dlDone
+                    ? const Color(0xFF07C160)
+                    : Colors.white.withValues(alpha: 0.85),
               ),
-            )
-          : themeSlotIcon(
-              ref,
-              'action.download',
-              fallback: dlDone
-                  ? Icons.check_circle_outline
-                  : Icons.download_outlined,
-              color: dlDone
-                  ? const Color(0xFF07C160)
-                  : Colors.white.withValues(alpha: 0.85),
-            ),
+      ),
       onPressed: onTap,
     ));
   }

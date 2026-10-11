@@ -20,6 +20,11 @@ class _PlayerCoverPage extends Page<void> {
           if (!didPop) return;
           // 预测返回手势全程已有封面回拨动画，跳过避免叠加
           if (PredictiveCoverReturn.instance.returning.value) return;
+          // 歌词页关闭一律不飞封面（封面源在屏幕外，飞入很奇怪），
+          // 顺手复位歌词态，下次打开从封面页起步
+          final lyricsOn = PredictiveCoverReturn.instance.lyricsActive.value;
+          PredictiveCoverReturn.instance.lyricsActive.value = false;
+          if (lyricsOn) return;
           final src = PredictiveCoverReturn.instance.sourceRect;
           if (src.isEmpty) return;
           final (sp, nu, tp) = PredictiveCoverReturn.instance.coverSource;
@@ -138,7 +143,9 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
             child: RouteStaticSnapshot(animation: animation, child: child),
           ),
         );
-        if (phase == PredictiveBackPhase.idle) {
+        if (phase == PredictiveBackPhase.idle ||
+            // 歌词页关闭：封面源在屏幕外，手势回拨同样跳过
+            PredictiveCoverReturn.instance.lyricsActive.value) {
           return exit;
         }
         return Stack(

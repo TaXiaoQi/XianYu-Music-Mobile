@@ -83,8 +83,13 @@ extension PlayerNotifierOnline on PlayerNotifier {
           if ((start + k) % n != curIdx) (start + k) % n,
       ];
     }
-    if (targets.isEmpty) return;
-    final items = [for (final i in targets) state.queue[i]];
+    if (targets.isEmpty && curIdx < 0) return;
+    final items = <QueueItem>[
+      // 当前曲目优先：播放条→播放页的飞行副本与落地真封面直接命中
+      // 已解码缓存，飞行全程高清，无落地「模糊→高清」二次过渡
+      if (curIdx >= 0 && curIdx < n) state.queue[curIdx],
+      for (final i in targets) state.queue[i],
+    ];
     unawaited(Future(() async {
       try {
         final dbPath = await _ref.read(dbPathProvider.future);

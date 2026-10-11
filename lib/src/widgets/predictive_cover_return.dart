@@ -11,6 +11,10 @@ class PredictiveCoverReturn {
 
   final ValueNotifier<bool> returning = ValueNotifier<bool>(false);
 
+  /// 歌词视图激活中：歌词页的封面区在屏幕外保留（PageView KeepAlive），
+  /// 此时关闭播放页一律跳过封面回飞与手势回拨，避免从屏幕外飞入
+  final ValueNotifier<bool> lyricsActive = ValueNotifier<bool>(false);
+
   _ReturnSource? _source;
   Rect Function()? _targetProvider;
 
@@ -297,14 +301,18 @@ class _PredictiveCoverReturnViewState extends State<PredictiveCoverReturnView> {
                     height: h,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(radius),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: fullBleedSource ? 0.25 * t : 0.25),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
+                      // 阴影 alpha≈0 时跳过（整块背景源起飞段免全屏模糊）
+                      boxShadow: (fullBleedSource ? 0.25 * t : 0.25) > 0.005
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withValues(
+                                  alpha: fullBleedSource ? 0.25 * t : 0.25,
+                                ),
+                                blurRadius: 20,
+                                offset: const Offset(0, 6),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: CoverImage(
                       songPath: songPath ?? '',

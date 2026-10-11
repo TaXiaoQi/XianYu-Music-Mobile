@@ -448,16 +448,15 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                 (toRect.height - widget.fromRect.height) * t;
             final topLeft = center - Offset(w / 2, h / 2);
 
-            final opacity = _fading
-                ? (0.92 * (1 - _fadeCtrl.value))
-                : (1.0 - 0.08 * t);
+            // 飞行途中保持不透明：Opacity<1 会逐帧对整块区域 saveLayer，
+            // 沉浸式全屏形变时是主要掉帧源；淡出只在落地嵌入段发生
+            final opacity = _fading ? 0.92 * (1 - _fadeCtrl.value) : 1.0;
 
             final radius = _radius(t);
-            // 整块矩形端无阴影：飞向整块背景时阴影随贴合退场，从整块
-            // 背景飞出时起飞即无阴影、卡片化过程中逐渐成形
+            // 阴影只在有形时绘制（alpha≈0 跳过）；飞向整块背景（沉浸式）
+            // 目标端无卡片阴影，全程不绘全屏模糊阴影，避免大矩形逐帧高斯
             final shadowAlpha = _effectiveRectMorph
-                ? 0.25 *
-                    (toRect.height >= widget.fromRect.height ? 1 - t : t)
+                ? (toRect.height >= widget.fromRect.height ? 0.0 : 0.25 * t)
                 : 0.25;
 
             return Transform.translate(
@@ -469,13 +468,16 @@ class _FlyingCoverOverlayState extends State<_FlyingCoverOverlay>
                   height: h,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(radius),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: shadowAlpha),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
+                    boxShadow: shadowAlpha > 0.005
+                        ? [
+                            BoxShadow(
+                              color:
+                                  Colors.black.withValues(alpha: shadowAlpha),
+                              blurRadius: 20,
+                              offset: const Offset(0, 6),
+                            ),
+                          ]
+                        : null,
                   ),
                   child: CoverImage(
                     songPath: widget.songPath ?? '',
