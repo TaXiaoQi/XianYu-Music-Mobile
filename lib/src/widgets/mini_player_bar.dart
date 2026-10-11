@@ -201,6 +201,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       MediaQuery.of(context).size.width >=
       MediaQuery.of(context).size.height * 1.05;
 
+  /// 横屏播放条档位高度：0 小 / 1 标准 / 2 大 / 3 更大；竖屏恒为标准
+  static const List<double> _barHeights = [46.0, 58.0, 72.0, 88.0];
+
+  double get _barH {
+    final v = ref.read(settingsProvider).valueOrNull?.landscapeBarSize ?? 1;
+    return _isLandscape ? _barHeights[v.clamp(0, 3)] : 58.0;
+  }
+
   double get _barWidth {
     final w = MediaQuery.of(context).size.width;
     return _isLandscape ? math.min(w * 0.55, 520.0) : w - 36.0;
@@ -217,7 +225,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
     final batchLift = ref.read(batchBarLiftProvider);
-    return size.height - padding.bottom - 58.0 - 12.0 - batchLift;
+    return size.height - padding.bottom - _barH - 12.0 - batchLift;
   }
 
   bool? _lastLandscape;
@@ -247,7 +255,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
     final barW = _barWidth;
-    const barH = 58.0;
+    final barH = _barH;
     const minLeft = 6.0;
     final maxLeft = size.width - barW - 6.0;
     final minTop = padding.top + 6.0;
@@ -365,7 +373,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
     final barW = _barWidth;
-    const barH = 58.0;
+    final barH = _barH;
     const minLeft = 6.0;
     final maxLeft = size.width - barW - 6.0;
     final minTop = padding.top + 6.0;
@@ -453,11 +461,20 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             !lowPerf;
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
 
+    // 横屏播放条档位（竖屏恒标准）：watch 触发换档重建，几何回调经 _barH 读取
+    final barSize = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.landscapeBarSize ?? 1),
+    );
+    final barH = _isLandscape ? _barHeights[barSize.clamp(0, 3)] : 58.0;
+    final k = barH / 58.0;
+    final coverSize = barH - 12.0;
+
     final cover = _RotatingDisc(
       key: _coverKey,
       current: current,
       duration: p.duration,
       spin: _spin,
+      size: coverSize,
     );
     final coverWidget = (widget.heroTag == null)
         ? cover
@@ -468,7 +485,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                 animation: animation,
                 songPath: current.path,
                 networkUrl: current.coverUrl,
-                fromRadius: 23,
+                fromRadius: coverSize / 2,
                 toRadius: 28,
                 borderColor: Colors.white.withValues(alpha: 0.18),
                 shadow: BoxShadow(
@@ -504,8 +521,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                   current.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
+                  style: TextStyle(
+                    fontSize: 14 * k,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -515,7 +532,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: 11 * k,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
@@ -526,8 +543,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             pressScale: 0.88,
             child: IconButton(
               icon: themeSlotIcon(ref, 'player.prev',
-                  fallback: Icons.skip_previous, size: 22),
-              iconSize: 22,
+                  fallback: Icons.skip_previous, size: 22 * k),
+              iconSize: 22 * k,
+              // 档位条高可低至 46：放宽默认 48 最小约束防溢出
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints(
+                minWidth: 44 * k,
+                minHeight: coverSize,
+              ),
               onPressed: () => ref.read(playerProvider.notifier).previous(),
             ),
           ),
@@ -549,16 +572,21 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
                         key: ValueKey(isPlaying),
                         child: themeSlotIcon(ref, 'player.play',
                             fallback: isPlaying ? Icons.pause : Icons.play_arrow,
-                            size: 26,
+                            size: 26 * k,
                             color: scheme.primary),
                       ),
                     )
                   : PlayPauseMorphIcon(
                       playing: isPlaying,
-                      size: 26,
+                      size: 26 * k,
                       color: scheme.primary,
                     ),
-              iconSize: 26,
+              iconSize: 26 * k,
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints(
+                minWidth: 44 * k,
+                minHeight: coverSize,
+              ),
               onPressed: () =>
                   ref.read(playerProvider.notifier).toggle(origin: 'miniBar'),
             ),
@@ -567,8 +595,13 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             pressScale: 0.88,
             child: IconButton(
               icon: themeSlotIcon(ref, 'player.next',
-                  fallback: Icons.skip_next, size: 22),
-              iconSize: 22,
+                  fallback: Icons.skip_next, size: 22 * k),
+              iconSize: 22 * k,
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints(
+                minWidth: 44 * k,
+                minHeight: coverSize,
+              ),
               onPressed: () => ref.read(playerProvider.notifier).next(),
             ),
           ),
@@ -594,7 +627,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               fromRect: from,
               songPath: current.path,
               networkUrl: current.coverUrl,
-              radius: 23,
+              radius: coverSize / 2,
               // 飞入播放页期间隐藏目的地真封面，落地才露出
               hideTarget: true,
               targetProvider: () =>
@@ -642,7 +675,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
   Widget _liquidSurface(BuildContext context, Widget content) {
     final quality = liquidGlassQualitySetting(ref);
     return SizedBox(
-      height: 58,
+      height: _barH,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -666,7 +699,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
             context,
             radius: 999,
             child: LiveLiquidSurface(
-              radius: 29,
+              radius: _barH / 2,
               refract: bilipaiRefractOf(quality),
               chroma: bilipaiChromaOf(quality),
               blurSigma: bilipaiBackdropBlurOf(quality),
@@ -726,7 +759,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final sigma =
         navFloating ? frostedBlurSigma(ref) : navSurfaceBlurSigma(ref);
     final surface = Container(
-      height: 58,
+      height: _barH,
       decoration: BoxDecoration(
         color: fill,
         borderRadius: BorderRadius.circular(999),
@@ -761,11 +794,15 @@ class _RotatingDisc extends ConsumerWidget {
     required this.current,
     required this.duration,
     required this.spin,
+    this.size = 46.0,
   });
 
   final QueueItem current;
   final double duration;
   final AnimationController spin;
+
+  /// 外径（含进度环）；内封面 = size - 2×环距
+  final double size;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -773,18 +810,20 @@ class _RotatingDisc extends ConsumerWidget {
     final progress = duration <= 0
         ? 0.0
         : (position / duration).clamp(0.0, 1.0);
+    final inset = 3.0 * size / 46.0;
 
     return RepaintBoundary(
       child: SizedBox(
-      width: 46,
-      height: 46,
+      width: size,
+      height: size,
       child: CustomPaint(
         painter: _RingPainter(
           progress: progress,
           color: Theme.of(context).colorScheme.primary,
+          stroke: inset,
         ),
         child: Padding(
-          padding: const EdgeInsets.all(3),
+          padding: EdgeInsets.all(inset),
           child: ClipOval(
             child: AnimatedBuilder(
               animation: spin,
@@ -793,8 +832,8 @@ class _RotatingDisc extends ConsumerWidget {
                 child: CoverImage(
                   songPath: current.path,
                   networkUrl: current.coverUrl,
-                  width: 40,
-                  height: 40,
+                  width: size - inset * 2,
+                  height: size - inset * 2,
                   radius: 0,
                   icon: Icons.music_note,
                 ),
@@ -809,13 +848,20 @@ class _RotatingDisc extends ConsumerWidget {
 }
 
 class _RingPainter extends CustomPainter {
-  const _RingPainter({required this.progress, required this.color});
+  const _RingPainter({
+    required this.progress,
+    required this.color,
+    this.stroke = 3.0,
+  });
   final double progress;
   final Color color;
 
+  /// 环宽随碟面外径等比缩放（标准档 46 时为 3）
+  final double stroke;
+
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 3.0;
+    final stroke = this.stroke;
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - stroke / 2;
     final track = Paint()
@@ -841,7 +887,9 @@ class _RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RingPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.color != color;
+      oldDelegate.progress != progress ||
+      oldDelegate.color != color ||
+      oldDelegate.stroke != stroke;
 }
 
 class LiveLiquidSurface extends StatefulWidget {

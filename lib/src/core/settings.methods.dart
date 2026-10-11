@@ -177,6 +177,7 @@ class SettingsStore {
         next.floatingLyricsHideInLandscape,
       ),
       prefs.setBool('landscapeCameraArea', next.landscapeCameraArea),
+      prefs.setInt('landscapeBarSize', next.landscapeBarSize),
       prefs.setInt(
         'floatingLyricsWidthPercent',
         next.floatingLyricsWidthPercent,
@@ -554,6 +555,9 @@ extension SettingsNotifierMethods on SettingsNotifier {
       .update((s) => s.copyWith(floatingLyricsHideInLandscape: v));
   Future<void> setLandscapeCameraArea(bool v) =>
       _settingsStore.update((s) => s.copyWith(landscapeCameraArea: v));
+
+  Future<void> setLandscapeBarSize(int v) =>
+      _settingsStore.update((s) => s.copyWith(landscapeBarSize: v));
   Future<void> setFloatingLyricsWidthPercent(int v) =>
       _settingsStore.update((s) => s.copyWith(floatingLyricsWidthPercent: v));
   Future<void> setFloatingLyricsUseLyricFont(bool v) =>

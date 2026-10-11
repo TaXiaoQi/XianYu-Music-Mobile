@@ -260,6 +260,7 @@ class AppSettings {
     this.floatingLyricsHideWhenPaused = false,
     this.floatingLyricsHideInLandscape = false,
     this.landscapeCameraArea = true,
+    this.landscapeBarSize = 1,
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
     this.statusBarLyricsEnabled = false,
@@ -460,6 +461,9 @@ class AppSettings {
 
   final bool landscapeCameraArea;
 
+  /// 横屏迷你播放条尺寸档位：0 小 / 1 标准 / 2 大 / 3 更大（竖屏恒为标准）
+  final int landscapeBarSize;
+
   final int floatingLyricsWidthPercent;
 
   final bool floatingLyricsUseLyricFont;
@@ -589,6 +593,7 @@ class AppSettings {
     bool? floatingLyricsHideWhenPaused,
     bool? floatingLyricsHideInLandscape,
     bool? landscapeCameraArea,
+    int? landscapeBarSize,
     int? floatingLyricsWidthPercent,
     bool? floatingLyricsUseLyricFont,
     bool? statusBarLyricsEnabled,
@@ -740,6 +745,7 @@ class AppSettings {
       floatingLyricsHideInLandscape:
           floatingLyricsHideInLandscape ?? this.floatingLyricsHideInLandscape,
       landscapeCameraArea: landscapeCameraArea ?? this.landscapeCameraArea,
+      landscapeBarSize: landscapeBarSize ?? this.landscapeBarSize,
       floatingLyricsWidthPercent:
           floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
       floatingLyricsUseLyricFont:
@@ -931,6 +937,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsHideInLandscape:
           prefs.getBool('floatingLyricsHideInLandscape') ?? false,
       landscapeCameraArea: prefs.getBool('landscapeCameraArea') ?? true,
+      landscapeBarSize: prefs.getInt('landscapeBarSize') ?? 1,
       floatingLyricsWidthPercent:
           prefs.getInt('floatingLyricsWidthPercent') ?? 92,
       floatingLyricsUseLyricFont:

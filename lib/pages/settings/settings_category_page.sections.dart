@@ -370,6 +370,19 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             value: s?.landscapeCameraArea ?? true,
             onChanged: (v) => n.setLandscapeCameraArea(v),
           ),
+          _tile(
+            context,
+            icon: Icons.picture_in_picture_alt_outlined,
+            title: tr('横屏播放条大小'),
+            subtitle: tr('横屏迷你播放条的尺寸档位，竖屏不受影响'),
+            trailing: Text(switch (s?.landscapeBarSize ?? 1) {
+              0 => tr('小'),
+              2 => tr('大'),
+              3 => tr('更大'),
+              _ => tr('标准'),
+            }),
+            onTap: () => _pickLandscapeBarSize(context, ref, s),
+          ),
           if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
             _tile(
               context,

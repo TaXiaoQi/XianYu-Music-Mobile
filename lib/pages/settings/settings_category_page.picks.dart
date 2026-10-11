@@ -164,6 +164,30 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
     }
   }
 
+  Future<void> _pickLandscapeBarSize(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.landscapeBarSize ?? 1;
+    final choice = await showModernChoiceSheet<int>(
+      context: context,
+      title: tr('横屏播放条大小'),
+      options:   [
+        ModernChoiceOption(label: tr('小'), value: 0, subtitle: tr('紧凑低调，少占画面')),
+        ModernChoiceOption(label: tr('标准'), value: 1, subtitle: tr('默认高度')),
+        ModernChoiceOption(label: tr('大'), value: 2, subtitle: tr('更易点按，封面更大')),
+        ModernChoiceOption(label: tr('更大'), value: 3, subtitle: tr('车机/平板远距离观看')),
+      ],
+      currentValue: cur,
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setLandscapeBarSize(choice);
+    }
+  }
+
   Future<void> _pickFontSize(
     BuildContext context,
     WidgetRef ref,
