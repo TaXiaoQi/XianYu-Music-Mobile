@@ -30,6 +30,10 @@ class WeiyunProvider extends CloudProvider {
   @override
   String get webviewLoginUrl => 'https://www.weiyun.com/';
 
+  // 移动 UA 会跳「立即安装」宣传页，桌面 UA 才出登录入口。
+  @override
+  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
+
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
         doneUrlPattern: RegExp(r'weiyun\.com'),

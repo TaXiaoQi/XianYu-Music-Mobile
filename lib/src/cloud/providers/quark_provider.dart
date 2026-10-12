@@ -1,5 +1,6 @@
 // 夸克网盘：继承 QuarkUcBase，仅声明品牌常量。
 
+import '../cloud_provider.dart';
 import '../cloud_types.dart';
 import 'quark_uc_base.dart';
 
@@ -25,12 +26,15 @@ class QuarkProvider extends QuarkUcBase {
   String get uaBrand => 'quark-cloud-drive';
 
   @override
-  String get webviewLoginUrl => 'https://passport.quark.cn/login';
+  String get webviewLoginUrl => 'https://pan.quark.cn/';
+
+  @override
+  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
 
   @override
   CloudCaptureRule? get captureRule => const CloudCaptureRule(
         cookieNames: ['kps', 'sign'],
-        cookieDomains: ['pan.quark.cn', 'passport.quark.cn'],
+        cookieDomains: ['pan.quark.cn'],
         pollIntervalMs: 500,
       );
 }

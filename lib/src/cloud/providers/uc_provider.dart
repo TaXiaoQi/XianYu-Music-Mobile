@@ -1,5 +1,6 @@
 // UC 网盘：继承 QuarkUcBase，仅声明品牌常量（接口与夸克同构）。
 
+import '../cloud_provider.dart';
 import '../cloud_types.dart';
 import 'quark_uc_base.dart';
 
@@ -25,7 +26,10 @@ class UcProvider extends QuarkUcBase {
   String get uaBrand => 'uc-cloud-drive';
 
   @override
-  String get webviewLoginUrl => 'https://pc.uc.cn/';
+  String get webviewLoginUrl => 'https://drive.uc.cn/';
+
+  @override
+  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
 
   @override
   CloudCaptureRule? get captureRule => const CloudCaptureRule(

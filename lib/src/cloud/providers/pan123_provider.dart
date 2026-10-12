@@ -49,7 +49,9 @@ class Pan123Provider extends CloudProvider {
     if (!resp.isOk) throw const CloudException('二维码获取失败');
     final data = resp.json['data'];
     if (data is! Map<String, dynamic>) throw const CloudException('二维码获取失败');
-    final qr = (data['qr'] ?? '').toString();
+    // 接口返回二维码跳转 URL（data.url，123pan App 扫码用）与 uniID；
+    // 旧字段 qr 兼容保留。
+    final qr = (data['url'] ?? data['qr'] ?? '').toString();
     final uniId = (data['uniID'] ?? '').toString();
     if (qr.isEmpty || uniId.isEmpty) throw const CloudException('二维码获取失败');
     return CloudQrLoginSession(qrContent: qr, state: uniId);
@@ -65,7 +67,10 @@ class Pan123Provider extends CloudProvider {
     if (!resp.isOk) return null;
     final data = resp.json['data'];
     if (data is! Map<String, dynamic>) return null;
-    final status = (data['status'] as num?)?.toInt() ?? 0;
+    // 现接口字段为 loginStatus（旧 status 兼容）：2=已确认，4=已失效。
+    final status =
+        ((data['loginStatus'] ?? data['status']) as num?)?.toInt() ?? 0;
+    if (status == 4) throw const CloudException('二维码已过期，请刷新');
     if (status != 2) return null; // 未确认。
     final token = (data['token'] ?? data['accessToken'] ?? '').toString();
     if (token.isEmpty) throw const CloudException('二维码已过期，请刷新');
