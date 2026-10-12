@@ -32,6 +32,14 @@ abstract class CloudProvider {
   /// WebView 捕获规则（webview 组；非 WebView 登录盘为 null）。
   CloudCaptureRule? get captureRule => null;
 
+  /// WebView 登录壳 HTML（非 null 时登录页 loadHtmlString 渲染本页，
+  /// 不再直接 loadRequest(webviewLoginUrl)——供需要 iframe/postMessage
+  /// 桥接的盘（阿里）在壳页里完成 OAuth 流程）。
+  String? get webviewShellHtml => null;
+
+  /// 壳页 baseUrl（决定壳页 origin；postMessage targetOrigin 需匹配）。
+  String? get webviewShellBaseUrl => null;
+
   /// 账密/短信表单字段（httpPassword/smsPassword）。
   List<CloudLoginField> get loginFields => const [];
 

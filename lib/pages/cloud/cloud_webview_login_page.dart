@@ -57,12 +57,23 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   }
 
   /// 部分盘（夸克/UC/微云）需桌面 UA 才出登录入口；UA 设置完成后再加载。
+  /// 壳页盘（阿里）渲染 provider 提供的 HTML（内嵌 OAuth iframe +
+  /// postMessage 桥），baseUrl 决定壳页 origin。
   Future<void> _bootstrap() async {
     final ua = _provider.webviewUserAgent;
     if (ua != null) {
       try {
         await _controller.setUserAgent(ua);
       } catch (_) {}
+    }
+    final shell = _provider.webviewShellHtml;
+    if (shell != null) {
+      try {
+        await _controller.loadHtmlString(shell, baseUrl: _provider.webviewShellBaseUrl);
+        return;
+      } catch (_) {
+        // 壳页加载失败兜底直开 OAuth 页（捕获走旧 localStorage 通道）。
+      }
     }
     await _controller
         .loadRequest(Uri.parse(_provider.webviewLoginUrl));

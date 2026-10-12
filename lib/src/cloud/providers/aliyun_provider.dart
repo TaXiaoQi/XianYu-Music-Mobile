@@ -1,8 +1,17 @@
-// 阿里云盘 provider（webviewToken：oauth 页轮询 localStorage 抓
-// refresh_token）。
+// 阿里云盘 provider（webviewToken：壳页 iframe 嵌官方 OAuth 授权页，
+// 登录完成后官方 callback 页在 iframe 内 postMessage 回 tokenInfo，
+// 壳页桥接存入 window 变量，pollScript 轮询读取）。
 //
-// 关键点：refresh_token 单次有效，rust 刷新后的轮换凭据经响应
-// rotated_cred 带回、由 cloud_remote 统一回写本地凭据存储。
+// 关键点：官方 callback（www.aliyundrive.com/sign/callback）只在
+// iframe 环境（top != self）下用 code 兑换 token 并 postMessage 给
+// state.origin 指定的父页 origin——直接顶层打开会报「Invalid stated」
+// 且 token 永不落 localStorage。因此壳页必须：
+//   1. iframe src 的 state 带 {"origin": <壳页 origin>}（官方校验
+//      要求真实 https origin，"*" 会被拒）；
+//   2. 壳页经 loadHtmlString(baseUrl: 同一 origin) 渲染，保证父页
+//      origin 与 postMessage targetOrigin 匹配。
+// refresh_token 单次有效，rust 刷新后的轮换凭据经响应 rotated_cred
+// 带回、由 cloud_remote 统一回写本地凭据存储。
 
 import 'dart:convert';
 
@@ -14,6 +23,9 @@ class AliyunProvider extends CloudProvider {
   AliyunProvider();
 
   static const _clientId = '25dzX3vbYqktVxyX';
+
+  /// 壳页 origin（postMessage 桥两端约定，须为真实 https origin）。
+  static const _shellOrigin = 'https://www.alipan.com';
 
   @override
   String get id => 'aliyun';
@@ -38,12 +50,57 @@ class AliyunProvider extends CloudProvider {
       '&client_id=$_clientId'
       '&state=${Uri.encodeQueryComponent('{"origin":"*"}')}#/login';
 
+  /// OAuth 授权页（iframe 用）：state.origin 指向壳页 origin。
+  static String get _oauthIframeUrl =>
+      'https://auth.aliyundrive.com/v2/oauth/authorize?login_type=custom'
+      '&response_type=code'
+      '&redirect_uri=${Uri.encodeQueryComponent('https://www.aliyundrive.com/sign/callback')}'
+      '&client_id=$_clientId'
+      '&state=${Uri.encodeQueryComponent('{"origin":"$_shellOrigin"}')}#/login';
+
+  @override
+  String? get webviewShellBaseUrl => _shellOrigin;
+
+  @override
+  String? get webviewShellHtml => '''
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#fff}
+iframe{border:0;width:100%;height:100%;display:block}
+</style>
+</head>
+<body>
+<iframe src="$_oauthIframeUrl"></iframe>
+<script>
+window.__XYM_ALI_TOKEN__ = '';
+window.addEventListener('message', function (e) {
+  try {
+    var d = e.data;
+    if (d && d.type === 'loginSuccess' && d.tokenInfo) {
+      window.__XYM_ALI_TOKEN__ = JSON.stringify(d.tokenInfo);
+    }
+  } catch (err) {}
+});
+</script>
+</body>
+</html>
+''';
+
   /// 轮询脚本：必须是返回字符串的 JS 表达式（IIFE）。
-  /// 遍历 localStorage/sessionStorage 找 refresh_token（键名兼容多种）。
+  /// 优先读壳页 postMessage 桥存的 tokenInfo；回退遍历
+  /// localStorage/sessionStorage 找 refresh_token（键名兼容多种）。
   @override
   CloudCaptureRule? get captureRule => const CloudCaptureRule(
         pollScript: '''
 (() => {
+  try {
+    var s = window.__XYM_ALI_TOKEN__;
+    if (s && s.length > 2) return s;
+  } catch (e) {}
   var keys = ['token','TOKEN','loginToken','login_token','auth_token',
               'aliyundrive_token','alipan_token','accountToken'];
   var stores = [window.localStorage, window.sessionStorage];
@@ -91,12 +148,26 @@ class AliyunProvider extends CloudProvider {
     } catch (_) {
       throw const CloudException('登录凭据解析失败，请重新登录');
     }
-    final refreshToken = (parsed['rt'] ?? '').toString();
+    // 新通道：官方 callback postMessage 的 tokenInfo（/token/get 响应，
+    // 字段在顶层，data 里可能有包裹）；旧通道：pollScript 打包的
+    // {rt, uid, nick}。两者兼容解析。
+    final data = parsed['data'] is Map<String, dynamic>
+        ? parsed['data'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    String fieldOf(List<String> keys) {
+      for (final k in keys) {
+        final v = parsed[k] ?? data[k];
+        if (v != null && v.toString().isNotEmpty) return v.toString();
+      }
+      return '';
+    }
+
+    final refreshToken = fieldOf(['rt', 'refresh_token']);
     if (refreshToken.isEmpty) {
       throw const CloudException('未捕获到登录凭据，请重新登录');
     }
-    final uid = (parsed['uid'] ?? '').toString();
-    final nick = (parsed['nick'] ?? '').toString();
+    final uid = fieldOf(['uid', 'user_id']);
+    final nick = fieldOf(['nick', 'nick_name', 'user_name', 'name']);
     final accountId = uid.isNotEmpty ? uid : refreshToken.substring(0, 12);
     final cred = <String, String>{
       'refreshToken': refreshToken,

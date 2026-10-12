@@ -1,9 +1,10 @@
 // 夸克 / UC 网盘共用实现（两家同为阿里系 XCloud 架构，接口同构）。
 //
-// 登录：原生扫码——CAS 下发 token → 轮询 service ticket → st 兑换
-// 登录 Cookie（kps/sign）；业务（列目录/分享/转存/直链）一律经
-// cloud_remote 桥转发内嵌 Rust（rust/src/cloud/quark_uc.rs）。
-// 子类只声明常量。
+// 登录：WebView 打开官方网盘页（桌面 UA），脚本上下文读登录 Cookie
+//（kps/sign 非 httpOnly）——原原生扫码链路的 st 兑换接口
+// /1/clouddrive/login 已被官方下线（404），无替代兑换端点；
+// 业务（列目录/分享/转存/直链）一律经 cloud_remote 桥转发内嵌
+// Rust（rust/src/cloud/quark_uc.rs）。子类声明品牌与登录页常量。
 
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
@@ -26,12 +27,6 @@ abstract class QuarkUcBase extends CloudProvider {
   /// UA 品牌串（quark-cloud-drive / uc-cloud-drive）。
   String get uaBrand;
 
-  /// CAS 扫码域（uop.quark.cn / api.open.uc.cn）。
-  String get casHost;
-
-  /// 扫码内容模板（{token} 占位；品牌 App 扫码后跳确认页）。
-  String get qrContentTemplate;
-
   String get commonQuery => 'pr=$pr&fr=pc&sys=win32&ve=3.23.2';
 
   String get _ua =>
@@ -46,70 +41,23 @@ abstract class QuarkUcBase extends CloudProvider {
         'Cookie': cookieHeader(cred),
       };
 
-  /// 未带登录态的 Web 请求头（扫码链路用）。
-  Map<String, String> get _webHeaders => {
-        'User-Agent': _ua,
-        'Referer': 'https://$webHost/',
-      };
-
   @override
   String get rootPath => '0';
 
   @override
-  CloudLoginKind get loginKind => CloudLoginKind.qrCode;
+  CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
+
+  @override
+  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
 
   @override
   Duration get directLinkTtl => const Duration(hours: 2);
 
-  // ── 登录（原生扫码）───────────────────────────────────
+  // ── 登录（WebView 捕获 Cookie）─────────────────────────
 
   @override
-  Future<CloudQrLoginSession> createQrLogin() async {
-    final resp = await cloudGet(
-      'https://$casHost/cas/ajax/getTokenForQrcodeLogin',
-      headers: _webHeaders,
-    );
-    if (!resp.isOk) throw const CloudException('二维码获取失败');
-    final data = resp.json['data'];
-    final members =
-        data is Map<String, dynamic> ? data['members'] : null;
-    final token = members is Map<String, dynamic>
-        ? (members['token'] ?? '').toString()
-        : '';
-    if (token.isEmpty) throw const CloudException('二维码获取失败');
-    return CloudQrLoginSession(
-      qrContent: qrContentTemplate.replaceFirst('{token}', token),
-      state: token,
-    );
-  }
-
-  @override
-  Future<CloudAccount?> pollQrLogin(CloudQrLoginSession session) async {
-    final resp = await cloudGet(
-      'https://$casHost/cas/ajax/getServiceTicketByQrcodeToken'
-      '?token=${Uri.encodeQueryComponent(session.state)}',
-      headers: _webHeaders,
-    );
-    if (!resp.isOk) return null; // 瞬时错误，保持轮询
-    final j = resp.json;
-    // 2000000=已确认（携带 service_ticket）；50004001=待扫码/待确认。
-    final status = (j['status'] as num?)?.toInt() ?? 0;
-    if (status == 50004001) return null;
-    if (status != 2000000) throw const CloudException('二维码已失效，请刷新');
-    final data = j['data'];
-    final members = data is Map<String, dynamic> ? data['members'] : null;
-    final st = members is Map<String, dynamic>
-        ? (members['service_ticket'] ?? '').toString()
-        : '';
-    if (st.isEmpty) throw const CloudException('二维码已失效，请刷新');
-    // st 兑换登录 Cookie（Set-Cookie 全收，含 kps/sign）。
-    final resp2 = await cloudGet(
-      'https://$apiHost/1/clouddrive/login?$commonQuery'
-      '&st=${Uri.encodeQueryComponent(st)}',
-      headers: _webHeaders,
-    );
-    return buildAccountFromCookies(resp2.setCookiePairs);
-  }
+  Future<CloudAccount> completeLogin(CloudCaptureResult captured) =>
+      buildAccountFromCookies(captured.cookies);
 
   /// 登录 Cookie → 账号（member 接口拿昵称/用户 id，防御式兜底指纹）。
   Future<CloudAccount> buildAccountFromCookies(Map<String, String> cookies) async {
