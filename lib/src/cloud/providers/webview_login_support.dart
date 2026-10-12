@@ -16,6 +16,22 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../cloud_types.dart';
 
+/// 解析用户粘贴的 Cookie 串（容忍 "Cookie:" 前缀与分号/换行分隔），
+/// 手动填 Cookie 登录共用。
+Map<String, String> parseCookieText(String raw) {
+  final cookies = <String, String>{};
+  for (var seg in raw.split(RegExp(r'[;\n]'))) {
+    seg = seg.trim();
+    if (seg.toLowerCase().startsWith('cookie:')) seg = seg.substring(7).trim();
+    final eq = seg.indexOf('=');
+    if (eq <= 0) continue;
+    final k = seg.substring(0, eq).trim();
+    final v = seg.substring(eq + 1).trim();
+    if (k.isNotEmpty && v.isNotEmpty && !k.contains(' ')) cookies[k] = v;
+  }
+  return cookies;
+}
+
 class CloudWebviewCaptureSession {
   CloudWebviewCaptureSession(this.rule);
 

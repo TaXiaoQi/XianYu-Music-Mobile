@@ -181,27 +181,12 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     final raw = controller.text;
     controller.dispose();
     if (ok != true || !mounted) return;
-    final cookies = _parseCookieText(raw);
+    final cookies = parseCookieText(raw);
     if (cookies.isEmpty) {
       showXianYuToast(context, tr('未识别到 Cookie'));
       return;
     }
     await _finalizeLogin(CloudCaptureResult(cookies: cookies));
-  }
-
-  /// 解析粘贴的 Cookie 串（容忍 "Cookie:" 前缀与换行分隔）。
-  Map<String, String> _parseCookieText(String raw) {
-    final cookies = <String, String>{};
-    for (var seg in raw.split(RegExp(r'[;\n]'))) {
-      seg = seg.trim();
-      if (seg.toLowerCase().startsWith('cookie:')) seg = seg.substring(7).trim();
-      final eq = seg.indexOf('=');
-      if (eq <= 0) continue;
-      final k = seg.substring(0, eq).trim();
-      final v = seg.substring(eq + 1).trim();
-      if (k.isNotEmpty && v.isNotEmpty && !k.contains(' ')) cookies[k] = v;
-    }
-    return cookies;
   }
 
   Future<void> _forceCapture() async {
