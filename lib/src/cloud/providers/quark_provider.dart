@@ -1,7 +1,5 @@
-// 夸克网盘：继承 QuarkUcBase，仅声明品牌常量。
+// 夸克网盘：继承 QuarkUcBase，仅声明品牌与扫码常量。
 
-import '../cloud_provider.dart';
-import '../cloud_types.dart';
 import 'quark_uc_base.dart';
 
 class QuarkProvider extends QuarkUcBase {
@@ -26,15 +24,11 @@ class QuarkProvider extends QuarkUcBase {
   String get uaBrand => 'quark-cloud-drive';
 
   @override
-  String get webviewLoginUrl => 'https://pan.quark.cn/';
+  String get casHost => 'uop.quark.cn';
 
   @override
-  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
-
-  @override
-  CloudCaptureRule? get captureRule => const CloudCaptureRule(
-        cookieNames: ['kps', 'sign'],
-        cookieDomains: ['pan.quark.cn'],
-        pollIntervalMs: 500,
-      );
+  String get qrContentTemplate =>
+      'https://su.quark.cn/4_eMHBJ?token={token}&client_id=532&ssb=weblogin'
+      '&uc_param_str=&uc_biz_str=S:custom|OPT:SAREA@0|OPT:IMMERSIVE@1'
+      '|OPT:BACK_BTN_STYLE@0';
 }
