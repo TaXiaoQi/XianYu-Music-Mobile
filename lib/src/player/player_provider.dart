@@ -90,6 +90,10 @@ class _StartOnlineTimeoutException implements Exception {
   String toString() => message;
 }
 
+/// 起播请求已被更新的请求取代（快速切歌），旧请求的超时按静默放弃处理：
+/// 不触发降级重试/换源，异常在上层 _playAt 的 epoch 守卫处被吞掉
+class _StartOnlineSupersedException implements Exception {}
+
 BeforePlayGate? beforePlayGate;
 
 class _GatedAudioPlayer extends AudioPlayer {
@@ -203,6 +207,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   int _playEpoch = 0;
   final Set<String> _failedSources = {};
+
+  /// 起播请求代数：每次 _startOnlineUrl 递增。快速切歌时旧请求的 setUrl
+  /// future 被新 load 抢占后可能永不完成，其超时不得作为当前播放器故障
+  /// 依据，更不能据此 stop/rebuild 杀掉正在播的新歌
+  int _onlineStartSeq = 0;
 
   /// 近期「URL 播放失败」的插件（id → 失败时间，10 分钟 TTL）。
   /// 兄弟换源候选排除这些插件：解析成功≠可播（如返回已 404 的直链），
@@ -457,11 +466,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     await _restoreSession();
   }
 
-  /// 正在播的在线歌刚下载完成：保进度换本地源。
+  /// 正在播的在线歌/网盘歌刚下载完成：保进度换本地源。
   /// 走 _playAt 重分派（会命中本地优先总闸）；暂停中切源后维持暂停。
   Future<void> _switchCurrentToLocalAfterDownload() async {
     final cur = state.current;
-    if (cur == null || !cur.isOnline) return;
+    if (cur == null) return;
+    if (!cur.isOnline && !cur.path.startsWith('cloud://')) return;
     final local = await _ref
         .read(downloadProvider.notifier)
         .localFileFor(cur.path);
@@ -505,19 +515,22 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _restoredOnlinePending = null;
     _restoredLocalPending = null;
     var item = state.queue[index];
-    // 本地优先总闸（对齐桌面端下载联运）：在线歌已下载且本地文件仍在
-    // → 直接换本地源，不再走在线解析；未下载的歌零磁盘 IO。
+    // 本地优先总闸（对齐桌面端下载联运）：在线歌/网盘歌已下载且本地文件
+    // 仍在 → 直接换本地源，不再走在线/直链解析；未下载的歌零磁盘 IO。
     // 队列里的播链不动，本地文件被清理后自然回退在线。
-    // 精确播链键未命中时再走跨源模糊匹配（同一首歌其他源的本地文件）。
-    if (item.isOnline) {
+    // 在线歌精确播链键未命中时再走跨源模糊匹配（同一首歌其他源的本地文件）；
+    // 网盘歌无可靠时长只做精确匹配，避免网盘版本被同名在线版本顶替。
+    if (item.isOnline || item.path.startsWith('cloud://')) {
       final dl = _ref.read(downloadProvider.notifier);
       var local = await dl.localFileFor(item.path);
-      local ??= await dl.localFileFuzzyFor(
-        title: item.title,
-        artist: item.artist,
-        durationMs: item.durationMs,
-        excludeSongPath: item.path,
-      );
+      if (item.isOnline) {
+        local ??= await dl.localFileFuzzyFor(
+          title: item.title,
+          artist: item.artist,
+          durationMs: item.durationMs,
+          excludeSongPath: item.path,
+        );
+      }
       if (local != null && local != item.path) {
         AppLog.info('play', '[local-first] ${item.title} -> $local');
         item = item.withLocalFile(local);
