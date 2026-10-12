@@ -105,11 +105,16 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
 
   Future<void> _finishLogin() async {
     if (_finishing || !mounted) return;
+    await _finalizeLogin(_session.result());
+  }
+
+  /// 落库（自动捕获与手动填 Cookie 共用）。
+  Future<void> _finalizeLogin(CloudCaptureResult captured) async {
     _finishing = true;
     _watch?.cancel();
     if (mounted) setState(() {});
     try {
-      final account = await _provider.completeLogin(_session.result());
+      final account = await _provider.completeLogin(captured);
       await CloudCredentialsStore.instance.saveAccount(account);
       if (!mounted) return;
       showXianYuToast(context, tr('绑定成功'));
@@ -124,6 +129,79 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
       setState(() => _finishing = false);
       _startWatch();
     }
+  }
+
+  /// 手动填 Cookie 兜底：自动捕获拿不到凭据（如鸿蒙端无原生
+  /// getCookies、平台差异导致 Cookie 不可读）时，从浏览器复制
+  /// 已登录 Cookie 粘贴落库。
+  Future<void> _manualCookie() async {
+    if (_finishing || !mounted) return;
+    final names = _provider.captureRule?.cookieNames ?? const [];
+    final controller = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('手动填 Cookie')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              names.isEmpty
+                  ? tr('粘贴已登录账号的 Cookie')
+                  : tr('粘贴已登录账号的 Cookie，需包含 {names}', {
+                      'names': names.join('、'),
+                    }),
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                hintText: 'kps=xxx; sign=xxx',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(tr('取消')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(tr('确定')),
+          ),
+        ],
+      ),
+    );
+    final raw = controller.text;
+    controller.dispose();
+    if (ok != true || !mounted) return;
+    final cookies = _parseCookieText(raw);
+    if (cookies.isEmpty) {
+      showXianYuToast(context, tr('未识别到 Cookie'));
+      return;
+    }
+    await _finalizeLogin(CloudCaptureResult(cookies: cookies));
+  }
+
+  /// 解析粘贴的 Cookie 串（容忍 "Cookie:" 前缀与换行分隔）。
+  Map<String, String> _parseCookieText(String raw) {
+    final cookies = <String, String>{};
+    for (var seg in raw.split(RegExp(r'[;\n]'))) {
+      seg = seg.trim();
+      if (seg.toLowerCase().startsWith('cookie:')) seg = seg.substring(7).trim();
+      final eq = seg.indexOf('=');
+      if (eq <= 0) continue;
+      final k = seg.substring(0, eq).trim();
+      final v = seg.substring(eq + 1).trim();
+      if (k.isNotEmpty && v.isNotEmpty && !k.contains(' ')) cookies[k] = v;
+    }
+    return cookies;
   }
 
   Future<void> _forceCapture() async {
@@ -145,6 +223,13 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
             leading: const BackButton(),
             title: Text(_provider.displayName),
             actions: [
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: _finishing ? null : _manualCookie,
+                  child: Text(tr('填 Cookie')),
+                ),
+              ),
               PressableScale(
                 pressScale: 0.92,
                 child: TextButton(

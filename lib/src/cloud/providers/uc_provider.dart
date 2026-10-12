@@ -31,6 +31,7 @@ class UcProvider extends QuarkUcBase {
   CloudCaptureRule? get captureRule => const CloudCaptureRule(
         cookieNames: ['kps', 'sign'],
         cookieDomains: ['drive.uc.cn', 'pc.uc.cn'],
-        pollIntervalMs: 500,
+        // kps/sign 已为 httpOnly，document.cookie 读不到，走原生通道。
+        nativeCookies: true,
       );
 }
