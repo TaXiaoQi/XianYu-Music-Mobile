@@ -1,11 +1,9 @@
-// 百度网盘 provider（原生扫码：passport 下发二维码图 → unicast 轮询 →
-// BDUSS/STOKEN 兑换）。
+// 百度网盘 provider（webviewCookie：WebView 打开网页登录页，输账密/
+// 短信验证码；BDUSS 为 httpOnly，凭捕获规则的原生 CookieManager 通道
+// 读取，平台无 getCookies 时回退 document.cookie——BDUSS 场景即失效）。
 //
 // 注意：分享列表/转存接口必须带登录态（BDUSS），故 parseShareLink 内
 // 直接读本地绑定凭据；业务一律经 cloud_remote 桥转发内嵌 Rust。
-
-import 'dart:convert';
-import 'dart:math';
 
 import '../cloud_credentials_store.dart';
 import '../cloud_http.dart';
@@ -36,108 +34,61 @@ class BaiduProvider extends CloudProvider {
   String get rootPath => '/';
 
   @override
-  CloudLoginKind get loginKind => CloudLoginKind.qrCode;
+  CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
+
+  @override
+  String get webviewLoginUrl => 'https://pan.baidu.com/login';
+
+  @override
+  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
+
+  @override
+  CloudCaptureRule? get captureRule => CloudCaptureRule(
+        // BDUSS 为 httpOnly，document.cookie 读不到，走原生通道。
+        cookieNames: ['BDUSS'],
+        cookieDomains: ['baidu.com'],
+        doneUrlPattern: RegExp(r'pan\.baidu\.com/(?!login)'),
+        nativeCookies: true,
+      );
 
   @override
   Duration get directLinkTtl => const Duration(hours: 8);
 
-  // ── 登录（原生扫码）───────────────────────────────────
+  // ── 登录（WebView 捕获 Cookie）────────────────────────
 
   @override
-  Future<CloudQrLoginSession> createQrLogin() async {
-    final gid = _randomHex(32);
-    final tt = DateTime.now().millisecondsSinceEpoch;
-    final resp = await cloudGet(
-      'https://passport.baidu.com/v2/api/getqrcode'
-      '?lp=pc&qrloginfrom=pc&gid=$gid&clienttype=web&apiver=v3&tt=$tt'
-      '&tpl=netdisk',
-      headers: _webHeaders,
-    );
-    if (!resp.isOk) throw const CloudException('二维码获取失败');
-    final j = resp.json;
-    if ((j['errno'] as num?)?.toInt() != 0) {
-      throw const CloudException('二维码获取失败');
-    }
-    final imgurl = (j['imgurl'] ?? '').toString();
-    final sign = (j['sign'] ?? '').toString();
-    if (imgurl.isEmpty || sign.isEmpty) {
-      throw const CloudException('二维码获取失败');
-    }
-    // getqrcode 响应的 Cookie（BAIDUID 等）须串联进后续轮询/兑换请求。
-    final state = jsonEncode({
-      'gid': gid,
-      'sign': sign,
-      'ck': cookieHeader(resp.setCookiePairs),
-    });
-    return CloudQrLoginSession(
-      qrContent: '',
-      qrImageUrl: imgurl.startsWith('http') ? imgurl : 'https://$imgurl',
-      state: state,
-    );
-  }
-
-  @override
-  Future<CloudAccount?> pollQrLogin(CloudQrLoginSession session) async {
-    final Map<String, dynamic> info;
-    try {
-      info = jsonDecode(session.state) as Map<String, dynamic>;
-    } catch (_) {
-      throw const CloudException('二维码已失效，请刷新');
-    }
-    final ck = (info['ck'] ?? '').toString();
-    final headers = {
-      ..._webHeaders,
-      if (ck.isNotEmpty) 'Cookie': ck,
-    };
-    final tt = DateTime.now().millisecondsSinceEpoch;
-    final resp = await cloudGet(
-      'https://passport.baidu.com/channel/unicast'
-      '?channel_id=${Uri.encodeQueryComponent((info['sign'] ?? '').toString())}'
-      '&gid=${Uri.encodeQueryComponent((info['gid'] ?? '').toString())}'
-      '&tpl=netdisk&_sdkFrom=1&apiver=v3&tt=$tt',
-      headers: headers,
-    );
-    if (!resp.isOk) return null; // 瞬时错误，保持轮询
-    final j = resp.json;
-    final errno = (j['errno'] as num?)?.toInt() ?? -1;
-    if (errno == 1) return null; // 待扫码/待确认
-    if (errno != 0) throw const CloudException('二维码已失效，请刷新');
-    // channel_v 为 JSON 字符串；status=0 表示已在手机端确认。
-    final cvRaw = j['channel_v'];
-    final cv = cvRaw is String
-        ? jsonDecode(cvRaw) as Map<String, dynamic>?
-        : cvRaw as Map<String, dynamic>?;
-    if (cv == null || (cv['status'] as num?)?.toInt() != 0) return null;
-    final v = (cv['v'] ?? '').toString();
-    final u = (cv['u'] ?? '').toString();
-    if (v.isEmpty) throw const CloudException('二维码已失效，请刷新');
-    // 兑换 BDUSS/STOKEN（Set-Cookie 下发）。
-    final ts = DateTime.now().millisecondsSinceEpoch;
-    final resp2 = await cloudGet(
-      'https://passport.baidu.com/v3/login/main/qrbdusslogin?v=$ts'
-      '&bduss=${Uri.encodeQueryComponent(v)}'
-      '&u=${Uri.encodeQueryComponent(u)}'
-      '&loginVersion=v5&qrcode=1&tpl=netdisk',
-      headers: headers,
-    );
-    final cookies = resp2.setCookiePairs;
+  Future<CloudAccount> completeLogin(CloudCaptureResult captured) async {
+    final cookies = captured.cookies;
     final bduss = cookies['BDUSS'] ?? '';
-    if (bduss.isEmpty) throw const CloudException('登录失败，请重试');
+    if (bduss.isEmpty) {
+      throw const CloudException('未捕获到登录凭据，请重试');
+    }
+    var nickname = displayName;
+    try {
+      final resp = await cloudGet(
+        'https://pan.baidu.com/api/user/getinfo?ref=client&clienttype=0&web=1',
+        headers: {..._webHeaders, 'Cookie': cookieHeader(cookies)},
+      );
+      if (resp.isOk) {
+        final info = resp.json['user_info'] ?? resp.json['data'];
+        if (info is Map<String, dynamic>) {
+          final name = (info['username'] ?? info['user_name'] ?? '').toString();
+          if (name.isNotEmpty) nickname = name;
+        }
+      }
+    } catch (_) {
+      // 拿不到昵称就用显示名兜底。
+    }
     return CloudAccount(
       provider: id,
       accountId: md5Hex(bduss).substring(0, 12),
-      nickname: u.isEmpty ? '百度账号' : u,
+      nickname: nickname,
       cred: {
         'BDUSS': bduss,
         if ((cookies['STOKEN'] ?? '').isNotEmpty) 'STOKEN': cookies['STOKEN']!,
       },
       boundAt: DateTime.now(),
     );
-  }
-
-  static String _randomHex(int len) {
-    final r = Random.secure();
-    return List.generate(len, (_) => r.nextInt(16).toRadixString(16)).join();
   }
 
   // ── 业务（rust 桥转发）─────────────────────────────────

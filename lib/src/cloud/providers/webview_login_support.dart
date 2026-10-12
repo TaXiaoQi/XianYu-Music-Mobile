@@ -1,10 +1,11 @@
 // WebView 登录捕获支撑。
 //
 // vendored webview_flutter（鸿蒙 fork，4.6.0）无 getCookies API（上游
-// 4.13 才引入，且 fork 未跟进），故 Cookie 一律走 JS `document.cookie`
-// 通道读取：只能拿到非 httpOnly 的 Cookie——当前依赖约束下的折衷
-// （夸克 kps/sign、UC、139、微云等所需凭据在登录页脚本上下文可读；
-// 若某盘确认被 httpOnly 拦截，二期再评估平台原生通道）。
+// 4.13 才引入，且 fork 未跟进）。Cookie 默认走 JS `document.cookie`
+// 通道读取（只能拿非 httpOnly——夸克 kps/sign、UC、139、微云等所需
+// 凭据在登录页脚本上下文可读）；捕获规则声明 nativeCookies 时优先走
+// 原生 CookieManager 通道（可读 httpOnly，如百度 BDUSS），平台不支持
+// 时自动回退 document.cookie（该场景下 httpOnly 凭据即拿不到）。
 //
 // Token 范式（阿里）走 pollScript 注入轮询：定时执行 JS 片段，返回
 // 非空字符串即视为 token 出现。
@@ -105,6 +106,7 @@ class CloudWebviewCaptureSession {
   }
 
   Future<void> _readCookies(WebViewController controller) async {
+    if (rule.nativeCookies && await _readNativeCookies()) return;
     final raw = await _evalJs(controller, 'document.cookie');
     if (raw.isEmpty) return;
     for (final seg in raw.split(';')) {
@@ -118,6 +120,26 @@ class CloudWebviewCaptureSession {
           (rule.cookieNames.isEmpty || rule.cookieNames.contains(k))) {
         _cookies[k] = v;
       }
+    }
+  }
+
+  /// 原生 CookieManager 通道（可读 httpOnly）。鸿蒙 fork 无 getCookies
+  /// 会在此抛错 → 返回 false，回退 document.cookie 通道。
+  Future<bool> _readNativeCookies() async {
+    final url = _finalUrl;
+    if (url == null) return false;
+    try {
+      final cookies =
+          await WebViewCookieManager().getCookies(domain: Uri.parse(url));
+      for (final c in cookies) {
+        if (c.value.isNotEmpty &&
+            (rule.cookieNames.isEmpty || rule.cookieNames.contains(c.name))) {
+          _cookies[c.name] = c.value;
+        }
+      }
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

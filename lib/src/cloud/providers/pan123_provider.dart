@@ -1,5 +1,5 @@
-// 123 云盘 provider（qrCode 主通道 + 账密兜底；分享免转存直链
-// directPlayable=true）。
+// 123 云盘 provider（httpPassword 账密登录——移动端没有第二台设备来
+// 扫码；分享免转存直链 directPlayable=true）。
 //
 // 业务（列目录/分享/直链）经 cloud_remote 桥转发内嵌 Rust
 // （rust/src/cloud/pan123.rs）。
@@ -27,7 +27,7 @@ class Pan123Provider extends CloudProvider {
   String get rootPath => '0';
 
   @override
-  CloudLoginKind get loginKind => CloudLoginKind.qrCode;
+  CloudLoginKind get loginKind => CloudLoginKind.httpPassword;
 
   @override
   Duration get directLinkTtl => const Duration(hours: 1);
@@ -38,57 +38,7 @@ class Pan123Provider extends CloudProvider {
         CloudLoginField(key: 'password', label: '密码', obscure: true),
       ];
 
-  // ── 登录 ──────────────────────────────────────────────
-
-  @override
-  Future<CloudQrLoginSession> createQrLogin() async {
-    final resp = await cloudGet(
-      'https://login.123pan.com/api/user/qr-code/generate',
-      headers: {'User-Agent': _ua},
-    );
-    if (!resp.isOk) throw const CloudException('二维码获取失败');
-    final data = resp.json['data'];
-    if (data is! Map<String, dynamic>) throw const CloudException('二维码获取失败');
-    // 接口返回二维码跳转 URL（data.url，123pan App 扫码用）与 uniID；
-    // 旧字段 qr 兼容保留。
-    final qr = (data['url'] ?? data['qr'] ?? '').toString();
-    final uniId = (data['uniID'] ?? '').toString();
-    if (qr.isEmpty || uniId.isEmpty) throw const CloudException('二维码获取失败');
-    return CloudQrLoginSession(qrContent: qr, state: uniId);
-  }
-
-  @override
-  Future<CloudAccount?> pollQrLogin(CloudQrLoginSession session) async {
-    final resp = await cloudGet(
-      'https://login.123pan.com/api/user/qr-code/result'
-      '?uniID=${Uri.encodeQueryComponent(session.state)}',
-      headers: {'User-Agent': _ua},
-    );
-    if (!resp.isOk) return null;
-    final data = resp.json['data'];
-    if (data is! Map<String, dynamic>) return null;
-    // 现接口字段为 loginStatus（旧 status 兼容）：2=已确认，4=已失效。
-    final status =
-        ((data['loginStatus'] ?? data['status']) as num?)?.toInt() ?? 0;
-    if (status == 4) throw const CloudException('二维码已过期，请刷新');
-    if (status != 2) return null; // 未确认。
-    final token = (data['token'] ?? data['accessToken'] ?? '').toString();
-    if (token.isEmpty) throw const CloudException('二维码已过期，请刷新');
-    final user = data['user'];
-    final uid = user is Map<String, dynamic>
-        ? (user['id'] ?? '').toString()
-        : '';
-    final nick = user is Map<String, dynamic>
-        ? ((user['nickname'] ?? user['Passport'] ?? '').toString())
-        : '';
-    return CloudAccount(
-      provider: id,
-      accountId: uid.isEmpty ? md5Hex(token).substring(0, 12) : uid,
-      nickname: nick.isEmpty ? '123云盘' : nick,
-      cred: {'token': token},
-      boundAt: DateTime.now(),
-    );
-  }
+  // ── 登录（账密）─────────────────────────────────────────
 
   @override
   Future<CloudAccount> loginWithFields(Map<String, String> fields) async {

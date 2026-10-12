@@ -31,6 +31,7 @@ class CloudCaptureRule {
     this.doneUrlPattern,
     this.pollScript,
     this.pollIntervalMs = 500,
+    this.nativeCookies = false,
   });
 
   /// 需要捕获的 Cookie 名（webviewCookie 范式）。
@@ -49,6 +50,11 @@ class CloudCaptureRule {
 
   /// JS 轮询间隔毫秒数。
   final int pollIntervalMs;
+
+  /// 走原生 CookieManager 通道读 Cookie（可读 httpOnly，如百度 BDUSS；
+  /// 上游 webview_flutter getCookies，鸿蒙 fork 无此 API 时由捕获会话
+  /// 自动回退 document.cookie）。
+  final bool nativeCookies;
 }
 
 /// WebView 登录捕获结果。
