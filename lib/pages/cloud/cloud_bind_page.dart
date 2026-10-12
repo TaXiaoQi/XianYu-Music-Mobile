@@ -46,40 +46,26 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
     });
   }
 
-  String _kindLabel(CloudProvider p) {
-    final supportsCookie = p.captureRule?.cookieNames.isNotEmpty ?? false;
-    final supportsFields = p.loginFields.isNotEmpty;
-    if (supportsCookie && supportsFields) return tr('Cookie / 账号密码');
-    if (supportsCookie) return tr('Cookie 登录');
-    if (supportsFields) {
-      return p.loginKind == CloudLoginKind.smsPassword
-          ? tr('手机号 + 验证码')
-          : tr('账号密码');
-    }
-    return switch (p.loginKind) {
-      CloudLoginKind.webviewCookie ||
-      CloudLoginKind.webviewToken =>
-        tr('网页登录'),
-      CloudLoginKind.httpPassword => tr('账号密码'),
-      CloudLoginKind.smsPassword => tr('手机号 + 验证码'),
-      CloudLoginKind.qrCode => tr('扫码登录'),
-    };
-  }
+  String _kindLabel(CloudLoginKind kind) => switch (kind) {
+        CloudLoginKind.webviewCookie ||
+        CloudLoginKind.webviewToken =>
+          tr('网页登录'),
+        CloudLoginKind.httpPassword => tr('账号密码'),
+        CloudLoginKind.smsPassword => tr('手机号 + 验证码'),
+        CloudLoginKind.qrCode => tr('扫码登录'),
+      };
 
   Future<void> _openLogin(CloudProvider p) async {
-    final supportsCookie = p.captureRule?.cookieNames.isNotEmpty ?? false;
-    final supportsFields = p.loginFields.isNotEmpty;
+    final kind = p.loginKind;
     Future<void> future;
-    if (supportsCookie || supportsFields) {
-      // 账号登录页：Cookie 优先，能力内与账密互相切换。
-      future = context.push('/cloud/password-login/${p.id}');
-    } else if (p.loginKind == CloudLoginKind.webviewCookie ||
-        p.loginKind == CloudLoginKind.webviewToken) {
-      // Cookie / 账密都不支持（token 范式）才走网页登录。
+    if (kind == CloudLoginKind.webviewCookie ||
+        kind == CloudLoginKind.webviewToken) {
+      // 网页登录为主，页内「填 Cookie」按钮兜底（与阿里同形态）。
       future = context.push('/cloud/webview-login/${p.id}');
-    } else if (p.loginKind == CloudLoginKind.qrCode) {
+    } else if (kind == CloudLoginKind.qrCode) {
       future = context.push('/cloud/qrcode-login/${p.id}');
     } else {
+      // 账密/短信表单（支持 Cookie 模式的盘会在页内自动出切换）。
       future = context.push('/cloud/password-login/${p.id}');
     }
     await future;
@@ -209,7 +195,7 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _kindLabel(p),
+                        _kindLabel(p.loginKind),
                         style: TextStyle(
                           fontSize: 11,
                           color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
