@@ -1,15 +1,13 @@
 // 123 云盘 provider（qrCode 主通道 + 账密兜底；分享免转存直链
 // directPlayable=true）。
 //
-// DownloadUrl 字段实测可能是 JSON 串（{url:...}）或纯 URL，统一防御解析。
-
-import 'dart:convert';
+// 业务（列目录/分享/直链）经 cloud_remote 桥转发内嵌 Rust
+// （rust/src/cloud/pan123.rs）。
 
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
 import '../cloud_remote.dart';
 import '../cloud_types.dart';
-import '../share_link_parser.dart';
 import 'http_login_support.dart';
 
 class Pan123Provider extends CloudProvider {
@@ -18,13 +16,6 @@ class Pan123Provider extends CloudProvider {
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-
-  Map<String, String> _h(String token) => {
-        'User-Agent': _ua,
-        'Referer': 'https://www.123pan.com/',
-        'Platform': 'web',
-        if (token.isNotEmpty) 'Authorization': 'Bearer $token',
-      };
 
   @override
   String get id => 'pan123';
@@ -141,246 +132,40 @@ class Pan123Provider extends CloudProvider {
     }
   }
 
+  // ── 业务（rust 桥转发）─────────────────────────────────
+
   @override
-  Future<bool> validate(Map<String, String> cred) async {
-    final remote = await tryRemoteValidate(id, cred);
-    if (remote != null) return remote;
-    return _validateLocal(cred);
-  }
-
-  Future<bool> _validateLocal(Map<String, String> cred) async {
-    final token = cred['token'] ?? '';
-    for (final host in ['https://www.123pan.com', 'https://123pan.com']) {
-      try {
-        final resp = await cloudGet(
-          '$host/b/api/user/info',
-          headers: _h(token),
-        );
-        if (resp.isOk && (resp.json['code'] as num?)?.toInt() == 200) {
-          return true;
-        }
-      } catch (_) {}
-    }
-    return false;
-  }
-
-  // ── 目录 ──────────────────────────────────────────────
+  Future<bool> validate(Map<String, String> cred) => rustValidate(id, cred);
 
   @override
   Future<CloudListResult> listDir(
     Map<String, String> cred,
     String path, {
     String? cursor,
-  }) async {
-    final remote = await tryRemoteListDir(id, cred, path, cursor: cursor);
-    if (remote != null) return remote;
-    return _listDirLocal(cred, path, cursor: cursor);
-  }
-
-  Future<CloudListResult> _listDirLocal(
-    Map<String, String> cred,
-    String path, {
-    String? cursor,
-  }) async {
-    final page = int.tryParse(cursor ?? '') ?? 1;
-    final resp = await cloudGet(
-      'https://www.123pan.com/b/api/file/list/new'
-      '?parentFileId=${Uri.encodeQueryComponent(path)}'
-      '&page=$page&limit=100&orderBy=file_id&orderDirection=asc'
-      '&trashed=false&OnlyAbnormal=false&SearchData=false',
-      headers: _h(cred['token'] ?? ''),
-    );
-    if (!resp.isOk) throw const CloudException('目录列表请求失败');
-    final data = resp.json['data'];
-    final list = data is Map<String, dynamic>
-        ? (data['InfoList'] as List?) ?? const []
-        : const [];
-    final files = <CloudFile>[];
-    for (final e in list) {
-      if (e is! Map<String, dynamic>) continue;
-      files.add(CloudFile(
-        id: (e['fileId'] ?? '').toString(),
-        name: (e['filename'] ?? '').toString(),
-        isDir: (e['type'] as num?)?.toInt() == 1,
-        size: (e['size'] as num?)?.toInt() ?? 0,
-        parentId: (e['parentFileId'] ?? path).toString(),
-      ));
-    }
-    final hasNext = files.length >= 100;
-    return CloudListResult(
-      files: files,
-      nextCursor: hasNext ? '${page + 1}' : null,
-    );
-  }
-
-  // ── 分享 ──────────────────────────────────────────────
+  }) =>
+      rustListDir(id, cred, path, cursor: cursor);
 
   @override
-  Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
-    final remote = await tryRemoteParseShare(id, url, pwd);
-    if (remote != null) return remote;
-    return _parseShareLinkLocal(url, pwd);
-  }
-
-  Future<CloudShareParse> _parseShareLinkLocal(String url, String? pwd) async {
-    final info = parseUrlToProvider(url);
-    final shareKey = info?.shareId ?? url;
-    final resp = await cloudGet(
-      'https://www.123pan.com/b/api/share/get'
-      '?shareKey=${Uri.encodeQueryComponent(shareKey)}'
-      '&PassCode=${Uri.encodeQueryComponent(pwd ?? '')}'
-      '&orderBy=file_id&orderDirection=asc',
-      headers: {'User-Agent': _ua},
-    );
-    if (!resp.isOk) throw const CloudException('分享链接解析失败');
-    final code = (resp.json['code'] as num?)?.toInt() ?? -1;
-    if (code != 0) {
-      throw CloudException(
-          (resp.json['message'] ?? (pwd?.isNotEmpty ?? false ? '提取码错误' : '分享已失效'))
-              .toString());
-    }
-    final data = resp.json['data'];
-    final list = data is Map<String, dynamic>
-        ? (data['InfoList'] as List?) ?? const []
-        : const [];
-    final files = <CloudFile>[];
-    for (final e in list) {
-      if (e is! Map<String, dynamic>) continue;
-      files.add(CloudFile(
-        id: (e['FileId'] ?? e['fileId'] ?? '').toString(),
-        name: (e['FileName'] ?? e['filename'] ?? '').toString(),
-        isDir: (e['Type'] as num?)?.toInt() == 1,
-        size: (e['Size'] as num?)?.toInt() ?? 0,
-      ));
-    }
-    return CloudShareParse(
-      providerId: id,
-      files: files,
-      shareId: shareKey,
-      // 123 分享直链需复用提取码，shareToken 暂存 pwd。
-      shareToken: pwd,
-      passcode: pwd,
-      directPlayable: true,
-    );
-  }
+  Future<CloudShareParse> parseShareLink(String url, String? pwd) =>
+      rustParseShare(id, url, pwd);
 
   @override
   Future<CloudDirectLink> getShareDirectLink(
     Map<String, String>? cred,
     CloudShareParse share,
     CloudFile file,
-  ) async {
-    final remote = await tryRemoteShareDirectLink(id, cred, share, file);
-    if (remote != null) return remote;
-    return _getShareDirectLinkLocal(cred, share, file);
-  }
-
-  /// 分享免转存直链（download/info 批量接口取单个文件）。
-  Future<CloudDirectLink> _getShareDirectLinkLocal(
-    Map<String, String>? cred,
-    CloudShareParse share,
-    CloudFile file,
-  ) async {
-    final pwd = share.passcode ?? share.shareToken ?? '';
-    final resp = await cloudGet(
-      'https://www.123pan.com/b/api/share/download/info'
-      '?shareKey=${Uri.encodeQueryComponent(share.shareId ?? '')}'
-      '&PassCode=${Uri.encodeQueryComponent(pwd)}'
-      '&fileIds=${Uri.encodeQueryComponent(jsonEncode([
-        {'FileId': file.id}
-      ]))}',
-      headers: {'User-Agent': _ua},
-    );
-    if (!resp.isOk) throw const CloudException('分享直链获取失败');
-    final code = (resp.json['code'] as num?)?.toInt() ?? -1;
-    if (code != 0) throw const CloudException('分享直链获取失败');
-    final data = resp.json['data'];
-    final url = _extractDownloadUrl(data);
-    if (url.isEmpty) throw const CloudException('分享直链获取失败');
-    return CloudDirectLink(
-      url: url,
-      headers: {'User-Agent': _ua},
-      fileName: file.name,
-      size: file.size,
-      expireAt: DateTime.now().add(const Duration(hours: 1)),
-    );
-  }
+  ) =>
+      rustShareDirectLink(id, cred, share, file);
 
   @override
   Future<List<CloudFile>> transferShareFiles(
     Map<String, String> cred,
     CloudShareParse share,
-  ) async {
-    final remote = await tryRemoteTransferShare(id, cred, share);
-    if (remote != null) return remote;
-    return _transferShareFilesLocal(cred, share);
-  }
-
-  // directPlayable=true，不支持转存。
-  Future<List<CloudFile>> _transferShareFilesLocal(
-    Map<String, String> cred,
-    CloudShareParse share,
-  ) {
-    throw UnsupportedError('该盘分享不支持转存');
-  }
-
-  // ── 直链 ──────────────────────────────────────────────
+  ) =>
+      rustTransferShare(id, cred, share);
 
   @override
   Future<CloudDirectLink> getDirectLink(
-      Map<String, String> cred, CloudFile file) async {
-    final remote = await tryRemoteDirectLink(id, cred, file);
-    if (remote != null) return remote;
-    return _getDirectLinkLocal(cred, file);
-  }
-
-  Future<CloudDirectLink> _getDirectLinkLocal(
-      Map<String, String> cred, CloudFile file) async {
-    final resp = await cloudGet(
-      'https://www.123pan.com/b/api/file/download_info'
-      '?driveId=0&fileId=${Uri.encodeQueryComponent(file.id)}'
-      '&Referer=',
-      headers: _h(cred['token'] ?? ''),
-    );
-    if (!resp.isOk) throw const CloudException('直链获取失败');
-    final code = (resp.json['code'] as num?)?.toInt() ?? -1;
-    if (code != 0) throw const CloudException('直链获取失败');
-    final url = _extractDownloadUrl(resp.json['data']);
-    if (url.isEmpty) throw const CloudException('直链获取失败');
-    return CloudDirectLink(
-      url: url,
-      headers: {'User-Agent': _ua},
-      fileName: file.name,
-      size: file.size,
-      expireAt: DateTime.now().add(const Duration(hours: 1)),
-    );
-  }
-
-  /// DownloadUrl 可能是纯 URL、JSON 串或嵌套 data，统一防御解析。
-  String _extractDownloadUrl(dynamic data) {
-    if (data is String) {
-      final s = data;
-      if (s.startsWith('http')) return s;
-      try {
-        return _extractDownloadUrl(jsonDecode(s));
-      } catch (_) {
-        return '';
-      }
-    }
-    if (data is Map<String, dynamic>) {
-      for (final key in ['DownloadUrl', 'downloadUrl', 'download_url']) {
-        final v = data[key];
-        if (v is String && v.startsWith('http')) return v;
-        if (v is String && v.isNotEmpty) {
-          final inner = _extractDownloadUrl(v);
-          if (inner.isNotEmpty) return inner;
-        }
-      }
-      final backup = data['backup_download_url'] ?? data['BackupDownloadUrl'];
-      if (backup is String && backup.startsWith('http')) {
-        return backup;
-      }
-    }
-    return '';
-  }
+          Map<String, String> cred, CloudFile file) =>
+      rustDirectLink(id, cred, file);
 }

@@ -126,32 +126,6 @@ Future<CloudHttpResponse> cloudPostForm(
 }) =>
     cloudRequest('POST', url, form: form, headers: headers, timeout: timeout);
 
-/// 组合 query 参数（跳过 null/空值）。
-String joinQuery(Map<String, String?> params) {
-  final q = <String>[];
-  params.forEach((k, v) {
-    if (v != null && v.isNotEmpty) {
-      q.add('${Uri.encodeQueryComponent(k)}=${Uri.encodeQueryComponent(v)}');
-    }
-  });
-  return q.isEmpty ? '' : '?${q.join('&')}';
-}
-
 /// 凭据 Cookie 键值拼请求头（各盘 cred 存 'cookie' 单键整串时用另一形态）。
 String cookieHeader(Map<String, String> pairs) =>
     pairs.entries.map((e) => '${e.key}=${e.value}').join('; ');
-
-/// 跟随重定向归一到最终 URL（直链注册代理前用；只读 redirects，
-/// 不消费响应体）。失败原样返回。
-Future<String> resolveFinalUrl(String url, {Map<String, String>? headers}) async {
-  try {
-    final resp =
-        await appRequest('GET', Uri.parse(url), headers: headers, body: '');
-    final redirects = resp.redirects;
-    await resp.drain<void>();
-    if (redirects.isEmpty) return url;
-    return redirects.last.location.toString();
-  } catch (_) {
-    return url;
-  }
-}
