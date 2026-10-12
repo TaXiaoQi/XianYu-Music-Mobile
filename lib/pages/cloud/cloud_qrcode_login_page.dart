@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -196,6 +197,25 @@ class _CloudQrcodeLoginPageState extends ConsumerState<CloudQrcodeLoginPage> {
             _error ?? tr('二维码获取失败'),
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: scheme.error),
+          ),
+        ),
+      );
+    }
+    // 服务方直接下发二维码图片（百度）：直接展示，无需本地渲染。
+    final img = s.qrImageUrl;
+    if (img != null && img.isNotEmpty) {
+      return SizedBox(
+        width: 220,
+        height: 220,
+        child: CachedNetworkImage(
+          imageUrl: img,
+          fit: BoxFit.contain,
+          placeholder: (_, _) =>
+              const Center(child: CircularProgressIndicator()),
+          errorWidget: (_, _, _) => Icon(
+            Icons.qr_code_2,
+            size: 64,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
           ),
         ),
       );

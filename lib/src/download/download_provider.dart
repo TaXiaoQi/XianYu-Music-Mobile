@@ -10,6 +10,10 @@ import 'package:permission_handler/permission_handler.dart';
 import 'download_notification_service.dart';
 import 'media_store_writer.dart';
 import '../widgets/app_toast.dart';
+import '../cloud/cloud_credentials_store.dart';
+import '../cloud/cloud_registry.dart';
+import '../cloud/cloud_types.dart';
+import '../cloud/direct_link_cache.dart';
 import '../core/db_path.dart';
 import '../core/application_logger.dart';
 import '../core/platform_caps.dart';
@@ -39,6 +43,9 @@ class DownloadTask {
   final String? source;
   final String? onlineSongJson;
   final String? onlineInfoJson;
+
+  /// 网盘歌曲播放上下文（cloud:// 任务专用，_performCloudDownload 用）。
+  final String? cloudInfoJson;
   final int durationMs;
   final DownloadStatus status;
   final String? error;
@@ -56,6 +63,7 @@ class DownloadTask {
     this.source,
     this.onlineSongJson,
     this.onlineInfoJson,
+    this.cloudInfoJson,
     this.durationMs = 0,
     this.status = DownloadStatus.downloading,
     this.error,
@@ -80,6 +88,7 @@ class DownloadTask {
       source: source,
       onlineSongJson: onlineSongJson,
       onlineInfoJson: onlineInfoJson,
+      cloudInfoJson: cloudInfoJson,
       status: status ?? this.status,
       error: error ?? this.error,
       filePath: filePath ?? this.filePath,
@@ -307,6 +316,148 @@ class DownloadManager extends StateNotifier<DownloadState> {
     _drain();
   }
 
+  /// 网盘歌曲下载：直链（复用播放直链缓存）→ 复用 rust 流式下载与
+  /// 下载历史/任务管线；网盘文件即原始音质，无音质候选。
+  /// 直链/凭据错误抛 CloudException（文案面向用户），调用方负责展示。
+  Future<void> downloadCloud(QueueItem item) async {
+    if (!item.path.startsWith('cloud://')) return;
+    if (!hasCustomDownloadDir) return;
+    if (state.tasks.any((t) =>
+        t.songPath == item.path &&
+        (t.status == DownloadStatus.waiting ||
+            t.status == DownloadStatus.downloading))) {
+      return;
+    }
+    final ctx = CloudPlayContext.tryParse(item.cloudInfoJson);
+    if (ctx == null) {
+      throw const CloudException('网盘歌曲信息缺失，请重新添加');
+    }
+
+    final task = DownloadTask(
+      songPath: item.path,
+      title: p.basenameWithoutExtension(ctx.file.name).trim(),
+      artist: '',
+      album: '',
+      quality: 'source',
+      source: item.source,
+      cloudInfoJson: item.cloudInfoJson,
+      durationMs: 0,
+      status: DownloadStatus.waiting,
+      startedAt: DateTime.now().millisecondsSinceEpoch,
+    );
+    state = state.copyWith(
+        tasks: [task, ...state.tasks.where((t) => t.songPath != item.path)]);
+    _pending.add(task);
+    _drain();
+  }
+
+  /// 网盘直链解析（下载用）：凭据/分享上下文对齐播放链路 _playCloud，
+  /// 优先复用播放直链缓存，解析结果回写缓存。
+  Future<CloudDirectLink> _resolveCloudLinkForDownload(QueueItem item) async {
+    final ctx = CloudPlayContext.tryParse(item.cloudInfoJson);
+    if (ctx == null) {
+      throw StateError(tr('网盘歌曲信息缺失，请重新添加'));
+    }
+    final provider = cloudProviderById(ctx.provider);
+    if (provider == null) throw StateError(tr('该网盘暂未支持'));
+
+    final cached =
+        await DirectLinkCache.instance.get(item.path, provider.directLinkTtl);
+    if (cached != null) return cached;
+
+    var cred = ctx.accountId == '_' || ctx.accountId.isEmpty
+        ? null
+        : await CloudCredentialsStore.instance
+            .credFor(provider.id, ctx.accountId);
+    cred ??= await CloudCredentialsStore.instance.soleCredFor(provider.id);
+    final fromShare = ctx.share != null && ctx.share!.directPlayable;
+    if (cred == null && !fromShare) {
+      throw StateError(tr('网盘账号未绑定或已失效'));
+    }
+    final link = fromShare
+        ? await provider.getShareDirectLink(cred, ctx.share!, ctx.file)
+        : await provider.getDirectLink(cred ?? const <String, String>{}, ctx.file);
+    DirectLinkCache.instance.put(item.path, link);
+    return link;
+  }
+
+  /// 网盘歌曲实际下载：直链 + headers 复用 rust 流式下载与 MediaStore 回退；
+  /// 无在线音源元数据，跳过歌词/封面/元数据收尾（网盘文件自带内嵌标签）。
+  Future<(String, String)> _performCloudDownload(
+      DownloadTask task, AppSettings? settings) async {
+    final item = QueueItem(
+      path: task.songPath,
+      title: task.title,
+      artist: task.artist,
+      album: task.album,
+      source: task.source,
+      cloudInfoJson: task.cloudInfoJson,
+    );
+    final ctx = CloudPlayContext.tryParse(item.cloudInfoJson);
+    if (ctx == null) throw StateError(tr('网盘歌曲信息缺失，请重新添加'));
+    final link = await _resolveCloudLinkForDownload(item);
+
+    _updateTask(task.songPath, progressPercent: 40);
+
+    final dir = await _downloadDir();
+    // 伪 URL 仅用于 rust 侧扩展名推断（网盘文件名自带正确扩展名；
+    // 直链 URL 文件名多为 hash，不可作文件名来源）。
+    final extUrl =
+        'https://cloud-download.local/${Uri.encodeComponent(ctx.file.name)}';
+    final destPath = await resolveDownloadFullPath(
+      directory: dir,
+      title: task.title,
+      artist: task.artist,
+      album: task.album,
+      url: extUrl,
+      quality: 'source',
+      keepSourceFilename: false,
+      fileNameStyle: settings?.downloadFileNameStyle ?? 'artist-title',
+      overwriteExisting: settings?.overwriteExisting ?? false,
+    );
+
+    _updateTask(task.songPath, progressPercent: 60);
+
+    final headersJson = jsonEncode(link.headers);
+    var finalPath = destPath;
+    try {
+      await downloadOnlineSong(
+        url: link.url,
+        destPath: destPath,
+        headersJson: headersJson,
+      );
+    } catch (e) {
+      final msg = e.toString();
+      final directWriteFailure = msg.contains('创建目标文件失败') ||
+          msg.contains('写入文件失败') ||
+          msg.contains('创建下载目录失败');
+      if (!directWriteFailure) rethrow;
+      ApplicationLogManager.instance.warn(
+          '下载', '直写 $destPath 失败，回退 MediaStore 兼容模式：$msg');
+      final fallback = await _mediaStoreFallback(
+        url: link.url,
+        dir: dir,
+        destPath: destPath,
+        item: item,
+        parsed: const {},
+        settings: settings,
+        headersJson: headersJson,
+      );
+      if (fallback == null) {
+        ApplicationLogManager.instance
+            .error('下载', 'MediaStore 回退也失败：$msg');
+        rethrow;
+      }
+      ApplicationLogManager.instance
+          .warn('下载', '已回退写入：$fallback（目标目录 ${p.basename(dir)}）');
+      finalPath = fallback;
+    }
+
+    _updateTask(task.songPath, progressPercent: 95);
+
+    return (finalPath, 'source');
+  }
+
   Future<bool> isAlreadyDownloaded(String songPath) async {
     final matched = state.history
         .where((h) => h.songPath == songPath && h.filePath.isNotEmpty)
@@ -404,8 +555,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
   Future<void> _execute(DownloadTask task) async {
     try {
       _updateTask(task.songPath, status: DownloadStatus.downloading, progressPercent: 15);
-      final (filePath, usedQuality) =
-          await _performDownload(task, _ref.read(settingsProvider).valueOrNull);
+      final settings = _ref.read(settingsProvider).valueOrNull;
+      final (filePath, usedQuality) = task.songPath.startsWith('cloud://')
+          ? await _performCloudDownload(task, settings)
+          : await _performDownload(task, settings);
       final entry = DownloadHistoryEntry(
         songPath: task.songPath,
         filePath: filePath,

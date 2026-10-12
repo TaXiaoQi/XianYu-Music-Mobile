@@ -7,7 +7,7 @@
 
 /// 登录范式：决定绑定页把用户路由到哪个登录页面。
 enum CloudLoginKind {
-  /// WebView 内完成登录后捕获指定 Cookie（百度/夸克/UC/139/微云）
+  /// WebView 内完成登录后捕获指定 Cookie（微云/139）
   webviewCookie,
 
   /// WebView 内完成登录 + JS 注入轮询捕获 Token（阿里）
@@ -19,7 +19,7 @@ enum CloudLoginKind {
   /// 账密 + 短信验证码（天翼短信通道）
   smsPassword,
 
-  /// 扫码登录（123）
+  /// 扫码登录（123/百度/夸克/UC）
   qrCode,
 }
 
@@ -92,12 +92,19 @@ class CloudLoginField {
 
 /// 扫码登录会话。
 class CloudQrLoginSession {
-  const CloudQrLoginSession({required this.qrContent, required this.state});
+  const CloudQrLoginSession({
+    required this.qrContent,
+    required this.state,
+    this.qrImageUrl,
+  });
 
   /// 渲染成二维码的内容。
   final String qrContent;
 
-  /// 轮询句柄（qrToken / state）。
+  /// 服务方直接下发的二维码图片地址（优先于 [qrContent] 渲染）。
+  final String? qrImageUrl;
+
+  /// 轮询句柄（qrToken / state；百度为 gid/sign/cookie 的 JSON 串）。
   final String state;
 }
 

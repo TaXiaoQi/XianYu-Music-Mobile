@@ -37,7 +37,7 @@ extension _SearchResultPageSources on _SearchResultPageState {
             id: 'local', name: tr('本地'), type: _SourceType.local);
   }
 
-  void _refreshSources() {
+  Future<void> _refreshSources() async {
     final plugins = ref.read(pluginManagerProvider).sources;
     final showReal =
         ref.read(settingsProvider).valueOrNull?.showRealSourceName ?? false;
@@ -70,6 +70,22 @@ extension _SearchResultPageSources on _SearchResultPageState {
           }
         }
       }
+    }
+    // 网盘来源尾部追加：支持文件名搜索且已绑定账号的盘；同盘多账号共用一个来源
+    try {
+      for (final p in cloudProviders) {
+        if (!p.supportsSearch) continue;
+        final accounts =
+            await CloudCredentialsStore.instance.accountsFor(p.id);
+        if (accounts.isEmpty) continue;
+        items.add(_SourceItem(
+            id: 'cloud:${p.id}',
+            name: p.displayName,
+            type: _SourceType.cloud,
+            cloudProviderId: p.id));
+      }
+    } catch (e) {
+      AppLog.warn('search', '网盘搜索来源加载失败: $e');
     }
     final result = items.isEmpty
         ?   [

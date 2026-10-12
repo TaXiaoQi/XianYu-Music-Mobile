@@ -1,6 +1,5 @@
-// UC 网盘：继承 QuarkUcBase，仅声明品牌常量（接口与夸克同构）。
+// UC 网盘：继承 QuarkUcBase，仅声明品牌与扫码常量（接口与夸克同构）。
 
-import '../cloud_types.dart';
 import 'quark_uc_base.dart';
 
 class UcProvider extends QuarkUcBase {
@@ -25,12 +24,12 @@ class UcProvider extends QuarkUcBase {
   String get uaBrand => 'uc-cloud-drive';
 
   @override
-  String get webviewLoginUrl => 'https://pc.uc.cn/';
+  String get casHost => 'api.open.uc.cn';
 
   @override
-  CloudCaptureRule? get captureRule => const CloudCaptureRule(
-        cookieNames: ['kps', 'sign'],
-        cookieDomains: ['drive.uc.cn', 'pc.uc.cn'],
-        pollIntervalMs: 500,
-      );
+  String get qrContentTemplate =>
+      'https://broccoli.uc.cn/apps/ZY5qIZiK/routes/1hbcQwLhH'
+      '?uc_param_str=dsdnfrpfbivesscpgimibtbmnijblauputogpintnwktprchmt'
+      '&uc_biz_str=S%3Acustom%7CC%3Atitlebar_hover_2'
+      '&token={token}&client_id=381&ssb=weblogin';
 }

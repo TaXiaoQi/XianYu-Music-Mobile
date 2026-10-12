@@ -2,7 +2,7 @@ part of 'search_page.dart';
 
 // ==================== 来源模型 ====================
 
-enum _SourceType { local, musicfree, lx }
+enum _SourceType { local, musicfree, lx, cloud }
 
 class _SourceItem {
   final String id;
@@ -11,12 +11,16 @@ class _SourceItem {
   final PluginSource? plugin;
   final String? lxKey;
 
+  /// 网盘来源（type == cloud）的注册 id（cloud_registry）。
+  final String? cloudProviderId;
+
   const _SourceItem({
     required this.id,
     required this.name,
     required this.type,
     this.plugin,
     this.lxKey,
+    this.cloudProviderId,
   });
 
   bool get isLocal => type == _SourceType.local;
@@ -34,11 +38,16 @@ class _TrackEntry {
   final PluginSource? pluginSource;
   final PluginSearchResult? pluginResult;
 
+  /// 网盘条目（cloud 来源）：预构造的可播放 QueueItem，
+  /// title/artist 兼作展示字段（title=解析歌名、artist=解析歌手或盘名）。
+  final QueueItem? cloudItem;
+
   const _TrackEntry({
     required this.isLocal,
     this.localSong,
     this.pluginSource,
     this.pluginResult,
+    this.cloudItem,
   });
 }
 

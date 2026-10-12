@@ -51,9 +51,21 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
           _onUrl(url);
         },
         onWebResourceError: (_) {},
-      ))
-      ..loadRequest(Uri.parse(_provider.webviewLoginUrl));
+      ));
+    _bootstrap();
     _startWatch();
+  }
+
+  /// 部分盘（夸克/UC/微云）需桌面 UA 才出登录入口；UA 设置完成后再加载。
+  Future<void> _bootstrap() async {
+    final ua = _provider.webviewUserAgent;
+    if (ua != null) {
+      try {
+        await _controller.setUserAgent(ua);
+      } catch (_) {}
+    }
+    await _controller
+        .loadRequest(Uri.parse(_provider.webviewLoginUrl));
   }
 
   @override

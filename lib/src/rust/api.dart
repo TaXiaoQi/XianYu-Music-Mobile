@@ -1854,6 +1854,11 @@ Future<String> trimAudio({
 Future<double> audioProbeDuration({required String path}) =>
     RustLib.instance.api.crateApiAudioProbeDuration(path: path);
 
+/// 网盘业务代理（十盘统一入口）。`req_json` 为 {provider, op, cred, params} JSON；
+/// 返回 {result, rotated_cred?} 的 JSON；业务失败 Err(中文文案)。
+Future<String> cloudProxy({required String reqJson}) =>
+    RustLib.instance.api.crateApiCloudProxy(reqJson: reqJson);
+
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {
   final String? baseUrl;

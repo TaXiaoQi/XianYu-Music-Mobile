@@ -88,6 +88,8 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                       ),
                       const SizedBox(height: 16),
                       const _RemoteLibraryCard(),
+                      const SizedBox(height: 16),
+                      const _CloudDrivesCard(),
                       if (root.isNotEmpty) ...[
                         const SizedBox(height: 16),
                         Padding(
@@ -244,6 +246,8 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           ),
                           const SizedBox(height: 16),
                           const _RemoteLibraryCard(),
+                          const SizedBox(height: 16),
+                          const _CloudDrivesCard(),
                         ],
                       ),
                     ),

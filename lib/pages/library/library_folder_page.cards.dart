@@ -351,3 +351,99 @@ class _RemoteLibraryCard extends ConsumerWidget {
     return PressableScale(child: card);
   }
 }
+
+/// 网盘入口卡：逐个已绑定账号直达浏览页，无绑定时引导去绑定页。
+class _CloudDrivesCard extends ConsumerStatefulWidget {
+  const _CloudDrivesCard();
+
+  @override
+  ConsumerState<_CloudDrivesCard> createState() => _CloudDrivesCardState();
+}
+
+class _CloudDrivesCardState extends ConsumerState<_CloudDrivesCard> {
+  List<MapEntry<CloudProvider, CloudAccount>> _bound = const [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final bound = <MapEntry<CloudProvider, CloudAccount>>[];
+    for (final p in cloudProviders) {
+      final accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
+      for (final a in accounts) {
+        bound.add(MapEntry(p, a));
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _bound = bound;
+      _loading = false;
+    });
+  }
+
+  /// 浏览页返回后重载，反映绑定变化
+  Future<void> _openBrowser(CloudProvider p, CloudAccount a) async {
+    await context.push('/cloud/browser/${p.id}?account=${a.accountId}');
+    _reload();
+  }
+
+  Future<void> _openBind() async {
+    await context.push('/cloud');
+    _reload();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final card = Material(
+      color: appCardFill(context, ref),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide.none,
+      ),
+      child: _loading
+          ? ListTile(
+              leading: Icon(Icons.cloud_outlined, color: scheme.primary),
+              title: Text(tr('网盘')),
+            )
+          : Column(
+              children: [
+                for (final e in _bound)
+                  ListTile(
+                    leading: Icon(Icons.cloud_outlined, color: scheme.primary),
+                    title: Text(e.key.displayName),
+                    subtitle: Text(
+                      e.value.nickname,
+                      style: TextStyle(
+                          fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                    trailing: Icon(Icons.chevron_right, color: scheme.outline),
+                    onTap: () => _openBrowser(e.key, e.value),
+                  ),
+                ListTile(
+                  leading: Icon(
+                    _bound.isEmpty ? Icons.add_link : Icons.settings_outlined,
+                    color: scheme.primary,
+                  ),
+                  title: Text(_bound.isEmpty ? tr('绑定网盘') : tr('管理网盘')),
+                  subtitle: _bound.isEmpty
+                      ? Text(
+                          tr('绑定后可在此浏览网盘音乐'),
+                          style: TextStyle(
+                              fontSize: 12, color: scheme.onSurfaceVariant),
+                        )
+                      : null,
+                  trailing: Icon(Icons.chevron_right, color: scheme.outline),
+                  onTap: _openBind,
+                ),
+              ],
+            ),
+    );
+    return PressableScale(child: card);
+  }
+}

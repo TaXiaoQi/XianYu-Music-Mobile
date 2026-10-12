@@ -7,6 +7,7 @@ import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/download/download_provider.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
@@ -164,27 +165,49 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
     return '${(size / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
   }
 
-  Future<void> _play(CloudFile f) async {
-    CloudAccount? account;
+  CloudPlayContext? _contextFor(CloudFile f) {
     for (final a in _accounts) {
       if (a.accountId == _accountId) {
-        account = a;
-        break;
+        return CloudPlayContext(
+          provider: _provider.id,
+          accountId: a.accountId,
+          file: f,
+        );
       }
     }
-    if (account == null) {
+    return null;
+  }
+
+  Future<void> _play(CloudFile f) async {
+    final ctx = _contextFor(f);
+    if (ctx == null) {
       showXianYuToast(context, tr('网盘账号未绑定或已失效'));
       return;
     }
-    final ctx = CloudPlayContext(
-      provider: _provider.id,
-      accountId: account.accountId,
-      file: f,
-    );
     await ref
         .read(playerProvider.notifier)
         .playQueue([cloudPlayQueueItem(ctx, artist: _provider.displayName)],
             startIndex: 0);
+  }
+
+  Future<void> _download(CloudFile f) async {
+    final ctx = _contextFor(f);
+    if (ctx == null) {
+      showXianYuToast(context, tr('网盘账号未绑定或已失效'));
+      return;
+    }
+    final dn = ref.read(downloadProvider.notifier);
+    if (!await dn.requireDownloadDir(context)) return;
+    try {
+      await dn.downloadCloud(
+          cloudPlayQueueItem(ctx, artist: _provider.displayName));
+      if (!mounted) return;
+      showXianYuToast(context,
+          tr('开始下载：{title}，请留意通知查看下载进度', {'title': f.name}));
+    } catch (e) {
+      if (!mounted) return;
+      showXianYuToast(context, e.toString());
+    }
   }
 
   @override
@@ -390,10 +413,28 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
                   ),
                 ),
           trailing: !f.isDir && f.isAudio
-              ? Icon(
-                  Icons.play_circle_outline_rounded,
-                  size: 22,
-                  color: scheme.primary,
+              ? FutureBuilder<bool>(
+                  future: ref
+                      .read(downloadProvider.notifier)
+                      .isAlreadyDownloaded(_contextFor(f)!.path),
+                  initialData: false,
+                  builder: (context, snap) => snap.data == true
+                      ? Icon(
+                          Icons.check_circle_rounded,
+                          size: 20,
+                          color: scheme.primary,
+                        )
+                      : IconButton(
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            Icons.download_rounded,
+                            size: 22,
+                            color: scheme.primary,
+                          ),
+                          tooltip: tr('下载'),
+                          onPressed: () => _download(f),
+                        ),
                 )
               : null,
           onTap: () {

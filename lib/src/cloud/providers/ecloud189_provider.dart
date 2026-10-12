@@ -1,18 +1,18 @@
 // 天翼云盘（189）provider（smsPassword：账密 + 短信二次验证）。
 //
-// logbox RSA 加密登录链；响应要求二次验证时自动发短信并暂存会话，
-// 带验证码重登走 submitForSecondAuth → portal 换会话。portal
+// 登录链：logbox RSA 加密登录；响应要求二次验证时自动发短信并暂存
+// 会话，带验证码重登走 submitForSecondAuth → portal 换会话。portal
 // loginUrl.action 换会话是 302 跳转链，appRequest 中间跳的 Set-Cookie
 // 会被 drain 掉，故此段用逐跳采 Cookie 的 GET 循环自实现。
+// 业务（列目录/分享/转存/直链）经 cloud_remote 桥转发内嵌 Rust。
 
-import 'dart:convert';
 import 'dart:io' show HttpHeaders;
 
 import '../../core/app_http.dart' show sharedHttpClient, validateHop;
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
+import '../cloud_remote.dart';
 import '../cloud_types.dart';
-import '../share_link_parser.dart';
 import 'http_login_support.dart';
 
 class Ecloud189Provider extends CloudProvider {
@@ -42,12 +42,6 @@ class Ecloud189Provider extends CloudProvider {
         CloudLoginField(key: 'password', label: '密码', obscure: true),
         CloudLoginField(key: 'smsCode', label: '短信验证码', isSmsCode: true),
       ];
-
-  Map<String, String> _h(String cookie) => {
-        'User-Agent': _ua,
-        'Referer': 'https://cloud.189.cn/',
-        if (cookie.isNotEmpty) 'Cookie': cookie,
-      };
 
   static const _ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -236,202 +230,45 @@ class Ecloud189Provider extends CloudProvider {
     jar.addAll(resp.setCookiePairs);
   }
 
-  @override
-  Future<bool> validate(Map<String, String> cred) async {
-    try {
-      final resp = await cloudGet(
-        'https://cloud.189.cn/api/open/file/listFiles.action'
-        '?folderId=-11&pageNum=1&pageSize=1',
-        headers: _h(cred['cookie'] ?? ''),
-      );
-      return resp.isOk;
-    } catch (_) {
-      return false;
-    }
-  }
+  // ── 业务（rust 桥转发）─────────────────────────────────
 
-  // ── 目录 ──────────────────────────────────────────────
+  @override
+  Future<bool> validate(Map<String, String> cred) => rustValidate(id, cred);
 
   @override
   Future<CloudListResult> listDir(
     Map<String, String> cred,
     String path, {
     String? cursor,
-  }) async {
-    final page = int.tryParse(cursor ?? '') ?? 1;
-    final resp = await cloudGet(
-      'https://cloud.189.cn/api/open/file/listFiles.action'
-      '?folderId=${Uri.encodeQueryComponent(path)}'
-      '&pageNum=$page&pageSize=60',
-      headers: _h(cred['cookie'] ?? ''),
-    );
-    if (!resp.isOk) throw const CloudException('目录列表请求失败');
-    final data = resp.json['data'];
-    final ao = data is Map<String, dynamic>
-        ? data['fileListAO'] as Map<String, dynamic>?
-        : null;
-    final list = (ao?['fileList'] as List?) ?? const [];
-    final files = <CloudFile>[];
-    for (final e in list) {
-      if (e is! Map<String, dynamic>) continue;
-      files.add(CloudFile(
-        id: (e['id'] ?? '').toString(),
-        name: (e['name'] ?? '').toString(),
-        isDir: e['dir'] == true || e['isdir'] == true,
-        size: (e['size'] as num?)?.toInt() ?? 0,
-        parentId: path,
-      ));
-    }
-    final hasNext = files.length >= 60;
-    return CloudListResult(
-      files: files,
-      nextCursor: hasNext ? '${page + 1}' : null,
-    );
-  }
-
-  // ── 分享 ──────────────────────────────────────────────
+  }) =>
+      rustListDir(id, cred, path, cursor: cursor);
 
   @override
-  Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
-    final info = parseUrlToProvider(url);
-    final shareCode = info?.shareId ?? url;
-    final headers = {'User-Agent': _ua};
-    final infoResp = await cloudGet(
-      'https://cloud.189.cn/api/open/share/getShareInfoByCodeV2.action'
-      '?shareCode=${Uri.encodeQueryComponent(shareCode)}',
-      headers: headers,
-    );
-    if (!infoResp.isOk) throw const CloudException('分享链接解析失败');
-    final data = infoResp.json['data'];
-    if (data is! Map<String, dynamic>) throw const CloudException('分享已失效');
-    final shareId = (data['shareId'] ?? '').toString();
-    var fileId = (data['fileId'] ?? '-1').toString();
-    final isDir = data['isDir'] == true || data['isDir'] == 1;
-    // 有提取码：checkAccessCode 校验。
-    if (pwd != null && pwd.isNotEmpty) {
-      final chk = await cloudPostForm(
-        'https://cloud.189.cn/api/open/share/checkAccessCode.action',
-        {
-          'shareCode': shareCode,
-          'accessCode': pwd,
-        },
-        headers: headers,
-      );
-      if (!chk.isOk) throw const CloudException('提取码错误');
-    }
-    var files = <CloudFile>[];
-    if (!isDir) {
-      files = [
-        CloudFile(
-          id: fileId,
-          name: (data['fileName'] ?? '').toString(),
-          size: (data['fileSize'] as num?)?.toInt() ?? 0,
-        ),
-      ];
-    } else {
-      final listResp = await cloudGet(
-        'https://cloud.189.cn/api/open/share/listShareDir.action'
-        '?shareId=${Uri.encodeQueryComponent(shareId)}'
-        '&fileId=${Uri.encodeQueryComponent(fileId)}'
-        '&pageNum=1&pageSize=60',
-        headers: headers,
-      );
-      if (!listResp.isOk) throw const CloudException('分享文件列表获取失败');
-      final ldata = listResp.json['data'];
-      final entries = ldata is Map<String, dynamic>
-          ? (ldata['fileShareResponseInfos'] as List?) ?? const []
-          : const [];
-      for (final e in entries) {
-        if (e is! Map<String, dynamic>) continue;
-        files.add(CloudFile(
-          id: (e['fileId'] ?? '').toString(),
-          name: (e['fileName'] ?? '').toString(),
-          isDir: e['isDir'] == true || e['isDir'] == 1,
-          size: (e['fileSize'] as num?)?.toInt() ?? 0,
-        ));
-      }
-    }
-    return CloudShareParse(
-      providerId: id,
-      files: files,
-      shareId: shareId,
-      passcode: pwd,
-      directPlayable: false,
-    );
-  }
+  bool get supportsSearch => true;
+
+  @override
+  Future<CloudListResult> searchFiles(
+    Map<String, String> cred,
+    String keyword, {
+    String? cursor,
+  }) =>
+      rustSearchFiles(id, cred, keyword, cursor: cursor);
+
+  @override
+  Future<CloudShareParse> parseShareLink(String url, String? pwd) =>
+      rustParseShare(id, url, pwd);
 
   @override
   Future<List<CloudFile>> transferShareFiles(
     Map<String, String> cred,
     CloudShareParse share,
-  ) async {
-    final headers = {
-      'User-Agent': _ua,
-      'Cookie': cred['cookie'] ?? '',
-    };
-    final resp = await cloudPostForm(
-      'https://cloud.189.cn/api/open/share/createBatchTask.action',
-      {
-        'type': 'SHARE_SAVE',
-        'taskInfos': jsonEncode(share.files
-            .map((f) => {
-                  'fileId': f.id,
-                  'fileName': f.name,
-                  'isDir': f.isDir,
-                  'shareId': share.shareId,
-                })
-            .toList()),
-        'targetFolderId': '-11',
-      },
-      headers: headers,
-    );
-    if (!resp.isOk) throw const CloudException('转存失败');
-    final taskId =
-        ((resp.json['data'] as Map<String, dynamic>)['taskId'] ?? '')
-            .toString();
-    if (taskId.isEmpty) throw const CloudException('转存失败');
-    for (var i = 0; i < 20; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-      final tResp = await cloudGet(
-        'https://cloud.189.cn/api/open/batch/checkBatchTask.action'
-        '?taskId=${Uri.encodeQueryComponent(taskId)}',
-        headers: headers,
-      );
-      if (!tResp.isOk) continue;
-      final state =
-          ((tResp.json['data'] as Map<String, dynamic>)['taskStatus'])
-              ?.toString();
-      if (state == '2') {
-        return share.files;
-      }
-    }
-    throw const CloudException('转存失败');
-  }
-
-  // ── 直链 ──────────────────────────────────────────────
+  ) =>
+      rustTransferShare(id, cred, share);
 
   @override
   Future<CloudDirectLink> getDirectLink(
-      Map<String, String> cred, CloudFile file) async {
-    final resp = await cloudGet(
-      'https://cloud.189.cn/api/open/file/getFileDownloadUrl.action'
-      '?fileId=${Uri.encodeQueryComponent(file.id)}',
-      headers: _h(cred['cookie'] ?? ''),
-    );
-    if (!resp.isOk) throw const CloudException('直链获取失败');
-    final url =
-        ((resp.json['data'] as Map<String, dynamic>)['fileDownloadUrl'] ?? '')
-            .toString();
-    if (url.isEmpty) throw const CloudException('直链获取失败');
-    final finalUrl = await resolveFinalUrl(url, headers: {'User-Agent': _ua});
-    return CloudDirectLink(
-      url: finalUrl,
-      headers: {'User-Agent': _ua},
-      fileName: file.name,
-      size: file.size,
-      expireAt: DateTime.now().add(const Duration(minutes: 30)),
-    );
-  }
+          Map<String, String> cred, CloudFile file) =>
+      rustDirectLink(id, cred, file);
 }
 
 /// 登录响应要求二次验证的内部信号。

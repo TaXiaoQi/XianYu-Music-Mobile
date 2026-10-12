@@ -129,6 +129,35 @@ Future<void> showSongActionsSheet(
                   );
                 },
               )),
+            // cloud 歌曲的 isOnline 恒为 false，与上方在线下载项条件互斥
+            if (!item.isOnline && item.path.startsWith('cloud://'))
+              PressableScale(child: ListTile(
+                leading:
+                    Icon(Icons.download_outlined, color: scheme.primary, size: 22),
+                title:   Text(tr('下载')),
+                onTap: () async {
+                  final dn = ref.read(downloadProvider.notifier);
+                  if (!await dn.requireDownloadDir(ctx)) {
+                    return;
+                  }
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  try {
+                    await dn.downloadCloud(item);
+                    if (context.mounted) {
+                      showXianYuToast(
+                        context,
+                        tr('开始下载：{title}，请留意通知查看下载进度',
+                            {'title': item.title}),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      showXianYuToast(context, e.toString());
+                    }
+                  }
+                },
+              )),
             if (onPlay != null)
               PressableScale(child: ListTile(
                 leading: Icon(Icons.play_arrow, color: scheme.primary, size: 22),

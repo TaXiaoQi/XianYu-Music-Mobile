@@ -20,6 +20,15 @@ abstract class CloudProvider {
   /// WebView 初始 URL（webview 组；非 WebView 登录盘为空串）。
   String get webviewLoginUrl => '';
 
+  /// WebView 登录页强制 UA（null = 系统默认）。
+  /// 夸克/UC/微云的网页端对移动 UA 跳 App 下载/推广页，需桌面 UA 才出登录入口。
+  String? get webviewUserAgent => null;
+
+  /// 桌面浏览器 UA（webviewUserAgent 用）。
+  static const desktopWebviewUa =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
   /// WebView 捕获规则（webview 组；非 WebView 登录盘为 null）。
   CloudCaptureRule? get captureRule => null;
 
@@ -86,4 +95,15 @@ abstract class CloudProvider {
     CloudFile file,
   ) =>
       throw UnsupportedError('该盘分享不支持免转存直链');
+
+  /// 是否支持文件名搜索（支持时搜索来源栏展示该盘）。
+  bool get supportsSearch => false;
+
+  /// 全盘文件名搜索（search_files；cursor 翻页续传，语义同 listDir）。
+  Future<CloudListResult> searchFiles(
+    Map<String, String> cred,
+    String keyword, {
+    String? cursor,
+  }) =>
+      throw UnsupportedError('该盘不支持文件搜索');
 }
