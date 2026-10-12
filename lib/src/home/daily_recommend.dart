@@ -13,6 +13,7 @@ import '../cloud/cloud_types.dart';
 import '../core/application_logger.dart';
 import '../core/app_http.dart';
 import '../core/settings.dart';
+import '../library/library_provider.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_catalog.dart';
 import '../plugin/plugin_engine.dart';
@@ -110,6 +111,10 @@ class DailyRecommendItem {
   /// 结构：{providerId, accountId, providerName, file: CloudFile json}
   final Map<String, dynamic>? cloud;
 
+  /// 本地库载荷：存在时按本地文件路径播放（与网盘候选同构兜底）。
+  /// 结构：{path, durationMs, coverThumbPath?}
+  final Map<String, dynamic>? local;
+
   const DailyRecommendItem({
     required this.song,
     required this.reason,
@@ -117,6 +122,7 @@ class DailyRecommendItem {
     required this.pluginId,
     this.pluginFormat = 'musicfree',
     this.cloud,
+    this.local,
   });
 
   String get title => (song['name'] as String?) ?? '';
@@ -151,6 +157,19 @@ class DailyRecommendItem {
         ),
         title: title,
         artist: artist,
+      );
+    }
+    final l = local;
+    if (l != null) {
+      // 本地曲目：直接按库内文件路径播放
+      return QueueItem(
+        path: (l['path'] as String?) ?? '',
+        title: title,
+        artist: artist,
+        album: album,
+        durationMs: (l['durationMs'] as num?)?.toInt() ?? 0,
+        coverPath: l['coverThumbPath'] as String?,
+        fromDailyRecommend: true,
       );
     }
     final isMf = isMfFormatValue(pluginFormat);
@@ -194,8 +213,9 @@ const _searchLimit = 20;
 const _searchConcurrency = 4;
 const _maxCandidates = 90;
 const _maxCloudCandidates = 20;
+const _maxLocalCandidates = 20;
 const _minDurationMs = 45000;
-const _cacheKey = 'daily_recommend_v4';
+const _cacheKey = 'daily_recommend_v5';
 
 int _imul(int a, int b) => ((a * b) & 0xFFFFFFFF).toSigned(32);
 
@@ -247,7 +267,8 @@ typedef _Collected = ({DailyRecommendItem item, double score});
 Future<List<DailyRecommendItem>> _executeAlgorithm(
     DailyRecommendAlgorithm algorithm,
     PluginEngine engine,
-    List<PluginSource> pluginSources) async {
+    List<PluginSource> pluginSources,
+    List<Song> localSongs) async {
   final exclusionSet = <String>{};
   for (final e in algorithm.exclusions) {
     if (e.title.isEmpty) continue;
@@ -278,6 +299,8 @@ Future<List<DailyRecommendItem>> _executeAlgorithm(
   if (alivePlugins.isNotEmpty) {
     await _searchAll(engine, algorithm, alivePlugins, exclusionSet, collected);
   }
+  // 本地库候选并入（同 key 按分数竞争）：无插件/网盘时本地兜底
+  _collectLocalCandidates(algorithm, exclusionSet, collected, localSongs);
 
   final best = <String, _Collected>{};
   for (final c in collected) {
@@ -455,6 +478,64 @@ Future<void> _collectCloudCandidates(
   await Future.wait([for (var i = 0; i < workerCount; i++) worker()]);
 }
 
+/// 本地候选收集（与网盘候选同构）：库内歌曲歌手段或歌名命中推荐歌手才收；
+/// 分数同网盘尺度（+0.05 偏置），同池竞争，全局限量。
+void _collectLocalCandidates(
+  DailyRecommendAlgorithm algorithm,
+  Set<String> exclusionSet,
+  List<_Collected> collected,
+  List<Song> localSongs,
+) {
+  final keywords = <String>{
+    for (final k in algorithm.topArtistNames)
+      if (_normalizeText(k.trim()).isNotEmpty) _normalizeText(k.trim()),
+  };
+  if (keywords.isEmpty || localSongs.isEmpty) return;
+
+  final seen = <String>{};
+  final hits = <Song>[];
+  for (final s in localSongs) {
+    if (hits.length >= _maxLocalCandidates) break;
+    if (s.path.isEmpty || s.title.isEmpty) continue;
+    final normTitle = _normalizeText(s.title);
+    if (normTitle.isEmpty) continue;
+    // 与插件候选一致：短于 45s 的曲目不参与
+    if (s.duration > 0 && s.duration * 1000 < _minDurationMs) continue;
+    final artistSegs =
+        s.artist.split(RegExp(r'[/、,&]')).map(_normalizeText).toList();
+    if (!artistSegs.any(keywords.contains) && !keywords.contains(normTitle)) {
+      continue;
+    }
+    final key = '$normTitle|${_normalizeText(_firstArtist(s.artist))}';
+    if (exclusionSet.contains(key) || !seen.add(key)) continue;
+    hits.add(s);
+  }
+
+  for (var rank = 0; rank < hits.length; rank++) {
+    final s = hits[rank];
+    collected.add((
+      item: DailyRecommendItem(
+        song: {
+          'name': s.title,
+          'singer': s.artist.isEmpty ? tr('本地音乐') : s.artist,
+          'source': '',
+          'songmid': s.path,
+        },
+        reason: tr('来自本地音乐'),
+        strategyId: 'local',
+        pluginId: '',
+        pluginFormat: 'musicfree',
+        local: {
+          'path': s.path,
+          'durationMs': s.duration * 1000,
+          if (s.coverThumbPath != null) 'coverThumbPath': s.coverThumbPath,
+        },
+      ),
+      score: (1 - rank / hits.length) * 0.5 + 0.05,
+    ));
+  }
+}
+
 Future<List<PluginSearchResult>> _searchPlugin(
     PluginEngine engine, PluginSource plugin, String keyword) async {
   if (plugin.format.isMfCompatible) {
@@ -595,6 +676,7 @@ class _DailyCache {
               'pluginId': c.pluginId,
               'pluginFormat': c.pluginFormat,
               if (c.cloud != null) 'cloud': c.cloud,
+              if (c.local != null) 'local': c.local,
             },
         ],
       };
@@ -617,8 +699,11 @@ class _DailyCache {
               pluginId: (e['pluginId'] as String?) ?? '',
               pluginFormat: e['pluginFormat'] as String? ?? 'musicfree',
               cloud: (e['cloud'] as Map?)?.cast<String, dynamic>(),
+              local: (e['local'] as Map?)?.cast<String, dynamic>(),
             ))
-        .where((c) => c.song.isNotEmpty && (c.pluginId.isNotEmpty || c.cloud != null))
+        .where((c) =>
+            c.song.isNotEmpty &&
+            (c.pluginId.isNotEmpty || c.cloud != null || c.local != null))
         .toList();
     if (candidates.isEmpty) return null;
     return _DailyCache(
@@ -755,9 +840,19 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
       );
     }
 
+    // 本地库未加载时先读一次（轻量 DB 读），保证本地候选可用
+    var localSongs = ref.read(libraryProvider).songs;
+    if (localSongs.isEmpty) {
+      try {
+        await ref.read(libraryProvider.notifier).load();
+        localSongs = ref.read(libraryProvider).songs;
+      } catch (_) {}
+    }
+
     final pluginSources = ref.watch(pluginManagerProvider).sources;
     if (!pluginSources.any((s) => s.enabled) &&
-        !await _anyBoundSearchableDrive()) {
+        !await _anyBoundSearchableDrive() &&
+        localSongs.isEmpty) {
       return const DailyRecommendState(items: []);
     }
 
@@ -766,7 +861,8 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
         .requestAction('get_daily_recommend', {'ciyuanxi_id': ciyuanxiId});
     final algorithm = DailyRecommendAlgorithm.fromJson(data);
     final engine = await ref.read(pluginEngineProvider.future);
-    final candidates = await _executeAlgorithm(algorithm, engine, pluginSources);
+    final candidates =
+        await _executeAlgorithm(algorithm, engine, pluginSources, localSongs);
     if (candidates.isNotEmpty) {
       await _saveCache(_DailyCache(
         ciyuanxiId: ciyuanxiId,

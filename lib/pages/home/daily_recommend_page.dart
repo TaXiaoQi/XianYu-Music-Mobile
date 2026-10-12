@@ -79,7 +79,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                 if (state.items.isEmpty) {
                   return _CenterAction(
                     icon: Icons.music_off_outlined,
-                    message: tr('今天还没有推荐\n请先在「插件管理」中安装音源插件'),
+                    message: tr('今天还没有推荐\n添加本地音乐或安装音源插件后再试'),
                     action: tr('去安装插件'),
                     onTap: () => context.push('/plugin'),
                   );
