@@ -37,7 +37,8 @@ class CloudCaptureRule {
   /// 需要捕获的 Cookie 名（webviewCookie 范式）。
   final List<String> cookieNames;
 
-  /// Cookie 所在域（Cloudflare/WKWebView 按域隔离，逐域读取）。
+  /// Cookie 所在域（Cloudflare/WKWebView 按域隔离，逐域读取；
+  /// nativeCookies 时首个域作为原生读取地址）。
   final List<String> cookieDomains;
 
   /// 页面 URL 命中该正则即认为登录流程走完，可读 Cookie。

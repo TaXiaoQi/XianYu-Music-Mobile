@@ -39,8 +39,8 @@ class BaiduProvider extends CloudProvider {
   @override
   String get webviewLoginUrl => 'https://pan.baidu.com/login';
 
-  @override
-  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
+  // 不强制桌面 UA：移动 UA 下登录 SPA 自适应移动视口（桌面 UA 在
+  // 手机 WebView 里排版挤压不可用）。
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(

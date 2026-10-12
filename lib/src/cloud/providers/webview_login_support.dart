@@ -141,8 +141,14 @@ class CloudWebviewCaptureSession {
 
   /// 原生 CookieManager 通道（可读 httpOnly）。鸿蒙 fork 无 getCookies
   /// 会在此抛错 → 返回 false，回退 document.cookie 通道。
+  ///
+  /// 读地址优先取捕获规则的首个 cookieDomains：移动端登录流会落在
+  /// h5.sm.cn / broccoli.uc.cn 等入口域，而凭据在 .quark.cn / .uc.cn /
+  /// .baidu.com 上，按当前页 URL 读会漏。
   Future<bool> _readNativeCookies() async {
-    final url = _finalUrl;
+    final url = rule.cookieDomains.isNotEmpty
+        ? 'https://${rule.cookieDomains.first}/'
+        : _finalUrl;
     if (url == null) return false;
     try {
       final cookies =
