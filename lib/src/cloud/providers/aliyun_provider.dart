@@ -128,6 +128,17 @@ class AliyunProvider extends CloudProvider {
       rustListDir(id, cred, path, cursor: cursor);
 
   @override
+  bool get supportsSearch => true;
+
+  @override
+  Future<CloudListResult> searchFiles(
+    Map<String, String> cred,
+    String keyword, {
+    String? cursor,
+  }) =>
+      rustSearchFiles(id, cred, keyword, cursor: cursor);
+
+  @override
   Future<CloudShareParse> parseShareLink(String url, String? pwd) =>
       rustParseShare(id, url, pwd);
 

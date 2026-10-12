@@ -224,6 +224,60 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
+/// 搜索请求体（纯函数，单测断言）：body 照 hcy/file/list 风格装配，
+/// searchValue 关键词 + pageNum 页码游标，pageSize 100 对齐列表每页条数。
+fn search_body(keyword: &str, page: i64) -> Value {
+    json!({
+        "searchValue": keyword,
+        "catalogType": 3,
+        "pageBean": { "pageNum": page, "pageSize": 100 },
+    })
+}
+
+/// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格），返回结构
+/// 与 list_dir 同构（list_result_json）；条目映射复用 file_from_content
+/// （搜索无目录上下文，parentId 缺省回空串）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
+    let resp = post_json_follow(
+        "https://personal-kd-njs.yun.139.com/hcy/file/search",
+        &h_headers(&req.cred_str("cookie")),
+        &search_body(&keyword, page),
+    )
+    .await
+    .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let list = j
+        .get("data")
+        .filter(|d| d.is_object())
+        .and_then(|d| d.get("contentList"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut files = Vec::new();
+    for e in &list {
+        if !e.is_object() {
+            continue;
+        }
+        files.push(file_from_content(e, ""));
+    }
+    let has_next = files.len() as i64 >= 100;
+    let next_cursor = if has_next {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+    Ok(CloudOut::plain(list_result_json(files, next_cursor)))
+}
+
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let info = pre_parse_share(req, "mobile139")?;
     let guid = if info.share_id.is_empty() {
@@ -382,6 +436,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -461,5 +516,39 @@ mod tests {
         assert_eq!(resolve_url("https://a.com/x", "//b.com/y"), "https://b.com/y");
         assert_eq!(resolve_url("https://a.com/x", "/y"), "https://a.com/y");
         assert_eq!(resolve_url("https://a.com/x/y", "z"), "https://a.com/x/z");
+    }
+
+    #[test]
+    fn search_body_shape() {
+        let b = search_body("周深", 2);
+        assert_eq!(b["searchValue"], "周深");
+        assert_eq!(b["catalogType"], json!(3));
+        assert_eq!(b["pageBean"]["pageNum"], json!(2));
+        assert_eq!(b["pageBean"]["pageSize"], json!(100));
+    }
+
+    #[test]
+    fn search_item_mapping_without_context() {
+        // 搜索复用 file_from_content：parentId 缺省回空串（无目录上下文）。
+        let e = json!({
+            "contentId": "c1",
+            "contentName": "a.flac",
+            "isCatalog": 0,
+            "contentSize": 123,
+        });
+        let f = file_from_content(&e, "");
+        assert_eq!(f["id"], "c1");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 123);
+        assert_eq!(f["parentId"], "");
+        assert!(f.get("path").is_none());
+        // 条目带 parentCatalogId 时原样带回。
+        let f2 = file_from_content(
+            &json!({ "contentId": "c2", "contentName": "b", "isCatalog": 1, "parentCatalogId": "p9" }),
+            "",
+        );
+        assert_eq!(f2["parentId"], "p9");
+        assert_eq!(f2["isDir"], true);
     }
 }

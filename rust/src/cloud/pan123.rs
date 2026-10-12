@@ -73,6 +73,15 @@ fn list_url(path: &str, page: i64) -> String {
     )
 }
 
+/// 文件搜索 URL（纯函数，单测断言）：端点 file/search/info 为设计稿形态，
+/// 其余固定 query 逐字照抄 list_url（SearchData 由 false 换为关键词）。
+fn search_url(keyword: &str, page: i64) -> String {
+    format!(
+        "https://www.123pan.com/b/api/file/search/info?SearchData={}&page={page}&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false",
+        http::url_encode(keyword)
+    )
+}
+
 fn share_get_url(share_key: &str, pass_code: &str) -> String {
     format!(
         "https://www.123pan.com/b/api/share/get?shareKey={}&PassCode={}&orderBy=file_id&orderDirection=asc",
@@ -144,6 +153,51 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
             let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), &path);
             files.push(file_json(&id, &name, is_dir, size, Some(&parent), None, None));
+        }
+    }
+    let has_next = files.len() >= 100;
+    let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
+    Ok(CloudOut::plain(list_result_json(files, next_cursor)))
+}
+
+/// file/search/info 的 data.InfoList 条目 → CloudFile（映射纯函数，单测断言）。
+/// 播放（download_info）只需 fileId；parentFileId 一并带回（搜索无目录上下文，
+/// 缺省回空串）。
+fn file_from_search_item(e: &Value) -> Value {
+    let id = js_str(e.get("fileId"), "");
+    let name = js_str(e.get("filename"), "");
+    let is_dir = e.get("type").and_then(Value::as_i64) == Some(1);
+    let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
+    let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), "");
+    file_json(&id, &name, is_dir, size, Some(&parent), None, None)
+}
+
+/// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格），
+/// 返回结构与 list_dir 同构（list_result_json）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let token = req.cred_str("token");
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
+    let resp = http::get(&search_url(&keyword, page), &auth_headers(&token))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let list = j
+        .get("data")
+        .and_then(|d| d.get("InfoList"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let mut files = Vec::new();
+    if let Some(items) = list.as_array() {
+        for e in items {
+            files.push(file_from_search_item(e));
         }
     }
     let has_next = files.len() >= 100;
@@ -336,6 +390,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         // Dart 抛 UnsupportedError('该盘分享不支持转存')。
         "transfer_share" => Err(biz_err("该盘分享不支持转存")),
@@ -380,6 +435,41 @@ mod tests {
             list_url("a b", 2),
             "https://www.123pan.com/b/api/file/list/new?parentFileId=a+b&page=2&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false&SearchData=false"
         );
+    }
+
+    #[test]
+    fn search_url_shape() {
+        // SearchData 换为关键词，其余固定 query 逐字照抄 list_url。
+        assert_eq!(
+            search_url("lo fi", 2),
+            "https://www.123pan.com/b/api/file/search/info?SearchData=lo+fi&page=2&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false"
+        );
+        assert_eq!(
+            search_url("周深", 1),
+            "https://www.123pan.com/b/api/file/search/info?SearchData=%E5%91%A8%E6%B7%B1&page=1&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false"
+        );
+    }
+
+    #[test]
+    fn file_from_search_item_maps_fields() {
+        let e = json!({
+            "fileId": "f1",
+            "filename": "a.flac",
+            "type": 0,
+            "size": 123,
+            "parentFileId": "p0",
+        });
+        let f = file_from_search_item(&e);
+        assert_eq!(f["id"], "f1");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 123);
+        assert_eq!(f["parentId"], "p0");
+        // type==1 判目录；parentFileId 缺失回空串（搜索无目录上下文）。
+        let d = file_from_search_item(&json!({ "fileId": 9, "filename": "dir", "type": 1 }));
+        assert_eq!(d["isDir"], true);
+        assert_eq!(d["id"], "9");
+        assert_eq!(d["parentId"], "");
     }
 
     #[test]

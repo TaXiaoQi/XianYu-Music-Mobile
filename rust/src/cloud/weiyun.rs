@@ -338,6 +338,8 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        // goapi 未暴露检索接口。
+        "search_files" => Err(biz_err("该盘不支持文件搜索")),
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,

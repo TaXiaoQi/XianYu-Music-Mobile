@@ -154,6 +154,17 @@ class BaiduProvider extends CloudProvider {
       rustListDir(id, cred, path, cursor: cursor);
 
   @override
+  bool get supportsSearch => true;
+
+  @override
+  Future<CloudListResult> searchFiles(
+    Map<String, String> cred,
+    String keyword, {
+    String? cursor,
+  }) =>
+      rustSearchFiles(id, cred, keyword, cursor: cursor);
+
+  @override
   Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
     // 解析需登录态（BDUSS）；未绑定账号时在此抛出，行为与原实现一致。
     final cred = await _soleCredOrThrow();

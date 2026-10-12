@@ -34,6 +34,7 @@ fn int_of(v: &Value, key: &str) -> i64 {
 pub const OPS: &[&str] = &[
     "validate",
     "list_dir",
+    "search_files",
     "parse_share",
     "transfer_share",
     "direct_link",

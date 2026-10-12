@@ -133,6 +133,24 @@ Future<CloudListResult> rustListDir(
   return _listResultFromJson(result);
 }
 
+/// 全盘文件名搜索（仅 supportsSearch 的盘转发）。
+Future<CloudListResult> rustSearchFiles(
+  String provider,
+  Map<String, String> cred,
+  String keyword, {
+  String? cursor,
+}) async {
+  final data = await _callRust(provider, 'search_files', cred, {
+    'keyword': keyword,
+    if (cursor != null && cursor.isNotEmpty) 'cursor': cursor,
+  });
+  final result = data['result'];
+  if (result is! Map<String, dynamic>) {
+    throw const CloudException('网盘数据解析失败');
+  }
+  return _listResultFromJson(result);
+}
+
 /// 分享链接解析。绝大多数盘免凭据；需登录态的盘（如百度）经 [cred] 携带。
 Future<CloudShareParse> rustParseShare(
   String provider,

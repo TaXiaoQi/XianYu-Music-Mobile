@@ -26,6 +26,8 @@ const UA: &str = "ANDROID-com.pikcloud.pikpak/1.47.1";
 const CLIENT_ID: &str = "YNxT9w7GMdWvEOKa";
 /// Dart jsonEncode({'phase': {'in': ['PHASE_TYPE_COMPLETE']}, 'trashed': {'in': false}})。
 const LIST_FILTERS: &str = r#"{"phase":{"in":["PHASE_TYPE_COMPLETE"]},"trashed":{"in":false}}"#;
+/// 搜索 filters（设计稿形态）：仅回收站过滤，与列表 LIST_FILTERS 不同。
+const SEARCH_FILTERS: &str = r#"{"trashed":{"match":"exact","value":"false"}}"#;
 
 const EXPIRED: &str = "登录已过期，请重新绑定";
 
@@ -76,6 +78,17 @@ fn files_list_url(parent_id: &str, page_token: &str) -> String {
         http::url_encode(parent_id),
         http::url_encode(page_token),
         http::url_encode(LIST_FILTERS)
+    )
+}
+
+/// 文件搜索 URL（纯函数，单测断言）：parent_id=* 全盘检索 + search 关键词，
+/// cursor 为响应 next_page_token。
+fn search_url(keyword: &str, page_token: &str) -> String {
+    format!(
+        "https://api-drive.mypikpak.com/drive/v1/files?parent_id=*&search={}&filters={}&page_token={}",
+        http::url_encode(keyword),
+        http::url_encode(SEARCH_FILTERS),
+        http::url_encode(page_token)
     )
 }
 
@@ -193,6 +206,49 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let result = list_dir_at(&at, &path, &cursor).await?;
     Ok(CloudOut {
         result,
+        rotated_cred: rotated,
+    })
+}
+
+/// 搜索结果条目 → CloudFile（映射纯函数，单测断言）。
+/// 播放（files/{id} 元信息）只需 id；parentId 一并带回（搜索无目录上下文，
+/// 缺省回空串）。
+fn file_from_search_item(e: &Value) -> Value {
+    let id = js_str(e.get("id"), "");
+    let name = js_str(e.get("name"), "");
+    let is_dir = e.get("kind").and_then(Value::as_str) == Some("drive#folder");
+    let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
+    let parent = js_str(e.get("parent_id"), "");
+    file_json(&id, &name, is_dir, size, Some(&parent), None, None)
+}
+
+/// 文件搜索：keyword 必填，cursor 为响应 next_page_token（与 list_dir 同
+/// 风格），返回结构与 list_dir 同构（list_result_json）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let (at, rotated) = auth(&req.cred).await?;
+    let cursor = req.param_str("cursor");
+    let resp = http::get(&search_url(&keyword, &cursor), &api_headers(&at))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let mut files = Vec::new();
+    if let Some(items) = j.get("files").and_then(Value::as_array) {
+        for e in items {
+            files.push(file_from_search_item(e));
+        }
+    }
+    let next = js_str(j.get("next_page_token"), "");
+    let next_cursor = if next.is_empty() { None } else { Some(next) };
+    Ok(CloudOut {
+        result: list_result_json(files, next_cursor),
         rotated_cred: rotated,
     })
 }
@@ -373,6 +429,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -444,5 +501,41 @@ mod tests {
             file_meta_url("f/1"),
             "https://api-drive.mypikpak.com/drive/v1/files/f%2F1"
         );
+    }
+
+    #[test]
+    fn search_url_filters_encoded() {
+        // 搜索 filters 整串逐字符对齐设计稿再 encodeQueryComponent。
+        assert_eq!(
+            search_url("lofi beats", ""),
+            "https://api-drive.mypikpak.com/drive/v1/files?parent_id=*&search=lofi+beats&filters=%7B%22trashed%22%3A%7B%22match%22%3A%22exact%22%2C%22value%22%3A%22false%22%7D%7D&page_token="
+        );
+        assert_eq!(
+            search_url("flac", "pt1"),
+            "https://api-drive.mypikpak.com/drive/v1/files?parent_id=*&search=flac&filters=%7B%22trashed%22%3A%7B%22match%22%3A%22exact%22%2C%22value%22%3A%22false%22%7D%7D&page_token=pt1"
+        );
+    }
+
+    #[test]
+    fn file_from_search_item_maps_fields() {
+        let e = json!({
+            "id": "f1",
+            "name": "a.flac",
+            "kind": "drive#file",
+            "size": 123,
+            "parent_id": "p0",
+        });
+        let f = file_from_search_item(&e);
+        assert_eq!(f["id"], "f1");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 123);
+        assert_eq!(f["parentId"], "p0");
+        // 目录 kind 判定；parentId 缺省回空串。
+        let d = file_from_search_item(&json!({ "id": "d1", "name": "dir", "kind": "drive#folder" }));
+        assert_eq!(d["isDir"], true);
+        assert_eq!(d["parentId"], "");
+        // 播放只需 id：path 留空。
+        assert!(f.get("path").is_none());
     }
 }

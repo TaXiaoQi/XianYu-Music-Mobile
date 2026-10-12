@@ -142,6 +142,67 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
+/// 文件搜索 URL（纯函数，单测断言）：filename 关键词 + 全盘 folderId=-11，
+/// 翻页 pageNum/pageSize 照 list_dir 风格（60 条/页）。
+fn search_url(keyword: &str, page: i64) -> String {
+    format!(
+        "https://cloud.189.cn/api/open/file/searchFiles.action?filename={}&folderId=-11&pageNum={page}&pageSize=60",
+        http::url_encode(keyword)
+    )
+}
+
+/// searchFiles 条目 → CloudFile（映射纯函数，单测断言）。字段防御式解析：
+/// 搜索结果条目键名在列表/分享两种形态间摇摆（id|fileId、name|fileName、
+/// dir|isdir|isDir、size|fileSize）；播放（getFileDownloadUrl）只需 id。
+fn file_from_search_item(e: &Value) -> Value {
+    let id = jstr(e.get("id").filter(|v| !v.is_null()).or_else(|| e.get("fileId")));
+    let name = jstr(
+        e.get("name")
+            .filter(|v| !v.is_null())
+            .or_else(|| e.get("fileName")),
+    );
+    let is_dir = dart_bool(e.get("dir")) || dart_bool(e.get("isdir")) || dir_flag_189(e.get("isDir"));
+    let size = num_i64(e.get("size"))
+        .or_else(|| num_i64(e.get("fileSize")))
+        .unwrap_or(0);
+    file_json(&id, &name, is_dir, size, None, None, None)
+}
+
+/// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格），
+/// 返回结构与 list_dir 同构（list_result_json）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
+    let resp = http::get(&search_url(&keyword, page), &auth_headers(&req.cred_str("cookie")))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    // 接口形状防御式解析：data 包裹与裸 fileListAO 两种形态都接。
+    let list = j
+        .pointer("/data/fileListAO/fileList")
+        .or_else(|| j.pointer("/fileListAO/fileList"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut files = Vec::new();
+    for e in &list {
+        files.push(file_from_search_item(e));
+    }
+    let next_cursor = if files.len() >= 60 {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
+    Ok(CloudOut::plain(list_result_json(files, next_cursor)))
+}
+
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let info = pre_parse_share(req, "ecloud189")?;
     let share_code = if info.share_id.is_empty() {
@@ -374,6 +435,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -443,6 +505,41 @@ mod tests {
         assert!(task_done(&state));
         let j2 = json!({ "data": { "taskStatus": "2" } });
         assert!(task_done(&jstr(j2.pointer("/data/taskStatus"))));
+    }
+
+    #[test]
+    fn search_url_shape() {
+        assert_eq!(
+            search_url("lo fi", 2),
+            "https://cloud.189.cn/api/open/file/searchFiles.action?filename=lo+fi&folderId=-11&pageNum=2&pageSize=60"
+        );
+        assert_eq!(
+            search_url("周深", 1),
+            "https://cloud.189.cn/api/open/file/searchFiles.action?filename=%E5%91%A8%E6%B7%B1&folderId=-11&pageNum=1&pageSize=60"
+        );
+    }
+
+    #[test]
+    fn file_from_search_item_maps_fields() {
+        // 列表形态键名。
+        let f = file_from_search_item(&json!({
+            "id": "f1", "name": "a.flac", "dir": true, "size": 123,
+        }));
+        assert_eq!(f["id"], "f1");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], true);
+        assert_eq!(f["size"], 123);
+        // 分享形态键名兜底（fileId/fileName/isDir/fileSize）。
+        let f2 = file_from_search_item(&json!({
+            "fileId": 999, "fileName": "b.mp3", "isDir": false, "fileSize": 9,
+        }));
+        assert_eq!(f2["id"], "999");
+        assert_eq!(f2["name"], "b.mp3");
+        assert_eq!(f2["isDir"], false);
+        assert_eq!(f2["size"], 9);
+        // 播放只需 id，parentId/path 留空。
+        assert!(f.get("parentId").is_none());
+        assert!(f.get("path").is_none());
     }
 
     #[test]

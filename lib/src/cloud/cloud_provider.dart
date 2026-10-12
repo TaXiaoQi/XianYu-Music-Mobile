@@ -95,4 +95,15 @@ abstract class CloudProvider {
     CloudFile file,
   ) =>
       throw UnsupportedError('该盘分享不支持免转存直链');
+
+  /// 是否支持文件名搜索（支持时搜索来源栏展示该盘）。
+  bool get supportsSearch => false;
+
+  /// 全盘文件名搜索（search_files；cursor 翻页续传，语义同 listDir）。
+  Future<CloudListResult> searchFiles(
+    Map<String, String> cred,
+    String keyword, {
+    String? cursor,
+  }) =>
+      throw UnsupportedError('该盘不支持文件搜索');
 }

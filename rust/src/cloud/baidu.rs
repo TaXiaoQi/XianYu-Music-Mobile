@@ -159,6 +159,53 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
+/// 文件搜索 URL（纯函数，单测断言）。端点 filesearch 为设计稿形态：
+/// 全盘检索（dir=/），app_id 照抄 list，响应 list 与 /api/list 同构。
+fn search_url(keyword: &str) -> String {
+    format!(
+        "https://pan.baidu.com/api/filesearch?dir=/&key={}&web=1&clienttype=0&app_id={APP_ID}",
+        http::url_encode(keyword)
+    )
+}
+
+/// filesearch 条目 → CloudFile（映射纯函数，单测断言）。
+/// 播放（filemetas dlink）只需 fs_id；path 一并带回，响应无 parent_path
+/// （parentId 留空）。
+fn file_from_search_item(e: &Value) -> Value {
+    file_json(
+        &jstr(e.get("fs_id")),
+        &jstr(e.get("server_filename")),
+        num_i64(e.get("isdir")) == Some(1),
+        num_i64(e.get("size")).unwrap_or(0),
+        None,
+        Some(&jstr(e.get("path"))),
+        None,
+    )
+}
+
+/// 文件搜索：keyword 必填；filesearch 无翻页参数，结果一次返回
+/// （nextCursor 恒空），返回结构与 list_dir 同构（list_result_json）。
+async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let keyword = req.param_str("keyword");
+    if keyword.is_empty() {
+        return Err(biz_err("缺少搜索关键词"));
+    }
+    let resp = http::get(&search_url(&keyword), &auth_headers(&req.cred))
+        .await
+        .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    if num_i64(j.get("errno")) != Some(0) {
+        return Err(biz_err("搜索请求失败"));
+    }
+    let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+    let files: Vec<Value> = list.iter().map(file_from_search_item).collect();
+    Ok(CloudOut::plain(list_result_json(files, None)))
+}
+
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let info = pre_parse_share(req, "baidu")?;
     // Dart：info?.shareId ?? url。
@@ -478,6 +525,7 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        "search_files" => search_files(req).await,
         "parse_share" => parse_share(req).await,
         "transfer_share" => transfer_share(req).await,
         "direct_link" => direct_link(req).await,
@@ -547,6 +595,40 @@ mod tests {
         assert_eq!(num_i64(json!({}).get("errno")), None);
         assert_eq!(num_i64(Some(&json!(2.0))), Some(2));
         assert_eq!(num_i64(Some(&json!(-105))), Some(-105));
+    }
+
+    #[test]
+    fn search_url_shape() {
+        assert_eq!(
+            search_url("lofi beats"),
+            "https://pan.baidu.com/api/filesearch?dir=/&key=lofi+beats&web=1&clienttype=0&app_id=250528"
+        );
+        assert_eq!(
+            search_url("周深"),
+            "https://pan.baidu.com/api/filesearch?dir=/&key=%E5%91%A8%E6%B7%B1&web=1&clienttype=0&app_id=250528"
+        );
+    }
+
+    #[test]
+    fn file_from_search_item_maps_fields() {
+        let e = json!({
+            "fs_id": 123456,
+            "server_filename": "a.flac",
+            "isdir": 0,
+            "size": 4096,
+            "path": "/music/a.flac",
+        });
+        let f = file_from_search_item(&e);
+        assert_eq!(f["id"], "123456");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["isDir"], false);
+        assert_eq!(f["size"], 4096);
+        assert_eq!(f["path"], "/music/a.flac");
+        // 响应无 parent_path：parentId 留空。
+        assert!(f.get("parentId").is_none());
+        // 目录条目 isdir==1。
+        let d = file_from_search_item(&json!({ "fs_id": 9, "server_filename": "m", "isdir": 1 }));
+        assert_eq!(d["isDir"], true);
     }
 
     #[test]

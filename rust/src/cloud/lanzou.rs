@@ -549,6 +549,8 @@ pub async fn dispatch(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     match req.op.as_str() {
         "validate" => validate(req).await,
         "list_dir" => list_dir(req).await,
+        // HTML 页面形态无检索接口。
+        "search_files" => Err(biz_err("该盘不支持文件搜索")),
         "parse_share" => parse_share(req).await,
         "transfer_share" => Err(transfer_share()),
         "direct_link" => direct_link(req).await,
