@@ -349,6 +349,35 @@ class MainActivity : AudioServiceActivity() {
         }
     }
 
+    // 旧安卓（API ≤ S）涂色看门狗：Flutter 引擎的 edge-to-edge 迁移会在首帧
+    // 后一段时间内多次改写窗口系统栏属性——实测 EMUI Android 12 云手机：首帧
+    // 后 0.5~9s 多次把 navigationBarColor 重涂为不透明黑并重置布局 flag，且
+    // 最后一笔晚于全部固定重申时机（onCreate/聚焦/首帧/600ms/通道）。attr 停
+    // 在黑色后，EMUI 把聚焦窗口的 navigationBarColor 实时镜像为系统导航栏窗
+    // 口背景，三键区域恒黑，直到下一次窗口聚焦（回桌面重进）才恢复。修复：
+    // 首帧后 20s 内每 250ms 对账涂色与期望值（override 或透明），发现被改写
+    // 立即重申——attr 恢复的瞬间 EMUI 镜像即恢复。
+    private var legacyPaintWatchdogArmed = false
+
+    private fun armLegacyPaintWatchdog() {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.S) return
+        if (legacyPaintWatchdogArmed) return
+        legacyPaintWatchdogArmed = true
+        val startUptime = android.os.SystemClock.uptimeMillis()
+        fun tick() {
+            if (!legacyPaintWatchdogArmed) return
+            if (window.navigationBarColor != (navBarColorOverride ?: Color.TRANSPARENT)) {
+                applyLegacyEdgeToEdgeLayout()
+            }
+            if (android.os.SystemClock.uptimeMillis() - startUptime < 20_000) {
+                window.decorView.postDelayed({ tick() }, 250)
+            } else {
+                legacyPaintWatchdogArmed = false
+            }
+        }
+        window.decorView.postDelayed({ tick() }, 250)
+    }
+
     /**
      * 窗口聚焦时重申布局 flag：部分 ROM（含鸿蒙兼容层）在键盘弹出/收回、
      * 焦点切换等时机会重置 systemUiVisibility，丢失后实色状态栏条复现。
@@ -359,6 +388,7 @@ class MainActivity : AudioServiceActivity() {
         if (hasFocus) {
             applyLegacyEdgeToEdgeLayout()
             applyLandscapeSystemBarImmersive()
+            armLegacyPaintWatchdog()
         }
     }
 
@@ -374,6 +404,9 @@ class MainActivity : AudioServiceActivity() {
             applyLegacyEdgeToEdgeLayout()
             applyLandscapeSystemBarImmersive()
         }, 600)
+        // 固定重申时机可能全部落在引擎最后一笔涂黑之前（EMUI Android 12
+        // 实测最后一笔在首帧后 ~9s），挂看门狗兜底对账。
+        armLegacyPaintWatchdog()
     }
 
     /** singleTask 复用已启动 Activity 时的深链回调（外部 VIEW intent 命中现存实例）。 */
@@ -777,6 +810,9 @@ class MainActivity : AudioServiceActivity() {
                         navBarColorOverride =
                             call.argument<Number>("color")?.toInt()
                         applyLegacyEdgeToEdgeLayout()
+                        // 引擎的涂黑可能晚于本次重申（EMUI Android 12 实测），
+                        // 挂看门狗兜底对账
+                        armLegacyPaintWatchdog()
                         result.success(null)
                     }
                     // 新安卓判定用：Flutter 侧 API 35+ 切实色垫
