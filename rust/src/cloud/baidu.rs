@@ -483,38 +483,53 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let file = req.param_obj("file");
     let id = jstr(file.get("id"));
-    let url = format!(
-        "https://pan.baidu.com/rest/2.0/xpan/multimedia?method=filemetas&dlink=1&fsids={}&clienttype=0&app_id={APP_ID}&web=1",
-        http::url_encode(&format!("[{id}]"))
-    );
-    let resp = http::get(&url, &auth_headers(&req.cred))
-        .await
-        .map_err(biz_err)?;
+    let name = jstr(file.get("name"));
+    let size = num_i64(file.get("size")).unwrap_or(0);
+
+    // 网页下载接口（POST fidlist）：BDUSS 全盘有效。开放平台 xpan
+    // filemetas 有应用沙箱——只能拿本应用 /apps 目录内文件的 dlink，
+    // 文件在「来自：其他app」目录时必失败，弃用。
+    let resp = http::post_form(
+        &format!("https://pan.baidu.com/api/download?clienttype=0&app_id={APP_ID}&web=1&dt=1"),
+        &auth_headers(&req.cred),
+        vec![("fidlist".into(), format!("[{id}]"))],
+    )
+    .await
+    .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("直链获取失败"));
+        return Err(biz_err(format!("直链获取失败(http={})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    let list = j
-        .get("list")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    if list.is_empty() {
-        return Err(biz_err("直链获取失败"));
+    let errno = num_i64(j.get("errno")).unwrap_or(-1);
+    if errno != 0 {
+        return Err(biz_err(format!("直链获取失败(errno={errno})")));
     }
-    let dlink = jstr(list[0].get("dlink"));
+    // 响应 dlink 为字符串数组；兼容对象形态取 .dlink 字段。
+    let dlink = j
+        .get("dlink")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .map(|d| match d {
+            Value::String(s) => s.clone(),
+            Value::Object(o) => jstr(o.get("dlink")),
+            _ => String::new(),
+        })
+        .unwrap_or_default();
     if dlink.is_empty() {
         return Err(biz_err("直链获取失败"));
     }
-    let dlink = resolve_final_url(&dlink, &[("User-Agent".into(), "netdisk".into())]).await;
+    // 302 跟随与获取使用同一套请求头（UA 一致性是网页 dlink 的校验点）。
+    let dlink = resolve_final_url(&dlink, &auth_headers(&req.cred)).await;
     if is_rate_limited(&host_of(&dlink)) {
         return Err(biz_err("该文件被限速，暂无法播放"));
     }
-    let name = jstr(file.get("name"));
-    let size = num_i64(file.get("size")).unwrap_or(0);
     Ok(CloudOut::plain(direct_link_json(
         &dlink,
-        json!({ "User-Agent": "netdisk;P2SP;2.2.91.136;android-android" }),
+        json!({
+            "User-Agent": UA,
+            "Referer": "https://pan.baidu.com/",
+            "Cookie": http::cookie_header(&cred_pairs(&req.cred)),
+        }),
         Some(&name),
         Some(size),
         Some(now_ms() + 8 * 3600 * 1000),
