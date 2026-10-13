@@ -126,7 +126,16 @@ class CloudWebviewCaptureSession {
   }
 
   Future<void> _readCookies(WebViewController controller) async {
-    if (rule.nativeCookies && await _readNativeCookies()) return;
+    if (rule.nativeCookies && await _readNativeCookies()) {
+      // 原生通道调用成功，但目标 Cookie 一个都没拿到时继续走
+      // document.cookie 兜底——部分厂商 WebView/URL 变体下 getCookie
+      // 会返回空，不能因为「通道成功」就放弃采集。
+      if (rule.cookieNames.isEmpty ||
+          rule.cookieNames.any(_cookies.containsKey)) {
+        return;
+      }
+      AppLog.warn('cloud', '原生 Cookie 通道未取到 ${rule.cookieNames.join('/')}，回退 document.cookie');
+    }
     final raw = await _evalJs(controller, 'document.cookie');
     if (raw.isEmpty) return;
     for (final seg in raw.split(';')) {
