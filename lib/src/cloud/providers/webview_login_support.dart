@@ -63,8 +63,10 @@ class CloudWebviewCaptureSession {
     final doneHit = rule.doneUrlPattern?.hasMatch(url) ?? false;
     await _readCookies(controller);
     // 声明 doneUrlPattern 时只在命中页采集完成（登录前落域名页不算）；
-    // 未声明时 Cookie 齐了即算完成。
-    if (_cookiesReady && (doneHit || rule.doneUrlPattern == null)) {
+    // 未声明时 Cookie 齐了即算完成；manualDoneOnly 一律等用户手动确认。
+    if (_cookiesReady &&
+        !rule.manualDoneOnly &&
+        (doneHit || rule.doneUrlPattern == null)) {
       _completed = true;
     }
     return _completed;
@@ -139,8 +141,10 @@ class CloudWebviewCaptureSession {
     }
   }
 
-  /// 原生 CookieManager 通道（可读 httpOnly）。鸿蒙 fork 无 getCookies
-  /// 会在此抛错 → 返回 false，回退 document.cookie 通道。
+  /// 原生 CookieManager 通道（可读 httpOnly）。getCookies 是 webview_flutter
+  /// 4.13+ 的 API，鸿蒙 fork（4.6.0）无此方法——静态调用在 fork 态直接编译
+  /// 失败，故走 dynamic 派发：官方态运行时真调原生通道；fork 态运行时抛
+  /// NoSuchMethodError → 返回 false，回退 document.cookie 通道。
   ///
   /// 读地址优先取捕获规则的首个 cookieDomains：移动端登录流会落在
   /// h5.sm.cn / broccoli.uc.cn 等入口域，而凭据在 .quark.cn / .uc.cn /
@@ -151,8 +155,9 @@ class CloudWebviewCaptureSession {
         : _finalUrl;
     if (url == null) return false;
     try {
-      final cookies =
-          await WebViewCookieManager().getCookies(domain: Uri.parse(url));
+      final dynamic cookieManager = WebViewCookieManager();
+      final cookies = await cookieManager.getCookies(domain: Uri.parse(url))
+          as List<WebViewCookie>;
       for (final c in cookies) {
         if (c.value.isNotEmpty &&
             (rule.cookieNames.isEmpty || rule.cookieNames.contains(c.name))) {

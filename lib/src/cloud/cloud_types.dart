@@ -32,6 +32,7 @@ class CloudCaptureRule {
     this.pollScript,
     this.pollIntervalMs = 500,
     this.nativeCookies = false,
+    this.manualDoneOnly = false,
   });
 
   /// 需要捕获的 Cookie 名（webviewCookie 范式）。
@@ -56,6 +57,11 @@ class CloudCaptureRule {
   /// 上游 webview_flutter getCookies，鸿蒙 fork 无此 API 时由捕获会话
   /// 自动回退 document.cookie）。
   final bool nativeCookies;
+
+  /// 禁用 URL 自动判定登录完成，仅凭用户点「我已登录完成」收 Cookie。
+  /// 适用于登录前后 URL 不可区分的盘（如 139：登录后跳回同一个
+  /// yun.139.com SPA 首页，doneUrlPattern 从第一秒就命中）。
+  final bool manualDoneOnly;
 }
 
 /// WebView 登录捕获结果。

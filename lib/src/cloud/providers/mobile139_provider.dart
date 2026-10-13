@@ -29,8 +29,12 @@ class Mobile139Provider extends CloudProvider {
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
-        // 全收（cookieNames 空 = 非空即采），登录完成由 URL 判定。
-        doneUrlPattern: RegExp(r'yun\.139\.com'),
+        // 全收（cookieNames 空 = 非空即采）。登录前后 URL 同为
+        // yun.139.com SPA 首页，无法按 URL 判定完成，等用户点
+        // 「我已登录完成」手动收 Cookie；原生通道读 httpOnly 登录态。
+        cookieDomains: ['yun.139.com'],
+        nativeCookies: true,
+        manualDoneOnly: true,
         pollIntervalMs: 500,
       );
 
