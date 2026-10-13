@@ -171,7 +171,7 @@ class CloudWebviewCaptureSession {
   Future<bool> _readNativeCookies() async {
     final urls = <String>{
       for (final d in rule.cookieDomains) 'https://$d/',
-      if (_finalUrl != null) _finalUrl!,
+      ?_finalUrl,
     };
     if (urls.isEmpty) return false;
     try {
