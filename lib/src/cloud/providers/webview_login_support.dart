@@ -11,6 +11,7 @@
 // 非空字符串即视为 token 出现。
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -175,10 +176,19 @@ class CloudWebviewCaptureSession {
     try {
       final r = await controller.runJavaScriptReturningResult(expr);
       var s = r.toString();
+      // Android evaluateJavascript 返回 JSON 文本：字符串值带引号且内部
+      // 引号转义为 \"（如 JSON.stringify 的 tokenInfo）。剥外层引号后
+      // 还需反转义一层，否则 jsonDecode 必失败。
       if (s.length >= 2 &&
           ((s.startsWith('"') && s.endsWith('"')) ||
               (s.startsWith("'") && s.endsWith("'")))) {
         s = s.substring(1, s.length - 1);
+      }
+      if (s.contains(r'\"')) {
+        try {
+          final dec = jsonDecode(s);
+          if (dec is String) s = dec;
+        } catch (_) {}
       }
       return s;
     } catch (_) {
