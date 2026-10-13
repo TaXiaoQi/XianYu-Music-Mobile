@@ -40,6 +40,10 @@ abstract class CloudProvider {
   /// 壳页 baseUrl（决定壳页 origin；postMessage targetOrigin 需匹配）。
   String? get webviewShellBaseUrl => null;
 
+  /// 页面加载完成后轮询执行的自定义脚本（非 null 时由登录页注入）。
+  /// 供登录入口藏在页内的盘自动唤起登录框（如夸克主页点「登录」）。
+  String? get webviewAutoLoginScript => null;
+
   /// 账密/短信表单字段（httpPassword/smsPassword）。
   List<CloudLoginField> get loginFields => const [];
 

@@ -69,6 +69,10 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
         onPageFinished: (url) {
           if (mounted) setState(() => _pageLoaded = true);
           _controller.runJavaScript(_unlockZoomJs).catchError((_) {});
+          final auto = _provider.webviewAutoLoginScript;
+          if (auto != null) {
+            _controller.runJavaScript(auto).catchError((_) {});
+          }
           _onUrl(url);
         },
         onWebResourceError: (_) {},
