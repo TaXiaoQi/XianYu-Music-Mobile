@@ -305,7 +305,7 @@ async fn bdstoken(cred: &Value) -> String {
 
 /// 确保转存目标目录存在并返回 bdstoken（errno 12/-8 = 目录已存在可继续）。
 async fn ensure_dir(cred: &Value) -> Result<String, (i32, String)> {
-    let mut bdstoken = bdstoken(cred).await;
+    let bdstoken = bdstoken(cred).await;
     let create_url =
         format!("https://pan.baidu.com/api/create?a=commit&channel=chunlei&web=1&app_id={APP_ID}&clienttype=0");
     let create_resp = http::post_form(
