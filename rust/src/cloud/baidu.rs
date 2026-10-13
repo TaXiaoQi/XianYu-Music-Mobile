@@ -288,18 +288,24 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     )))
 }
 
-/// 确保转存目标目录存在并返回 bdstoken（errno 12/-8 = 目录已存在可继续）。
-async fn ensure_dir(cred: &Value) -> Result<String, (i32, String)> {
+/// 拉取 bdstoken（CSRF token，网页 /api/download、转存等写接口必带，
+/// 缺失时返回 errno=-6）。
+async fn bdstoken(cred: &Value) -> String {
     let tpl_url = format!(
         "https://pan.baidu.com/api/gettemplatevariable?clienttype=0&app_id={APP_ID}&web=1&fields=[\"bdstoken\"]"
     );
-    let mut bdstoken = String::new();
-    if let Ok(tpl_resp) = http::get(&tpl_url, &auth_headers(cred)).await {
-        if tpl_resp.is_ok() {
-            let j = tpl_resp.json().map_err(biz_err)?;
-            bdstoken = jstr(j.pointer("/result/bdstoken"));
-        }
+    match http::get(&tpl_url, &auth_headers(cred)).await {
+        Ok(resp) if resp.is_ok() => match resp.json() {
+            Ok(j) => jstr(j.pointer("/result/bdstoken")),
+            Err(_) => String::new(),
+        },
+        _ => String::new(),
     }
+}
+
+/// 确保转存目标目录存在并返回 bdstoken（errno 12/-8 = 目录已存在可继续）。
+async fn ensure_dir(cred: &Value) -> Result<String, (i32, String)> {
+    let mut bdstoken = bdstoken(cred).await;
     let create_url =
         format!("https://pan.baidu.com/api/create?a=commit&channel=chunlei&web=1&app_id={APP_ID}&clienttype=0");
     let create_resp = http::post_form(
@@ -486,11 +492,15 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let name = jstr(file.get("name"));
     let size = num_i64(file.get("size")).unwrap_or(0);
 
-    // 网页下载接口（POST fidlist）：BDUSS 全盘有效。开放平台 xpan
-    // filemetas 有应用沙箱——只能拿本应用 /apps 目录内文件的 dlink，
-    // 文件在「来自：其他app」目录时必失败，弃用。
+    // 网页下载接口（POST fidlist + bdstoken）：BDUSS 全盘有效。开放平台
+    // xpan filemetas 有应用沙箱——只能拿本应用 /apps 目录内文件的 dlink，
+    // 文件在「来自：其他app」目录时必失败，弃用。bdstoken 缺失时接口
+    // 返回 errno=-6。
+    let token = bdstoken(&req.cred).await;
     let resp = http::post_form(
-        &format!("https://pan.baidu.com/api/download?clienttype=0&app_id={APP_ID}&web=1&dt=1"),
+        &format!(
+            "https://pan.baidu.com/api/download?clienttype=0&app_id={APP_ID}&web=1&dt=1&bdstoken={token}"
+        ),
         &auth_headers(&req.cred),
         vec![("fidlist".into(), format!("[{id}]"))],
     )
