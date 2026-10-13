@@ -21,6 +21,7 @@ import '../../l10n/gen/app_localizations.dart';
 import '../../pages/home/home_page.dart';
 import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
+import '../../pages/home/recommend_sheets_page.dart';
 import '../../pages/home/online_detail_page.dart';
 import '../../pages/library/library_page.dart';
 import '../../pages/library/library_folder_page.dart';
@@ -504,6 +505,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _coverPage(
         context,
         (_) => const TopListsPage(),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/home/recommend-sheets',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const RecommendSheetsPage(),
         key: state.pageKey,
       ),
     ),

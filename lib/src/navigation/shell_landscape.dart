@@ -477,12 +477,14 @@ class _ContentPane extends StatelessWidget {
     final page = switch (path) {
       '/home/daily' => const DailyRecommendPage(embedded: true),
       '/home/toplists' => const TopListsPage(embedded: true),
+      '/home/recommend-sheets' => const RecommendSheetsPage(embedded: true),
       '/leaderboard' => const LeaderboardPage(embedded: true),
       _ => const SizedBox.shrink(),
     };
     final title = switch (path) {
       '/home/daily' => tr('每日推荐'),
       '/home/toplists' => tr('音源榜单'),
+      '/home/recommend-sheets' => tr('推荐歌单'),
       '/leaderboard' => tr('听歌排行榜'),
       _ => '',
     };

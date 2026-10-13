@@ -58,7 +58,10 @@ class _HomePageState extends ConsumerState<HomePage> {
       // 推荐歌单：无插件支持/无数据时整块隐藏（含标题，避免孤标题）
       if (ref.watch(recommendSheetsPreviewProvider
           .select((s) => s.hasData))) ...[
-        _SectionHeader(title: tr('推荐歌单')),
+        _SectionHeader(
+          title: tr('推荐歌单'),
+          action: _viewAllAction(context, ref, '/home/recommend-sheets'),
+        ),
         const SizedBox(height: 14),
         const RecommendSheetsSection(),
         const SizedBox(height: 26),

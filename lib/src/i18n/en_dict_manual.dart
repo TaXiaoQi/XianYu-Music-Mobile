@@ -384,6 +384,7 @@ const Map<String, String> enDictManual = {
   '该位置无法直接访问，请选择本地存储（如音乐、Download）下的文件夹':
       'That location cannot be accessed directly. Choose a folder in local storage (such as Music or Download)',
   '该音源暂无榜单\n试试切换其他音源': 'No charts for this source\nTry switching sources',
+  '该音源暂无推荐歌单\n试试切换其他音源': 'No playlists for this source\nTry switching sources',
   '改名未通过': 'Rename rejected',
   '干声': 'Dry vocal',
   '刚刚同步': 'Just synced',
@@ -1097,6 +1098,8 @@ const Map<String, String> enDictManual = {
   '暂无支持榜单的插件\n请先在「插件管理」安装支持排行榜的音源插件':
       'No chart-capable plugins\nInstall a source plugin that supports charts first',
   '暂无支持榜单的音源插件，去安装': 'No chart-capable source plugins; install one',
+  '暂无支持推荐歌单的插件\n请先在「插件管理」安装音源插件':
+      'No playlist-capable plugins\nInstall a source plugin first',
   '噪声门': 'Noise gate',
   '增益': 'Gain',
   '增益可能超出 0 dB 极限时自动压低；无峰值标签的歌曲不提升音量':
@@ -1126,6 +1129,8 @@ const Map<String, String> enDictManual = {
   '正在播放页样式': 'Now-playing page style',
   '正在读取文件夹…': 'Reading folders…',
   '正在加载榜单…': 'Loading charts…',
+  '正在加载推荐歌单…': 'Loading playlists…',
+  '推荐歌单加载失败\n点击重试': 'Failed to load playlists\nTap to retry',
   '正在检测可用音源…': 'Detecting available sources…',
   '正在解析播放链接…': 'Resolving the playback URL…',
   '正在扫描…': 'Scanning…',

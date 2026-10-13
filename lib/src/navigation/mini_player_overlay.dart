@@ -95,6 +95,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     '/library/folders',
     '/search',
     '/home/toplists',
+    '/home/recommend-sheets',
     '/account',
     '/leaderboard',
     '/scan',

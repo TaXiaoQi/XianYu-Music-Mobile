@@ -46,6 +46,7 @@ import '../../pages/account/account_page.dart';
 import '../../pages/download/download_page.dart';
 import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
+import '../../pages/home/recommend_sheets_page.dart';
 import '../../pages/leaderboard/leaderboard_page.dart';
 import '../../pages/leaderboard/leaderboard_prefetch.dart';
 import '../../pages/search/search_page.dart';
@@ -574,6 +575,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       }
     } else if (path == '/home/daily' ||
         path == '/home/toplists' ||
+        path == '/home/recommend-sheets' ||
         path == '/leaderboard') {
       _rotateBackPath = path;
       ref.read(landscapeContentPathProvider.notifier).state = path;

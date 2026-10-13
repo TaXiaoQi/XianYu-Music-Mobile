@@ -128,9 +128,11 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
 
   /// 推荐歌单首页：getRecommendSheetTags 取默认标签，getRecommendSheetsByTag
   /// 拉第一页。无标签协议的插件以 null 标签调用，由插件自身回退默认。
-  Future<List<MfSheetItem>> getRecommendSheets(PluginSource source) async {
+  /// lxKey 用于二级页把多平台 LX 音源按平台拆分（与榜单页同款）
+  Future<List<MfSheetItem>> getRecommendSheets(PluginSource source,
+      {String? lxKey}) async {
     if (source.format == PluginFormat.lx) {
-      return _getLxRecommendSheets(source);
+      return _getLxRecommendSheets(source, lxKey: lxKey);
     }
     try {
       final tags = await _call(source, 'getRecommendSheetTags', []);
@@ -155,9 +157,12 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// LX 音源推荐歌单：走 lx_recommend_sheets 兜底模块（服务端下发 JS 优先、
   /// Rust builtin 兜底）。取 pinned 首个标签（按其 source 平台）拉第一页；
   /// 空结果且有标签时以 null 标签（各平台默认推荐）对首个平台重试一次。
-  Future<List<MfSheetItem>> _getLxRecommendSheets(PluginSource source) async {
+  /// 指定 lxKey 时仅在该平台内取数，且只接受该平台的标签
+  Future<List<MfSheetItem>> _getLxRecommendSheets(PluginSource source,
+      {String? lxKey}) async {
     final keys = source.sources
         .where((k) => const {'wy', 'kg', 'kw', 'tx'}.contains(k))
+        .where((k) => lxKey == null || k == lxKey)
         .toList();
     if (keys.isEmpty) return const [];
     try {
@@ -165,7 +170,10 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       Map<String, dynamic>? tag;
       final pinned = tags?['pinned'];
       if (pinned is List && pinned.isNotEmpty && pinned.first is Map) {
-        tag = (pinned.first as Map).cast<String, dynamic>();
+        final first = (pinned.first as Map).cast<String, dynamic>();
+        if (lxKey == null || (first['source'] ?? '').toString() == lxKey) {
+          tag = first;
+        }
       }
       final tagSource = (tag?['source'] ?? '').toString();
       final srcKey = tagSource.isNotEmpty ? tagSource : keys.first;
