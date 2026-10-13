@@ -47,9 +47,13 @@ abstract class QuarkUcBase extends CloudProvider {
   @override
   CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
 
-  // 不强制桌面 UA：移动 UA 下 pan.quark.cn / drive.uc.cn 跳转
-  // h5.sm.cn / broccoli.uc.cn 的 H5 移动入口，登录页经过移动端
-  // 针对性优化（桌面 UA 在手机 WebView 里只有 PC 宣传页）。
+  // 必须强制桌面 UA：移动 UA 下 pan.quark.cn / drive.uc.cn 一律
+  // 302 到 h5.sm.cn / broccoli.uc.cn 的 H5 下载宣传页（无任何登录
+  // 入口，实测确认）；桌面 UA 才出登录面板（UC 主站直接渲染账密/
+  // 短信 tab，夸克点页面上「登录」弹窗），PC 排版缩放但可用。
+
+  @override
+  String? get webviewUserAgent => CloudProvider.desktopWebviewUa;
 
   @override
   Duration get directLinkTtl => const Duration(hours: 2);

@@ -36,11 +36,14 @@ class BaiduProvider extends CloudProvider {
   @override
   CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
 
+  // wappass = 百度移动端统一登录页（百度系 App 内嵌 WebView 同款），
+  // 全屏账密/短信表单。pan.baidu.com/login 旧 SPA 在手机上默认落
+  // 「扫码登录」tab（passLoginType 强制 qrcode），无法在手机上自扫，
+  // 弃用；保持移动 UA（wappass 本身就是移动页）。
   @override
-  String get webviewLoginUrl => 'https://pan.baidu.com/login';
-
-  // 不强制桌面 UA：移动 UA 下登录 SPA 自适应移动视口（桌面 UA 在
-  // 手机 WebView 里排版挤压不可用）。
+  String get webviewLoginUrl =>
+      'https://wappass.baidu.com/passport/?login&tpl=netdisk'
+      '&u=https%3A%2F%2Fpan.baidu.com%2F';
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
