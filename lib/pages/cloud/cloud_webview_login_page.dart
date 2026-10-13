@@ -36,6 +36,26 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   bool _finishing = false;
   bool _pageLoaded = false;
 
+  /// 解锁双指缩放：部分登录页（UC 桌面登录面板、百度 wappass 等）
+  /// viewport 声明 user-scalable=no / maximum-scale=1，手机上无法
+  /// 双指缩放看细节。仅改写缩放相关键，width / initial-scale /
+  /// viewport-fit 保持页面原设置，不影响布局。
+  static const _unlockZoomJs = r'''
+(function(){
+  try {
+    var m = document.querySelector('meta[name="viewport"]');
+    if (!m) return;
+    var c = m.getAttribute('content') || '';
+    if (!/user-scalable\s*=\s*no/i.test(c) &&
+        !/maximum-scale\s*=\s*1(?:\s*,|\s*$)/i.test(c)) return;
+    c = c.replace(/user-scalable\s*=\s*\w+/ig, 'user-scalable=yes')
+         .replace(/minimum-scale\s*=\s*[\w.]+/ig, 'minimum-scale=0.2')
+         .replace(/maximum-scale\s*=\s*[\w.]+/ig, 'maximum-scale=5');
+    m.setAttribute('content', c);
+  } catch (e) {}
+})();
+''';
+
   @override
   void initState() {
     super.initState();
@@ -48,6 +68,7 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (url) {
           if (mounted) setState(() => _pageLoaded = true);
+          _controller.runJavaScript(_unlockZoomJs).catchError((_) {});
           _onUrl(url);
         },
         onWebResourceError: (_) {},
