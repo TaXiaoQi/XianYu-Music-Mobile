@@ -47,8 +47,10 @@ class BaiduProvider extends CloudProvider {
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
-        // BDUSS 为 httpOnly，document.cookie 读不到，走原生通道。
-        cookieNames: ['BDUSS'],
+        // BDUSS/STOKEN 均 httpOnly，document.cookie 读不到，走原生通道。
+        // 网页接口风控下通常要求 BDUSS+STOKEN 组合，只带 BDUSS 会
+        // errno=-6 列不了文件。
+        cookieNames: ['BDUSS', 'STOKEN'],
         cookieDomains: ['baidu.com'],
         doneUrlPattern: RegExp(r'pan\.baidu\.com/(?!login)'),
         nativeCookies: true,

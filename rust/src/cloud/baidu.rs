@@ -132,11 +132,12 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("目录列表请求失败"));
+        return Err(biz_err(format!("目录列表请求失败(http={})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    if num_i64(j.get("errno")) != Some(0) {
-        return Err(biz_err("目录列表请求失败"));
+    let errno = num_i64(j.get("errno")).unwrap_or(-1);
+    if errno != 0 {
+        return Err(biz_err(format!("目录列表请求失败(errno={errno})")));
     }
     let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
     let mut files = Vec::new();
