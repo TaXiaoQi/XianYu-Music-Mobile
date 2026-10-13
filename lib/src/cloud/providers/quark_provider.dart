@@ -28,14 +28,30 @@ class QuarkProvider extends QuarkUcBase {
   String get webviewLoginUrl => 'https://pan.quark.cn/';
 
   // 主页「登录」按钮在右上角（ice SPA 动态渲染，SSR HTML 里没有），
-  // PC 页 1:1 渲染下按钮在屏幕外右侧。页面加载完后把视口滚到页面
-  // 右上角，登录入口直接展示，无需手动横向寻找（保持 1:1 渲染不缩放）。
+  // PC 页 1:1 渲染下按钮在屏幕外右侧。内容异步渲染，单次 scrollTo
+  // 时机不稳——持续轮询：一旦出现横向溢出立即滚到页面右上角露出
+  // 登录入口；用户一触摸屏幕就停止，不抢手势。
   @override
   String? get webviewPageLoadedScript => r'''
 (function(){
-  setTimeout(function(){
-    try { window.scrollTo(999999, 0); } catch (e) {}
-  }, 600);
+  if (window.__xymPosRight) return;
+  window.__xymPosRight = true;
+  var n = 0;
+  var t = setInterval(function(){
+    try {
+      var de = document.documentElement;
+      var max = Math.max(0, (de.scrollWidth || 0) - window.innerWidth);
+      if (max > 0) {
+        window.scrollTo(max, 0);
+        if (de.scrollWidth > de.clientWidth) de.scrollLeft = max;
+        var b = document.body;
+        if (b && b.scrollWidth > b.clientWidth) b.scrollLeft = max;
+      }
+    } catch (e) {}
+    if (++n >= 20) clearInterval(t);
+  }, 500);
+  document.addEventListener('touchstart', function(){ clearInterval(t); },
+    { passive: true });
 })();
 ''';
 
