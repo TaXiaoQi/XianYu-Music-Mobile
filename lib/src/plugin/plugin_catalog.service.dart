@@ -114,6 +114,39 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     return _maybeFillQqDurations(source, list);
   }
 
+  // ==================== 推荐歌单 ====================
+
+  /// MF 插件协议自带推荐歌单能力（getRecommendSheetTags/getRecommendSheetsByTag）；
+  /// LX 音源协议无推荐歌单方法
+  Future<bool> supportsRecommendSheets(PluginSource source) async {
+    if (source.format == PluginFormat.lx) return false;
+    return (await _availableMethods(source))
+        .contains('getRecommendSheetTags');
+  }
+
+  /// 推荐歌单首页：getRecommendSheetTags 取默认标签，getRecommendSheetsByTag
+  /// 拉第一页。无标签协议的插件以 null 标签调用，由插件自身回退默认。
+  Future<List<MfSheetItem>> getRecommendSheets(PluginSource source) async {
+    try {
+      final tags = await _call(source, 'getRecommendSheetTags', []);
+      dynamic tag;
+      if (tags is Map) {
+        tag = tags['defaultTag'] ??
+            ((tags['tags'] as List?)?.isNotEmpty == true
+                ? (tags['tags'] as List).first
+                : null);
+      }
+      final result = await _call(source, 'getRecommendSheetsByTag', [tag, 1]);
+      return extractMfResultList(result)
+          .map((m) => _toSheet(m, source))
+          .where((s) => s.title.isNotEmpty)
+          .toList();
+    } catch (e) {
+      AppLog.warn('plugin', '[catalog] ${source.name} 推荐歌单获取失败: $e');
+      return const [];
+    }
+  }
+
   // ==================== 歌单 ====================
 
   Future<({List<PluginSearchResult> songs, bool? isEnd})> getMusicSheetInfoWithEnd(

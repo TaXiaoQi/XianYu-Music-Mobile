@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
+import '../../src/home/recommend_sheets_preview_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/player/player_provider.dart';
@@ -54,6 +55,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       const SizedBox(height: 14),
       const DailyRecommendSection(),
       const SizedBox(height: 26),
+      // 推荐歌单：无插件支持/无数据时整块隐藏（含标题，避免孤标题）
+      if (ref.watch(recommendSheetsPreviewProvider
+          .select((s) => s.hasData))) ...[
+        _SectionHeader(title: tr('推荐歌单')),
+        const SizedBox(height: 14),
+        const RecommendSheetsSection(),
+        const SizedBox(height: 26),
+      ],
     ];
   }
 

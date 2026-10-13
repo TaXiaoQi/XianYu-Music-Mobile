@@ -8,6 +8,7 @@ import '../leaderboard/leaderboard_prefetch.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/top_lists_preview_provider.dart';
+import '../../src/home/recommend_sheets_preview_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/responsive/landscape.dart';
@@ -385,6 +386,90 @@ class _TopListsBody extends ConsumerWidget {
             const SizedBox(height: 5),
             Text(
               b.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return PressableScale(child: tile);
+  }
+}
+
+class RecommendSheetsSection extends ConsumerWidget {
+  const RecommendSheetsSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return const _RecommendSheetsBody();
+  }
+}
+
+class _RecommendSheetsBody extends ConsumerWidget {
+  const _RecommendSheetsBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final state = ref.watch(recommendSheetsPreviewProvider);
+    // 无数据时整块隐藏（home_page 同步按 hasData 隐藏标题，避免孤标题）
+    final sheets = state.sheets;
+    if (!state.hasData || sheets.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (state.sourceName != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              tr('来源：{name}', {'name': state.sourceName ?? ''}),
+              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        SizedBox(
+          height: 144,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: sheets.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 10),
+            itemBuilder: (context, i) => _sheetTile(context, sheets[i]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sheetTile(BuildContext context, MfSheetItem s) {
+    final tile = GestureDetector(
+      onTap: () => context.push(
+        '/online-detail',
+        extra: OnlineDetailArgs(
+          type: OnlineDetailType.playlist,
+          pluginId: s.pluginId,
+          title: s.title,
+          subtitle: s.subtitle,
+          coverUrl: s.coverUrl,
+          raw: s.raw,
+        ),
+      ),
+      child: SizedBox(
+        width: 92,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: OnlineCover(url: s.coverUrl, size: 92, radius: 10),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              s.title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(

@@ -569,6 +569,7 @@ const Map<String, String> enDictManual = {
       'No match found; move closer to the audio source and retry',
   '没有需要重命名的文件': 'No files to rename',
   '每日推荐': 'Daily mixes',
+  '推荐歌单': 'Playlists',
   '每月限一次': 'Once per month',
   '咪咕': 'Migu',
   '咪咕音乐': 'Migu Music',
