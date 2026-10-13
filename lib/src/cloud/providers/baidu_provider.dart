@@ -47,10 +47,9 @@ class BaiduProvider extends CloudProvider {
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
-        // BDUSS/STOKEN 均 httpOnly，document.cookie 读不到，走原生通道。
-        // 网页接口风控下通常要求 BDUSS+STOKEN 组合，只带 BDUSS 会
-        // errno=-6 列不了文件。
-        cookieNames: ['BDUSS', 'STOKEN'],
+        // 收域内全量 Cookie（BDUSS/STOKEN 均 httpOnly 走原生通道；网页
+        // 接口风控校验完整浏览器 Cookie 指纹，只带 BDUSS+STOKEN 会
+        // errno=-6——手填时代粘贴整串 Cookie 能用正说明这点）。
         cookieDomains: ['baidu.com'],
         doneUrlPattern: RegExp(r'pan\.baidu\.com/(?!login)'),
         nativeCookies: true,
@@ -88,9 +87,11 @@ class BaiduProvider extends CloudProvider {
       provider: id,
       accountId: md5Hex(bduss).substring(0, 12),
       nickname: nickname,
+      // 全量保留捕获到的 Cookie（BDUSS/STOKEN/PANWEB/BAIDUID 等）——
+      // 网页接口风控校验完整指纹，逐键白名单会 errno=-6。
       cred: {
-        'BDUSS': bduss,
-        if ((cookies['STOKEN'] ?? '').isNotEmpty) 'STOKEN': cookies['STOKEN']!,
+        for (final e in cookies.entries)
+          if (e.value.isNotEmpty) e.key: e.value,
       },
       boundAt: DateTime.now(),
     );
