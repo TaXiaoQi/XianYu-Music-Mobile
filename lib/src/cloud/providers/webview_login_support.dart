@@ -164,21 +164,37 @@ class CloudWebviewCaptureSession {
   /// 读地址优先取捕获规则的首个 cookieDomains：移动端登录流会落在
   /// h5.sm.cn / broccoli.uc.cn 等入口域，而凭据在 .quark.cn / .uc.cn /
   /// .baidu.com 上，按当前页 URL 读会漏。
+  ///
+  /// 厂商 WebView（华为 hwschromium 等）对裸域（https://baidu.com/）与
+  /// 子域（https://pan.baidu.com/）的 domain-match 实现存在差异——逐个
+  /// 地址读合并，任一命中即拿到凭据；每地址失败均留痕。
   Future<bool> _readNativeCookies() async {
-    final url = rule.cookieDomains.isNotEmpty
-        ? 'https://${rule.cookieDomains.first}/'
-        : _finalUrl;
-    if (url == null) return false;
+    final urls = <String>{
+      for (final d in rule.cookieDomains) 'https://$d/',
+      if (_finalUrl != null) _finalUrl!,
+    };
+    if (urls.isEmpty) return false;
     try {
       final dynamic cookieManager = WebViewCookieManager();
-      final cookies = await cookieManager.getCookies(domain: Uri.parse(url))
-          as List<WebViewCookie>;
-      for (final c in cookies) {
-        if (c.value.isNotEmpty &&
-            (rule.cookieNames.isEmpty || rule.cookieNames.contains(c.name))) {
-          _cookies[c.name] = c.value;
+      var anyOk = false;
+      for (final url in urls) {
+        try {
+          final cookies = await cookieManager.getCookies(domain: Uri.parse(url))
+              as List<WebViewCookie>;
+          anyOk = true;
+          for (final c in cookies) {
+            if (c.value.isNotEmpty &&
+                (rule.cookieNames.isEmpty ||
+                    rule.cookieNames.contains(c.name))) {
+              _cookies[c.name] = c.value;
+            }
+          }
+        } catch (e) {
+          AppLog.warn('cloud', '原生 Cookie 读取失败 $url: $e');
         }
       }
+      if (!anyOk) return false;
+      AppLog.debug('cloud', '原生 Cookie 通道读到: ${_cookies.keys.join(',')}');
       return true;
     } catch (e) {
       AppLog.warn('cloud', '原生 Cookie 通道失败(将回退 document.cookie): $e');
