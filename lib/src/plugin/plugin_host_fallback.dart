@@ -4,7 +4,7 @@ import '../core/application_logger.dart';
 import '../rust/api.dart' as frb;
 import 'fallback_modules/registry.dart';
 import 'fallback_modules/types.dart'
-    show kFallbackModuleLxToplist, kFallbackModulePluginFallback;
+    show kFallbackModuleLxRecommendSheets, kFallbackModuleLxToplist, kFallbackModulePluginFallback;
 import 'plugin_models.dart';
 
 final RegExp _qqPattern = RegExp(r'qq', caseSensitive: false);
@@ -547,4 +547,66 @@ Future<List<Map<String, dynamic>>> lxToplistBoardSongsFallback(
       .map((e) => e.cast<String, dynamic>())
       .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
       .toList();
+}
+
+/// LX 推荐歌单标签兜底（lx_recommend_sheets 模块，服务端下发 JS 优先、Rust
+/// builtin 兜底）。返回 `{pinned:[tag], data:[{title,data:[tag]}]}`，与 MF 插件
+/// getRecommendSheetTags 返回形状一致（tag 含 id/title/digest?/source）。
+Future<Map<String, dynamic>?> lxRecommendSheetTagsFallback(
+  List<String> sourceKeys,
+) async {
+  if (sourceKeys.isEmpty) return null;
+  Future<Map<String, dynamic>?> builtin() async {
+    try {
+      // Dart 层超时兜底：Rust 四平台并发有 6s 上界，桥传输层挂起时 await 永不返回
+      final json = await frb.lxRecommendSheetTags(sources: sourceKeys)
+          .timeout(const Duration(seconds: 12));
+      final result = jsonDecode(json);
+      return result is Map ? result.cast<String, dynamic>() : null;
+    } catch (e, st) {
+      AppLog.warn('plugin',
+          '[lxRecommendSheetTags] sources=$sourceKeys EXCEPTION: $e\n$st');
+      return null;
+    }
+  }
+
+  return dispatchFallbackModule<Map<String, dynamic>?>(
+    kFallbackModuleLxRecommendSheets,
+    'getRecommendSheetTags',
+    {'sources': sourceKeys},
+    builtin,
+  );
+}
+
+/// LX 按标签取推荐歌单兜底。返回 `{isEnd, data:[sheet]}`，与 MF 插件
+/// getRecommendSheetsByTag 返回形状一致（sheet 含 id/title/artist/artwork/...）。
+Future<Map<String, dynamic>?> lxRecommendSheetsByTagFallback(
+  String sourceKey,
+  Map<String, dynamic>? tag,
+  int page,
+) async {
+  Future<Map<String, dynamic>?> builtin() async {
+    try {
+      // Dart 层超时兜底：Rust 内部有 8s 上界，桥传输层挂起时 await 永不返回
+      final json = await frb.lxRecommendSheetsByTag(
+        source: sourceKey,
+        tagId: (tag?['id'] ?? '').toString(),
+        digest: (tag?['digest'] ?? '').toString(),
+        page: page,
+      ).timeout(const Duration(seconds: 15));
+      final result = jsonDecode(json);
+      return result is Map ? result.cast<String, dynamic>() : null;
+    } catch (e, st) {
+      AppLog.warn('plugin',
+          '[lxRecommendSheetsByTag] source=$sourceKey tag=${tag?['id']} page=$page EXCEPTION: $e\n$st');
+      return null;
+    }
+  }
+
+  return dispatchFallbackModule<Map<String, dynamic>?>(
+    kFallbackModuleLxRecommendSheets,
+    'getRecommendSheetsByTag',
+    {'source': sourceKey, 'tag': tag, 'page': page},
+    builtin,
+  );
 }

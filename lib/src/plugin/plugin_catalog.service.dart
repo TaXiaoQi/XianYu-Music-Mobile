@@ -117,9 +117,11 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   // ==================== 推荐歌单 ====================
 
   /// MF 插件协议自带推荐歌单能力（getRecommendSheetTags/getRecommendSheetsByTag）；
-  /// LX 音源协议无推荐歌单方法
+  /// LX 音源经 lx_recommend_sheets 兜底模块提供同协议能力（平台集合与榜单一致）
   Future<bool> supportsRecommendSheets(PluginSource source) async {
-    if (source.format == PluginFormat.lx) return false;
+    if (source.format == PluginFormat.lx) {
+      return lxToplistSources.contains(source);
+    }
     return (await _availableMethods(source))
         .contains('getRecommendSheetTags');
   }
@@ -127,6 +129,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 推荐歌单首页：getRecommendSheetTags 取默认标签，getRecommendSheetsByTag
   /// 拉第一页。无标签协议的插件以 null 标签调用，由插件自身回退默认。
   Future<List<MfSheetItem>> getRecommendSheets(PluginSource source) async {
+    if (source.format == PluginFormat.lx) {
+      return _getLxRecommendSheets(source);
+    }
     try {
       final tags = await _call(source, 'getRecommendSheetTags', []);
       dynamic tag;
@@ -145,6 +150,62 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       AppLog.warn('plugin', '[catalog] ${source.name} 推荐歌单获取失败: $e');
       return const [];
     }
+  }
+
+  /// LX 音源推荐歌单：走 lx_recommend_sheets 兜底模块（服务端下发 JS 优先、
+  /// Rust builtin 兜底）。取 pinned 首个标签（按其 source 平台）拉第一页；
+  /// 空结果且有标签时以 null 标签（各平台默认推荐）对首个平台重试一次。
+  Future<List<MfSheetItem>> _getLxRecommendSheets(PluginSource source) async {
+    final keys = source.sources
+        .where((k) => const {'wy', 'kg', 'kw', 'tx'}.contains(k))
+        .toList();
+    if (keys.isEmpty) return const [];
+    try {
+      final tags = await lxRecommendSheetTagsFallback(keys);
+      Map<String, dynamic>? tag;
+      final pinned = tags?['pinned'];
+      if (pinned is List && pinned.isNotEmpty && pinned.first is Map) {
+        tag = (pinned.first as Map).cast<String, dynamic>();
+      }
+      final tagSource = (tag?['source'] ?? '').toString();
+      final srcKey = tagSource.isNotEmpty ? tagSource : keys.first;
+      var list = _lxRecommendSheetList(
+        await lxRecommendSheetsByTagFallback(srcKey, tag, 1),
+        srcKey,
+        source,
+      );
+      if (list.isEmpty && tag != null) {
+        list = _lxRecommendSheetList(
+          await lxRecommendSheetsByTagFallback(keys.first, null, 1),
+          keys.first,
+          source,
+        );
+      }
+      return list;
+    } catch (e, st) {
+      AppLog.warn(
+          'plugin', '[catalog] ${source.name} LX推荐歌单获取失败: $e\n$st');
+      return const [];
+    }
+  }
+
+  List<MfSheetItem> _lxRecommendSheetList(
+      Map<String, dynamic>? result, String fallbackSource, PluginSource source) {
+    final data = result?['data'];
+    if (data is! List) return const [];
+    return data
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .map((m) {
+          // 条目缺 source（下发 JS 模块形状差异）时回退请求的平台键
+          final src = (m['source'] ?? '').toString();
+          m['_lxSource'] = src.isNotEmpty ? src : fallbackSource;
+          m['_lxPlaylistId'] = (m['id'] ?? '').toString();
+          return m;
+        })
+        .map((m) => _toSheet(m, source))
+        .where((s) => s.title.isNotEmpty)
+        .toList();
   }
 
   // ==================== 歌单 ====================

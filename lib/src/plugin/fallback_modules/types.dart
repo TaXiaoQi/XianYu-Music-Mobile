@@ -1,19 +1,25 @@
 // 兜底模块（fallback modules）共享类型（移植自桌面端 fallbackModules/types）。
 //
-// 移动端接入四条链路：逐字歌词解码（lx_lyric）、插件宿主兜底（plugin_fallback）、
-// 歌单导入（playlist_import）与音源榜单（lx_toplist），key/方法白名单与 Rust 侧
-// FALLBACK_MODULE_METHODS（fallback_host/mod.rs）一致；新增 key 需两端同步。
+// 移动端接入五条链路：逐字歌词解码（lx_lyric）、插件宿主兜底（plugin_fallback）、
+// 歌单导入（playlist_import）、音源榜单（lx_toplist）与推荐歌单（lx_recommend_sheets），
+// key/方法白名单与 Rust 侧 FALLBACK_MODULE_METHODS（fallback_host/mod.rs）一致；
+// 新增 key 需两端同步。
 
 /// 服务端下发的兜底模块 key（移动端子集）
 const kFallbackModuleLxLyric = 'lx_lyric';
 const kFallbackModulePluginFallback = 'plugin_fallback';
 const kFallbackModulePlaylistImport = 'playlist_import';
 const kFallbackModuleLxToplist = 'lx_toplist';
+const kFallbackModuleLxRecommendSheets = 'lx_recommend_sheets';
 
 /// 各模块期望导出的方法
 const fallbackModuleMethods = <String, List<String>>{
   kFallbackModuleLxLyric: ['fetchLyric'],
   kFallbackModuleLxToplist: ['getTopLists', 'getTopListDetail'],
+  kFallbackModuleLxRecommendSheets: [
+    'getRecommendSheetTags',
+    'getRecommendSheetsByTag',
+  ],
   kFallbackModulePluginFallback: [
     'isQqMusicPluginSource',
     'hostSearchFallback',

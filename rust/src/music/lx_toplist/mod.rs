@@ -5,10 +5,10 @@
 // Dart 侧经 lxToplistBoards/lxToplistBoardSongs 桥接；服务端下发的同名 JS
 // 模块优先于本实现执行（见 fallback_host 与 plugin_host_fallback）。
 
-mod kg;
+pub(crate) mod kg;
 mod kw;
 mod tx;
-mod wy;
+pub(crate) mod wy;
 
 use std::collections::HashMap;
 use std::time::Duration;

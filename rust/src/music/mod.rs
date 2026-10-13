@@ -4,6 +4,7 @@ pub mod cue; // 实现
 pub mod files; // 实现
 pub mod library; // 实现
 pub mod lx_catalog;
+pub mod lx_recommend_sheets;
 pub mod lx_search;
 pub mod lx_toplist;
 pub mod lyric_fetcher;

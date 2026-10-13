@@ -2,7 +2,7 @@
 
 use super::*;
 
-const WY_HEADERS: &[(&str, &str)] = &[
+pub(crate) const WY_HEADERS: &[(&str, &str)] = &[
     ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"),
     ("Referer", "https://music.163.com/"),
     ("Cookie", "MUSIC_A=1"),

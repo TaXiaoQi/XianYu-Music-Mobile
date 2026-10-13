@@ -122,6 +122,30 @@ pub async fn lx_toplist_board_songs(
     serde_json::to_string(&LxToplistDetailResult { list, is_end }).map_err(|e| e.to_string())
 }
 
+/// LX 推荐歌单标签（兜底模块 lx_recommend_sheets 的 builtin 后端）。
+/// `sources` 为 wy/kg/kw/tx 子集；返回 `{pinned:[tag], data:[{title,data:[tag]}]}`
+/// 的 JSON（tag 含 id/title/digest?/source），失败平台跳过，同名分组按 title 合并。
+pub async fn lx_recommend_sheet_tags(sources: Vec<String>) -> Result<String, String> {
+    let result = crate::music::lx_recommend_sheets::lx_recommend_sheet_tags(&sources).await;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
+/// LX 按标签取推荐歌单。返回 `{isEnd, data:[sheet]}` 的 JSON（sheet 含
+/// id/title/artist/artwork/playCount/worksNum/description/source）；
+/// tag_id/digest 空串表示各平台默认标签。
+pub async fn lx_recommend_sheets_by_tag(
+    source: String,
+    tag_id: String,
+    digest: String,
+    page: u32,
+) -> Result<String, String> {
+    let result = crate::music::lx_recommend_sheets::lx_recommend_sheets_by_tag(
+        &source, &tag_id, &digest, page,
+    )
+    .await?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LxToplistDetailResult {

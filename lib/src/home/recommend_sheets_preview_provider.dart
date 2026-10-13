@@ -62,8 +62,10 @@ class RecommendSheetsPreviewNotifier
       final engine = await _ref.read(pluginEngineProvider.future);
       final catalog = PluginCatalogService(
           engine, _ref.read(pluginManagerProvider).sources);
+      // 候选含 MF 插件与 LX 音源（LX 经 lx_recommend_sheets 兜底模块支持推荐歌单）
       final candidates = <PluginSource>[];
-      for (final s in sortPluginSources(catalog.musicFreeSources)) {
+      for (final s in sortPluginSources(
+          [...catalog.musicFreeSources, ...catalog.lxToplistSources])) {
         if (await catalog.supportsRecommendSheets(s)) candidates.add(s);
       }
       if (candidates.isEmpty) {

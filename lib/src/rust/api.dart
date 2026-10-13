@@ -123,6 +123,27 @@ Future<String> lxToplistBoardSongs({
   limit: limit,
 );
 
+/// LX 推荐歌单标签（兜底模块 lx_recommend_sheets 的 builtin 后端）。
+/// `sources` 为 wy/kg/kw/tx 子集；返回 `{pinned:[tag], data:[{title,data:[tag]}]}`
+/// 的 JSON（tag 含 id/title/digest?/source），失败平台跳过，同名分组按 title 合并。
+Future<String> lxRecommendSheetTags({required List<String> sources}) =>
+    RustLib.instance.api.crateApiLxRecommendSheetTags(sources: sources);
+
+/// LX 按标签取推荐歌单。返回 `{isEnd, data:[sheet]}` 的 JSON（sheet 含
+/// id/title/artist/artwork/playCount/worksNum/description/source）；
+/// tag_id/digest 空串表示各平台默认标签。
+Future<String> lxRecommendSheetsByTag({
+  required String source,
+  required String tagId,
+  required String digest,
+  required int page,
+}) => RustLib.instance.api.crateApiLxRecommendSheetsByTag(
+  source: source,
+  tagId: tagId,
+  digest: digest,
+  page: page,
+);
+
 /// 从指定音源抓取歌词（kg/kw/tx/wy）。
 ///
 /// - `song_info_json`：[
