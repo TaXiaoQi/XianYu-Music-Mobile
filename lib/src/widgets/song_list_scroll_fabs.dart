@@ -5,11 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../player/player_provider.dart';
+import '../core/application_logger.dart';
 import '../core/settings.dart';
 import '../i18n/i18n.dart';
 import 'bilipai_glass.dart';
 import 'glass_settings.dart';
 import 'press_scale.dart';
+
+/// 日志用 path 尾段（cloud:// 等长 path 全打会刷屏）。
+String _tail24(String s) =>
+    s.length <= 24 ? s : '…${s.substring(s.length - 24)}';
 
 class SongListScrollFabs extends ConsumerWidget {
   const SongListScrollFabs({
@@ -50,6 +55,12 @@ class SongListScrollFabs extends ConsumerWidget {
         ? -1
         : paths.indexWhere((p) => p == current.path);
 
+    // 诊断：定位按钮不出现的现场（path 匹配 / 列表规模）。
+    AppLog.debug(
+        'locate',
+        'fabs cur=${_tail24(current?.path ?? '')} paths=${paths.length} '
+        'idx=$currentIndex');
+
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -74,9 +85,17 @@ class SongListScrollFabs extends ConsumerWidget {
             );
 
         void onLocate() {
+          AppLog.debug(
+              'locate',
+              'tap cur=${_tail24(current?.path ?? '')} hasClients=$hasClients '
+              'idx=$currentIndex offset=${hasClients ? offset.toStringAsFixed(0) : '-'}');
           if (!hasClients || currentIndex < 0) return;
           final target = rowTopOf(currentIndex)
               .clamp(0.0, controller.position.maxScrollExtent);
+          AppLog.debug(
+              'locate',
+              'tap animate target=${target.toStringAsFixed(0)} '
+              'max=${controller.position.maxScrollExtent.toStringAsFixed(0)}');
           controller.animateTo(
             target,
             duration: const Duration(milliseconds: 360),
