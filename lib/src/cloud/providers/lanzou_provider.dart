@@ -87,7 +87,7 @@ class LanzouProvider extends CloudProvider {
     HttpLoginGate.instance.ensureAllowed(id);
     HttpLoginGate.instance.recordAttempt(id);
     try {
-      const fieldsBody = {
+      final fieldsBody = {
         'task': '3',
         'uid': username,
         'pwd': password,
