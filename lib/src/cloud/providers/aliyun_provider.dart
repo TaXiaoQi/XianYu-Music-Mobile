@@ -24,8 +24,12 @@ class AliyunProvider extends CloudProvider {
 
   static const _clientId = '25dzX3vbYqktVxyX';
 
-  /// 壳页 origin（postMessage 桥两端约定，须为真实 https origin）。
-  static const _shellOrigin = 'https://www.alipan.com';
+  /// 壳页 origin（postMessage 桥两端约定，须为真实 https origin）：
+  /// 必须与 OAuth 页（auth.aliyundrive.com）同主域 aliyundrive.com——
+  /// Android WebView 默认拒收第三方 Cookie，壳页用 alipan.com 时 iframe
+  /// 里的 SESSIONID 存不上，登录永远失败；同主域即第一方。redirect_uri/
+  /// callback/postMessage 同域对齐官方 App 形态。
+  static const _shellOrigin = 'https://www.aliyundrive.com';
 
   @override
   String get id => 'aliyun';
