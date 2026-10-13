@@ -15,6 +15,7 @@ import 'dart:convert';
 
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../core/application_logger.dart';
 import '../cloud_types.dart';
 
 /// 解析用户粘贴的 Cookie 串（容忍 "Cookie:" 前缀与分号/换行分隔），
@@ -143,9 +144,13 @@ class CloudWebviewCaptureSession {
   }
 
   /// 原生 CookieManager 通道（可读 httpOnly）。getCookies 是 webview_flutter
-  /// 4.13+ 的 API，鸿蒙 fork（4.6.0）无此方法——静态调用在 fork 态直接编译
+  /// 4.14+ 的 API，鸿蒙 fork（4.6.0）无此方法——静态调用在 fork 态直接编译
   /// 失败，故走 dynamic 派发：官方态运行时真调原生通道；fork 态运行时抛
   /// NoSuchMethodError → 返回 false，回退 document.cookie 通道。
+  ///
+  /// 注意：原生 handler 随插件原生代码编译。若 run 会话是在依赖升级前
+  /// 启动的，热重载/热重启都不会重编原生层，这里会持续抛 MissingPlugin
+  /// 类异常——必须完全重启 flutter run。失败时打日志，避免静默回退黑盒。
   ///
   /// 读地址优先取捕获规则的首个 cookieDomains：移动端登录流会落在
   /// h5.sm.cn / broccoli.uc.cn 等入口域，而凭据在 .quark.cn / .uc.cn /
@@ -166,7 +171,8 @@ class CloudWebviewCaptureSession {
         }
       }
       return true;
-    } catch (_) {
+    } catch (e) {
+      AppLog.warn('cloud', '原生 Cookie 通道失败(将回退 document.cookie): $e');
       return false;
     }
   }
