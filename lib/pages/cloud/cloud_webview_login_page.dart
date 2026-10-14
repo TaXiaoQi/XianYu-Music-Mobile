@@ -159,6 +159,7 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     if (_finishing || !mounted) return;
     final names = _provider.captureRule?.cookieNames ?? const [];
     final controller = TextEditingController();
+    var raw = '';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -177,9 +178,13 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
             ),
             const SizedBox(height: 12),
             TextField(
+              // onChanged 收集而非 pop 后读 controller.text——对话框退场
+              // 动画期间 widget 树仍在访问 controller，pop 返回后立刻
+              // dispose 会触发「used after being disposed」红屏崩溃。
               controller: controller,
               autofocus: true,
               maxLines: 4,
+              onChanged: (v) => raw = v,
               decoration: const InputDecoration(
                 border: OutlineInputBorder(),
                 hintText: 'kps=xxx; sign=xxx',
@@ -193,14 +198,17 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
             child: Text(tr('取消')),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () {
+              raw = controller.text;
+              Navigator.pop(ctx, raw.trim().isNotEmpty);
+            },
             child: Text(tr('确定')),
           ),
         ],
       ),
     );
-    final raw = controller.text;
-    controller.dispose();
+    // 不显式 dispose：退场动画仍持有引用，立即释放会崩；
+    // 短生命周期对象交给 GC，无实际泄漏。
     if (ok != true || !mounted) return;
     final cookies = parseCookieText(raw);
     if (cookies.isEmpty) {
