@@ -7,6 +7,7 @@ import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/player/player_provider.dart';
@@ -134,6 +135,8 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
       });
     } catch (e) {
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
+      AppLog.warn(
+          'cloud', '列目录失败 path=$path: ${e is CloudException ? e.message : e}');
       setState(() {
         _loading = false;
         _appending = false;

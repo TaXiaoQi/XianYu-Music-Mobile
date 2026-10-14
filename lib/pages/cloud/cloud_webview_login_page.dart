@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -35,6 +36,7 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   Timer? _watch;
   bool _finishing = false;
   bool _pageLoaded = false;
+  bool _pendingPostLogin = false;
 
   /// 解锁双指缩放：部分登录页（UC 桌面登录面板、百度 wappass 等）
   /// viewport 声明 user-scalable=no / maximum-scale=1，手机上无法
@@ -69,6 +71,13 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
         onPageFinished: (url) {
           if (mounted) setState(() => _pageLoaded = true);
           _controller.runJavaScript(_unlockZoomJs).catchError((_) {});
+          // postLoginUrl 补跳完成：等页面 JS 种完 Cookie 再捕获，
+          // 此期间不做 URL 自动判定（SPA 路由会误触发）。
+          if (_pendingPostLogin) {
+            _pendingPostLogin = false;
+            _postLoginCapture();
+            return;
+          }
           _onUrl(url);
         },
         onWebResourceError: (_) {},
@@ -194,6 +203,17 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
         ),
         actions: [
           TextButton(
+            onPressed: () async {
+              // 长文本粘贴会被输入法截断（实测 10000 字符），改走系统
+              // 剪贴板 API 直接填充，无长度限制。
+              final text = (await Clipboard.getData('text/plain'))?.text ?? '';
+              if (text.isEmpty) return;
+              controller.text = text;
+              raw = text;
+            },
+            child: Text(tr('从剪贴板填入')),
+          ),
+          TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(tr('取消')),
           ),
@@ -211,6 +231,9 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     // 短生命周期对象交给 GC，无实际泄漏。
     if (ok != true || !mounted) return;
     final cookies = parseCookieText(raw);
+    AppLog.info(
+        'cloud', '手填 Cookie 解析: ${cookies.length} 键 ${cookies.keys.take(8).join(',')}'
+        '${cookies.isEmpty ? '（原始长度 ${raw.length}，开头: ${raw.trim().substring(0, raw.trim().length > 30 ? 30 : raw.trim().length)}）' : ''}');
     if (cookies.isEmpty) {
       showXianYuToast(context, tr('未识别到 Cookie'));
       return;
@@ -220,6 +243,31 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
 
   Future<void> _forceCapture() async {
     if (_finishing) return;
+    // 主站页补跳：登录页上的 Cookie 缺页面侧风控指纹（百度 ndut_fmt
+    // 等），先跳主站让 JS 种齐再捕获。已在主站则直接读。
+    final post = _provider.captureRule?.postLoginUrl;
+    if (post != null) {
+      final postHost = Uri.tryParse(post)?.host ?? '';
+      final cur = await _controller.currentUrl();
+      final curHost = Uri.tryParse(cur ?? '')?.host ?? '';
+      if (postHost.isNotEmpty && curHost != postHost) {
+        _pendingPostLogin = true;
+        await _controller.loadRequest(Uri.parse(post));
+        return;
+      }
+    }
+    final done = await _session.forceCapture(_controller);
+    if (done) {
+      _finishLogin();
+    } else if (mounted) {
+      showXianYuToast(context, tr('未捕获到登录信息，请先完成登录'));
+    }
+  }
+
+  /// postLoginUrl 页面加载完成后的延迟捕获（给页面 JS 留种 Cookie 时间）。
+  Future<void> _postLoginCapture() async {
+    await Future<void>.delayed(const Duration(milliseconds: 1500));
+    if (!mounted || _finishing) return;
     final done = await _session.forceCapture(_controller);
     if (done) {
       _finishLogin();

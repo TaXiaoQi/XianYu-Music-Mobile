@@ -24,9 +24,17 @@ import '../cloud_types.dart';
 bool validCookiePair(String k, String v) =>
     k.isNotEmpty && k != 'undefined' && v != 'undefined';
 
-/// 解析用户粘贴的 Cookie 串（容忍 "Cookie:" 前缀与分号/换行分隔），
-/// 手动填 Cookie 登录共用。
+/// 解析用户粘贴的 Cookie（容忍 "Cookie:" 前缀与分号/换行分隔；亦支持
+/// EditThisCookie 等浏览器插件导出的 JSON 格式），手动填 Cookie 共用。
 Map<String, String> parseCookieText(String raw) {
+  final t = raw.trim();
+  if (t.startsWith('[') || t.startsWith('{')) {
+    try {
+      return _fromJsonCookies(jsonDecode(t));
+    } catch (_) {
+      // 非 JSON 或结构不符，落回文本解析。
+    }
+  }
   final cookies = <String, String>{};
   for (var seg in raw.split(RegExp(r'[;\n]'))) {
     seg = seg.trim();
@@ -38,6 +46,20 @@ Map<String, String> parseCookieText(String raw) {
     if (validCookiePair(k, v) && !k.contains(' ')) cookies[k] = v;
   }
   return cookies;
+}
+
+/// EditThisCookie / Cookie-Editor 导出格式：[{name, value}, ...] 或
+/// 单对象 {name, value}。
+Map<String, String> _fromJsonCookies(dynamic json) {
+  final out = <String, String>{};
+  final items = json is List ? json : (json is Map ? [json] : const []);
+  for (final e in items) {
+    if (e is! Map) continue;
+    final name = (e['name'] ?? e['Name'] ?? '').toString().trim();
+    final value = (e['value'] ?? e['Value'] ?? '').toString().trim();
+    if (validCookiePair(name, value)) out[name] = value;
+  }
+  return out;
 }
 
 class CloudWebviewCaptureSession {

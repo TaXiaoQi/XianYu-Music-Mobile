@@ -50,9 +50,12 @@ class BaiduProvider extends CloudProvider {
         // 收域内全量 Cookie（BDUSS/STOKEN 均 httpOnly 走原生通道；网页
         // 接口风控校验完整浏览器 Cookie 指纹，只带 BDUSS+STOKEN 会
         // errno=-6——手填时代粘贴整串 Cookie 能用正说明这点）。
-        cookieDomains: ['baidu.com'],
+        cookieDomains: ['baidu.com', 'pan.baidu.com'],
         doneUrlPattern: RegExp(r'pan\.baidu\.com/(?!login)'),
         nativeCookies: true,
+        // ndut_fmt/PANPSC 等风控指纹由主站页 JS 种下，登录页直接捕获
+        // 会缺键（errno=-6）——手动完成前先跳主站让页面种齐。
+        postLoginUrl: 'https://pan.baidu.com/disk/main',
       );
 
   @override
@@ -68,6 +71,7 @@ class BaiduProvider extends CloudProvider {
       throw const CloudException('未捕获到登录凭据，请重试');
     }
     var nickname = displayName;
+    var accountId = md5Hex(bduss).substring(0, 12);
     try {
       final resp = await cloudGet(
         'https://pan.baidu.com/api/user/getinfo?ref=client&clienttype=0&web=1',
@@ -78,6 +82,11 @@ class BaiduProvider extends CloudProvider {
         if (info is Map<String, dynamic>) {
           final name = (info['username'] ?? info['user_name'] ?? '').toString();
           if (name.isNotEmpty) nickname = name;
+          // 账号标识用百度 uid：BDUSS 每次网页登录都会轮换，指纹当
+          // accountId 会把同一账号的重复登录当成新账号（绑出多条）。
+          final uid = (info['id'] ?? info['user_id'] ?? info['baidu_id'])
+              ?.toString();
+          if (uid != null && uid.isNotEmpty && uid != '0') accountId = uid;
         }
       }
     } catch (_) {
@@ -85,7 +94,7 @@ class BaiduProvider extends CloudProvider {
     }
     return CloudAccount(
       provider: id,
-      accountId: md5Hex(bduss).substring(0, 12),
+      accountId: accountId,
       nickname: nickname,
       // 全量保留捕获到的 Cookie（BDUSS/STOKEN/PANWEB/BAIDUID 等）——
       // 网页接口风控校验完整指纹，逐键白名单会 errno=-6。
