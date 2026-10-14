@@ -18,6 +18,12 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/application_logger.dart';
 import '../cloud_types.dart';
 
+/// 剔除 WebView 偶发产出的脏 Cookie（空名 / `undefined` 名 / `undefined`
+/// 值）——拼进 Cookie 头会破坏百度等服务的会话判定（实测 /api/list
+/// errno 由 0 变 1）。
+bool validCookiePair(String k, String v) =>
+    k.isNotEmpty && k != 'undefined' && v != 'undefined';
+
 /// 解析用户粘贴的 Cookie 串（容忍 "Cookie:" 前缀与分号/换行分隔），
 /// 手动填 Cookie 登录共用。
 Map<String, String> parseCookieText(String raw) {
@@ -29,7 +35,7 @@ Map<String, String> parseCookieText(String raw) {
     if (eq <= 0) continue;
     final k = seg.substring(0, eq).trim();
     final v = seg.substring(eq + 1).trim();
-    if (k.isNotEmpty && v.isNotEmpty && !k.contains(' ')) cookies[k] = v;
+    if (validCookiePair(k, v) && !k.contains(' ')) cookies[k] = v;
   }
   return cookies;
 }
@@ -146,6 +152,7 @@ class CloudWebviewCaptureSession {
       // cookieDomains 仅用于语义声明（document.cookie 天然按当前域返回），
       // 不做硬过滤，避免域名单落后于实际登录域时采不到。
       if (v.isNotEmpty &&
+          validCookiePair(k, v) &&
           (rule.cookieNames.isEmpty || rule.cookieNames.contains(k))) {
         _cookies[k] = v;
       }
@@ -184,6 +191,7 @@ class CloudWebviewCaptureSession {
           anyOk = true;
           for (final c in cookies) {
             if (c.value.isNotEmpty &&
+                validCookiePair(c.name, c.value) &&
                 (rule.cookieNames.isEmpty ||
                     rule.cookieNames.contains(c.name))) {
               _cookies[c.name] = c.value;
