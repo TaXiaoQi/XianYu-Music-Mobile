@@ -9,7 +9,8 @@
 //! QMC 解密见 qmc_decrypt，其余 IO 见 misc_io。
 
 pub(crate) use crate::music::tags::{
-    extract_text_metadata, read_tagged_file_from_path, write_metadata_to_file, EmbedMetadataRequest,
+    extract_text_metadata, read_tagged_file_from_path, read_tagged_file_from_path_for_scan,
+    write_metadata_to_file, EmbedMetadataRequest,
 };
 pub(crate) use crate::music::utils::is_supported_library_extension;
 pub(crate) use crate::security::path_validator;

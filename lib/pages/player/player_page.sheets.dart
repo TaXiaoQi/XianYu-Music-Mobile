@@ -711,7 +711,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
               const Spacer(),
-              PressableScale(pressScale: 0.88, child: IconButton(
+              PressableScale(pressScale: 0.88, swing: true, child: IconButton(
                 icon: Icon(
                   Icons.delete_outline,
                   size: 20,
@@ -810,7 +810,7 @@ class _QueueSheetState extends ConsumerState<_QueueSheet> {
                           onlineSongJson: item.onlineSongJson,
                         ),
                         const SizedBox(width: 4),
-                        PressableScale(pressScale: 0.88, child: IconButton(
+                        PressableScale(pressScale: 0.88, swing: true, child: IconButton(
                           icon: Icon(
                             Icons.close,
                             size: 18,

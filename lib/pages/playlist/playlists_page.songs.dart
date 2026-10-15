@@ -684,10 +684,12 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                   onDone: batch.exit,
                 ),
               ),
-            if (!inBatch && !sortable)
+            if (!inBatch)
               SongListScrollFabs(
                 controller: _controller,
-                paths: songs.map((s) => s.path).toList(),
+                // 按显示顺序传 paths：排序/过滤模式下 indices 已重排，
+                // rowTopOf(i) 以第 i 行为准，定位才落在屏幕上的真实行
+                paths: visSongs.map((s) => s.path).toList(),
                 rowTopOf: (i) => i * rowExtent,
                 itemExtent: rowExtent,
                 bottom: bottomPad + 8,

@@ -250,6 +250,14 @@ class MvNotifier extends StateNotifier<MvState> {
 
   bool _mvResolveAmbiguous = false;
 
+  // —— MV 解析降噪（仅影响日志与重复探测，不改变解析结果）——
+  /// 本源插件已明确答复"无 MV"的歌曲：会话内不再重复走三档梯次
+  final Set<String> _mvNoResultCache = {};
+  /// 本源插件确定性答复过"无 MV"（方法存在且返回空），才允许写缓存
+  bool _mvResolvedDefinitive = false;
+  /// 已告警过一次"全链路无 MV"的插件，后续同类告警降为 debug
+  final Set<String> _mvFailWarned = {};
+
   int _guardCount = 0;
   DateTime _guardWindowStart = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -620,12 +628,40 @@ class MvNotifier extends StateNotifier<MvState> {
   }
 
   Future<MvSource?> _resolve(Map<String, dynamic> song, String quality) async {
+    final emptyKey = _mvEmptyKey(song);
+    if (emptyKey != null && _mvNoResultCache.contains(emptyKey)) {
+      AppLog.debug('mv', 'MV 探测会话缓存命中(无结果) key=$emptyKey');
+      return null;
+    }
     _mvResolveAmbiguous = false;
+    _mvResolvedDefinitive = false;
     for (final q in _qualityCandidates(quality)) {
       final src = await _resolveQuality(song, q);
       if (src != null && src.url.isNotEmpty) return src;
     }
+    // 本源插件明确答复过"无 MV"才缓存，方法不存在/路由异常等未知态不缓存
+    if (_mvResolvedDefinitive && emptyKey != null) {
+      _mvNoResultCache.add(emptyKey);
+    }
     return null;
+  }
+
+  /// 歌曲在 MV 探测里的会话级标识：源插件 + 尽力而为的歌曲唯一键
+  static String? _mvEmptyKey(Map<String, dynamic> song) {
+    final sourceId =
+        song['pluginId']?.toString() ?? song['source']?.toString() ?? '';
+    final id = (song['songmid'] ??
+            song['songId'] ??
+            song['vid'] ??
+            song['hash'] ??
+            song['id'])
+        ?.toString();
+    final title = song['title']?.toString() ?? '';
+    final artist = song['artist']?.toString() ?? '';
+    if ((id == null || id.isEmpty) && (title.isEmpty || artist.isEmpty)) {
+      return null;
+    }
+    return '$sourceId|$id|$title|$artist';
   }
 
   static List<String> _qualityCandidates(String quality) {
@@ -667,10 +703,12 @@ class MvNotifier extends StateNotifier<MvState> {
             final parsed = MvSource.fromJson(raw);
             if (parsed.url.isNotEmpty) return parsed;
           }
-          AppLog.warn('mv', 'getMvSource($sourceId) 无有效结果');
+          // 方法存在且答复为空：插件对自家歌曲的权威结论
+          _mvResolvedDefinitive = true;
+          AppLog.debug('mv', 'getMvSource($sourceId) 无有效结果');
         } catch (e) {
           _mvResolveAmbiguous = true;
-          AppLog.warn('mv', 'getMvSource($sourceId) 调用失败: $e');
+          AppLog.debug('mv', 'getMvSource($sourceId) 调用失败: $e');
         }
       }
 
@@ -688,7 +726,7 @@ class MvNotifier extends StateNotifier<MvState> {
           }
         } catch (e) {
           _mvResolveAmbiguous = true;
-          AppLog.warn('mv', 'getMvSource($pluginId) 调用失败: $e');
+          AppLog.debug('mv', 'getMvSource($pluginId) 调用失败: $e');
         }
       }
     } catch (e) {
@@ -700,8 +738,14 @@ class MvNotifier extends StateNotifier<MvState> {
     if (host != null) {
       return host;
     }
-    AppLog.warn('mv',
-        'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
+    // 全链路无 MV 属常见常态（多数插件未实现 getMvSource），每源仅告警一次
+    if (_mvFailWarned.add(sourceId)) {
+      AppLog.warn('mv',
+          'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
+    } else {
+      AppLog.debug('mv',
+          'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
+    }
     return null;
   }
 

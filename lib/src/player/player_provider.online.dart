@@ -208,6 +208,7 @@ extension PlayerNotifierOnline on PlayerNotifier {
     // 网盘直链不走在线预缓存调度（预缓存面向插件音源候选解析）
     bool cloudSource = false,
   }) async {
+    final startSeq = ++_onlineStartSeq;
     final clean = sanitizeMediaUrl(url);
     if (clean.isEmpty) throw StateError(tr('无效的播放链接'));
     final h = await withBilibiliStreamCookie(
@@ -247,17 +248,51 @@ extension PlayerNotifierOnline on PlayerNotifier {
     }
     final playUrl = AudioProxyServer.instance.playUrlFor(clean);
     final setUrlAt = DateTime.now();
+    final loadFuture = _player.setUrl(playUrl,
+        headers: h,
+        initialPosition: startAtSecs > 0
+            ? Duration(milliseconds: (startAtSecs * 1000).round())
+            : null);
     try {
-      await _player.setUrl(playUrl,
-              headers: h,
-              initialPosition: startAtSecs > 0
-                  ? Duration(milliseconds: (startAtSecs * 1000).round())
-                  : null)
-          .timeout(const Duration(seconds: 10));
-      AppLog.debug('play',
-          '[startOnlineUrl] setUrl 完成 ${DateTime.now().difference(setUrlAt).inMilliseconds}ms '
-          'proc=${_player.processingState} url=$playUrl');
+      // 与 setUrl 竞速：代理侧拿到上游 4xx（如 QQ vkey 过期 403）即秒级
+      // 判负，避免播放器对死链无报错地干等到 10s 起播超时
+      final outcome = await Future.any<Object>([
+        loadFuture.then<Object>((_) => 'loaded'),
+        AudioProxyServer.instance
+            .watchUpstreamRejection(clean, const Duration(seconds: 9))
+            .then<Object>((code) => 'rejected:$code'),
+      ]).timeout(const Duration(seconds: 10));
+      if (outcome == 'loaded') {
+        AppLog.debug('play',
+            '[startOnlineUrl] setUrl 完成 '
+            '${DateTime.now().difference(setUrlAt).inMilliseconds}ms '
+            'proc=${_player.processingState} url=$playUrl');
+      } else {
+        final code = (outcome as String).substring('rejected:'.length);
+        if (code.isEmpty) {
+          // 竞速窗口内未被拒：剩余窗口回到 load 通道等待
+          await loadFuture.timeout(const Duration(seconds: 1));
+          AppLog.debug('play',
+              '[startOnlineUrl] setUrl 完成(竞速尾声) '
+              '${DateTime.now().difference(setUrlAt).inMilliseconds}ms '
+              'proc=${_player.processingState} url=$playUrl');
+        } else {
+          AppLog.warn('play', '[startOnlineUrl] 上游拒绝($code) url=$clean');
+          if (startSeq != _onlineStartSeq) {
+            throw _StartOnlineSupersedException();
+          }
+          // 播放器通道未楔死（新 load 可直接接管），不 stop/rebuild；
+          // 抛起播失败交给降级重试/换源链路
+          throw _StartOnlineTimeoutException(tr('音源直链被拒（$code）'));
+        }
+      }
     } on TimeoutException {
+      if (startSeq != _onlineStartSeq) {
+        // 请求已被更新的起播取代（快速切歌）：当前播放器属于新歌，
+        // 此处 stop/diag/rebuild 都会误杀新歌，静默放弃旧请求
+        AppLog.debug('play', '[startOnlineUrl] 起播超时但请求已被更新取代，忽略');
+        throw _StartOnlineSupersedException();
+      }
       AppLog.warn('play',
           '[startOnlineUrl] 起播超时(10s) proc=${_player.processingState} '
           'buffered=${_player.bufferedPosition.inMilliseconds}ms '

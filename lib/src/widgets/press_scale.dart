@@ -84,30 +84,46 @@ class _PressScaleHostState extends State<PressScaleHost> {
 /// PressableScale(pressScale: 0.88, child: IconButton(...))
 /// ```
 class PressableScale extends SingleChildRenderObjectWidget {
-  const PressableScale({super.key, this.pressScale = 0.94, required super.child});
+  const PressableScale({
+    super.key,
+    this.pressScale = 0.97,
+    this.swing = false,
+    required super.child,
+  });
 
-  /// 按下时的目标缩放；大卡片/行/瓦片用默认，小图标按钮建议 0.88~0.92
+  /// 按下时的目标缩放。大件（卡片/行/播放条）用默认 0.97：浅按压、含蓄；
+  /// 小 ui（播放页控制键、顶栏按钮等）显式传 0.88~0.92 声明深按压，
+  /// 走小件档（沉得深、回弹 Q 弹）
   final double pressScale;
+
+  /// 松手回弹时左右轻摆：全局默认关闭，仅播放队列等明确需要晃感的
+  /// 小件开启
+  final bool swing;
 
   @override
   RenderPressableScale createRenderObject(BuildContext context) =>
-      RenderPressableScale(pressScale: pressScale);
+      RenderPressableScale(pressScale: pressScale, swing: swing);
 
   @override
   void updateRenderObject(
       BuildContext context, covariant RenderPressableScale renderObject) {
-    renderObject.pressScale = pressScale;
+    renderObject
+      ..pressScale = pressScale
+      ..swing = swing;
   }
 }
 
 class RenderPressableScale extends RenderProxyBox {
-  RenderPressableScale({required double pressScale}) {
+  RenderPressableScale({required double pressScale, bool swing = false}) {
     this.pressScale = pressScale;
+    this.swing = swing;
   }
 
   // 欠阻尼物理弹簧（Telegram/iOS 手感），大小控件分档：
-  // 小件（图标按钮）沉得深、回弹 Q 弹，松手左右轻摆一次补足表现力；
-  // 大件（卡片/行/播放条）浅按压、回弹利落几乎不过冲，一点不晃
+  // 小 ui（显式传 0.88~0.92 深按压的：播放页控制键、顶栏按钮等）沉得
+  // 深、回弹 Q 弹；大件（卡片/行/播放条，默认 0.97）浅按压、回弹利落
+  // 几乎不过冲。左右轻摆默认关闭，swing=true（播放队列等）的小件松手
+  // 摇摆一次补足表现力
   static const double _stiffnessDown = 520; // 下压刚度：几十毫秒内沉到位
   static const double _dampingDown = 0.55; // 下压阻尼比：底部轻微顿挫
   static const double _stiffnessUpSmall = 240; // 小件回弹：稍缓释放
@@ -116,22 +132,36 @@ class RenderPressableScale extends RenderProxyBox {
   static const double _dampingUpLarge = 0.62; // 大件回弹：几乎无过冲
   static const double _boostSmall = 1.35; // 小件按压深度增益
   static const double _boostLarge = 1.0; // 大件保持原始深度，不再加深
-  static const double _smallSideMax = 56; // 短边阈值：图标按钮 vs 卡片/条
+  // 小件判定：显式深按压（≤0.92）才算小 ui；默认按压（0.97）的行内
+  // 按钮/列表元素一律按大件处理
+  static const double _smallPressScaleMax = 0.92;
   // 小件松手摇摆：旋转弹簧参数与交替方向的激励初速
   static const double _stiffnessSwing = 220;
   static const double _dampingSwing = 0.35;
   static const double _swingKick = 1.25;
 
-  double _rawPressScale = 0.94;
+  double _rawPressScale = 0.97;
   set pressScale(double value) {
     if (value == _rawPressScale) return;
     _rawPressScale = value;
     _applyPressScale();
   }
 
-  bool _small = true;
+  set swing(bool value) {
+    if (value == _swingEnabled) return;
+    _swingEnabled = value;
+    if (!value && attached) {
+      // 关闭摇摆时立即回正，残留角不再参与绘制
+      _angle = 0.0;
+      _angleVel = 0.0;
+      markNeedsPaint();
+    }
+  }
+
+  bool _small = false;
   bool _isPressed = false;
   bool _pulseReturn = false; // 快速点按：先把下沉脉冲走完再回弹
+  bool _swingEnabled = false; // 松手摇摆开关：仅显式传入 swing 的控件启用
   bool _swingFlip = false; // 摇摆方向交替，避免每次同向
   double _scale = 1.0;
   double _velocity = 0.0;
@@ -155,7 +185,8 @@ class RenderPressableScale extends RenderProxyBox {
     if (!attached) return;
     _isPressed = true;
     _pulseReturn = false;
-    _small = size.shortestSide <= _smallSideMax;
+    // 档位按显式按压深度划分：深按压（≤0.92）= 小 ui，默认按压 = 大件
+    _small = _rawPressScale <= _smallPressScaleMax;
     _applyPressScale();
     _angle = 0.0;
     _angleVel = 0.0;
@@ -179,8 +210,9 @@ class RenderPressableScale extends RenderProxyBox {
 
   void _startReturn() {
     _springTo(1.0);
-    // 小件松手左右轻摆（播放队列切换那种晃感）；大件不摇
-    if (_small) {
+    // 小件松手左右轻摆（播放队列切换那种晃感）；仅 swing 显式开启处
+    // 生效，全局默认不摇
+    if (_swingEnabled && _small) {
       _swingFlip = !_swingFlip;
       _angleVel += _swingFlip ? _swingKick : -_swingKick;
     }

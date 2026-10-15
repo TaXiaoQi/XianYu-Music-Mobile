@@ -289,6 +289,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
     if (item.title.trim().isEmpty) return false;
     AppLog.info('autoswitch', '起播失败自动换源: ${item.title}');
 
+    // 换源全程（兄弟插件/落雪候选解析各耗时数秒）用户可能已切歌：
+    // 期望 current 随每次占位推进，失配即放弃，防止旧歌换源把新歌顶掉
+    var expectPath = state.current?.path;
     if (await _switchViaSiblingPlatform(item)) return true;
 
     final curSource = (info['source'] as String?) ?? item.source;
@@ -370,6 +373,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         _failedSources.add(srcId);
         continue;
       }
+      // 解析直链耗时数秒，期间用户可能已切歌：current 偏离期望即放弃，
+      // 否则旧歌的换源会把新歌从播放器里顶掉
+      if (state.current?.path != expectPath) return false;
       final idx = state.queueIndex;
       final queue = [...state.queue];
       if (idx >= 0 && idx < queue.length) queue[idx] = newItem;
@@ -382,6 +388,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         duration: newItem.durationMs / 1000.0,
         error: null,
       );
+      expectPath = newItem.path;
       _syncToSystemMediaSession();
       try {
         state = state.copyWith(resolving: false);
@@ -486,6 +493,8 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         }
       }
       if (hit == null) return false;
+      // 兄弟插件/跨格式治愈解析耗时数秒，用户可能已切歌
+      if (state.current?.path != item.path) return false;
 
       if (healedJson != null) {
         _applyCrossFormatHealToState(
@@ -557,6 +566,8 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
               pluginId, format, sourceKey, musicInfo, sources, engine,
               platformLabelOverride: override);
           if (healedCross == null) {
+            AppLog.warn('player',
+                '[resolvePluginUrl] 插件不在列表且无法修复 pluginId=$pluginId format=$format source=$sourceKey');
             return null;
           }
           source = [healedCross.$1];
@@ -612,6 +623,10 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       if (resolved != null) return resolved;
       return null;
     } catch (e) {
+      // 静默吞掉会让「插件被禁用/加载失败/插件被删」在日志里完全不可见，
+      // 只剩上层重搜换源兜底在空转——至少留一条指向真实原因的记录
+      AppLog.warn('player',
+          '[resolvePluginUrl] ${songJson['pluginId']} q=$quality 解析失败: $e');
       return null;
     }
   }

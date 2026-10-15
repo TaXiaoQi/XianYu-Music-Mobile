@@ -61,16 +61,16 @@ int compareVersions(String a, String b) {
     if (av != bv) return av > bv ? 1 : -1;
   }
   // 语义化版本规则：主版本号相同时，预发布版低于正式版（1.0.3-beta4 < 1.0.3）
-  if (pa.pre == null || pb.pre == null) return pa.pre == null ? 1 : -1;
-  final preA = pa.pre;
-  final preB = pb.pre;
-  if (preA != null && preB != null) {
-    final aToken = RegExp(r'^[a-zA-Z]*').firstMatch(preA)?.group(0) ?? '';
-    final bToken = RegExp(r'^[a-zA-Z]*').firstMatch(preB)?.group(0) ?? '';
-    if (aToken != bToken) return aToken.compareTo(bToken) > 0 ? 1 : -1;
-    if (pa.preNum != pb.preNum) return pa.preNum > pb.preNum ? 1 : -1;
-    if (preA != preB) return preA.compareTo(preB) > 0 ? 1 : -1;
-  }
+  if (pa.pre == null && pb.pre == null) return 0;
+  if (pa.pre == null) return 1;
+  if (pb.pre == null) return -1;
+  final preA = pa.pre!;
+  final preB = pb.pre!;
+  final aToken = RegExp(r'^[a-zA-Z]*').firstMatch(preA)?.group(0) ?? '';
+  final bToken = RegExp(r'^[a-zA-Z]*').firstMatch(preB)?.group(0) ?? '';
+  if (aToken != bToken) return aToken.compareTo(bToken) > 0 ? 1 : -1;
+  if (pa.preNum != pb.preNum) return pa.preNum > pb.preNum ? 1 : -1;
+  if (preA != preB) return preA.compareTo(preB) > 0 ? 1 : -1;
   return 0;
 }
 

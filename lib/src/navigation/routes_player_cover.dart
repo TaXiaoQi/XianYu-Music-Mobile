@@ -12,12 +12,23 @@ class _PlayerCoverPage extends Page<void> {
 
   @override
   Route<void> createRoute(BuildContext context) {
-    return _PlayerCoverRoute(
+    late final _PlayerCoverRoute route;
+    route = _PlayerCoverRoute(
       settings: this,
       builder: (context) => PopScope<void>(
         canPop: true,
         onPopInvokedWithResult: (didPop, result) {
           if (!didPop) return;
+          // 转场打断：进入动画未完成就返回（快速开合）。此刻出向封面
+          // 飞行仍在途中（真封面被藏、锚点矩形随页面滑动不在最终位），
+          // 再启动返程飞行会从错位起飞且强杀出向副本，两副本叠加
+          // 反向转场直接一团糟。打断路径：取消出向副本即止——页面沿
+          // 反向转场滑回底部，播放条在拔页后淡入，封面天然归位，
+          // 无需第二次飞行
+          if (route.animation?.status != AnimationStatus.completed) {
+            FlyingCover.instance.cancel();
+            return;
+          }
           // 预测返回手势全程已有封面回拨动画，跳过避免叠加
           if (PredictiveCoverReturn.instance.returning.value) return;
           // 歌词页关闭一律不飞封面（封面源在屏幕外，飞入很奇怪），
@@ -62,6 +73,7 @@ class _PlayerCoverPage extends Page<void> {
       ),
       predictiveBack: predictiveBack,
     );
+    return route;
   }
 }
 

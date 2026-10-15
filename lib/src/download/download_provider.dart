@@ -453,6 +453,14 @@ class DownloadManager extends StateNotifier<DownloadState> {
       finalPath = fallback;
     }
 
+    // 网盘文件可能自带内嵌标签：收尾按开关走，且仅缺标题时才补写，
+    // 已有标签（含封面/歌词）的原文件保持原样
+    if (finalPath == destPath) {
+      _updateTask(task.songPath, progressPercent: 85);
+      await _finalizeExtras(item, finalPath, const {}, settings,
+          onlyIfMissing: true);
+    }
+
     _updateTask(task.songPath, progressPercent: 95);
 
     return (finalPath, 'source');
@@ -736,8 +744,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
       );
 
       final saveLyricsFile = settings?.downloadLyrics ?? true;
-      // 收尾项由 _finalizeExtras 内部按开关统一判断
-      await _finalizeExtras(item, tempPath, parsed, settings);
+      // 收尾项由 _finalizeExtras 内部按开关统一判断；
+      // 网盘任务仅缺标题才补写（防覆盖原文件标签）
+      await _finalizeExtras(item, tempPath, parsed, settings,
+          onlyIfMissing: item.path.startsWith('cloud://'));
 
       final relativePath = _mediaRelativePath(dir);
       final finalPath = await MediaStoreWriter.writeFromPath(
@@ -811,7 +821,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
   Future<void> _finalizeExtras(
       QueueItem item, String filePath, Map<String, dynamic> parsed,
-      AppSettings? settings) async {
+      AppSettings? settings,
+      {bool onlyIfMissing = false}) async {
     try {
       final embedMetadata = settings?.embedDownloadMetadata ?? true;
       final embedLyrics = settings?.embedDownloadLyrics ?? false;
@@ -825,7 +836,10 @@ class DownloadManager extends StateNotifier<DownloadState> {
       final wordByWord =
           (settings?.downloadLyricsStyle ?? 'word-by-word') != 'line-by-line';
       String? lyricsText;
-      if (saveLyricsFile || embedLyrics) {
+      if (onlyIfMissing) {
+        // 网盘任务：无在线歌词来源，不抓取（盘名不是 lx 源，请求必败）
+        lyricsText = '';
+      } else if (saveLyricsFile || embedLyrics) {
         if (parsed.containsKey('pluginId')) {
           lyricsText = await _fetchPluginLyric(parsed, wordByWord: wordByWord);
           // 插件不支持 lyric action 时回退原生歌词抓取（与播放链路兜底同源）
@@ -876,8 +890,30 @@ class DownloadManager extends StateNotifier<DownloadState> {
               }
             : null,
         'embedCover': embedCover,
+        'onlyIfEmptyTitle': onlyIfMissing,
       });
-      await finalizeDownloadExtras(requestJson: request);
+      final resJson = await finalizeDownloadExtras(requestJson: request);
+      // rust 返回的嵌入结果此前被整体丢弃：嵌入失败用户无感知、日志也无线索
+      try {
+        final res = (jsonDecode(resJson) as Map).cast<String, dynamic>();
+        final metaErr = res['metadata_error'] as String?;
+        final metaDone = res['metadata_embedded'] == true;
+        if (metaErr != null && metaErr.isNotEmpty) {
+          AppLog.warn('download', '元数据嵌入失败: $metaErr');
+        } else if (onlyIfMissing) {
+          // 网盘防覆盖模式：meta=false 即文件已有内嵌标题，属预期结果
+          AppLog.info(
+              'download',
+              metaDone
+                  ? '网盘文件缺内嵌标题，已补写'
+                  : '网盘文件已有内嵌标签，保持原样');
+        } else if (embedMetadata) {
+          AppLog.info('download',
+              '收尾完成 lyrics=${res['lyrics_saved']} meta=$metaDone');
+        }
+      } catch (_) {
+        // 结果解析失败不影响收尾本身
+      }
     } catch (e) {
       AppLog.warn('download', '下载收尾（歌词/封面/元数据）失败: $e');
     }

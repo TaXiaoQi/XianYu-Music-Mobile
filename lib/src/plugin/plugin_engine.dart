@@ -403,7 +403,13 @@ class PluginEngine {
     String preferred = '320k',
     String fallback = 'lower',
   }) async {
-    await ensureLoaded(source);
+    final loaded = await ensureLoaded(source);
+    // 禁用/脚本缺失/加载失败时静默返回 null：若继续向下调 call 只会得到
+    // 误导性的「插件实例不存在」，这里快速失败并给出真实原因
+    if (loaded == null) {
+      throw PluginEngineException(
+          tr('插件未启用或加载失败: {name}', {'name': source.name}));
+    }
     final meta = metadataOf(source.id);
     final declaredRaw = meta?['supportedQualities'];
     final declaredKeys = <String>{};
@@ -646,13 +652,13 @@ class PluginEngine {
         .where((p) => p.enabled && p.format == PluginFormat.lx)
         .toList();
     if (lxPlugins.isEmpty) return null;
-    // 声明支持该音源的插件优先，逐个尝试直到命中，
-    // 避免单个插件的第三方接口故障导致整体解析失败
-    final preferred =
+    // 声明支持该音源的插件优先；lx 协议 musicUrl 的 source 必须是插件声明
+    // 支持的平台（musicfree 歌曲跨格式兜底会带来「汽水音乐」这类平台名），
+    // 没有任何插件声明支持时逐插件请求只会收获「未开放平台」错误——
+    // 直接放弃，不做注定失败的网络空转
+    final candidates =
         lxPlugins.where((p) => p.sources.contains(source)).toList();
-    final fallback =
-        lxPlugins.where((p) => !p.sources.contains(source)).toList();
-    final candidates = [...preferred, if (preferred.isEmpty) ...fallback];
+    if (candidates.isEmpty) return null;
     for (final plugin in candidates) {
       // 插件自报「不支持该档位」时改用它声明支持的档位重试一次：
       // 否则固定档位会被逐插件连续拒绝，白白等满每轮网络往返

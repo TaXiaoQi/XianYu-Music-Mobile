@@ -268,6 +268,7 @@ class AppSettings {
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
     this.watchLinkTransferMode = 'ask',
+    
     this.watchLinkAutoTransfer = false,
     this.watchLinkAskDate = '',
     this.watchLinkAskGranted = false,

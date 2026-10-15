@@ -546,7 +546,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
               .read(settingsProvider)
               .valueOrNull
               ?.onlineFailureBehavior ??
-          'skip';
+          'stop';
       if (failBehavior != 'autoswitch') {
         AppLog.info(
             'play', '[playAt] 快速跳过已失败音源歌曲 path=${item.path}');
@@ -790,7 +790,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 .read(settingsProvider)
                 .valueOrNull
                 ?.onlineFailureBehavior ??
-            'skip';
+            'stop';
         if (behavior == 'skip') {
           _markOnlineSourceFailed(item);
           _skipDepth++;
@@ -1375,7 +1375,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
                 .read(settingsProvider)
                 .valueOrNull
                 ?.onlineFailureBehavior ??
-            'skip';
+            'stop';
         final switched = await _autoSwitchSource(item);
         if (switched) return;
         if (state.current?.path != item.path) return;

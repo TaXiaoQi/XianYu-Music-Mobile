@@ -101,6 +101,21 @@ $DartBin = if (Test-Path $DartOfficial) { $DartOfficial }
            elseif (Test-Path $DartOhos) { $DartOhos }
            else { 'dart.bat' }
 Write-Host "[ohos] sync version (version.ts -> pubspec/account_api) ..." -ForegroundColor Cyan
+# dart run 会为本机目标构建 native-assets hooks（jni/objective_c 已入依赖图），
+# 编译出的 hook.dill 绑定 dart 内核版本，而 .dart_tool\hooks_runner 由本机多个
+# dart SDK（sdk_tmp / C:\flutter\flutter / Flutter-OH）共享——版本不对齐时
+# 报「Can't load Kernel binary: Invalid kernel binary format version」。
+# 以 dart 版本为戳，戳缺失或不一致即清缓存重编（hook 编译秒级），两方向自愈。
+$hooksRunner = Join-Path $ProjectRoot '.dart_tool\hooks_runner'
+$hooksStamp  = Join-Path $hooksRunner '.xy-dart-version'
+$dartVersion = (& $DartBin --version 2>&1 | Out-String).Trim()
+if (-not (Test-Path $hooksStamp) -or
+    ((Get-Content $hooksStamp -Raw -ErrorAction SilentlyContinue) -ne $dartVersion)) {
+    Write-Host '[ohos] dart SDK changed -> rebuild native-assets hooks cache' -ForegroundColor DarkCyan
+    Remove-Item $hooksRunner -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $hooksRunner | Out-Null
+    Set-Content $hooksStamp $dartVersion
+}
 Push-Location $ProjectRoot
 try { & $DartBin run tool/sync_version.dart; if ($LASTEXITCODE -ne 0) { throw "sync_version failed ($LASTEXITCODE)" } }
 finally { Pop-Location }

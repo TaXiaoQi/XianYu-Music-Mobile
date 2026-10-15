@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/account_api.dart';
+import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../plugin/plugin_backup_import.dart';
 import '../sync/playlist_song_sync_state.dart';
+import '../sync/sync_trigger.dart';
+import '../widgets/app_toast.dart';
 import '../widgets/sheet_dialog.dart';
 import 'playlist_store.dart';
 
@@ -80,6 +83,8 @@ Future<String?> resolvePlaylistSongDeleteScope(
       ),
     ),
   );
+  AppLog.info('playlist',
+      '[del-scope] 弹窗结果=${scope ?? '<dismissed>'} cloudId=$cloudId n=$songCount');
   return scope;
 }
 
@@ -96,20 +101,34 @@ Future<void> applyPlaylistSongDeleteScope(
     await onLocalRemove();
     return;
   }
-  switch (scope) {
-    case 'local':
-      final payloads = <String, String>{
-        for (final s in songs) s.path: jsonEncode(songToSyncPayload(s)),
-      };
-      await PlaylistSongSyncState.addCloudKeepSongs(cloudId, payloads);
-      await onLocalRemove();
-    case 'all':
-      await PlaylistSongSyncState.addPendingDeletedSongs(
-          cloudId, songs.map((s) => s.path));
-      await onLocalRemove();
-    default:
-      await PlaylistSongSyncState.addLocalOnlySongs(
-          cloudId, songs.map((s) => s.path));
+  AppLog.info('playlist',
+      '[del-scope] 执行 scope=$scope cloudId=$cloudId songs=${songs.length}');
+  try {
+    switch (scope) {
+      case 'local':
+        final payloads = <String, String>{
+          for (final s in songs) s.path: jsonEncode(songToSyncPayload(s)),
+        };
+        await PlaylistSongSyncState.addCloudKeepSongs(cloudId, payloads);
+        await onLocalRemove();
+      case 'all':
+        await PlaylistSongSyncState.addPendingDeletedSongs(
+            cloudId, songs.map((s) => s.path));
+        await onLocalRemove();
+      default:
+        await PlaylistSongSyncState.addLocalOnlySongs(
+            cloudId, songs.map((s) => s.path));
+        // 本地列表不变、无 UI 反馈：立即标脏触发上传，把墓碑尽快上报云端，
+        // 否则要等下一次同步才生效，用户感知为"点了没反应"
+        SyncTrigger.markDirty(const {SyncTrigger.playlists});
+        if (context.mounted) {
+          showXianYuToast(context, tr('本机保留，云端删除已同步'));
+        }
+    }
+    AppLog.info('playlist', '[del-scope] 完成 scope=$scope');
+  } catch (e, st) {
+    AppLog.warn('playlist', '[del-scope] 失败 scope=$scope: $e\n$st');
+    rethrow;
   }
 }
 

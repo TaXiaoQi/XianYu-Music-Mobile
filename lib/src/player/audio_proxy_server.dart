@@ -47,6 +47,11 @@ class AudioProxyServer {
   String _token = '';
   Future<void>? _starting;
 
+  /// 上游 4xx 拒绝记录（URL → (状态码, 时间)）。起播链路据此对死链
+  /// （如 QQ vkey 过期 403）秒级判负，不必等播放器 10s 起播超时。
+  static const Duration _rejectionTtl = Duration(seconds: 15);
+  final Map<String, (int, DateTime)> _upstreamRejections = {};
+
   bool get running => _server != null;
 
   Future<void> ensureStarted() async {
@@ -98,6 +103,43 @@ class AudioProxyServer {
     if (server == null || !running) return null;
     return 'http://127.0.0.1:${server.port}/$_token/audio'
         '?u=${Uri.encodeComponent(url)}';
+  }
+
+  /// 416 属正常越界探测（播放器探尾），不算拒绝
+  void _recordUpstreamRejection(String target, int status) {
+    if (status < 400 || status == HttpStatus.requestedRangeNotSatisfiable) {
+      return;
+    }
+    final now = DateTime.now();
+    _upstreamRejections
+        .removeWhere((_, r) => now.difference(r.$2) > _rejectionTtl);
+    if (_upstreamRejections.length > 128) {
+      _upstreamRejections.remove(_upstreamRejections.keys.first);
+    }
+    _upstreamRejections[target] = (status, now);
+  }
+
+  /// 该直链近期（TTL 内）是否被上游拒绝，返回状态码或 null
+  int? lookupUpstreamRejection(String url) {
+    final r = _upstreamRejections[url];
+    if (r == null) return null;
+    if (DateTime.now().difference(r.$2) > _rejectionTtl) {
+      _upstreamRejections.remove(url);
+      return null;
+    }
+    return r.$1;
+  }
+
+  /// 轮询上游拒绝记录：命中即以状态码完成，窗口结束无拒绝以空串完成。
+  /// 供起播链路与 setUrl 竞速使用。
+  Future<String> watchUpstreamRejection(String url, Duration window) async {
+    final deadline = DateTime.now().add(window);
+    while (DateTime.now().isBefore(deadline)) {
+      final st = lookupUpstreamRejection(url);
+      if (st != null) return '$st';
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    return '';
   }
 
   String? mvProxyUrlFor(String url, Map<String, String>? headers) {
@@ -402,6 +444,7 @@ class AudioProxyServer {
         ureq.headers.set(HttpHeaders.rangeHeader, 'bytes=$headLen-$end');
         _applyUpstreamHeaders(ureq, upstreamHeaders);
         final uresp = await ureq.close().timeout(const Duration(seconds: 20));
+        _recordUpstreamRejection(target, uresp.statusCode);
         unawaited(res.done.whenComplete(() {
           try {
             ureq.abort();
@@ -475,6 +518,7 @@ class AudioProxyServer {
       }
       _applyUpstreamHeaders(ureq, upstreamHeaders);
       final uresp = await ureq.close().timeout(const Duration(seconds: 20));
+      _recordUpstreamRejection(target, uresp.statusCode);
 
       final res = req.response;
       res.statusCode = uresp.statusCode;
