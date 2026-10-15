@@ -6,6 +6,7 @@
 // 业务（列目录/分享/转存/直链）一律经 cloud_remote 桥转发内嵌
 // Rust（rust/src/cloud/quark_uc.rs）。子类声明品牌与登录页常量。
 
+import '../../core/application_logger.dart';
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
 import '../cloud_remote.dart';
@@ -76,25 +77,50 @@ abstract class QuarkUcBase extends CloudProvider {
     final cookieStr = cookieHeader(cookies);
     var accountId = md5Hex(cookieStr).substring(0, 12);
     var nickname = displayName;
-    try {
-      final resp = await cloudGet(
-        'https://$apiHost/1/clouddrive/member?$commonQuery'
-        '&fetch_subscribe=true&fetch_identity=true',
-        headers: authHeaders(cookies),
-      );
-      if (resp.isOk) {
-        final data = resp.json['data'];
-        if (data is Map<String, dynamic>) {
-          final member = data['member'];
-          if (member is Map<String, dynamic>) {
-            final uid = (member['user_id'] ?? data['user_id'])?.toString();
-            final nick = member['nickname']?.toString();
-            if (uid != null && uid.isNotEmpty) accountId = uid;
-            if (nick != null && nick.isNotEmpty) nickname = nick;
-          }
-        }
+
+    // member 响应 → (user_id, nickname)。只认老结构 data.member：
+    // 2026-10 drive-pc 网关把 member 拆成容量接口（data.member_info
+    // 仅剩容量字段，无昵称，真机实测）；网页端昵称走 webHost 自身
+    // 网关——先探 web 域，PC 域兜底（拿不到也不阻塞绑定）。
+    Future<void> probe(String url, Map<String, String> headers) async {
+      final resp = await cloudGet(url, headers: headers);
+      if (!resp.isOk) {
+        final body =
+            resp.body.length > 120 ? resp.body.substring(0, 120) : resp.body;
+        AppLog.debug('cloud',
+            '$displayName 昵称探测 status=${resp.status}: $body');
+        return;
       }
-    } catch (_) {}
+      final data = resp.json['data'];
+      if (data is! Map<String, dynamic>) return;
+      final member = data['member'];
+      if (member is! Map<String, dynamic>) return;
+      final uid = (member['user_id'] ?? data['user_id'])?.toString();
+      final nick = member['nickname']?.toString();
+      if (uid != null && uid.isNotEmpty) accountId = uid;
+      if (nick != null && nick.isNotEmpty) nickname = nick;
+    }
+
+    try {
+      await probe('https://$webHost/1/clouddrive/member', {
+        'User-Agent': CloudProvider.desktopWebviewUa,
+        'Referer': 'https://$webHost/',
+        'Cookie': cookieStr,
+      });
+    } catch (e) {
+      AppLog.debug('cloud', '$displayName web 域昵称探测失败: $e');
+    }
+    if (nickname == displayName) {
+      try {
+        await probe(
+          'https://$apiHost/1/clouddrive/member?$commonQuery'
+          '&fetch_subscribe=true&fetch_identity=true',
+          authHeaders(cookies),
+        );
+      } catch (e) {
+        AppLog.debug('cloud', '$displayName PC 域昵称探测失败: $e');
+      }
+    }
     return CloudAccount(
       provider: id,
       accountId: accountId,

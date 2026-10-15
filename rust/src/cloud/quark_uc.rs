@@ -62,6 +62,15 @@ fn desktop_ua() -> &'static str {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
+/// PC 客户端 Electron UA（取链与下载必须同串：夸克 CDN 校验 UA 与
+/// 取链请求一致，不一致 403，真机实测）。
+fn client_ua(b: &Brand) -> String {
+    format!(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) {}/2.5.20 Chrome/100.0.4896.160 Electron/18.3.5.12-a038f7b798 Safari/537.36 Channel/pckk_other_ch",
+        b.ua_brand
+    )
+}
+
 /// 带凭据的通用请求头。UA 为夸克/UC PC 客户端 Electron 串：pr=ucpro
 /// 网关按此 UA 识别客户端身份（OpenList 同款配置，网页 Cookie 可用）。
 fn auth_headers(b: &Brand, cred: &Value) -> Vec<(String, String)> {
@@ -74,13 +83,7 @@ fn auth_headers(b: &Brand, cred: &Value) -> Vec<(String, String)> {
         })
         .unwrap_or_default();
     vec![
-        (
-            "User-Agent".into(),
-            format!(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) {}/2.5.20 Chrome/100.0.4896.160 Electron/18.3.5.12-a038f7b798 Safari/537.36 Channel/pckk_other_ch",
-                b.ua_brand
-            ),
-        ),
+        ("User-Agent".into(), client_ua(b)),
         ("Referer".into(), format!("https://{}/", b.web_host)),
         ("Cookie".into(), http::cookie_header(&pairs)),
     ]
@@ -513,7 +516,7 @@ async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<V
         .unwrap_or(0);
     Ok(direct_link_json(
         &dl_url,
-        json!({ "User-Agent": desktop_ua(), "Referer": format!("https://{}/", b.web_host) }),
+        json!({ "User-Agent": client_ua(b), "Referer": format!("https://{}/", b.web_host) }),
         Some(name),
         size,
         Some(now_ms + 2 * 3600 * 1000),
@@ -566,7 +569,7 @@ async fn direct_link_route2_quark(
         .unwrap_or(0);
     Ok(direct_link_json(
         &dl_url,
-        json!({ "User-Agent": desktop_ua(), "Referer": format!("https://{}/", b.web_host) }),
+        json!({ "User-Agent": client_ua(b), "Referer": format!("https://{}/", b.web_host) }),
         Some(name),
         size,
         Some(now_ms + 2 * 3600 * 1000),
