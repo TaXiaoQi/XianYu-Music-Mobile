@@ -178,6 +178,12 @@ fn num_i64(v: Option<&Value>) -> Option<i64> {
     v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))
 }
 
+/// 凭据失效 errno：-6 身份验证失败（BDUSS 被拒/缺失，bdstoken 拿不到也
+/// 落在这里），111 登录态过期。统一映射为简短重绑提示。
+fn cred_expired(errno: i64) -> bool {
+    errno == -6 || errno == 111
+}
+
 /// `a ?? b ?? ''` 的字符串版（仅跳过 null，空串不跳）。
 fn coalesce_jstr(a: Option<&Value>, b: Option<&Value>) -> String {
     match a.filter(|v| !v.is_null()) {
@@ -303,6 +309,9 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         let j = resp.json().map_err(biz_err)?;
         let errno = num_i64(j.get("errno")).unwrap_or(-1);
         if errno != 0 {
+            if cred_expired(errno) {
+                return Err(biz_err("登录已过期，请重新绑定"));
+            }
             let msg = if errno == -7 {
                 "目录不存在"
             } else if errno == 2 {
@@ -339,6 +348,9 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let j = resp.json().map_err(biz_err)?;
     let errno = num_i64(j.get("errno")).unwrap_or(-1);
     if errno != 0 {
+        if cred_expired(errno) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         return Err(biz_err(format!("目录列表请求失败(errno={errno})")));
     }
     let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
@@ -727,6 +739,9 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         let j = resp.json().map_err(biz_err)?;
         let errno = num_i64(j.get("errno")).unwrap_or(-1);
         if errno != 0 {
+            if cred_expired(errno) {
+                return Err(biz_err("登录已过期，请重新绑定"));
+            }
             let msg = if errno == 12 || errno == 2 {
                 "文件不在应用可访问范围内（开放平台沙箱限制，需申请全盘权限；可先转存到 /apps 目录）"
             } else {
@@ -783,6 +798,9 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let j = resp.json().map_err(biz_err)?;
     let errno = num_i64(j.get("errno")).unwrap_or(-1);
     if errno != 0 {
+        if cred_expired(errno) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         return Err(biz_err(format!("直链获取失败(errno={errno})")));
     }
     // 响应 dlink 为字符串数组；兼容对象形态取 .dlink 字段。

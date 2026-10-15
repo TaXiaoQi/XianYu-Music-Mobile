@@ -96,6 +96,13 @@ fn headers_with_ua(b: &Brand, ua: &str) -> Vec<(String, String)> {
     ]
 }
 
+/// 凭据失效判定：服务端不再认这套 web cookie（401 / code=31001 require
+/// login [guest]，夸克 UC 同网关同文案）。原始 JSON 对用户无意义，
+/// 统一映射为简短重绑提示。
+fn cred_expired(status: u16, body: &str) -> bool {
+    status == 401 || body.contains("\"code\":31001") || body.contains("require login")
+}
+
 /// download 接口 data 兼容数组/对象两种形态，提取 download_url。
 fn extract_download_url(data: &Value) -> Option<String> {
     let url = if let Some(list) = data.as_array() {
@@ -176,6 +183,9 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
+        if cred_expired(resp.status, &resp.body) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         // 带上 status + 响应体片段：夸克凭据/风控问题只能从响应体定位
         // （如 NotLogin / 风控文案），光报「请求失败」没法排障。
         let body: String = resp.body.chars().take(300).collect();
@@ -251,6 +261,9 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
+        if cred_expired(resp.status, &resp.body) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         return Err(biz_err("搜索请求失败"));
     }
     let j = resp.json().map_err(biz_err)?;
@@ -503,6 +516,9 @@ async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<V
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
+        if cred_expired(resp.status, &resp.body) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
         return Err(biz_err("直链获取失败"));
     }
     let j = resp.json().map_err(biz_err)?;
