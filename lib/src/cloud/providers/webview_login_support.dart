@@ -120,16 +120,22 @@ class CloudWebviewCaptureSession {
     return _completed;
   }
 
-  /// 只读不判定完成：返回当前 Cookie 稳定性签名（键数|STOKEN|BDUSS 尾 4），
+  /// 只读不判定完成：返回当前 Cookie 稳定性签名（键数|锚键尾 6），
   /// 空串 = 还没读到有效 Cookie。登录落地轮询用——百度落地是 3-4 跳
   /// 服务端重定向，STOKEN 由最终落地页下发，过早捕获会拿到与 BDUSS
-  /// 不配对的中间态值（列目录 errno=-6）。
+  /// 不配对的中间态值（列目录 errno=-6）。锚键按盘取：百度 BDUSS/
+  /// STOKEN，夸克/UC __puus（缺则 __pus）——2026-10-16 实测 UC 落地
+  /// 后 __puus 晚数秒签发，锚住它才知道「齐了没」。
   Future<String> cookieSignature(WebViewController controller) async {
     await _readCookies(controller);
-    final bd = _cookies['BDUSS'] ?? '';
-    if (bd.isEmpty) return '';
-    return '${_cookies.length}|${_cookies['STOKEN'] ?? ''}|'
-        '${bd.substring(bd.length - 4)}';
+    final anchor = _cookies['BDUSS'] ??
+        _cookies['__puus'] ??
+        _cookies['__pus'] ??
+        _cookies['STOKEN'] ??
+        '';
+    if (anchor.isEmpty) return '';
+    return '${_cookies.length}|'
+        '${anchor.substring(anchor.length >= 6 ? anchor.length - 6 : 0)}';
   }
 
   /// 诊断转储：当前页 storage 全量键名 + 值前 6 位（捕获失败时定位

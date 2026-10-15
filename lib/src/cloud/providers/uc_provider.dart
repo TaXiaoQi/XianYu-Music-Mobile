@@ -36,5 +36,9 @@ class UcProvider extends QuarkUcBase {
         // 覆盖完整登录链（同夸克）：主站、裸域、登录域 passport。
         cookieDomains: ['uc.cn', 'drive.uc.cn', 'pc.uc.cn', 'passport.uc.cn'],
         nativeCookies: true,
+        // __puus（长期鉴权锚）由落地页 init 请求在登录完成后数秒才签发
+        // （2026-10-16 实测：URL 命中即捕获拿到 17 键死凭据，jar 里 2s
+        // 后才出现 __puus）——postLoginUrl 触发稳定性轮询等齐再收尾。
+        postLoginUrl: 'https://drive.uc.cn/',
       );
 }

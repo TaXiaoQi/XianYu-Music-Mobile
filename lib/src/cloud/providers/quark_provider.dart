@@ -42,5 +42,7 @@ class QuarkProvider extends QuarkUcBase {
         // （pl.quark.cn）——只读 pan.quark.cn 会漏。
         cookieDomains: ['quark.cn', 'pan.quark.cn', 'pl.quark.cn'],
         nativeCookies: true,
+        // 同 UC：__puus 由落地页 init 请求后补签发，稳定性轮询等齐再收尾。
+        postLoginUrl: 'https://pan.quark.cn/',
       );
 }

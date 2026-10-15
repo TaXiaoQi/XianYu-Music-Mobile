@@ -81,7 +81,11 @@ abstract class QuarkUcBase extends CloudProvider {
     // member 响应 → (user_id, nickname)。只认老结构 data.member：
     // 2026-10 drive-pc 网关把 member 拆成容量接口（data.member_info
     // 仅剩容量字段，无昵称，真机实测）；网页端昵称走 webHost 自身
-    // 网关——先探 web 域，PC 域兜底（拿不到也不阻塞绑定）。
+    // 网关——先探 web 域，PC 域兜底。探测同时充当会话有效性闸门：
+    // 两域都被拒（401 guest）说明捕获到的是死/残 Cookie（如缺 __puus），
+    // 必须抛错回登录页重采——静默落库会产生「绑定成功但列目录即过期」
+    // 的死账号（2026-10-16 实测）。
+    var sessionOk = false;
     Future<void> probe(String url, Map<String, String> headers) async {
       final resp = await cloudGet(url, headers: headers);
       if (!resp.isOk) {
@@ -90,6 +94,12 @@ abstract class QuarkUcBase extends CloudProvider {
         AppLog.debug('cloud',
             '$displayName 昵称探测 status=${resp.status}: $body');
         return;
+      }
+      // 200 但返回 SPA HTML（web 域对无环境头 API 路径的兜底）或
+      // envelope code != 0（guest JSON）都不算过闸。
+      if (resp.body.trimLeft().startsWith('{')) {
+        final code = resp.json['code'];
+        sessionOk = code == null || code == 0;
       }
       final data = resp.json['data'];
       if (data is! Map<String, dynamic>) return;
@@ -120,6 +130,9 @@ abstract class QuarkUcBase extends CloudProvider {
       } catch (e) {
         AppLog.debug('cloud', '$displayName PC 域昵称探测失败: $e');
       }
+    }
+    if (!sessionOk) {
+      throw const CloudException('登录会话未完成，请重新登录');
     }
     return CloudAccount(
       provider: id,

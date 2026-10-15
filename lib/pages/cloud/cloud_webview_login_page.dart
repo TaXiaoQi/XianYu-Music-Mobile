@@ -39,6 +39,9 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   bool _pendingPostLogin = false;
   // postLoginUrl 落地轮询防重入（主站多页跳转会多次触发 onPageFinished）。
   bool _postLoginRunning = false;
+  // 校验失败后的自动重采轮数上限：捕获早于登录完成时（jar 残留旧
+  // Cookie 提前齐活），用户此刻正在输账密，重试轮询等真登录落定。
+  int _finalizeRetries = 0;
 
   /// 解锁双指缩放：部分登录页（UC 桌面登录面板、百度 wappass 等）
   /// viewport 声明 user-scalable=no / maximum-scale=1，手机上无法
@@ -165,14 +168,23 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     } catch (e) {
       AppLog.warn('cloud', '${_provider.id} 登录捕获失败: $e');
       if (!mounted) return;
-      showXianYuToast(
-        context,
-        e is CloudException ? e.message : tr('登录信息捕获失败，请重试'),
-      );
       setState(() => _finishing = false);
       // 校验失败后重置捕获完成态：下次手动重试重新采集 Cookie（页面
       // JS 此期间可能已种齐），避免 watch 用旧快照反复失败。
       _session.resetCompletion();
+      // postLoginUrl 范式：自动重入稳定性轮询（脏 jar 场景首次捕获早于
+      // 真登录完成，用户此刻正在输账密/刚提交——等新会话 Cookie 落定再
+      // 过闸），轮次用尽才提示回落手动兜底。
+      if (_provider.captureRule?.postLoginUrl != null &&
+          _finalizeRetries < 3) {
+        _finalizeRetries++;
+        _postLoginCapture();
+        return;
+      }
+      showXianYuToast(
+        context,
+        e is CloudException ? e.message : tr('登录信息捕获失败，请重试'),
+      );
       _startWatch();
     }
   }
