@@ -28,7 +28,7 @@ const QUARK: Brand = Brand {
 };
 
 const UC: Brand = Brand {
-    api_host: "drive-pc.uc.cn",
+    api_host: "pc-api.uc.cn",
     web_host: "drive.uc.cn",
     pr: "ucpro",
     ua_brand: "uc-cloud-drive",
@@ -650,7 +650,7 @@ mod tests {
         );
         assert_eq!(
             search_url(&UC, "flac", 1),
-            "https://drive-pc.uc.cn/1/clouddrive/file/search?pr=ucpro&fr=pc&sys=win32&ve=3.23.2&_page=1&_size=50&p=1&f=1-2&keyword=flac"
+            "https://pc-api.uc.cn/1/clouddrive/file/search?pr=ucpro&fr=pc&sys=win32&ve=3.23.2&_page=1&_size=50&p=1&f=1-2&keyword=flac"
         );
     }
 

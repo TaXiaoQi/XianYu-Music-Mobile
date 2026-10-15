@@ -16,7 +16,7 @@ import 'http_login_support.dart';
 abstract class QuarkUcBase extends CloudProvider {
   const QuarkUcBase();
 
-  /// API 域（drive-pc.quark.cn / drive-pc.uc.cn）。
+  /// API 域（drive-pc.quark.cn / pc-api.uc.cn）。
   String get apiHost;
 
   /// Web 域（Referer 用）。

@@ -13,7 +13,7 @@ class UcProvider extends QuarkUcBase {
   String get displayName => 'UC网盘';
 
   @override
-  String get apiHost => 'drive-pc.uc.cn';
+  String get apiHost => 'pc-api.uc.cn';
 
   @override
   String get webHost => 'drive.uc.cn';
