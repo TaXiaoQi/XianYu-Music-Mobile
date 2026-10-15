@@ -112,6 +112,15 @@ class LanzouProvider extends CloudProvider {
         );
       }
       // 接口返回 JSON（中文为 \uXXXX 转义，不能 contains('登录成功')）。
+      // 2026-10 改版：成功（zt==1）不再 Set-Cookie ylogin，会话改为
+      // phpdisk_info（PC 端 mydisk.php 实测认可），uid 走 JSON id 字段。
+      final uid = () {
+        try {
+          final j = jsonDecode(resp.body);
+          if (j is Map<String, dynamic>) return j['id']?.toString() ?? '';
+        } catch (_) {}
+        return '';
+      }();
       final failMsg = () {
         try {
           final j = jsonDecode(resp.body);
@@ -126,17 +135,18 @@ class LanzouProvider extends CloudProvider {
         HttpLoginGate.instance.recordFailure(id);
         throw CloudException(failMsg ?? '登录失败，请稍后再试');
       }
-      final ylogin = resp.setCookiePairs['ylogin'] ?? '';
-      if (ylogin.isEmpty) {
+      final session = resp.setCookiePairs['phpdisk_info'] ?? '';
+      if (session.isEmpty) {
         HttpLoginGate.instance.recordFailure(id);
         throw const CloudException('登录失败');
       }
       HttpLoginGate.instance.recordSuccess(id);
       return CloudAccount(
         provider: id,
-        accountId: md5Hex(ylogin).substring(0, 12),
+        accountId:
+            uid.isNotEmpty ? uid : md5Hex(session).substring(0, 12),
         nickname: username,
-        cred: {'cookie': 'ylogin=$ylogin'},
+        cred: {'cookie': 'phpdisk_info=$session'},
         boundAt: DateTime.now(),
       );
     } on CloudException {

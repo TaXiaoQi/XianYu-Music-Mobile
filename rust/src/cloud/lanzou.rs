@@ -10,8 +10,9 @@
 // - Dart cloudGet/cloudPostForm 底层 appRequest 为手动重定向跟随（上限 5 跳、
 //   303/302 非 GET 降级 GET、逐跳携带同一组请求头），蓝奏多 route 域名降级
 //   即依赖该语义——request_follow/resolve_url 在此复刻；
-// - share_direct_link / direct_link 免登录：Dart 不使用凭据（分享页匿名可取），
-//   空 cred 可解析，不做 require_cred；
+// - 我的网盘列表/直链 2026-10 改版走 AJAX（doupload.php task=47/5/22）：
+//   框架页抽 uid+vei，文件夹/文件分离返回，文件 token='f:<id>' 直链时换
+//   分享页链接；旧 HTML 解析函数保留兼容单测与旧数据；
 // - transfer_share：Dart 抛 UnsupportedError('该盘分享不支持转存') → 502 同文案；
 // - 直链 TTL 20 分钟，随 expireAt 毫秒时间戳回传。
 
@@ -25,6 +26,8 @@ use super::types::{
 use super::{biz_err, pre_parse_share, require_cred};
 
 const UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
+/// 分享页 2026-10 改版仅 PC UA 下返回内联 sign + ajaxfile.php 结构。
+const PC_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
 /// 常见音频扩展名（对齐 CloudFile.audioExts）。
 const AUDIO_EXTS: &[&str] = &[
@@ -72,25 +75,6 @@ fn html_unescape(s: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&apos;", "'")
-}
-
-/// Uri.tryParse(url).host 最小实现：scheme:// 与 /?# 之间，去 userinfo/端口。
-fn host_of(url: &str) -> String {
-    let rest = match url.split_once("://") {
-        Some((_, r)) => r,
-        None => return String::new(),
-    };
-    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let mut host = &rest[..end];
-    if let Some(i) = host.rfind('@') {
-        host = &host[i + 1..];
-    }
-    if !host.starts_with('[') {
-        if let Some(i) = host.find(':') {
-            host = &host[..i];
-        }
-    }
-    host.to_string()
 }
 
 /// 最小化 Dart Uri.resolve：绝对地址原样；`//` 开头补 scheme；`/` 开头补
@@ -219,52 +203,22 @@ fn iframe_sub_links(page: &str) -> Vec<String> {
     out
 }
 
-/// 隐含 input（name/value 顺序可反，双向匹配；name 空跳过；同名后写覆盖）。
-fn extract_hidden_inputs(page: &str) -> Vec<(String, String)> {
-    let re = Regex::new(
-        r#"(?i)<input[^>]+(?:name="([^"]*)"[^>]+value="([^"]*)"|value="([^"]*)"[^>]+name="([^"]*)")"#,
-    )
-    .unwrap();
-    let mut out: Vec<(String, String)> = Vec::new();
-    for c in re.captures_iter(page) {
-        let name = c
-            .get(1)
-            .or_else(|| c.get(4))
-            .map(|m| m.as_str().trim())
-            .unwrap_or("");
-        if name.is_empty() {
-            continue;
-        }
-        let value_raw = c
-            .get(2)
-            .or_else(|| c.get(3))
-            .map(|m| m.as_str().trim())
-            .unwrap_or("");
-        let value = html_unescape(value_raw);
-        if let Some(slot) = out.iter_mut().find(|(k, _)| k == name) {
-            slot.1 = value;
-        } else {
-            out.push((name.to_string(), value));
-        }
-    }
-    out
+/// 分享页 JS 内联 sign（`var isngis = ''` 空声明后再赋值，取非空那条）。
+fn extract_share_sign(page: &str) -> Option<&str> {
+    Regex::new(r"var isngis = '([^']{20,})'")
+        .ok()?
+        .captures(page)?
+        .get(1)
+        .map(|m| m.as_str())
 }
 
-/// /ajaxm.php 响应 → 直链：zt==1 且 url 为绝对地址取 url，否则 dom+url。
-fn ajaxm_direct_url(j: &Value) -> Option<String> {
-    let zt = j.get("zt").and_then(Value::as_i64).unwrap_or(0);
-    if zt != 1 {
-        return None; // 分享已失效等。
-    }
-    let dom = jstr(j.get("dom"));
-    let url = jstr(j.get("url"));
-    if url.starts_with("http") {
-        return Some(url);
-    }
-    if !dom.is_empty() && !url.is_empty() {
-        return Some(format!("{dom}{url}"));
-    }
-    None
+/// 分享页 file id（ajaxfile.php?file=N）。
+fn extract_share_file_id(page: &str) -> Option<&str> {
+    Regex::new(r"ajaxfile\.php\?file=(\d+)")
+        .ok()?
+        .captures(page)?
+        .get(1)
+        .map(|m| m.as_str())
 }
 
 /// 页面标题；去常见尾缀「xxx - 蓝奏云」，空则 None。
@@ -291,16 +245,17 @@ fn audio_ext_ok(name: &str) -> bool {
 
 // ── 内部请求（对齐 Dart 私有方法） ──────────────────────
 
-/// Dart _get：GET 分享页，失败/非 2xx 返回空串。
+/// Dart _get：GET 分享页，失败/非 2xx 返回空串。2026-10 改版分享页仅
+/// PC UA 下返回内联 sign + ajaxfile.php 结构，用 PC_UA。
 async fn get_page(url: &str) -> String {
-    match get_follow(url, &[("User-Agent".to_string(), UA.to_string())]).await {
+    match get_follow(url, &[("User-Agent".to_string(), PC_UA.to_string())]).await {
         Ok(r) if r.is_ok() => r.body,
         _ => String::new(),
     }
 }
 
-/// 分享页 → 子页（iframe）→ 隐含表单 → /ajaxm.php → 直链。
-async fn resolve_share_page_files(share_url: &str) -> Result<Vec<Value>, (i32, String)> {
+/// 分享页 → 子页（iframe）→ sign + ajaxfile.php → 直链。
+async fn resolve_share_page_files(share_url: &str, pwd: &str) -> Result<Vec<Value>, (i32, String)> {
     let page = get_page(share_url).await;
     if page.is_empty() {
         return Err(biz_err("分享已失效"));
@@ -309,7 +264,7 @@ async fn resolve_share_page_files(share_url: &str) -> Result<Vec<Value>, (i32, S
     let sub_links = iframe_sub_links(&page);
     if sub_links.is_empty() {
         // 单文件页：直接解析出直链。
-        let direct = direct_from_page(&page, &host_of(share_url)).await;
+        let direct = direct_from_page(&page, pwd).await;
         let name = page_title(&page).unwrap_or_else(|| "蓝奏云文件".to_string());
         return Ok(vec![file_json(
             share_url,
@@ -327,7 +282,7 @@ async fn resolve_share_page_files(share_url: &str) -> Result<Vec<Value>, (i32, S
         if sub_page.is_empty() {
             continue;
         }
-        let direct = direct_from_page(&sub_page, &host_of(sub)).await;
+        let direct = direct_from_page(&sub_page, pwd).await;
         let name = page_title(&sub_page).unwrap_or_else(|| "蓝奏云文件".to_string());
         files.push(file_json(
             sub,
@@ -342,31 +297,54 @@ async fn resolve_share_page_files(share_url: &str) -> Result<Vec<Value>, (i32, S
     Ok(files)
 }
 
-/// 子页隐含表单参数 → POST /ajaxm.php → dom+url 直链。
-async fn direct_from_page(page: &str, host: &str) -> Option<String> {
-    let pairs = extract_hidden_inputs(page);
-    if pairs.is_empty() {
-        return None;
-    }
-    let url = format!("https://{host}/ajaxm.php");
+/// 页面 sign + file id → POST apifile.woozooo.com/ajaxfile.php
+/// （action=downprocess）→ dom + /file/ + url 直链（2026-10 改版）。
+async fn direct_from_page(page: &str, pwd: &str) -> Option<String> {
+    let sign = extract_share_sign(page)?;
+    let file_id = extract_share_file_id(page)?;
+    let url = format!("https://apifile.woozooo.com/ajaxfile.php?file={file_id}");
     let headers = vec![
-        ("User-Agent".to_string(), UA.to_string()),
-        ("Referer".to_string(), format!("https://{host}/")),
+        ("User-Agent".to_string(), PC_UA.to_string()),
+        ("Referer".to_string(), "https://wwi.lanzouo.com/".to_string()),
     ];
-    let resp = post_form_follow(&url, &headers, pairs).await.ok()?;
+    let resp = post_form_follow(
+        &url,
+        &headers,
+        vec![
+            ("action".to_string(), "downprocess".to_string()),
+            ("sign".to_string(), sign.to_string()),
+            ("kd".to_string(), "1".to_string()),
+            ("p".to_string(), pwd.to_string()),
+        ],
+    )
+    .await
+    .ok()?;
     if !resp.is_ok() {
         return None;
     }
-    ajaxm_direct_url(&resp.json().ok()?)
+    let j = resp.json().ok()?;
+    if j.get("zt").and_then(Value::as_i64) != Some(1) {
+        return None; // 密码错/分享失效等。
+    }
+    let dom = jstr(j.get("dom"));
+    let url2 = jstr(j.get("url"));
+    if !dom.starts_with("http") || url2.is_empty() {
+        return None;
+    }
+    Some(format!("{}/file/{}", dom.trim_end_matches('/'), url2))
 }
 
 /// 分享页直链：单文件页直接出直链；多文件页先找首个 iframe（不过滤 file）。
-async fn direct_from_share_page(url: &str, name: &str, size: i64) -> Result<Value, (i32, String)> {
+async fn direct_from_share_page(
+    url: &str,
+    name: &str,
+    size: i64,
+    pwd: &str,
+) -> Result<Value, (i32, String)> {
     let page = get_page(url).await;
     if page.is_empty() {
         return Err(biz_err("分享已失效"));
     }
-    let mut host = host_of(url);
     let mut target = page;
     let re = Regex::new(r#"(?i)<iframe[^>]+src="([^"]+)""#).unwrap();
     if let Some(m) = re.captures(&target) {
@@ -377,9 +355,8 @@ async fn direct_from_share_page(url: &str, name: &str, size: i64) -> Result<Valu
             src
         };
         target = get_page(&sub).await;
-        host = host_of(&sub);
     }
-    let direct = direct_from_page(&target, &host)
+    let direct = direct_from_page(&target, pwd)
         .await
         .ok_or_else(|| biz_err("分享已失效"))?;
     Ok(direct_link_json(
@@ -408,44 +385,139 @@ async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(json!({ "valid": valid })))
 }
 
+// ── 我的网盘（2026-10 AJAX 接口）─────────────────────────
+
+/// 框架页 → (uid, vei)：列表接口 POST /doupload.php?uid=N 需带页内联的
+/// 加密串 vei（'vei':'xxx'）。
+fn extract_uid_vei(body: &str) -> Option<(String, String)> {
+    let uid = Regex::new(r"doupload\.php\?uid=(\d+)")
+        .ok()?
+        .captures(body)?
+        .get(1)?
+        .as_str()
+        .to_string();
+    let vei = Regex::new(r"'vei':'([^']+)'")
+        .ok()?
+        .captures(body)?
+        .get(1)?
+        .as_str()
+        .to_string();
+    Some((uid, vei))
+}
+
+/// "28.4 M" → 字节数（蓝奏列表 JSON 的 size 为格式化文本）。
+fn parse_lanzou_size(s: &str) -> i64 {
+    let t = s.trim();
+    let num_end = t
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(t.len());
+    let num: f64 = t[..num_end].trim().parse().unwrap_or(0.0);
+    let mul: f64 = match t[num_end..].trim().to_uppercase().as_str() {
+        "B" => 1.0,
+        "K" | "KB" => 1024.0,
+        "M" | "MB" => 1024.0 * 1024.0,
+        "G" | "GB" => 1024.0 * 1024.0 * 1024.0,
+        "T" | "TB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => 1.0,
+    };
+    (num * mul) as i64
+}
+
+/// POST doupload.php（task 语义见 comm.js：47 目录树 / 5 文件列表 /
+/// 22 文件分享链接）。uid 为空时 URL 不带 ?uid=（对齐 comm.js 各处）。
+async fn doupload(
+    cookie: &str,
+    uid: &str,
+    form: Vec<(&str, String)>,
+) -> Result<Value, (i32, String)> {
+    let url = if uid.is_empty() {
+        "https://pc.woozooo.com/doupload.php".to_string()
+    } else {
+        format!("https://pc.woozooo.com/doupload.php?uid={uid}")
+    };
+    let pairs: Vec<(String, String)> =
+        form.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    let resp = post_form_follow(&url, &h_headers(cookie), pairs).await.map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err("目录列表请求失败"));
+    }
+    resp.json().map_err(biz_err)
+}
+
 async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let path = req.param_str("path");
     let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
-    let mut url = "https://pc.woozooo.com/mydisk.php?item=files&action=index".to_string();
-    if !path.is_empty() {
-        url.push_str("&f_id=");
-        url.push_str(&http::url_encode(&path));
-    }
-    url.push_str(&format!("&page={page}"));
-    let resp = get_follow(&url, &h_headers(&req.cred_str("cookie")))
-        .await
-        .map_err(biz_err)?;
-    if !resp.is_ok() {
+    let cookie = req.cred_str("cookie");
+    // 框架页抽 uid + vei（改版后文件列表全走 AJAX，HTML 不再有文件行）。
+    let frame = get_follow(
+        "https://pc.woozooo.com/mydisk.php?item=files&action=index",
+        &h_headers(&cookie),
+    )
+    .await
+    .map_err(biz_err)?;
+    if !frame.is_ok() {
         return Err(biz_err("目录列表请求失败"));
     }
-    let body = resp.body;
+    let Some((uid, vei)) = extract_uid_vei(&frame.body) else {
+        return Err(biz_err("目录列表请求失败"));
+    };
+    let folder_id = if path.is_empty() { "-1" } else { path.as_str() };
     let mut files = Vec::new();
-    for (id, name) in extract_folder_rows(&body) {
-        files.push(file_json(&id, &name, true, 0, Some(&path), None, None));
-    }
-    // 文件行：文件页链接作为 token（后续直链复用）；与名称按文档序就近配对。
-    let names = extract_names(&body);
-    let links = extract_file_links(&body);
-    let mut i = 0usize;
-    for link in &links {
-        if i >= names.len() {
-            break;
+    // 文件夹（task=47，不分页）；翻页时跳过避免跨页重复。
+    if page == 1 {
+        let folders = doupload(
+            &cookie,
+            &uid,
+            vec![
+                ("task", "47".to_string()),
+                ("folder_id", folder_id.to_string()),
+                ("vei", vei.clone()),
+            ],
+        )
+        .await?;
+        if let Some(arr) = folders.get("text").and_then(Value::as_array) {
+            for f in arr {
+                let id = jstr(f.get("fol_id"));
+                let name = html_unescape(&jstr(f.get("name"))).trim().to_string();
+                if id.is_empty() || name.is_empty() {
+                    continue;
+                }
+                files.push(file_json(&id, &name, true, 0, Some(&path), None, None));
+            }
         }
-        let n = html_unescape(&names[i]).trim().to_string();
-        i += 1;
-        // 只收音频扩展名；名称判后缀。
-        if !audio_ext_ok(&n) {
-            continue;
-        }
-        files.push(file_json(link, &n, false, 0, Some(&path), None, Some(link)));
     }
-    let has_next = files.len() as i64 >= 30;
+    // 文件（task=5，pg 翻页；info!=0 表示还有下一页）。
+    let list = doupload(
+        &cookie,
+        &uid,
+        vec![
+            ("task", "5".to_string()),
+            ("folder_id", folder_id.to_string()),
+            ("pg", page.to_string()),
+            ("vei", vei),
+        ],
+    )
+    .await?;
+    if let Some(arr) = list.get("text").and_then(Value::as_array) {
+        for f in arr {
+            let id = jstr(f.get("id"));
+            let name = html_unescape(&jstr(f.get("name_all"))).trim().to_string();
+            if id.is_empty() {
+                continue;
+            }
+            // 只收音频扩展名；名称判后缀。
+            if !audio_ext_ok(&name) {
+                continue;
+            }
+            let size = parse_lanzou_size(&jstr(f.get("size")));
+            // token 存 'f:<id>'，直链时 task=22 换分享页链接（对齐
+            // direct_link 的 token 语义）。
+            let token = format!("f:{id}");
+            files.push(file_json(&token, &name, false, size, Some(&path), None, Some(&token)));
+        }
+    }
+    let has_next = list.get("info").and_then(Value::as_i64).unwrap_or(0) != 0;
     let next_cursor = if has_next {
         Some((page + 1).to_string())
     } else {
@@ -462,7 +534,8 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     } else {
         info.url.clone()
     };
-    let files = resolve_share_page_files(&share_url).await?;
+    let pwd = req.param_str("pwd");
+    let files = resolve_share_page_files(&share_url, &pwd).await?;
     if files.is_empty() {
         return Err(biz_err("分享已失效"));
     }
@@ -471,7 +544,6 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     } else {
         info.share_id.clone()
     };
-    let pwd = req.param_str("pwd");
     let passcode = if pwd.is_empty() { None } else { Some(pwd.as_str()) };
     Ok(CloudOut::plain(share_parse_json(
         "lanzou",
@@ -488,8 +560,9 @@ fn transfer_share() -> (i32, String) {
     biz_err("该盘分享不支持转存")
 }
 
-/// 我的网盘文件：file.token 为分享页地址（浏览页入口解析时写入）。
-/// Dart getDirectLink 只读 file.token，凭据不参与请求 → 不做 require_cred。
+/// 我的网盘文件：file.token 为 'f:<id>'（列表时写入，2026-10 改版 AJAX
+/// 列表不含分享链接）或旧数据的分享页地址。'f:' 前缀走 task=22 换分享
+/// 链接（需登录 cred）再解析直链；http 直通免登录。
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let file = req.param_obj("file");
     let name = jstr(file.get("name"));
@@ -497,10 +570,33 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let token = jstr(file.get("token"));
     if token.starts_with("http") {
         return Ok(CloudOut::plain(
-            direct_from_share_page(&token, &name, size).await?,
+            direct_from_share_page(&token, &name, size, "").await?,
         ));
     }
-    Err(biz_err("直链获取失败"))
+    let file_id = token.strip_prefix("f:").unwrap_or(&token);
+    if file_id.is_empty() {
+        return Err(biz_err("直链获取失败"));
+    }
+    require_cred(req)?;
+    let j = doupload(
+        &req.cred_str("cookie"),
+        "",
+        vec![("task", "22".to_string()), ("file_id", file_id.to_string())],
+    )
+    .await?;
+    if j.get("zt").and_then(Value::as_i64) != Some(1) {
+        return Err(biz_err("直链获取失败"));
+    }
+    let info = j.get("info").cloned().unwrap_or(Value::Null);
+    let base = jstr(info.get("is_newd"));
+    let fid = jstr(info.get("f_id"));
+    if !base.starts_with("http") || fid.is_empty() {
+        return Err(biz_err("直链获取失败"));
+    }
+    let share_url = format!("{}/{}", base.trim_end_matches('/'), fid);
+    Ok(CloudOut::plain(
+        direct_from_share_page(&share_url, &name, size, &jstr(info.get("pwd"))).await?,
+    ))
 }
 
 /// 分享免转存直链：parseShareLink 时直链已塞 file.token；否则按分享页重解析。
@@ -521,13 +617,14 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             Some(expire),
         )));
     }
-    // token 是分享页地址 → 重新解析。
+    // token 是分享页地址 → 重新解析（分享密码回填）。
+    let pwd = jstr(share.get("passcode"));
     let url = if !token.is_empty() {
         token
     } else {
         jstr(share.get("shareId"))
     };
-    let files = resolve_share_page_files(&url).await?;
+    let files = resolve_share_page_files(&url, &pwd).await?;
     for f in &files {
         let f_token = jstr(f.get("token"));
         if f.get("name").and_then(Value::as_str) == Some(name.as_str())
@@ -580,6 +677,25 @@ mod tests {
         assert_eq!(h[1].1, "https://pc.woozooo.com/");
         assert_eq!(h[2], ("Cookie".to_string(), "ylogin=abc".to_string()));
         assert_eq!(h_headers("").len(), 2);
+    }
+
+    #[test]
+    fn uid_vei_extracted_from_frame() {
+        let body = "url : '/doupload.php?uid=5355434' data:{task:5, 'vei':'UFRRUwZUAQ0BA1NWAFo='}";
+        let (uid, vei) = extract_uid_vei(body).unwrap();
+        assert_eq!(uid, "5355434");
+        assert_eq!(vei, "UFRRUwZUAQ0BA1NWAFo=");
+        assert!(extract_uid_vei("no markers").is_none());
+    }
+
+    #[test]
+    fn lanzou_size_parsed() {
+        assert_eq!(parse_lanzou_size("28.4 M"), 29779558);
+        assert_eq!(parse_lanzou_size("3 KB"), 3072);
+        assert_eq!(parse_lanzou_size("512 B"), 512);
+        assert_eq!(parse_lanzou_size("1 G"), 1073741824);
+        assert_eq!(parse_lanzou_size("bad"), 0);
+        assert_eq!(parse_lanzou_size(""), 0);
     }
 
     #[test]
@@ -642,37 +758,20 @@ mod tests {
     }
 
     #[test]
-    fn hidden_inputs_both_orders() {
+    fn share_sign_file_id_extracted() {
         let page = concat!(
-            "<form>",
-            "<input type=\"hidden\" name=\"lx\" value=\"2\">",
-            "<input type=\"hidden\" value=\"abc123\" name=\"fid\">",
-            "<input type=\"text\" value=\"keep\" name=\"\">",
-            "</form>",
+            "var isngis = '';\n",
+            "var isngis = 'CG5WaA08UmMIAQQ7BjYFOVQ9BDNQOwc2';\n",
+            "url : 'https://apifile.woozooo.com/ajaxfile.php?file=324374513'",
         );
         assert_eq!(
-            extract_hidden_inputs(page),
-            vec![
-                ("lx".to_string(), "2".to_string()),
-                ("fid".to_string(), "abc123".to_string()),
-            ]
+            extract_share_sign(page),
+            Some("CG5WaA08UmMIAQQ7BjYFOVQ9BDNQOwc2")
         );
-        assert!(extract_hidden_inputs("<p>no inputs</p>").is_empty());
-    }
-
-    #[test]
-    fn ajaxm_json_extracts_direct() {
-        assert_eq!(
-            ajaxm_direct_url(&json!({"zt": 1, "dom": "https://d.cn", "url": "/f/x.mp3"})),
-            Some("https://d.cn/f/x.mp3".to_string())
-        );
-        assert_eq!(
-            ajaxm_direct_url(&json!({"zt": 1, "dom": "https://d.cn", "url": "http://full/x"})),
-            Some("http://full/x".to_string())
-        );
-        assert_eq!(ajaxm_direct_url(&json!({"zt": 0, "dom": "a", "url": "b"})), None);
-        assert_eq!(ajaxm_direct_url(&json!({"zt": 1, "dom": "a", "url": ""})), None);
-        assert_eq!(ajaxm_direct_url(&json!({})), None);
+        assert_eq!(extract_share_file_id(page), Some("324374513"));
+        // 空声明不匹配（长度 <20）。
+        assert!(extract_share_sign("var isngis = '';").is_none());
+        assert!(extract_share_file_id("no marker").is_none());
     }
 
     #[test]
@@ -711,7 +810,5 @@ mod tests {
             "https://a.com/x/c.mp3"
         );
         assert_eq!(resolve_url("https://a.com", "c"), "https://a.com/c");
-        assert_eq!(host_of("https://sub.lanzouw.com/file.html?a=1"), "sub.lanzouw.com");
-        assert_eq!(host_of("/relative.html"), "");
     }
 }

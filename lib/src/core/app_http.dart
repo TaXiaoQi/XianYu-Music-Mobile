@@ -112,6 +112,8 @@ Future<void> validateHop(Uri uri, bool allowPrivateHost) async {
 /// - [bodyBytes]/[body] 二选一；重定向方法降级语义与 dart:io 默认一致
 /// - [allowPrivateHost] 允许私网目标（本地受信链路专用）
 /// - [maxRedirects] 重定向上限，超限抛 HttpException
+/// - [redirectSetCookies] 非空时收集中间 3xx 响应的 Set-Cookie（手动
+///   跟随会丢弃中间响应头，而登录类接口常在 302 跳转上 Set-Cookie）
 ///
 /// 返回最终（非 3xx）响应；响应体由调用方负责消费/关闭。
 Future<HttpClientResponse> appRequest(
@@ -122,6 +124,7 @@ Future<HttpClientResponse> appRequest(
   String? body,
   bool allowPrivateHost = false,
   int maxRedirects = 5,
+  List<String>? redirectSetCookies,
 }) async {
   var current = uri;
   var m = method.toUpperCase();
@@ -139,6 +142,7 @@ Future<HttpClientResponse> appRequest(
     final resp = await req.close();
     final status = resp.statusCode;
     if (status >= 300 && status < 400) {
+      redirectSetCookies?.addAll(resp.headers['set-cookie'] ?? const []);
       final loc = resp.headers.value(HttpHeaders.locationHeader);
       await resp.drain<void>();
       if (loc == null || loc.isEmpty) {

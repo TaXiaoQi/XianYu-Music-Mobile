@@ -76,13 +76,17 @@ Future<CloudHttpResponse> cloudRequest(
     bodyStr = rawBody;
   }
   try {
+    final redirectSetCookies = <String>[];
     final resp = await appRequest(
       method,
       Uri.parse(url),
       headers: h,
       body: bodyStr,
+      redirectSetCookies: redirectSetCookies,
     ).timeout(timeout);
-    final setCookies = <String>[];
+    final setCookies = <String>[
+      ...redirectSetCookies, // 中间 3xx 跳上的 Set-Cookie（蓝奏 ylogin 等）
+    ];
     final headerMap = <String, String>{};
     resp.headers.forEach((name, values) {
       if (name.toLowerCase() == 'set-cookie') {
