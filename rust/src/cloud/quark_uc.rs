@@ -16,10 +16,14 @@ struct Brand {
     ua_brand: &'static str,
 }
 
+// pr 两家同为 ucpro：drive-pc.*.cn 是同一套 UC 专业版客户端网关，
+// 对 Web Cookie（__pus 系）校验宽松；pr=quark 是夸克官方客户端通道，
+// 2026-10 起要求真客户端环境，Web Cookie 会被风控降为游客
+// （401 require login [guest]，真机实测）。
 const QUARK: Brand = Brand {
     api_host: "drive-pc.quark.cn",
     web_host: "pan.quark.cn",
-    pr: "quark",
+    pr: "ucpro",
     ua_brand: "quark-cloud-drive",
 };
 
@@ -58,7 +62,8 @@ fn desktop_ua() -> &'static str {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
-/// 带凭据的通用请求头。
+/// 带凭据的通用请求头。UA 为夸克/UC PC 客户端 Electron 串：pr=ucpro
+/// 网关按此 UA 识别客户端身份（OpenList 同款配置，网页 Cookie 可用）。
 fn auth_headers(b: &Brand, cred: &Value) -> Vec<(String, String)> {
     let pairs: Vec<(String, String)> = cred
         .as_object()
@@ -168,7 +173,10 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("目录列表请求失败"));
+        // 带上 status + 响应体片段：夸克凭据/风控问题只能从响应体定位
+        // （如 NotLogin / 风控文案），光报「请求失败」没法排障。
+        let body: String = resp.body.chars().take(300).collect();
+        return Err((502, format!("目录列表请求失败 status={}: {body}", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
     let data = j.get("data").cloned().unwrap_or(Value::Null);
@@ -602,8 +610,10 @@ mod tests {
     #[test]
     fn brand_constants() {
         assert_eq!(brand_of("quark").api_host, "drive-pc.quark.cn");
+        // 两家 pr 同为 ucpro（UC 专业版网关对 Web Cookie 宽容）。
+        assert_eq!(brand_of("quark").pr, "ucpro");
         assert_eq!(brand_of("uc").pr, "ucpro");
-        assert_eq!(common_query(&QUARK), "pr=quark&fr=pc&sys=win32&ve=3.23.2");
+        assert_eq!(common_query(&QUARK), "pr=ucpro&fr=pc&sys=win32&ve=3.23.2");
     }
 
     #[test]
@@ -633,7 +643,7 @@ mod tests {
         // 两家仅域名与 pr 不同，query 其余逐字一致。
         assert_eq!(
             search_url(&QUARK, "lofi beats", 2),
-            "https://drive-pc.quark.cn/1/clouddrive/file/search?pr=quark&fr=pc&sys=win32&ve=3.23.2&_page=2&_size=50&p=1&f=1-2&keyword=lofi+beats"
+            "https://drive-pc.quark.cn/1/clouddrive/file/search?pr=ucpro&fr=pc&sys=win32&ve=3.23.2&_page=2&_size=50&p=1&f=1-2&keyword=lofi+beats"
         );
         assert_eq!(
             search_url(&UC, "flac", 1),

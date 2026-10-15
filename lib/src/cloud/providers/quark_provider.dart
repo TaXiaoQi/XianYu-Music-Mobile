@@ -18,8 +18,9 @@ class QuarkProvider extends QuarkUcBase {
   @override
   String get webHost => 'pan.quark.cn';
 
+  // pr 同 UC 走 ucpro 网关通道（pr=quark 客户端通道风控拒 Web Cookie）。
   @override
-  String get pr => 'quark';
+  String get pr => 'ucpro';
 
   @override
   String get uaBrand => 'quark-cloud-drive';
@@ -32,11 +33,14 @@ class QuarkProvider extends QuarkUcBase {
 
   @override
   CloudCaptureRule? get captureRule => const CloudCaptureRule(
-        cookieNames: ['kps', 'sign'],
-        // kps/sign 的种下域覆盖完整登录链：主站 .quark.cn、裸域、
-        // 登录接口域（pl.quark.cn）——只读 pan.quark.cn 会全空。
+        // 2026-10 夸克 Web 端凭据更名：旧 kps/sign → __kps（sign Cookie
+        // 已不存在），且 drive-pc 风控依赖完整 Cookie 链（ctoken/b-user-id/
+        // __kp 等）——全收非空 Cookie 原样回传，账号兜底校验见 base 类
+        // （__kps/__pus/__puus 任一在即有效）。全程 httpOnly，走原生通道。
+        cookieNames: [],
+        // 种下域覆盖完整登录链：主站 .quark.cn、裸域、登录接口域
+        // （pl.quark.cn）——只读 pan.quark.cn 会漏。
         cookieDomains: ['quark.cn', 'pan.quark.cn', 'pl.quark.cn'],
-        // kps/sign 已为 httpOnly，document.cookie 读不到，走原生通道。
         nativeCookies: true,
       );
 }

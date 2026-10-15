@@ -21,11 +21,9 @@ abstract class QuarkUcBase extends CloudProvider {
   /// Web 域（Referer 用）。
   String get webHost;
 
-  /// 客户端品牌参数（pr=quark / ucpro）。
+  /// 客户端品牌参数（pr=ucpro：两家同为 UC 专业版网关，对 Web Cookie
+  /// 宽容；pr=quark 客户端通道 2026-10 起风控拒绝 Web Cookie）。
   String get pr;
-
-  /// UA 品牌串（quark-cloud-drive / uc-cloud-drive）。
-  String get uaBrand;
 
   String get commonQuery => 'pr=$pr&fr=pc&sys=win32&ve=3.23.2';
 
@@ -33,6 +31,9 @@ abstract class QuarkUcBase extends CloudProvider {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) $uaBrand/2.5.20 Chrome/100.0.4896.160 '
       'Electron/18.3.5.12-a038f7b798 Safari/537.36 Channel/pckk_other_ch';
+
+  /// UA 品牌串（quark-cloud-drive / uc-cloud-drive）。
+  String get uaBrand;
 
   /// 带凭据的通用请求头（登录态探测用）。
   Map<String, String> authHeaders(Map<String, String> cred) => {
@@ -66,7 +67,10 @@ abstract class QuarkUcBase extends CloudProvider {
 
   /// 登录 Cookie → 账号（member 接口拿昵称/用户 id，防御式兜底指纹）。
   Future<CloudAccount> buildAccountFromCookies(Map<String, String> cookies) async {
-    if (cookies['kps']?.isEmpty ?? true) {
+    // 2026-10 Web 端凭据更名：__kps / __pus / __puus 任一在即有效
+    // （旧 kps/sign 名已不存在）。
+    if ((cookies['__kps'] ?? cookies['__pus'] ?? cookies['__puus'])?.isEmpty ??
+        true) {
       throw const CloudException('登录凭据获取失败，请重试');
     }
     final cookieStr = cookieHeader(cookies);

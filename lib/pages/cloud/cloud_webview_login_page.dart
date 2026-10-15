@@ -290,7 +290,10 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     if (done) {
       _finishLogin();
     } else if (mounted) {
-      showXianYuToast(context, tr('未捕获到登录信息，请先完成登录'));
+      await _session.debugDumpAuth(_controller);
+      if (mounted) {
+        showXianYuToast(context, tr('未捕获到登录信息，请先完成登录'));
+      }
     }
   }
 

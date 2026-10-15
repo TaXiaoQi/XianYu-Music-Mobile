@@ -132,6 +132,29 @@ class CloudWebviewCaptureSession {
         '${bd.substring(bd.length - 4)}';
   }
 
+  /// 诊断转储：当前页 storage 全量键名 + 值前 6 位（捕获失败时定位
+  /// 厂商/版本把凭据挪到了哪——如夸克 Web 端已不带 kps/sign Cookie）。
+  Future<void> debugDumpAuth(WebViewController controller) async {
+    final v = await _evalJs(controller, '''
+(() => {
+  var out = [];
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      out.push('L:' + k + '=' + String(localStorage.getItem(k)).slice(0, 6));
+    }
+  } catch (e) {}
+  try {
+    for (var i = 0; i < sessionStorage.length; i++) {
+      var k = sessionStorage.key(i);
+      out.push('S:' + k + '=' + String(sessionStorage.getItem(k)).slice(0, 6));
+    }
+  } catch (e) {}
+  return out.slice(0, 40).join(' | ');
+})()''');
+    AppLog.debug('cloud', 'storage 转储: ${v.isEmpty ? '(空)' : v}');
+  }
+
   void startPolling(WebViewController controller) {
     _timer ??= Timer.periodic(
       Duration(milliseconds: rule.pollIntervalMs),
@@ -183,7 +206,10 @@ class CloudWebviewCaptureSession {
       AppLog.warn('cloud', '原生 Cookie 通道未取到 ${rule.cookieNames.join('/')}，回退 document.cookie');
     }
     final raw = await _evalJs(controller, 'document.cookie');
-    if (raw.isEmpty) return;
+    if (raw.isEmpty) {
+      AppLog.debug('cloud', 'document.cookie 为空');
+      return;
+    }
     for (final seg in raw.split(';')) {
       final eq = seg.indexOf('=');
       if (eq <= 0) continue;
@@ -197,6 +223,10 @@ class CloudWebviewCaptureSession {
         _cookies[k] = v;
       }
     }
+    AppLog.debug(
+        'cloud',
+        'document.cookie 解析 ${_cookies.length} 键: '
+        '${_cookies.keys.take(12).join(',')}');
   }
 
   /// 原生 CookieManager 通道（可读 httpOnly）。getCookies 是 webview_flutter
@@ -234,6 +264,9 @@ class CloudWebviewCaptureSession {
           final cookies = await cookieManager.getCookies(domain: Uri.parse(url))
               as List<WebViewCookie>;
           anyOk = true;
+          AppLog.debug('cloud',
+              '原生 Cookie $url → ${cookies.length} 条: '
+              '${cookies.map((c) => c.name).join(',')}');
           for (final c in cookies) {
             if (c.value.isNotEmpty &&
                 validCookiePair(c.name, c.value) &&
