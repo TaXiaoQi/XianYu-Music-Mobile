@@ -37,6 +37,8 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   bool _finishing = false;
   bool _pageLoaded = false;
   bool _pendingPostLogin = false;
+  // postLoginUrl 落地轮询防重入（主站多页跳转会多次触发 onPageFinished）。
+  bool _postLoginRunning = false;
 
   /// 解锁双指缩放：部分登录页（UC 桌面登录面板、百度 wappass 等）
   /// viewport 声明 user-scalable=no / maximum-scale=1，手机上无法
@@ -77,6 +79,17 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
             _pendingPostLogin = false;
             _postLoginCapture();
             return;
+          }
+          // postLoginUrl 范式：URL 落到主站即启动稳定性轮询收尾——
+          // 登录跳转链中间态的 Cookie 未落定，不能按 URL 命中直接完成。
+          final post = _provider.captureRule?.postLoginUrl;
+          if (post != null) {
+            final postHost = Uri.tryParse(post)?.host ?? '';
+            if (postHost.isNotEmpty &&
+                Uri.tryParse(url)?.host == postHost) {
+              _postLoginCapture();
+              return;
+            }
           }
           _onUrl(url);
         },
@@ -157,32 +170,40 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
         e is CloudException ? e.message : tr('登录信息捕获失败，请重试'),
       );
       setState(() => _finishing = false);
+      // 校验失败后重置捕获完成态：下次手动重试重新采集 Cookie（页面
+      // JS 此期间可能已种齐），避免 watch 用旧快照反复失败。
+      _session.resetCompletion();
       _startWatch();
     }
   }
 
-  /// 手动填 Cookie 兜底：自动捕获拿不到凭据（如鸿蒙端无原生
-  /// getCookies、平台差异导致 Cookie 不可读）时，从浏览器复制
-  /// 已登录 Cookie 粘贴落库。
+  /// 手动填兜底：Cookie 范式填 Cookie；token 范式（阿里）凭据不在
+  /// Cookie 里（refresh_token 存于网页版 localStorage，无接口可换），
+  /// 填 refresh_token 或 tokenInfo JSON。
   Future<void> _manualCookie() async {
     if (_finishing || !mounted) return;
-    final names = _provider.captureRule?.cookieNames ?? const [];
+    final rule = _provider.captureRule;
+    final isTokenKind = rule?.pollScript != null;
+    final names = rule?.cookieNames ?? const [];
     final controller = TextEditingController();
     var raw = '';
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(tr('手动填 Cookie')),
+        title: Text(tr(isTokenKind ? '手动填 Token' : '手动填 Cookie')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              names.isEmpty
-                  ? tr('粘贴已登录账号的 Cookie')
-                  : tr('粘贴已登录账号的 Cookie，需包含 {names}', {
-                      'names': names.join('、'),
-                    }),
+              isTokenKind
+                  ? tr('粘贴网页版的 refresh_token（浏览器 F12 → Application → '
+                      'Local Storage 里找 refresh_token 字段），或完整 tokenInfo JSON')
+                  : (names.isEmpty
+                      ? tr('粘贴已登录账号的 Cookie')
+                      : tr('粘贴已登录账号的 Cookie，需包含 {names}', {
+                          'names': names.join('、'),
+                        })),
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -194,9 +215,9 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
               autofocus: true,
               maxLines: 4,
               onChanged: (v) => raw = v,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                hintText: 'kps=xxx; sign=xxx',
+              decoration: InputDecoration(
+                border: const OutlineInputBorder(),
+                hintText: isTokenKind ? 'refresh_token' : 'kps=xxx; sign=xxx',
               ),
             ),
           ],
@@ -230,6 +251,15 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     // 不显式 dispose：退场动画仍持有引用，立即释放会崩；
     // 短生命周期对象交给 GC，无实际泄漏。
     if (ok != true || !mounted) return;
+    if (isTokenKind) {
+      final token = raw.trim();
+      if (token.isEmpty) {
+        showXianYuToast(context, tr('未识别到 Token'));
+        return;
+      }
+      await _finalizeLogin(CloudCaptureResult(token: token));
+      return;
+    }
     final cookies = parseCookieText(raw);
     AppLog.info(
         'cloud', '手填 Cookie 解析: ${cookies.length} 键 ${cookies.keys.take(8).join(',')}'
@@ -264,15 +294,34 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
     }
   }
 
-  /// postLoginUrl 页面加载完成后的延迟捕获（给页面 JS 留种 Cookie 时间）。
+  /// postLoginUrl 页面加载完成后的延迟捕获。百度登录落地是 3-4 跳服务端
+  /// 重定向，STOKEN 由最终落地页下发——固定 1.5s 会拿到与 BDUSS 不配对
+  /// 的中间态旧值（列目录 errno=-6）。改为轮询读稳定性签名，连续两轮
+  /// 一致（会话落定）再 finalize；轮次用尽也 finalize（completeLogin
+  /// 的主站校验兜底，坏会话会抛错不产生坏账号）。
   Future<void> _postLoginCapture() async {
-    await Future<void>.delayed(const Duration(milliseconds: 1500));
-    if (!mounted || _finishing) return;
-    final done = await _session.forceCapture(_controller);
-    if (done) {
-      _finishLogin();
-    } else if (mounted) {
-      showXianYuToast(context, tr('未捕获到登录信息，请先完成登录'));
+    if (_postLoginRunning || _finishing) return;
+    _postLoginRunning = true;
+    try {
+      var lastSig = '';
+      for (var round = 0; round < 6; round++) {
+        await Future<void>.delayed(
+            Duration(milliseconds: round == 0 ? 3000 : 2500));
+        if (!mounted || _finishing) return;
+        final sig = await _session.cookieSignature(_controller);
+        if (sig.isEmpty) continue;
+        if (sig == lastSig) break;
+        lastSig = sig;
+      }
+      if (!mounted || _finishing) return;
+      final done = await _session.forceCapture(_controller);
+      if (done) {
+        _finishLogin();
+      } else if (mounted) {
+        showXianYuToast(context, tr('未捕获到登录信息，请先完成登录'));
+      }
+    } finally {
+      _postLoginRunning = false;
     }
   }
 
@@ -289,7 +338,9 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
                 pressScale: 0.92,
                 child: TextButton(
                   onPressed: _finishing ? null : _manualCookie,
-                  child: Text(tr('填 Cookie')),
+                  child: Text(tr(_provider.captureRule?.pollScript != null
+                      ? '填 Token'
+                      : '填 Cookie')),
                 ),
               ),
               PressableScale(

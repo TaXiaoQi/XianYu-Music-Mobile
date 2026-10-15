@@ -33,7 +33,9 @@ class QuarkProvider extends QuarkUcBase {
   @override
   CloudCaptureRule? get captureRule => const CloudCaptureRule(
         cookieNames: ['kps', 'sign'],
-        cookieDomains: ['pan.quark.cn'],
+        // kps/sign 的种下域覆盖完整登录链：主站 .quark.cn、裸域、
+        // 登录接口域（pl.quark.cn）——只读 pan.quark.cn 会全空。
+        cookieDomains: ['quark.cn', 'pan.quark.cn', 'pl.quark.cn'],
         // kps/sign 已为 httpOnly，document.cookie 读不到，走原生通道。
         nativeCookies: true,
       );

@@ -1,10 +1,18 @@
-// 百度网盘 provider（webviewCookie：BDUSS/STOKEN）。
+// 百度网盘 provider（双轨凭据）。
+//
+// - OAuth 轨（cred 含 accessToken/refreshToken）：开放平台 xpan API，
+//   access_token 鉴权——登录凭据不受网页风控降权影响（WebView 会话
+//   签发的 BDUSS 被百度服务端系统性拒绝，任何 API 通道 errno=-6）。
+//   access_token 30 天有效，过期用 refresh_token 续（百度刷新会轮换
+//   refresh_token，新凭据经 rotated_cred 带回落盘）。
+//   注意：xpan 无搜索/分享 API，且 filemetas 有应用沙箱（默认仅
+//   /apps/<应用名> 目录）——OAuth 轨 search/parse_share/transfer_share
+//   明确报错，direct_link 依赖全盘权限申请结果。
+// - Cookie 轨（cred 含 BDUSS）：网页 API（手填 Cookie 的账号），
+//   分享列表/转存/搜索全功能保留。
 //
 // 移植自移动端 providers/baidu_provider.dart。关键行为对齐点：
-// - 分享列表/转存接口必须带登录态（BDUSS），parse_share / transfer_share
-//   使用请求自带的 cred；登录类逻辑留在客户端；
-// - parse_share 先 share/verify 换 randsk（BDCLND，无提取码的分享也走一遍，
-//   响应 Set-Cookie 里的 BDCLND 兜底），再以
+// - parse_share 先 share/verify 换 randsk（BDCLND），再以
 //   `Cookie: <登录态>; BDCLND=<urlencoded>` 拉 share/list；
 // - 分享文件 token 存 `<shareid>:<from>`，转存时拆出 from（split(':').last）；
 // - 转存前 ensureDir 建 /apps/弦予音乐（errno 12/-8 = 目录已存在可继续），
@@ -25,14 +33,133 @@ use super::{biz_err, pre_parse_share, require_cred};
 
 const APP_ID: &str = "250528";
 const SAVE_DIR: &str = "/apps/弦予音乐";
+// OAuth 凭据（pan.baidu.com/union 注册，与 Dart 侧 baidu_provider 一致）。
+const OAUTH_CLIENT_ID: &str = "__BAIDU_APPKEY__";
+const OAUTH_CLIENT_SECRET: &str = "__BAIDU_APPSECRET__";
+// 统一移动 UA：百度网页会话与创建环境 UA 绑定——移动端 WebView（安卓
+// UA）种的 Cookie 用桌面 UA 请求会判定会话无效（/disk/main 302 循环、
+// api/list errno=-6）；实测移动 UA 对 WebView 与电脑浏览器种的 Cookie
+// 均兼容，网页通道统一走移动 UA。
 const UA: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    "Mozilla/5.0 (Linux; Android 13; M2102K1C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
+// xpan dlink 下载校验 UA 前缀（开放平台规则：下载请求 UA 须为 netdisk 系）。
+const NETDISK_UA: &str = "netdisk;P2SP;2.2.91.136;android-android;";
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// OAuth 轨判定：cred 带 refreshToken / accessToken 即为 OAuth 凭据。
+fn is_oauth(cred: &Value) -> bool {
+    cred.get("refreshToken")
+        .and_then(Value::as_str)
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+        || cred
+            .get("accessToken")
+            .and_then(Value::as_str)
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+}
+
+/// xpan 业务请求头（UA + access_token 走 query，无需 Cookie）。
+fn oauth_headers() -> Vec<(String, String)> {
+    vec![("User-Agent".into(), UA.into())]
+}
+
+/// 换 access_token：缓存有效直接用；否则用 refresh_token 续新，
+/// 新凭据集交由调用方放进 rotated_cred（百度刷新轮换 refresh_token）。
+async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, String)> {
+    let cached = cred
+        .get("accessToken")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let expire_ms: i64 = cred
+        .get("accessExpireMs")
+        .and_then(Value::as_str)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    if !cached.is_empty() && now_ms() < expire_ms {
+        return Ok((cached, None));
+    }
+    let refresh_token = cred
+        .get("refreshToken")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if refresh_token.is_empty() {
+        return Err(biz_err("登录凭据缺失，请重新绑定"));
+    }
+    let resp = http::post_form(
+        "https://openapi.baidu.com/oauth/2.0/token",
+        &[("User-Agent".into(), UA.into())],
+        vec![
+            ("grant_type".into(), "refresh_token".into()),
+            ("refresh_token".into(), refresh_token.clone()),
+            ("client_id".into(), OAUTH_CLIENT_ID.into()),
+            ("client_secret".into(), OAUTH_CLIENT_SECRET.into()),
+        ],
+    )
+    .await
+    .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err(format!("凭据续期失败(http={})", resp.status)));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let access = j
+        .get("access_token")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if access.is_empty() {
+        // 百度错误响应：{"error":"expired_token","error_description":"..."}
+        let desc = j
+            .get("error_description")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        return Err(biz_err(format!(
+            "登录已过期，请重新绑定{}",
+            if desc.is_empty() {
+                String::new()
+            } else {
+                format!("（{desc}）")
+            }
+        )));
+    }
+    let new_refresh = j
+        .get("refresh_token")
+        .and_then(Value::as_str)
+        .unwrap_or(&refresh_token)
+        .to_string();
+    let expires_in = j.get("expires_in").and_then(Value::as_i64).unwrap_or(2_592_000);
+    let s = |k: &str| {
+        cred.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let new_cred = json!({
+        "refreshToken": new_refresh,
+        "accountId": s("accountId"),
+        "nickname": s("nickname"),
+        "accessToken": access,
+        "accessExpireMs": (now_ms() + expires_in * 1000).to_string(),
+    });
+    Ok((access, Some(new_cred)))
+}
+
+/// xpan 请求 URL 拼接（纯函数，单测断言）：access_token + 业务参数
+/// （method 也走 query，如 xpan_url("file", at, &[("method","list"), ...])）。
+fn xpan_url(path: &str, access: &str, extra: &[(&str, &str)]) -> String {
+    let mut url = format!("https://pan.baidu.com/rest/2.0/xpan/{path}?access_token={access}");
+    for (k, v) in extra {
+        url.push_str(&format!("&{k}={}", http::url_encode(v)));
+    }
+    url
 }
 
 /// `(x ?? '').toString()`：字符串原样、数值/布尔取字面量、其余为空串。
@@ -98,8 +225,22 @@ fn cookie_with_randsk(base: &str, randsk: &str) -> String {
 
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
+    // OAuth 轨：uinfo 探活。
+    if is_oauth(&req.cred) {
+        let (at, rotated) = access_token(&req.cred).await?;
+        let url = xpan_url("nas", &at, &[("method", "uinfo")]);
+        let ok = match http::get(&url, &oauth_headers()).await {
+            Ok(resp) => resp.is_ok(),
+            Err(_) => false,
+        };
+        return Ok(CloudOut {
+            result: json!({ "valid": ok }),
+            rotated_cred: rotated,
+        });
+    }
+    // Cookie 轨：quota 探活。Dart 侧 try/catch 全吞：网络失败/JSON
+    // 异常一律 valid=false。
     let url = "https://pan.baidu.com/api/quota?checkfree=1&checkexpire=1&clienttype=0&app_id=250528&web=1";
-    // Dart 侧 try/catch 全吞：网络失败/JSON 异常一律 valid=false。
     let ok = match http::get(url, &auth_headers(&req.cred)).await {
         Ok(resp) => {
             resp.is_ok()
@@ -113,9 +254,23 @@ async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(json!({ "valid": ok })))
 }
 
+/// xpan file list 条目 → CloudFile（映射纯函数，单测断言）。响应字段
+/// path 即文件全路径（无独立 parent 字段），parentId 一并带 path。
+fn file_from_xpan_item(e: &Value) -> Value {
+    let path = jstr(e.get("path"));
+    file_json(
+        &jstr(e.get("fs_id")),
+        &jstr(e.get("server_filename")),
+        num_i64(e.get("isdir")) == Some(1),
+        num_i64(e.get("size")).unwrap_or(0),
+        Some(&path),
+        Some(&path),
+        None,
+    )
+}
+
 async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
-    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
     let dir = {
         let p = req.param_str("path");
         if p.is_empty() {
@@ -124,6 +279,53 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             p
         }
     };
+    // OAuth 轨：xpan file list，游标为 start 偏移。
+    if is_oauth(&req.cred) {
+        let (at, rotated) = access_token(&req.cred).await?;
+        let start: i64 = req.param_str("cursor").parse().unwrap_or(0);
+        let url = xpan_url(
+            "file",
+            &at,
+            &[
+                ("method", "list"),
+                ("dir", &dir),
+                ("order", "name"),
+                ("desc", "0"),
+                ("limit", "100"),
+                ("start", &start.to_string()),
+                ("web", "1"),
+            ],
+        );
+        let resp = http::get(&url, &oauth_headers()).await.map_err(biz_err)?;
+        if !resp.is_ok() {
+            return Err(biz_err(format!("目录列表请求失败(http={})", resp.status)));
+        }
+        let j = resp.json().map_err(biz_err)?;
+        let errno = num_i64(j.get("errno")).unwrap_or(-1);
+        if errno != 0 {
+            let msg = if errno == -7 {
+                "目录不存在"
+            } else if errno == 2 {
+                "参数错误（应用可能无全盘权限，文件需在应用沙箱目录内）"
+            } else {
+                "目录列表请求失败"
+            };
+            return Err(biz_err(format!("{msg}(errno={errno})")));
+        }
+        let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+        let files: Vec<Value> = list.iter().map(file_from_xpan_item).collect();
+        let next_cursor = if files.len() >= 100 {
+            Some((start + 100).to_string())
+        } else {
+            None
+        };
+        return Ok(CloudOut {
+            result: list_result_json(files, next_cursor),
+            rotated_cred: rotated,
+        });
+    }
+    // Cookie 轨：网页 /api/list，游标为页码。
+    let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
     let url = format!(
         "https://pan.baidu.com/api/list?clienttype=0&app_id={APP_ID}&web=1&order=name&desc=0&dir={}&limit=100&page={page}",
         http::url_encode(&dir)
@@ -188,6 +390,10 @@ fn file_from_search_item(e: &Value) -> Value {
 /// （nextCursor 恒空），返回结构与 list_dir 同构（list_result_json）。
 async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
+    // xpan 无全盘搜索 API，OAuth 轨明确降级提示。
+    if is_oauth(&req.cred) {
+        return Err(biz_err("OAuth 账号暂不支持全盘搜索（百度开放平台未提供接口）"));
+    }
     let keyword = req.param_str("keyword");
     if keyword.is_empty() {
         return Err(biz_err("缺少搜索关键词"));
@@ -208,6 +414,10 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 }
 
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    // 分享接口仅网页 API（Cookie 登录态），OAuth 轨明确提示。
+    if is_oauth(&req.cred) {
+        return Err(biz_err("分享解析需 Cookie 登录态：请用「填 Cookie」绑定的账号，或转存到网盘后播放"));
+    }
     let info = pre_parse_share(req, "baidu")?;
     // Dart：info?.shareId ?? url。
     let surl = if info.share_id.is_empty() {
@@ -335,6 +545,10 @@ async fn ensure_dir(cred: &Value) -> Result<String, (i32, String)> {
 
 async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
+    // 分享接口仅网页 API（Cookie 登录态），OAuth 轨明确提示。
+    if is_oauth(&req.cred) {
+        return Err(biz_err("分享转存需 Cookie 登录态：请用「填 Cookie」绑定的账号"));
+    }
     let share = req.param_obj("share");
     let files_in = share
         .get("files")
@@ -493,10 +707,66 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let name = jstr(file.get("name"));
     let size = num_i64(file.get("size")).unwrap_or(0);
 
-    // 网页下载接口（POST fidlist + bdstoken）：BDUSS 全盘有效。开放平台
-    // xpan filemetas 有应用沙箱——只能拿本应用 /apps 目录内文件的 dlink，
-    // 文件在「来自：其他app」目录时必失败，弃用。bdstoken 缺失时接口
-    // 返回 errno=-6。
+    // OAuth 轨：xpan filemetas dlink（应用沙箱——文件不在应用可访问
+    // 目录时接口报错，文案提示全盘权限）。
+    if is_oauth(&req.cred) {
+        let (at, rotated) = access_token(&req.cred).await?;
+        let url = xpan_url(
+            "file",
+            &at,
+            &[
+                ("method", "filemetas"),
+                ("dlink", "1"),
+                ("fsids", &format!("[{id}]")),
+            ],
+        );
+        let resp = http::get(&url, &oauth_headers()).await.map_err(biz_err)?;
+        if !resp.is_ok() {
+            return Err(biz_err(format!("直链获取失败(http={})", resp.status)));
+        }
+        let j = resp.json().map_err(biz_err)?;
+        let errno = num_i64(j.get("errno")).unwrap_or(-1);
+        if errno != 0 {
+            let msg = if errno == 12 || errno == 2 {
+                "文件不在应用可访问范围内（开放平台沙箱限制，需申请全盘权限；可先转存到 /apps 目录）"
+            } else {
+                "直链获取失败"
+            };
+            return Err(biz_err(format!("{msg}(errno={errno})")));
+        }
+        let dlink = j
+            .get("list")
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+            .and_then(|d| d.get("dlink"))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if dlink.is_empty() {
+            return Err(biz_err("直链获取失败"));
+        }
+        // dlink 下载校验 UA 为 netdisk 系；302 跟随同 UA。
+        let nd_headers = vec![("User-Agent".to_string(), NETDISK_UA.to_string())];
+        let dlink = resolve_final_url(&dlink, &nd_headers).await;
+        if is_rate_limited(&host_of(&dlink)) {
+            return Err(biz_err("该文件被限速，暂无法播放"));
+        }
+        return Ok(CloudOut {
+            result: direct_link_json(
+                &dlink,
+                json!({ "User-Agent": NETDISK_UA }),
+                Some(&name),
+                Some(size),
+                Some(now_ms() + 8 * 3600 * 1000),
+            ),
+            rotated_cred: rotated,
+        });
+    }
+
+    // Cookie 轨：网页下载接口（POST fidlist + bdstoken）：BDUSS 全盘
+    // 有效。开放平台 xpan filemetas 有应用沙箱——只能拿本应用 /apps
+    // 目录内文件的 dlink，文件在「来自：其他app」目录时必失败，弃用。
+    // bdstoken 缺失时接口返回 errno=-6。
     let token = bdstoken(&req.cred).await;
     let resp = http::post_form(
         &format!(
@@ -572,6 +842,44 @@ mod tests {
         assert!(h[0].1.contains("Chrome/120.0.0.0"));
         assert_eq!(h[1].1, "https://pan.baidu.com/disk/main");
         assert_eq!(h[2].1, "BDUSS=abc; STOKEN=def");
+    }
+
+    #[test]
+    fn oauth_track_detection() {
+        assert!(is_oauth(&json!({ "refreshToken": "r", "accessToken": "a" })));
+        assert!(is_oauth(&json!({ "accessToken": "a" })));
+        assert!(!is_oauth(&json!({ "BDUSS": "b" })));
+        assert!(!is_oauth(&json!({ "refreshToken": "" })));
+        assert!(!is_oauth(&json!({})));
+    }
+
+    #[test]
+    fn xpan_url_shape() {
+        assert_eq!(
+            xpan_url("file", "AT", &[("method", "list"), ("dir", "/")]),
+            "https://pan.baidu.com/rest/2.0/xpan/file?access_token=AT&method=list&dir=%2F"
+        );
+        assert_eq!(
+            xpan_url("nas", "AT", &[("method", "uinfo")]),
+            "https://pan.baidu.com/rest/2.0/xpan/nas?access_token=AT&method=uinfo"
+        );
+    }
+
+    #[test]
+    fn xpan_item_maps_fields() {
+        let e = json!({
+            "fs_id": 123,
+            "server_filename": "a.flac",
+            "isdir": 0,
+            "size": 4096,
+            "path": "/music/a.flac",
+        });
+        let f = file_from_xpan_item(&e);
+        assert_eq!(f["id"], "123");
+        assert_eq!(f["name"], "a.flac");
+        assert_eq!(f["path"], "/music/a.flac");
+        assert_eq!(f["parentId"], "/music/a.flac");
+        assert_eq!(f["isDir"], false);
     }
 
     #[test]

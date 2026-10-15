@@ -105,10 +105,19 @@ pub async fn request(
         req = req.header(k.as_str(), v.as_str());
     }
     if let Some(b) = body {
+        // 调用方已显式带 Content-Type 时不再注入——reqwest 对同名头
+        // 逗号合并（application/json,application/json），阿里等严格
+        // 校验 mime 的接口直接 400 InvalidContentType。
+        let has_ct = headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
         req = match b {
-            Body::Json(v) => req
-                .header("content-type", "application/json")
-                .body(v.to_string()),
+            Body::Json(v) => {
+                if !has_ct {
+                    req = req.header("content-type", "application/json");
+                }
+                req.body(v.to_string())
+            }
             Body::Form(pairs) => {
                 let encoded: Vec<String> = pairs
                     .iter()
@@ -120,8 +129,11 @@ pub async fn request(
                         )
                     })
                     .collect();
-                req.header("content-type", "application/x-www-form-urlencoded")
-                    .body(encoded.join("&"))
+                if !has_ct {
+                    req = req
+                        .header("content-type", "application/x-www-form-urlencoded");
+                }
+                req.body(encoded.join("&"))
             }
             Body::Raw(s) => req.body(s.clone()),
         };

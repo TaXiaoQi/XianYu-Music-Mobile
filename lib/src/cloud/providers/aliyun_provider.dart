@@ -142,7 +142,7 @@ window.addEventListener('message', function (e) {
 
   @override
   Future<CloudAccount> completeLogin(CloudCaptureResult captured) async {
-    final raw = captured.token;
+    var raw = captured.token;
     if (raw == null || raw.isEmpty) {
       throw const CloudException('未捕获到登录凭据，请重新登录');
     }
@@ -150,7 +150,28 @@ window.addEventListener('message', function (e) {
     try {
       parsed = jsonDecode(raw) as Map<String, dynamic>;
     } catch (_) {
-      throw const CloudException('登录凭据解析失败，请重新登录');
+      // 平台通道偶发返回转义形态（{\"rt\":...}）：包回引号整体解码还原
+      // 一层再试。
+      Map<String, dynamic>? retry;
+      if (raw.contains(r'\"')) {
+        try {
+          final dec = jsonDecode('"$raw"');
+          if (dec is String) {
+            retry = jsonDecode(dec) as Map<String, dynamic>;
+          }
+        } catch (_) {}
+      }
+      if (retry != null) {
+        parsed = retry;
+      } else {
+        // 手填裸 refresh_token（非 JSON）直接当 rt 用。
+        final bare = raw.trim();
+        if (bare.isNotEmpty && !bare.contains('{')) {
+          parsed = {'rt': bare};
+        } else {
+          throw const CloudException('登录凭据解析失败，请重新登录');
+        }
+      }
     }
     // 新通道：官方 callback postMessage 的 tokenInfo（/token/get 响应，
     // 字段在顶层，data 里可能有包裹）；旧通道：pollScript 打包的

@@ -1,10 +1,16 @@
-// 百度网盘 provider（webviewCookie：WebView 打开网页登录页，输账密/
-// 短信验证码；BDUSS 为 httpOnly，凭捕获规则的原生 CookieManager 通道
-// 读取，平台无 getCookies 时回退 document.cookie——BDUSS 场景即失效）。
+// 百度网盘 provider（webviewToken：WebView 打开开放平台 OAuth 授权页，
+// 登录授权后重定向到 redirect_uri（URL 带 code），pollScript 读
+// location.href 抽取 code，completeLogin 用 code 换 access_token/
+// refresh_token。OAuth 通道绕开网页 Cookie 风控（WebView 会话签发的
+// BDUSS 被百度服务端降权，任何 API 通道 errno=-6，实测全灭）。
 //
-// 注意：分享列表/转存接口必须带登录态（BDUSS），故 parseShareLink 内
-// 直接读本地绑定凭据；业务一律经 cloud_remote 桥转发内嵌 Rust。
+// 手填通道语义随 pollScript 变为「填 Token」：可粘贴 refresh_token
+// （或完整 token JSON），供从电脑端搬运凭据。
+// 分享解析/转存走网页 API（需 Cookie 登录态），rust 侧按凭据形态双轨。
 
+import 'dart:convert';
+
+import '../../core/application_logger.dart';
 import '../cloud_credentials_store.dart';
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
@@ -15,9 +21,20 @@ import 'http_login_support.dart';
 class BaiduProvider extends CloudProvider {
   const BaiduProvider();
 
+  // 开放平台 OAuth（pan.baidu.com/union 注册的应用）。
+  // redirect_uri 无需真实可达——授权完成后 WebView 重定向到
+  // `<redirect_uri>?code=xxx`，页面 404 无妨，URL 已带 code，
+  // pollScript 从 location.href 抽取。
+  static const _clientId = '__BAIDU_APPKEY__';
+  static const _clientSecret = '__BAIDU_APPSECRET__';
+  static const _redirectUri = 'https://xianyu-music.github.io/oauth/baidu';
+
+  // 统一移动 UA：网页 Cookie 轨（分享/转存）的会话与创建环境 UA 绑定
+  // ——WebView（安卓 UA）种的 Cookie 用桌面 UA 请求会判定会话无效；
+  // 实测移动 UA 对 WebView 与电脑浏览器种的 Cookie 均兼容。
   static const _ua =
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+      'Mozilla/5.0 (Linux; Android 13; M2102K1C) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
   Map<String, String> get _webHeaders => {
         'User-Agent': _ua,
@@ -34,73 +51,131 @@ class BaiduProvider extends CloudProvider {
   String get rootPath => '/';
 
   @override
-  CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
+  CloudLoginKind get loginKind => CloudLoginKind.webviewToken;
 
-  // wappass = 百度移动端统一登录页（百度系 App 内嵌 WebView 同款），
-  // 全屏账密/短信表单。pan.baidu.com/login 旧 SPA 在手机上默认落
-  // 「扫码登录」tab（passLoginType 强制 qrcode），无法在手机上自扫，
-  // 弃用；保持移动 UA（wappass 本身就是移动页）。
   @override
   String get webviewLoginUrl =>
-      'https://wappass.baidu.com/passport/?login&tpl=netdisk'
-      '&u=https%3A%2F%2Fpan.baidu.com%2F';
+      'https://openapi.baidu.com/oauth/2.0/authorize'
+      '?response_type=code'
+      '&client_id=$_clientId'
+      '&redirect_uri=${Uri.encodeQueryComponent(_redirectUri)}'
+      '&scope=basic,netdisk&display=mobile';
 
   @override
-  CloudCaptureRule? get captureRule => CloudCaptureRule(
-        // 收域内全量 Cookie（BDUSS/STOKEN 均 httpOnly 走原生通道；网页
-        // 接口风控校验完整浏览器 Cookie 指纹，只带 BDUSS+STOKEN 会
-        // errno=-6——手填时代粘贴整串 Cookie 能用正说明这点）。
-        cookieDomains: ['baidu.com', 'pan.baidu.com'],
-        doneUrlPattern: RegExp(r'pan\.baidu\.com/(?!login)'),
-        nativeCookies: true,
-        // ndut_fmt/PANPSC 等风控指纹由主站页 JS 种下，登录页直接捕获
-        // 会缺键（errno=-6）——手动完成前先跳主站让页面种齐。
-        postLoginUrl: 'https://pan.baidu.com/disk/main',
+  CloudCaptureRule? get captureRule => const CloudCaptureRule(
+        // 轮询 location.href 抽 code；兜底抓页面里渲染的 access_token
+        // （部分授权形态直出 token，带 at: 前缀与 code 区分）。
+        pollScript: '''
+(() => {
+  try {
+    var m = location.href.match(/[?&#]code=([0-9a-zA-Z._-]{10,})/);
+    if (m) return m[1];
+    var t = document.documentElement.innerHTML
+      .match(/access_token[=:&"'\\s]+([0-9a-zA-Z._-]{24,})/);
+    if (t) return 'at:' + t[1];
+  } catch (e) {}
+  return "";
+})()''',
+        pollIntervalMs: 500,
       );
 
   @override
   Duration get directLinkTtl => const Duration(hours: 8);
 
-  // ── 登录（WebView 捕获 Cookie）────────────────────────
+  // ── 登录（OAuth code 换 token）────────────────────────
 
   @override
   Future<CloudAccount> completeLogin(CloudCaptureResult captured) async {
-    final cookies = captured.cookies;
-    final bduss = cookies['BDUSS'] ?? '';
-    if (bduss.isEmpty) {
-      throw const CloudException('未捕获到登录凭据，请重试');
+    var raw = captured.token ?? '';
+    if (raw.isEmpty) {
+      throw const CloudException('未捕获到授权凭据，请重试');
     }
-    var nickname = displayName;
-    var accountId = md5Hex(bduss).substring(0, 12);
+    // 手填兼容：完整 token JSON 直接解析；裸串当 refresh_token。
+    Map<String, dynamic>? parsed;
     try {
-      final resp = await cloudGet(
-        'https://pan.baidu.com/api/user/getinfo?ref=client&clienttype=0&web=1',
-        headers: {..._webHeaders, 'Cookie': cookieHeader(cookies)},
-      );
-      if (resp.isOk) {
-        final info = resp.json['user_info'] ?? resp.json['data'];
-        if (info is Map<String, dynamic>) {
-          final name = (info['username'] ?? info['user_name'] ?? '').toString();
-          if (name.isNotEmpty) nickname = name;
-          // 账号标识用百度 uid：BDUSS 每次网页登录都会轮换，指纹当
-          // accountId 会把同一账号的重复登录当成新账号（绑出多条）。
-          final uid = (info['id'] ?? info['user_id'] ?? info['baidu_id'])
-              ?.toString();
-          if (uid != null && uid.isNotEmpty && uid != '0') accountId = uid;
-        }
-      }
-    } catch (_) {
-      // 拿不到昵称就用显示名兜底。
+      final dec = jsonDecode(raw);
+      if (dec is Map<String, dynamic>) parsed = dec;
+    } catch (_) {}
+    String? accessToken = parsed?['access_token']?.toString();
+    String? refreshToken = parsed?['refresh_token']?.toString();
+    String code = '';
+    if (raw.startsWith('at:')) {
+      accessToken ??= raw.substring(3);
+    } else if (accessToken == null && refreshToken == null) {
+      code = raw.trim();
     }
+
+    // code 换 token（或裸 refresh_token 换新 token）。
+    if (accessToken == null || accessToken.isEmpty) {
+      final body = code.isNotEmpty
+          ? {
+              'grant_type': 'authorization_code',
+              'code': code,
+              'client_id': _clientId,
+              'client_secret': _clientSecret,
+              'redirect_uri': _redirectUri,
+            }
+          : {
+              'grant_type': 'refresh_token',
+              'refresh_token': refreshToken ?? raw.trim(),
+              'client_id': _clientId,
+              'client_secret': _clientSecret,
+            };
+      final CloudHttpResponse resp;
+      try {
+        resp = await cloudPostForm(
+          'https://openapi.baidu.com/oauth/2.0/token',
+          body,
+          headers: const {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+        );
+      } catch (e) {
+        AppLog.warn('cloud', '百度OAuth换token请求异常: $e');
+        throw const CloudException('授权凭据交换失败，请重试');
+      }
+      Map<String, dynamic>? j;
+      try {
+        final dec = jsonDecode(resp.body);
+        if (dec is Map<String, dynamic>) j = dec;
+      } catch (_) {}
+      if (j == null || j['access_token'] == null) {
+        AppLog.warn('cloud',
+            '百度OAuth换token失败 status=${resp.status} body=${resp.body.length > 200 ? resp.body.substring(0, 200) : resp.body}');
+        throw const CloudException('授权凭据无效或已过期，请重新登录');
+      }
+      accessToken = j['access_token'].toString();
+      refreshToken = (j['refresh_token'] ?? refreshToken)?.toString();
+    }
+
+    // uinfo：昵称 + 百度数字 uid（账号标识；refresh_token 每次授权
+    // 会轮换，不能当 accountId）。
+    String uid = '', nickname = '';
+    try {
+      final info = await cloudGet(
+        'https://pan.baidu.com/rest/2.0/xpan/nas?method=uinfo'
+        '&access_token=${Uri.encodeQueryComponent(accessToken)}',
+        headers: _webHeaders,
+      );
+      final j = jsonDecode(info.body);
+      if (j is Map<String, dynamic>) {
+        uid = (j['baidu_id'] ?? j['uk'] ?? '').toString();
+        nickname = (j['netdisk_name'] ?? j['name'] ?? '').toString();
+      }
+    } catch (e) {
+      AppLog.warn('cloud', '百度uinfo获取异常: $e');
+    }
+    final expiresAt =
+        DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch;
     return CloudAccount(
       provider: id,
-      accountId: accountId,
-      nickname: nickname,
-      // 全量保留捕获到的 Cookie（BDUSS/STOKEN/PANWEB/BAIDUID 等）——
-      // 网页接口风控校验完整指纹，逐键白名单会 errno=-6。
+      accountId: uid.isNotEmpty ? uid : md5Hex(accessToken).substring(0, 12),
+      nickname: nickname.isNotEmpty ? nickname : displayName,
       cred: {
-        for (final e in cookies.entries)
-          if (e.value.isNotEmpty) e.key: e.value,
+        'accessToken': accessToken,
+        if (refreshToken != null && refreshToken.isNotEmpty)
+          'refreshToken': refreshToken,
+        'accessExpireMs': expiresAt.toString(),
       },
       boundAt: DateTime.now(),
     );

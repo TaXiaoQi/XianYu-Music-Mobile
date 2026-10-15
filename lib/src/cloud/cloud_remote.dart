@@ -12,6 +12,7 @@
 import 'dart:convert';
 
 import '../rust/api.dart' as rust;
+import '../core/application_logger.dart';
 import 'cloud_credentials_store.dart';
 import 'cloud_types.dart';
 
@@ -26,6 +27,8 @@ Future<void> _applyRotatedCred(
   final rotated = data['rotated_cred'];
   if (rotated is! Map<String, dynamic> || rotated.isEmpty) return;
   final accountId = cred['accountId'] ?? '';
+  AppLog.info('cloud',
+      '凭据轮换回写 provider=$provider accountId=$accountId rotatedKeys=${rotated.keys.toList()}');
   if (accountId.isEmpty || accountId == '_') return;
   await CloudCredentialsStore.instance
       .updateCred(provider, accountId, rotated.map((k, v) => MapEntry(k, v.toString())));

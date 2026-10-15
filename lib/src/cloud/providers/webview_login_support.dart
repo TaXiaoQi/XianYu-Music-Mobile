@@ -92,15 +92,21 @@ class CloudWebviewCaptureSession {
     }
     final doneHit = rule.doneUrlPattern?.hasMatch(url) ?? false;
     await _readCookies(controller);
-    // 声明 doneUrlPattern 时只在命中页采集完成（登录前落域名页不算）；
-    // 未声明时 Cookie 齐了即算完成；manualDoneOnly 一律等用户手动确认。
-    if (_cookiesReady &&
-        !rule.manualDoneOnly &&
+    // postLoginUrl 范式（百度）：登录落地是 3-4 跳服务端重定向，STOKEN
+    // 由最终落地页下发——URL 命中不代表会话落定，禁止在此自动完成，
+    // 由 postLoginUrl 补跳后的稳定性轮询或用户手动确认收尾。
+    if (!rule.manualDoneOnly &&
+        rule.postLoginUrl == null &&
+        _cookiesReady &&
         (doneHit || rule.doneUrlPattern == null)) {
       _completed = true;
     }
     return _completed;
   }
+
+  /// completeLogin 校验失败后重置完成态：下次 forceCapture 重新采集
+  /// （页面 JS 此期间可能已种齐 Cookie），避免用旧快照反复失败。
+  void resetCompletion() => _completed = false;
 
   /// 用户手动点「我已登录」强制采集一次（doneUrlPattern 未命中时的兜底）。
   Future<bool> forceCapture(WebViewController controller) async {
@@ -112,6 +118,18 @@ class CloudWebviewCaptureSession {
     }
     if (_cookiesReady) _completed = true;
     return _completed;
+  }
+
+  /// 只读不判定完成：返回当前 Cookie 稳定性签名（键数|STOKEN|BDUSS 尾 4），
+  /// 空串 = 还没读到有效 Cookie。登录落地轮询用——百度落地是 3-4 跳
+  /// 服务端重定向，STOKEN 由最终落地页下发，过早捕获会拿到与 BDUSS
+  /// 不配对的中间态值（列目录 errno=-6）。
+  Future<String> cookieSignature(WebViewController controller) async {
+    await _readCookies(controller);
+    final bd = _cookies['BDUSS'] ?? '';
+    if (bd.isEmpty) return '';
+    return '${_cookies.length}|${_cookies['STOKEN'] ?? ''}|'
+        '${bd.substring(bd.length - 4)}';
   }
 
   void startPolling(WebViewController controller) {
@@ -206,6 +224,11 @@ class CloudWebviewCaptureSession {
     try {
       final dynamic cookieManager = WebViewCookieManager();
       var anyOk = false;
+      // 原生通道单轮即全量快照：以本轮结果整体覆盖累积缓冲。登录跳转
+      // 链中服务端会清键（PANPSC 置过期删除）与轮换（STOKEN），累积
+      // 残留会把中间态旧值混进最终凭据（百度列目录 errno=-6 的根因：
+      // 捕获到与 BDUSS 不配对的旧 STOKEN）。
+      final snapshot = <String, String>{};
       for (final url in urls) {
         try {
           final cookies = await cookieManager.getCookies(domain: Uri.parse(url))
@@ -216,12 +239,17 @@ class CloudWebviewCaptureSession {
                 validCookiePair(c.name, c.value) &&
                 (rule.cookieNames.isEmpty ||
                     rule.cookieNames.contains(c.name))) {
-              _cookies[c.name] = c.value;
+              snapshot[c.name] = c.value;
             }
           }
         } catch (e) {
           AppLog.warn('cloud', '原生 Cookie 读取失败 $url: $e');
         }
+      }
+      if (snapshot.isNotEmpty) {
+        _cookies
+          ..clear()
+          ..addAll(snapshot);
       }
       if (!anyOk) return false;
       AppLog.debug('cloud', '原生 Cookie 通道读到: ${_cookies.keys.join(',')}');
@@ -238,18 +266,17 @@ class CloudWebviewCaptureSession {
       final r = await controller.runJavaScriptReturningResult(expr);
       var s = r.toString();
       // Android evaluateJavascript 返回 JSON 文本：字符串值带引号且内部
-      // 引号转义为 \"（如 JSON.stringify 的 tokenInfo）。剥外层引号后
-      // 还需反转义一层，否则 jsonDecode 必失败。
+      // 引号转义为 \"（如 JSON.stringify 的 tokenInfo）。此时整体仍是
+      // 合法 JSON 字符串字面量——先整体 jsonDecode（同时完成剥引号与
+      // 反转义）；先手工剥引号再 decode 剩余部分会因 \" 非法而必失败。
       if (s.length >= 2 &&
           ((s.startsWith('"') && s.endsWith('"')) ||
               (s.startsWith("'") && s.endsWith("'")))) {
-        s = s.substring(1, s.length - 1);
-      }
-      if (s.contains(r'\"')) {
         try {
           final dec = jsonDecode(s);
-          if (dec is String) s = dec;
+          if (dec is String) return dec;
         } catch (_) {}
+        s = s.substring(1, s.length - 1);
       }
       return s;
     } catch (_) {

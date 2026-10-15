@@ -233,31 +233,19 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
     CloudAccount a,
     ColorScheme scheme,
   ) {
+    // 账号行只显示云盘昵称（无昵称才退 accountId 那串标识）——
+    // accountId 是内部凭据标识，对用户无意义。
+    final title = a.nickname.isEmpty ? a.accountId : a.nickname;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
       child: Row(
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  a.nickname.isEmpty ? a.accountId : a.nickname,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  a.accountId,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                  ),
-                ),
-              ],
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14),
             ),
           ),
           const SizedBox(width: 8),

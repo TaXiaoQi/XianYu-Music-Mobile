@@ -123,8 +123,9 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
         _cursor = null;
       }
     });
+    Map<String, String> cred = const {};
     try {
-      final cred = await _cred();
+      cred = await _cred();
       final r = await _provider.listDir(cred, path, cursor: more ? _cursor : null);
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
       setState(() {
@@ -135,8 +136,12 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
       });
     } catch (e) {
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
+      final credKeys = cred.keys.toList();
+      final rtHead = (cred['refreshToken'] ?? '').toString();
       AppLog.warn(
-          'cloud', '列目录失败 path=$path: ${e is CloudException ? e.message : e}');
+          'cloud',
+          '列目录失败 path=$path: ${e is CloudException ? e.message : e}'
+          ' | credKeys=$credKeys rtLen=${rtHead.length} rtHead=${rtHead.length > 8 ? rtHead.substring(0, 8) : rtHead}');
       setState(() {
         _loading = false;
         _appending = false;
