@@ -1,7 +1,18 @@
-// 移动云盘（139）provider（webviewCookie：登录页 Cookie 全收）。
+// 移动云盘（139）provider（webviewCookie + pollScript：页面内轮询
+// authorization 凭据自动完成登录）。
+//
+// 网页版 SPA 登录成功后：① 写 authorization Cookie（enCodeToken =
+// "Basic " + btoa("pc:账号:token")）；② Vuex MCloudVM.$store.state.auth
+// 维护 accountPhone/token。pollScript 双路取值（Cookie 为主、MCloudVM
+// 兜底）并严格校验 token ≥4 段 '|'，命中即自动完成——登录前后 URL 同为
+// SPA 首页，无法按 URL 判定，manualDoneOnly 保留挡住「有 Cookie 就算
+// 登录」的早采。业务凭据：authorization（裸 base64，无 "Basic " 前缀）
+// + cookie（旧转存接口可选留档）。
 //
 // 分享走 outLink 免转存直链（directPlayable=true）；业务经 cloud_remote
 // 桥转发内嵌 Rust（rust/src/cloud/mobile139.rs）。
+
+import 'dart:convert';
 
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
@@ -19,7 +30,8 @@ class Mobile139Provider extends CloudProvider {
   String get displayName => '移动云盘';
 
   @override
-  String get rootPath => 'root';
+  // hcy 根目录约定为 "/"（SPA 同款；传 "root" 实测回空列表）。
+  String get rootPath => '/';
 
   @override
   CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
@@ -36,12 +48,44 @@ class Mobile139Provider extends CloudProvider {
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
-        // 全收（cookieNames 空 = 非空即采）。登录前后 URL 同为
-        // yun.139.com SPA 首页，无法按 URL 判定完成，等用户点
-        // 「我已登录完成」手动收 Cookie；原生通道读 httpOnly 登录态。
+        // 全收（cookieNames 空 = 非空即采）留档旧转存接口；完成判定全权
+        // 交给 pollScript（authorization Cookie 或 MCloudVM auth 状态）。
         cookieDomains: ['yun.139.com'],
         nativeCookies: true,
         manualDoneOnly: true,
+        pollScript: r'''
+(() => {
+  try {
+    var m = document.cookie.match(/(?:^|;\s*)authorization=([^;]*)/);
+    if (m) {
+      var v = String(m[1]);
+      if (v.indexOf('Basic ') !== 0) {
+        try { v = decodeURIComponent(v); } catch (e0) {}
+      }
+      if (okBasic(v)) return JSON.stringify({ auth: v });
+    }
+    var vm = window.MCloudVM;
+    if (vm && vm.$store) {
+      var a = vm.$store.state.auth || {};
+      var ph = String(a.accountPhone || '');
+      var tk = String(a.token || '');
+      if (ph && tk && tk.split('|').length >= 4) {
+        var b = 'Basic ' + btoa('pc:' + ph + ':' + tk);
+        if (okBasic(b)) return JSON.stringify({ auth: b });
+      }
+    }
+    return "";
+  } catch (e) { return ""; }
+  function okBasic(v) {
+    if (!v || v.indexOf('Basic ') !== 0) return false;
+    try {
+      var dec = atob(v.substring(6));
+      var seg = dec.split(':');
+      return dec.indexOf('pc:') === 0 && seg.length >= 3 &&
+             seg[2].split('|').length >= 4;
+    } catch (e) { return false; }
+  }
+})()''',
         pollIntervalMs: 500,
       );
 
@@ -49,17 +93,67 @@ class Mobile139Provider extends CloudProvider {
 
   @override
   Future<CloudAccount> completeLogin(CloudCaptureResult captured) async {
-    final cookie = cookieHeader(captured.cookies);
-    if (cookie.isEmpty) {
+    var auth = '';
+    final raw = captured.token ?? '';
+    if (raw.isNotEmpty) {
+      final parsed = _parseAuthJson(raw);
+      auth = (parsed?['auth'] ?? '').toString();
+    }
+    // 兜底：pollScript 未命中的平台差异下，原生 Cookie 通道可能已拿到
+    // authorization（值可能经 escape/encodeURIComponent 转义）。
+    if (!_validBasic(auth)) {
+      final c = captured.cookies['authorization'] ?? '';
+      final dec = c.isEmpty ? '' : Uri.decodeFull(c);
+      auth = _validBasic(c) ? c : (_validBasic(dec) ? dec : '');
+    }
+    if (!_validBasic(auth)) {
       throw const CloudException('未捕获到登录凭据，请重新登录');
     }
+    final authorization = auth.substring(6);
+    final cookie = cookieHeader(captured.cookies);
     return CloudAccount(
       provider: id,
-      accountId: md5Hex(cookie).substring(0, 12),
+      accountId: md5Hex(authorization).substring(0, 12),
       nickname: '移动云盘',
-      cred: {'cookie': cookie},
+      cred: {
+        'authorization': authorization,
+        if (cookie.isNotEmpty) 'cookie': cookie,
+      },
       boundAt: DateTime.now(),
     );
+  }
+
+  /// pollScript 产出解析；平台通道偶发返回转义形态（{\"auth\":...}）：
+  /// 包回引号整体解码还原（对齐 thunder）。
+  Map<String, dynamic>? _parseAuthJson(String raw) {
+    try {
+      final j = jsonDecode(raw);
+      if (j is Map<String, dynamic>) return j;
+    } catch (_) {}
+    if (raw.contains(r'\"')) {
+      try {
+        final dec = jsonDecode('"$raw"');
+        if (dec is String) {
+          final j = jsonDecode(dec);
+          if (j is Map<String, dynamic>) return j;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /// "Basic " + base64("pc:账号:token") 且 token ≥4 段 '|'（与 pollScript
+  /// 校验同口径）。
+  bool _validBasic(String v) {
+    if (!v.startsWith('Basic ')) return false;
+    try {
+      final dec = utf8.decode(base64Decode(v.substring(6)));
+      if (!dec.startsWith('pc:')) return false;
+      final seg = dec.split(':');
+      return seg.length >= 3 && seg[2].split('|').length >= 4;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ── 业务（rust 桥转发）─────────────────────────────────
