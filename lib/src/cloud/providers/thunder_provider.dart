@@ -17,6 +17,7 @@
 
 import 'dart:convert';
 
+import '../../core/application_logger.dart';
 import '../cloud_provider.dart';
 import '../cloud_remote.dart';
 import '../cloud_types.dart';
@@ -63,25 +64,47 @@ class ThunderProvider extends CloudProvider {
     try { dev = String(window.localStorage.getItem('deviceid') || ''); } catch (e2) {}
     var nick = String(o.user_name || o.nick_name || '');
     if (!nick) {
-      // 网页版 credentials 无昵称字段（实测仅 token/user_id），兜底读
-      // 用户特权 token（每次登录必有）：base64(JWT)，payload.username
-      // 即迅雷账号用户名。
+      // 网页版 credentials 无昵称字段，用户特权 token 的 JWT payload 亦
+      // 无用户名（实测仅 UID/vip 等）——本地无昵称数据，兜底在页面上下文
+      // 内带最新 access_token + captcha token 同步调认证域用户信息接口，
+      // 失败不阻断捕获（回退盘名）。
       try {
-        var up = JSON.parse(window.localStorage.getItem('USER_PRIVILEGE_USER_SECURITY_TOKEN_expiration') || 'null');
-        var tok = up && up.user_security_token ? String(up.user_security_token) : '';
-        if (tok) {
-          var pl = window.atob(tok).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-          var u = JSON.parse(window.atob(pl)).username;
-          if (u) nick = String(u);
+        var at = String(o.access_token || '');
+        var cap = '';
+        try {
+          var ck = JSON.parse(window.localStorage.getItem('captcha_$_clientId') || 'null');
+          cap = ck && ck.token ? String(ck.token) : '';
+        } catch (e4) {}
+        if (at) {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', 'https://xluser-ssl.xunlei.com/v1/user/me?client_id=$_clientId', false);
+          xhr.setRequestHeader('Accept', 'application/json;charset=UTF-8');
+          xhr.setRequestHeader('x-client-id', '$_clientId');
+          xhr.setRequestHeader('x-client-version', '1.93.10');
+          if (dev) { xhr.setRequestHeader('x-device-id', dev.substring(0, 32)); }
+          if (cap) { xhr.setRequestHeader('X-Captcha-Token', cap); }
+          xhr.setRequestHeader('Authorization', 'Bearer ' + at);
+          xhr.send(null);
+          var dbg = 'status=' + xhr.status;
+          if (xhr.status === 200) {
+            var u = JSON.parse(xhr.responseText);
+            var n = String(u.username || u.nick_name || u.nickname ||
+              (u.User && u.User.username) || '');
+            if (n) nick = n;
+          } else { dbg += ' body=' + String(xhr.responseText || '').substring(0, 160); }
+          window.localStorage.setItem('__xysdk_nick_dbg', dbg);
         }
       } catch (e3) {}
     }
+    var dbg = '';
+    try { dbg = String(window.localStorage.getItem('__xysdk_nick_dbg') || ''); } catch (e5) {}
     return JSON.stringify({
       at: String(o.access_token || ''),
       rt: rt,
       uid: String(o.user_id || o.sub || ''),
       nick: nick,
-      dev: dev
+      dev: dev,
+      dbg: dbg
     });
   } catch (e) { return ""; }
 })()''',
@@ -129,6 +152,8 @@ class ThunderProvider extends CloudProvider {
       dev = md5Hex(refreshToken);
     }
     final accountId = uid.isNotEmpty ? uid : md5Hex(refreshToken).substring(0, 12);
+    final dbg = (parsed['dbg'] ?? '').toString();
+    AppLog.debug('cloud', '迅雷昵称捕获 nick=$nick dbg=$dbg');
     return CloudAccount(
       provider: id,
       accountId: accountId,
