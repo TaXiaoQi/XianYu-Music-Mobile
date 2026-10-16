@@ -81,3 +81,42 @@ String rsaPkcs1Hex(String plain, String modulusHex, String exponentHex) {
   final out = cipher.process(Uint8List.fromList(utf8.encode(plain)));
   return out.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }
+
+/// 解析天翼 encryptConf 返回的 pubKey（base64 编码的 X.509
+/// SubjectPublicKeyInfo），提取 (modulusHex, exponentHex)。
+(String, String) parseSpki(String b64Key) {
+  final d = Uint8List.fromList(base64Decode(b64Key));
+  int pos = 0;
+  (int, int, int) item() {
+    final tag = d[pos];
+    pos++;
+    var len = d[pos];
+    pos++;
+    if (len & 0x80 != 0) {
+      final nb = len & 0x7f;
+      len = 0;
+      for (var i = 0; i < nb; i++) {
+        len = (len << 8) | d[pos + i];
+      }
+      pos += nb;
+    }
+    final start = pos;
+    pos += len;
+    return (tag, start, pos);
+  }
+
+  final top = item(); // 外层 SEQUENCE
+  pos = top.$2; // 子项从外层内容起点重新定位
+  item(); // AlgorithmIdentifier
+  final bit = item(); // BIT STRING
+  // BIT STRING 内容首字节是未用位数（RSA 恒为 0），跳过。
+  pos = bit.$2 + 1;
+  final rsa = item(); // 内层 SEQUENCE（rsaPublicKey），$2 = 内容起点
+  pos = rsa.$2;
+  final n = item();
+  final e = item();
+  return (
+    d.sublist(n.$2, n.$3).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+    d.sublist(e.$2, e.$3).map((b) => b.toRadixString(16).padLeft(2, '0')).join(),
+  );
+}

@@ -14,6 +14,8 @@ import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/predictive_dialog_route.dart';
+import '../../src/widgets/press_scale.dart';
 
 /// 账号登录页（Cookie / 账密双模式，按 provider 能力展示）。
 ///
@@ -118,8 +120,74 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       if (!mounted) return;
       showXianYuToast(context, tr('绑定成功'));
       context.pop();
+    } on CloudSmsRequiredException catch (e) {
+      // 风控要求设备短信二次校验：provider 已自动发码，弹窗收码续登。
+      if (!mounted) return;
+      setState(() => _submitting = false);
+      await _promptSmsCode(e.username);
     } catch (e) {
       AppLog.warn('cloud', '${_provider.id} 账密登录失败: $e');
+      if (!mounted) return;
+      showXianYuToast(
+        context,
+        e is CloudException ? e.message : tr('登录失败，请重试'),
+      );
+      setState(() => _submitting = false);
+    }
+  }
+
+  /// 验证码输入弹窗（同新建歌单的输入范式），确认后提交完成绑定。
+  Future<void> _promptSmsCode(String username) async {
+    final controller = TextEditingController();
+    final code = await showPredictiveDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('输入短信验证码')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(tr('检测到新设备登录，验证码已发送至 {username}',
+                {'username': username})),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: InputDecoration(hintText: tr('短信验证码')),
+              onSubmitted: (v) => Navigator.pop(ctx, v),
+            ),
+          ],
+        ),
+        actions: [
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child:   Text(tr('取消')),
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child:   Text(tr('确定')),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (code == null || code.isEmpty) return;
+    if (!mounted) return;
+    setState(() => _submitting = true);
+    try {
+      final account = await _provider.submitSmsCode(username, code);
+      await CloudCredentialsStore.instance.saveAccount(account);
+      if (!mounted) return;
+      showXianYuToast(context, tr('绑定成功'));
+      context.pop();
+    } catch (e) {
+      AppLog.warn('cloud', '${_provider.id} 验证码校验失败: $e');
       if (!mounted) return;
       showXianYuToast(
         context,
