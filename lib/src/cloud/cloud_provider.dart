@@ -15,6 +15,10 @@ abstract class CloudProvider {
   /// 显示名。
   String get displayName;
 
+  /// 是否在网盘页提供绑定入口（false = 绑定列表不出现该盘，
+  /// 分享链接导入等其余能力不受影响）。
+  bool get bindable => true;
+
   CloudLoginKind get loginKind;
 
   /// WebView 初始 URL（webview 组；非 WebView 登录盘为空串）。

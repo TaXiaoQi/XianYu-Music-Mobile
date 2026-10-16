@@ -21,6 +21,11 @@ class PikpakProvider extends CloudProvider {
   @override
   String get displayName => 'PikPak';
 
+  // 接口域 user.mypikpak.com 直连不可用（需代理），下架绑定入口；
+  // 分享链接导入等其余能力保留。
+  @override
+  bool get bindable => false;
+
   @override
   String get rootPath => '';
 
