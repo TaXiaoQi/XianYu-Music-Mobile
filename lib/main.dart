@@ -35,6 +35,10 @@ Future<void> main() async {
       .addObserver(AppLogLifecycleObserver());
   WidgetsBinding.instance
       .addObserver(AppLogBackGestureObserver());
+  // 系统返回兜底必须在 Router 挂载前注册：经典返回链路
+  // （Android ≤12 三大键/手势）handlePopRoute 按注册顺序遍历 observer，
+  // 若晚于 go_router 注册，播放页开着时底下的页面会被 go_router 抢先 pop
+  PredictiveBackOffFallback.instance.ensureRegistered();
   BackGestureNativeBridge.init();
   _installErrorReporting(container);
   AppLog.info('startup', '应用启动（main 开始）');
