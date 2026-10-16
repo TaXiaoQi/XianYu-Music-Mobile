@@ -16,10 +16,12 @@ struct Brand {
     ua_brand: &'static str,
 }
 
-// pr 两家同为 ucpro：drive-pc.*.cn 是同一套 UC 专业版客户端网关，
-// 对 Web Cookie（__pus 系）校验宽松；pr=quark 是夸克官方客户端通道，
-// 2026-10 起要求真客户端环境，Web Cookie 会被风控降为游客
-// （401 require login [guest]，真机实测）。
+// pr=ucpro：drive-pc.*.cn 同为 UC 专业版客户端网关，对 Web Cookie
+// （__pus 系）校验宽松；pr=quark 是夸克官方客户端通道，2026-10 起要求
+// 真客户端环境，Web Cookie 会被风控降为游客（401 require login [guest]，
+// 真机实测）。UC 侧 2026-10-16 起 ucpro 通道同样收紧（隔夜全量 401，
+// PC 实测新鲜 Web Cookie 亦拒），UC 切 UCBrowser 通道（OpenList 同款，
+// 对 Web Cookie 宽容）。
 const QUARK: Brand = Brand {
     api_host: "drive-pc.quark.cn",
     web_host: "pan.quark.cn",
@@ -30,7 +32,7 @@ const QUARK: Brand = Brand {
 const UC: Brand = Brand {
     api_host: "pc-api.uc.cn",
     web_host: "drive.uc.cn",
-    pr: "ucpro",
+    pr: "UCBrowser",
     ua_brand: "uc-cloud-drive",
 };
 
@@ -629,9 +631,10 @@ mod tests {
     #[test]
     fn brand_constants() {
         assert_eq!(brand_of("quark").api_host, "drive-pc.quark.cn");
-        // 两家 pr 同为 ucpro（UC 专业版网关对 Web Cookie 宽容）。
+        // 夸克 pr=ucpro；UC 2026-10-16 起切 UCBrowser（ucpro 通道拒 Web
+        // Cookie，PC 实测 401 guest / UCBrowser 200）。
         assert_eq!(brand_of("quark").pr, "ucpro");
-        assert_eq!(brand_of("uc").pr, "ucpro");
+        assert_eq!(brand_of("uc").pr, "UCBrowser");
         assert_eq!(common_query(&QUARK), "pr=ucpro&fr=pc&sys=win32&ve=3.23.2");
     }
 
@@ -666,7 +669,7 @@ mod tests {
         );
         assert_eq!(
             search_url(&UC, "flac", 1),
-            "https://pc-api.uc.cn/1/clouddrive/file/search?pr=ucpro&fr=pc&sys=win32&ve=3.23.2&_page=1&_size=50&p=1&f=1-2&keyword=flac"
+            "https://pc-api.uc.cn/1/clouddrive/file/search?pr=UCBrowser&fr=pc&sys=win32&ve=3.23.2&_page=1&_size=50&p=1&f=1-2&keyword=flac"
         );
     }
 

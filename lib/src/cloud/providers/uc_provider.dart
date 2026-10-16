@@ -19,7 +19,9 @@ class UcProvider extends QuarkUcBase {
   String get webHost => 'drive.uc.cn';
 
   @override
-  String get pr => 'ucpro';
+  // 2026-10-16 起 ucpro 通道收紧拒 Web Cookie（401 guest，PC 实测），
+  // UC 切 UCBrowser 通道（对 Web Cookie 宽容，OpenList 同款）。
+  String get pr => 'UCBrowser';
 
   @override
   String get uaBrand => 'uc-cloud-drive';
