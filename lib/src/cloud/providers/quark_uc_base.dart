@@ -75,7 +75,10 @@ abstract class QuarkUcBase extends CloudProvider {
       throw const CloudException('登录凭据获取失败，请重试');
     }
     final cookieStr = cookieHeader(cookies);
-    var accountId = md5Hex(cookieStr).substring(0, 12);
+    // 账号 ID 稳定性：真实 user_id > 昵称哈希 > Cookie 哈希。Cookie 每次
+    // 登录都不同，直接哈希 Cookie 会导致重复登录产生重复账号（同用户
+    // 出现「昵称 + 回退名」两条），故 Cookie 哈希只作最后兜底。
+    var accountId = '';
     var nickname = displayName;
 
     // member 响应 → (user_id, nickname)。只认老结构 data.member：
@@ -165,6 +168,11 @@ abstract class QuarkUcBase extends CloudProvider {
     if (!sessionOk) {
       throw const CloudException('登录会话未完成，请重新登录');
     }
+    accountId = accountId.isNotEmpty
+        ? accountId
+        : (nickname != displayName
+            ? 'u_${md5Hex(nickname).substring(0, 12)}'
+            : md5Hex(cookieStr).substring(0, 12));
     return CloudAccount(
       provider: id,
       accountId: accountId,
