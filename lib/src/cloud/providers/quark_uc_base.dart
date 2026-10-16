@@ -96,19 +96,36 @@ abstract class QuarkUcBase extends CloudProvider {
         return;
       }
       // 200 但返回 SPA HTML（web 域对无环境头 API 路径的兜底）或
-      // envelope code != 0（guest JSON）都不算过闸。
+      // envelope code != 0（guest JSON）都不算过闸。code 归一化：web 域
+      // account/info 用 success 布尔 + code 字符串形态的响应壳。
       if (resp.body.trimLeft().startsWith('{')) {
         final code = resp.json['code'];
-        sessionOk = code == null || code == 0;
+        final ok = code == null ||
+            code == 0 ||
+            code == '0' ||
+            (code is String && int.tryParse(code) == 0) ||
+            resp.json['success'] == true;
+        // 只置位不覆盖：任一探过闸即认会话有效，后探被拒不得回拉。
+        if (ok) sessionOk = true;
       }
       final data = resp.json['data'];
       if (data is! Map<String, dynamic>) return;
+      // member 路径：老结构昵称在 data.member（2026-10 起多返回
+      // data.member_info 仅剩容量字段）。
       final member = data['member'];
-      if (member is! Map<String, dynamic>) return;
-      final uid = (member['user_id'] ?? data['user_id'])?.toString();
-      final nick = member['nickname']?.toString();
-      if (uid != null && uid.isNotEmpty) accountId = uid;
-      if (nick != null && nick.isNotEmpty) nickname = nick;
+      if (member is Map<String, dynamic>) {
+        final uid = (member['user_id'] ?? data['user_id'])?.toString();
+        final nick = member['nickname']?.toString();
+        if (uid != null && uid.isNotEmpty) accountId = uid;
+        if (nick != null && nick.isNotEmpty) nickname = nick;
+      }
+      // account/info 路径：昵称/用户 id 在 data 本层。
+      final localUid = data['user_id']?.toString();
+      if (localUid != null && localUid.isNotEmpty) accountId = localUid;
+      final localNick =
+          (data['nick_name'] ?? data['nickname'] ?? data['user_name'])
+              ?.toString();
+      if (localNick != null && localNick.isNotEmpty) nickname = localNick;
     }
 
     try {
@@ -129,6 +146,20 @@ abstract class QuarkUcBase extends CloudProvider {
         );
       } catch (e) {
         AppLog.debug('cloud', '$displayName PC 域昵称探测失败: $e');
+      }
+    }
+    // 现役网页昵称接口：pan.quark.cn / drive.uc.cn 的 account/info
+    //（先昵称头像后容量的官方前端双接口结构，社区现役实现均以此取
+    // 昵称；member 已被 2026-10 拆改只剩容量）。
+    if (nickname == displayName) {
+      try {
+        await probe('https://$webHost/account/info?fr=pc&platform=pc', {
+          'User-Agent': CloudProvider.desktopWebviewUa,
+          'Referer': 'https://$webHost/',
+          'Cookie': cookieStr,
+        });
+      } catch (e) {
+        AppLog.debug('cloud', '$displayName account/info 昵称探测失败: $e');
       }
     }
     if (!sessionOk) {

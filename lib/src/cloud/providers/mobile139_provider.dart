@@ -111,10 +111,20 @@ class Mobile139Provider extends CloudProvider {
     }
     final authorization = auth.substring(6);
     final cookie = cookieHeader(captured.cookies);
+    // 139 账号即手机号（凭据形态 pc:<手机号>:<sig>）；官方 web 端个人
+    // 标识同样使用脱敏手机号（未提供面向网页的昵称接口），据此显示。
+    var nick = '移动云盘';
+    try {
+      final seg = utf8.decode(base64.decode(authorization)).split(':');
+      if (seg.length >= 2 && seg[1].length >= 7) {
+        final p = seg[1];
+        nick = '${p.substring(0, 3)}****${p.substring(p.length - 4)}';
+      }
+    } catch (_) {}
     return CloudAccount(
       provider: id,
       accountId: md5Hex(authorization).substring(0, 12),
-      nickname: '移动云盘',
+      nickname: nick,
       cred: {
         'authorization': authorization,
         if (cookie.isNotEmpty) 'cookie': cookie,
