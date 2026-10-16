@@ -376,6 +376,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       textTheme:
           base.textTheme.apply(bodyColor: onSurface, displayColor: onSurface),
       iconTheme: IconThemeData(color: onSurface),
+      // 亮色字体模式：文字全局染白，dialogTheme 仍是固定白底会白底白字
+      // （更新弹窗等 AlertDialog 内容不可见），容器随 surfaceContainer 一起翻转
+      dialogTheme: mode == WallpaperTextColor.light
+          ? base.dialogTheme.copyWith(backgroundColor: const Color(0xFF333333))
+          : base.dialogTheme,
     );
   }
 
