@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/cloud/cloud_credentials_store.dart';
+import '../../src/cloud/cloud_folder_selection_store.dart';
 import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
@@ -26,6 +27,8 @@ class CloudBindPage extends ConsumerStatefulWidget {
 
 class _CloudBindPageState extends ConsumerState<CloudBindPage> {
   Map<String, List<CloudAccount>> _accounts = const {};
+  // 每账号已选文件夹数（providerId|accountId → n），行内小字展示。
+  Map<String, int> _folderCounts = const {};
   bool _loading = true;
 
   @override
@@ -36,12 +39,23 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
 
   Future<void> _reload() async {
     final map = <String, List<CloudAccount>>{};
+    final counts = <String, int>{};
     for (final p in cloudProviders) {
-      map[p.id] = await CloudCredentialsStore.instance.accountsFor(p.id);
+      if (!p.bindable) continue; // 已下架绑定入口的盘不加载账号
+      final list = await CloudCredentialsStore.instance.accountsFor(p.id);
+      map[p.id] = list;
+      for (final a in list) {
+        final paths = await CloudFolderSelectionStore.instance
+            .pathsFor(p.id, a.accountId);
+        if (paths.isNotEmpty) {
+          counts['${p.id}|${a.accountId}'] = paths.length;
+        }
+      }
     }
     if (!mounted) return;
     setState(() {
       _accounts = map;
+      _folderCounts = counts;
       _loading = false;
     });
   }
@@ -98,8 +112,13 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
     _reload();
   }
 
-  void _openBrowser(CloudAccount a) {
-    context.push('/cloud/browser/${a.provider}?account=${a.accountId}');
+  /// 打开文件夹选择：浏览该账号网盘目录，多选文件夹路径保存。
+  /// 选中结果供后续网盘音乐扫描/入库消费。
+  Future<void> _openFolderPicker(CloudAccount a) async {
+    await context
+        .push('/cloud/folder-picker/${a.provider}?account=${a.accountId}');
+    if (!mounted) return;
+    _reload(); // 返回后刷新行内已选数
   }
 
   @override
@@ -128,10 +147,11 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
                     child: Center(child: CircularProgressIndicator()),
                   )
                 else
-                  for (final p in cloudProviders) ...[
-                    _providerCard(context, p, scheme),
-                    const SizedBox(height: 10),
-                  ],
+                  for (final p in cloudProviders)
+                    if (p.bindable) ...[
+                      _providerCard(context, p, scheme),
+                      const SizedBox(height: 10),
+                    ],
               ],
             ),
             Positioned(
@@ -236,27 +256,43 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
     // 账号行只显示云盘昵称（无昵称才退 accountId 那串标识）——
     // accountId 是内部凭据标识，对用户无意义。
     final title = a.nickname.isEmpty ? a.accountId : a.nickname;
+    final folderCount = _folderCounts['${a.provider}|${a.accountId}'];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14),
+                ),
+                if (folderCount != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    tr('已选 {n} 个文件夹', {'n': '$folderCount'}),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
           const SizedBox(width: 8),
           IconButton(
-            onPressed: () => _openBrowser(a),
+            onPressed: () => _openFolderPicker(a),
             icon: Icon(
               Icons.folder_open_rounded,
               size: 20,
               color: scheme.onSurfaceVariant,
             ),
-            tooltip: tr('浏览网盘'),
+            tooltip: tr('选择文件夹'),
           ),
           IconButton(
             onPressed: () => _unbind(a),

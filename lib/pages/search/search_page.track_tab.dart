@@ -368,7 +368,8 @@ extension _TrackTabActions on _TrackTabState {
             _TrackEntry(isLocal: true, localSong: s)));
         ref.read(accountApiProvider).reportSearch(q, 'local', list.length);
       } else if (src.type == _SourceType.cloud) {
-        // 网盘来源：取该盘首个账号凭据做全盘文件名搜索，逐个预构造可播放条目
+        // 网盘来源：取该盘首个账号凭据做文件名搜索，逐个预构造可播放条目。
+        // 有已选文件夹的账号只遍历选定范围，避免全盘搜索
         final pid = src.cloudProviderId!;
         final provider = cloudProviderById(pid);
         if (provider == null) throw StateError(tr('该网盘暂未支持'));
@@ -376,9 +377,21 @@ extension _TrackTabActions on _TrackTabState {
             await CloudCredentialsStore.instance.accountsFor(pid);
         if (accounts.isEmpty) throw StateError(tr('网盘账号未绑定或已失效'));
         final acc = accounts.first;
-        final res = await provider.searchFiles(acc.cred, q);
-        final files =
-            res.files.where((f) => !f.isDir && f.isAudio).toList();
+        final roots =
+            await CloudFolderSelectionStore.instance.pathsFor(pid, acc.accountId);
+        final List<CloudFile> files;
+        if (roots.isNotEmpty) {
+          final hits = await scopedSearchAudio(
+            provider: provider,
+            cred: acc.cred,
+            roots: roots,
+            keyword: q,
+          );
+          files = hits.where((f) => !f.isDir && f.isAudio).toList();
+        } else {
+          final res = await provider.searchFiles(acc.cred, q);
+          files = res.files.where((f) => !f.isDir && f.isAudio).toList();
+        }
         for (final f in files) {
           final ctx = CloudPlayContext(
               provider: pid, accountId: acc.accountId, file: f);

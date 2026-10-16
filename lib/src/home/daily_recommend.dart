@@ -8,7 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/auth_provider.dart';
 import '../cloud/cloud_credentials_store.dart';
 import '../cloud/cloud_filename.dart';
+import '../cloud/cloud_folder_selection_store.dart';
 import '../cloud/cloud_registry.dart';
+import '../cloud/cloud_scoped_query.dart';
 import '../cloud/cloud_types.dart';
 import '../core/application_logger.dart';
 import '../core/app_http.dart';
@@ -377,16 +379,24 @@ class _CloudSearchTask {
   final String providerName;
   final Map<String, String> cred;
   final String keyword;
-  const _CloudSearchTask(
-      this.providerId, this.accountId, this.providerName, this.cred, this.keyword);
+  /// 已选文件夹范围；非空时只遍历这些文件夹（不调全盘 searchFiles）。
+  final List<String> roots;
+  const _CloudSearchTask(this.providerId, this.accountId, this.providerName,
+      this.cred, this.keyword, {this.roots = const []});
 }
 
-/// 是否存在「支持搜索且已绑定」的网盘（无插件时判断是否仍生成日推）。
+/// 是否存在「支持搜索且已绑定」或「已绑定且选了文件夹（走范围遍历）」
+/// 的网盘（无插件时判断是否仍生成日推）。
 Future<bool> _anyBoundSearchableDrive() async {
   for (final p in cloudProviders) {
-    if (!p.supportsSearch) continue;
     try {
-      if ((await CloudCredentialsStore.instance.accountsFor(p.id)).isNotEmpty) {
+      final accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
+      if (accounts.isEmpty) continue;
+      if (p.supportsSearch) return true;
+      // 盘侧不支持搜索：账号选了文件夹即可走范围遍历参与
+      if ((await CloudFolderSelectionStore.instance
+              .pathsFor(p.id, accounts.first.accountId))
+          .isNotEmpty) {
         return true;
       }
     } catch (_) {}
@@ -410,13 +420,17 @@ Future<void> _collectCloudCandidates(
 
   final tasks = <_CloudSearchTask>[];
   for (final p in cloudProviders) {
-    if (!p.supportsSearch) continue;
     try {
       final accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
       if (accounts.isEmpty) continue;
       final acc = accounts.first; // 同盘多账号取首个
+      // 已选文件夹范围：非空则只遍历这些文件夹（不支持搜索的盘也借此参与）
+      final roots =
+          await CloudFolderSelectionStore.instance.pathsFor(p.id, acc.accountId);
+      if (!p.supportsSearch && roots.isEmpty) continue;
       for (final kw in keywords) {
-        tasks.add(_CloudSearchTask(p.id, acc.accountId, p.displayName, acc.cred, kw));
+        tasks.add(_CloudSearchTask(p.id, acc.accountId, p.displayName, acc.cred, kw,
+            roots: roots));
       }
     } catch (_) {}
   }
@@ -430,10 +444,21 @@ Future<void> _collectCloudCandidates(
       try {
         final provider = cloudProviderById(task.providerId);
         if (provider == null) continue;
-        final res = await provider.searchFiles(task.cred, task.keyword);
-        final total = res.files.length;
+        // 有已选文件夹 → 只遍历选定范围；否则走盘侧全盘搜索
+        final List<CloudFile> hits;
+        if (task.roots.isNotEmpty) {
+          hits = await scopedSearchAudio(
+            provider: provider,
+            cred: task.cred,
+            roots: task.roots,
+            keyword: task.keyword,
+          );
+        } else {
+          hits = (await provider.searchFiles(task.cred, task.keyword)).files;
+        }
+        final total = hits.length;
         for (var rank = 0; rank < total && cloudCount < _maxCloudCandidates; rank++) {
-          final f = res.files[rank];
+          final f = hits[rank];
           if (f.isDir || !f.isAudio) continue;
           final nk = _normalizeText(task.keyword);
           final parts = parseCloudFileName(f.name);
