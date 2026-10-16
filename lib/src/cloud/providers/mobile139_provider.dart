@@ -25,7 +25,9 @@ class Mobile139Provider extends CloudProvider {
   CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
 
   @override
-  String get webviewLoginUrl => 'https://yun.139.com/';
+  // 直达网页版网盘应用（未登录会弹登录）。根路径 yun.139.com/ 是
+  // 纯营销落地页（装客户端推广），没有登录入口。
+  String get webviewLoginUrl => 'https://yun.139.com/w/';
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
