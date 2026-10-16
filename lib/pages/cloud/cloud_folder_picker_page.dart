@@ -448,7 +448,8 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
               ],
             ),
           ),
-          const SizedBox(width: 40),
+          // 与文件夹行行尾 Checkbox 同尺寸的隐形占位，保证两种行高一致
+          const SizedBox(width: 40, height: 48),
         ],
       ),
     );
