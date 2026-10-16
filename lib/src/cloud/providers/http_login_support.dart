@@ -61,6 +61,9 @@ class HttpLoginGate {
 
 String md5Hex(String input) => md5.convert(utf8.encode(input)).toString();
 
+/// sha1 小写 hex（迅雷云盘X devicesign 用）。
+String sha1Hex(String input) => sha1.convert(utf8.encode(input)).toString();
+
 /// 随机 UUID v4（小写，带连字符）。多盘设备指纹/请求 id 用。
 String uuidV4() {
   final r = Random.secure();

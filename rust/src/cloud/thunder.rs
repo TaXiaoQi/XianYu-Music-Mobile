@@ -1,22 +1,21 @@
-// 迅雷云盘代理（移植自移动端 providers/thunder_provider.dart）。
+// 迅雷云盘代理（网页版 pan.xunlei.com 通道）。
 //
-// 关键行为对齐点：
-// - 安卓端 UA（ANDROID-com.xunlei.downloadprovider/8.31.0.9726 ...）+
-//   Referer(https://pan.xunlei.com/) + Bearer + JSON CT；accessToken 为空
-//   才走 refresh（xluser-ssl.xunlei.com/xluser.core.auth.token/v1/auth/token，
-//   client_id=Xq00jqW5m1PrHnV8）；刷新失败统一抛「登录已过期，请重新绑定」。
-// - 刷新得到的新 accessToken 经 rotated_cred 回传，cred 键名对齐 Dart
-//   loginWithFields 存储键（accessToken/refreshToken/userId）。
-// - 列表 filters 为 jsonEncode({phase:{in:[PHASE_TYPE_COMPLETE]},trashed:{in:false}})
-//   的整串编码（常量逐字符对齐 Dart jsonEncode 输出）；share/detail 不带
-//   client_id（与 PikPak 的差异点）。
-// - share 解析：resp.json['share'] 为 Map 时取之，否则把整个响应视作 share
-//   （Dart data = share is Map ? resp.json : {'share': resp.json}）。
-// - 直链：web_content_link 优先，medias[].link.url 兜底；直链头带 Referer，
-//   TTL 30 分钟。分享 directPlayable=false → share_direct_link 走基类
-//   UnsupportedError（'该盘分享不支持免转存直链'）。
-// - Dart 源中签名相关：登录密码 md5Hex 与登录体 deviceid: uuidV4()；登录
-//   留在客户端，两个纯函数按 Dart 逻辑移植并附单测。
+// 2026-10-16 迁移：X App 通道（thunderx 参数 + BuildCustomUserAgent 定制串）
+// 与用户表按 client 维度隔离（X 参数对网页版账号报 not_found(5)），且 API
+// 直调 auth/signin 有 IP/账号维度风控（review 4002，6h 不冷却），全量切换
+// 网页版形态：
+// - 业务 https://api-pan.xunlei.com/drive/v1；账号 https://xluser-ssl.xunlei.com/v1
+//   （登录在 Dart/TS 端 WebView 内完成，此处只做 refresh）。
+// - 请求头五件套：浏览器 UA（登录端存 cred.ua）+ Accept + x-device-id +
+//   x-client-id + x-client-version；鉴权再加 Bearer + X-Captcha-Token。
+// - 验证码 token：业务必带 X-Captcha-Token；error_code=9 过期 → captcha/init
+//   重取（captcha_sign = 网页版 9 盐 md5 链）重试一次；4121/4122/10/16
+//   → 刷 access token 重试一次；刷新失败统一抛「登录已过期，请重新绑定」。
+// - refresh：POST /v1/auth/token，form 编码 client_id + grant_type +
+//   refresh_token（不带 client_secret，带则 403）；refresh_token 单次轮换。
+// - cred 键名对齐 Dart WebView 捕获：accessToken/refreshToken/userId/
+//   deviceId（32hex）/ua（旧版凭据缺键 → 按过期处理，重新绑定即可）。
+// - share/detail、share/restore 沿用同域路径（未验证，失败会显式报错）。
 
 use serde_json::{json, Value};
 
@@ -26,10 +25,32 @@ use super::types::{
 use super::http;
 use super::{biz_err, pre_parse_share, require_cred};
 
-const UA: &str = "ANDROID-com.xunlei.downloadprovider/8.31.0.9726 netWorkType/5G appid/40 deviceName/Xiaomi_M2004j7ac deviceModel/M2004J7AC Oauth2Client/0.9";
-const CLIENT_ID: &str = "Xq00jqW5m1PrHnV8";
-/// Dart jsonEncode({'phase': {'in': ['PHASE_TYPE_COMPLETE']}, 'trashed': {'in': false}})。
-const LIST_FILTERS: &str = r#"{"phase":{"in":["PHASE_TYPE_COMPLETE"]},"trashed":{"in":false}}"#;
+const API: &str = "https://api-pan.xunlei.com/drive/v1";
+const XLUSER: &str = "https://xluser-ssl.xunlei.com/v1";
+// client 参数用网页版（pan.xunlei.com）：实测用户表按 client 维度
+// 隔离——X App 参数（ZQL_zwA4qhHcoe_2）对网页版注册的账号报
+// not_found(5)，网页版参数报 invalid_account_or_password(4022)。
+const CLIENT_ID: &str = "Xqp0kJBXWhwaTpB6";
+const CLIENT_VERSION: &str = "1.93.10";
+const PACKAGE_NAME: &str = "pan.xunlei.com";
+/// 业务/分享/下载 UA（网页版浏览器串；与 Dart 端 cred.ua 保持同一串，
+/// CDN 直链对签发 UA 敏感时保持一致最稳）。
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+/// captcha 签名盐表（网页版 utils-async chunk 实测 9 盐，顺序敏感；
+/// 初串 = clientId + clientVersion + packageName + deviceId + timestampMs）。
+const ALGORITHMS: [&str; 9] = [
+    "DVM8BRQfJWDsIE0JbH5GCUM0z0jU1yGymBTj4Eyloazv1F+w0G7ig",
+    "T",
+    "a1fUxfjOO1/dW++DpGupRgw9P93L",
+    "aktKbp+/lQc3MvlMHIupt65LjAgJOL6ttMFvTKK+7+WKubSf9rT",
+    "SB/ne9FQUnQmWz4Wuv9KqKfGOBOCUubpHpECxOHfD4hNoMclYA2Yq",
+    "sOZFBQ8IMFy3OFjAIf/eA65iqFvS9TIKzLyrhiT6",
+    "ZhJdLgL7MGh2GanboB0yk",
+    "Osf",
+    "v",
+];
+/// 列表 filters（thunderx getFiles：eq 形态）。
+const LIST_FILTERS: &str = r#"{"phase":{"eq":"PHASE_TYPE_COMPLETE"},"trashed":{"eq":false}}"#;
 /// 搜索 filters（设计稿形态）：仅回收站过滤，与列表 LIST_FILTERS 不同
 /// （与 PikPak 搜索同构）。
 const SEARCH_FILTERS: &str = r#"{"trashed":{"match":"exact","value":"false"}}"#;
@@ -37,29 +58,9 @@ const SEARCH_FILTERS: &str = r#"{"trashed":{"match":"exact","value":"false"}}"#;
 const EXPIRED: &str = "登录已过期，请重新绑定";
 
 /// 对齐 Dart md5Hex（http_login_support.dart）：utf8 → md5 → 小写 hex。
-/// 登录密码传参用（登录留在客户端）。
-#[allow(dead_code)]
+/// captcha_sign 链式摘要用。
 fn md5_hex(input: &str) -> String {
     format!("{:x}", md5::compute(input.as_bytes()))
-}
-
-/// 对齐 Dart uuidV4：随机 UUID v4（小写、带连字符；登录体 deviceid 用）。
-#[allow(dead_code)]
-fn uuid_v4() -> String {
-    uuid::Uuid::new_v4().to_string()
-}
-
-/// API 请求头（Dart _h）：UA + Referer + Bearer（token 非空时）+ JSON CT。
-fn api_headers(access_token: &str) -> Vec<(String, String)> {
-    let mut h = vec![
-        ("User-Agent".to_string(), UA.to_string()),
-        ("Referer".to_string(), "https://pan.xunlei.com/".to_string()),
-    ];
-    if !access_token.is_empty() {
-        h.push(("Authorization".to_string(), format!("Bearer {access_token}")));
-    }
-    h.push(("Content-Type".to_string(), "application/json".to_string()));
-    h
 }
 
 /// Dart `(v ?? fallback).toString()` 语义：字符串原样、数值转十进制，其余取 fallback。
@@ -78,11 +79,11 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-// ── URL 拼接（纯函数，单测对齐 Dart 模板串）─────────────────
+// ── URL 拼接（纯函数，单测对齐参考实现）─────────────────────
 
 fn files_list_url(parent_id: &str, page_token: &str) -> String {
     format!(
-        "https://api-pan.xunlei.com/drive/v1/files?parent_id={}&limit=100&page_token={}&filters={}",
+        "{API}/files?space=&__type=drive&refresh=true&__sync=true&parent_id={}&page_token={}&with_audit=true&limit=100&filters={}",
         http::url_encode(parent_id),
         http::url_encode(page_token),
         http::url_encode(LIST_FILTERS)
@@ -93,27 +94,28 @@ fn files_list_url(parent_id: &str, page_token: &str) -> String {
 /// cursor 为响应 next_page_token（与 PikPak 搜索同构）。
 fn search_url(keyword: &str, page_token: &str) -> String {
     format!(
-        "https://api-pan.xunlei.com/drive/v1/files?parent_id=*&search={}&filters={}&page_token={}",
+        "{API}/files?parent_id=*&search={}&filters={}&page_token={}",
         http::url_encode(keyword),
         http::url_encode(SEARCH_FILTERS),
         http::url_encode(page_token)
     )
 }
 
-/// 迅雷 share/detail 不带 client_id（与 PikPak 差异点）。
+/// 迅雷 share/detail（不带 client_id，与 PikPak 差异点）。
 fn share_detail_url(share_id: &str, pass_code: &str) -> String {
     format!(
-        "https://api-pan.xunlei.com/drive/v1/share/detail?share_id={}&pass_code={}",
+        "{API}/share/detail?share_id={}&pass_code={}",
         http::url_encode(share_id),
         http::url_encode(pass_code)
     )
 }
 
 fn file_meta_url(file_id: &str) -> String {
-    format!(
-        "https://api-pan.xunlei.com/drive/v1/files/{}",
-        http::url_encode(file_id)
-    )
+    format!("{API}/files/{}", http::url_encode(file_id))
+}
+
+fn about_url() -> String {
+    format!("{API}/about")
 }
 
 /// share 对象提取：顶层 'share' 为对象取之，否则整个响应即 share
@@ -126,24 +128,154 @@ fn pick_share_object(j: &Value) -> Value {
     }
 }
 
+/// OpenList GetAction：method + ":/路径段"（去 query/hash）。
+fn action_of(method: &str, url: &str) -> String {
+    let rest = url.split("://").nth(1).unwrap_or("");
+    let path: String = {
+        let no_query = rest.split(['?', '#']).next().unwrap_or("");
+        let segs: Vec<&str> = no_query.split('/').skip(1).collect();
+        format!("/{}", segs.join("/"))
+    };
+    format!("{method}:{path}")
+}
+
+// ── 请求头 ───────────────────────────────────────────────
+
+/// 基础请求头（Common.Request 五件套；缺 ua/deviceId 的旧凭据按过期处理）。
+fn base_headers(cred: &Value) -> Result<Vec<(String, String)>, (i32, String)> {
+    let ua = cred.get("ua").and_then(Value::as_str).unwrap_or("");
+    if ua.is_empty() {
+        return Err(biz_err(EXPIRED));
+    }
+    let device_id = cred.get("deviceId").and_then(Value::as_str).unwrap_or("");
+    Ok(vec![
+        ("User-Agent".to_string(), ua.to_string()),
+        (
+            "Accept".to_string(),
+            "application/json;charset=UTF-8".to_string(),
+        ),
+        ("x-device-id".to_string(), device_id.to_string()),
+        ("x-client-id".to_string(), CLIENT_ID.to_string()),
+        ("x-client-version".to_string(), CLIENT_VERSION.to_string()),
+    ])
+}
+
+/// 鉴权请求头：基础五件套 + Bearer + X-Captcha-Token。
+fn auth_headers(
+    cred: &Value,
+    access_token: &str,
+    captcha_token: &str,
+) -> Result<Vec<(String, String)>, (i32, String)> {
+    let mut h = base_headers(cred)?;
+    if !access_token.is_empty() {
+        h.push(("Authorization".to_string(), format!("Bearer {access_token}")));
+    }
+    if !captcha_token.is_empty() {
+        h.push(("X-Captcha-Token".to_string(), captcha_token.to_string()));
+    }
+    Ok(h)
+}
+
+// ── 验证码 token（缓存 + 签名）───────────────────────────
+
+struct CaptchaEntry {
+    user_id: String,
+    token: String,
+    expires_at: i64,
+}
+
+static CAPTCHA: std::sync::Mutex<Option<CaptchaEntry>> = std::sync::Mutex::new(None);
+
+/// captcha_sign（GetCaptchaSign）："1." + md5 链（初串 = 五段拼接，逐盐摘要）。
+fn captcha_sign(device_id: &str, timestamp_ms: i64) -> String {
+    let mut s = format!("{CLIENT_ID}{CLIENT_VERSION}{PACKAGE_NAME}{device_id}{timestamp_ms}");
+    for alg in ALGORITHMS {
+        s = md5_hex(&format!("{s}{alg}"));
+    }
+    format!("1.{s}")
+}
+
+/// captcha/init 重取验证码 token（RefreshCaptchaTokenAtLogin 形态：meta 带
+/// user_id + 签名）。
+async fn fetch_captcha_token(cred: &Value, action: &str) -> Result<String, (i32, String)> {
+    let headers = base_headers(cred)?;
+    let device_id = cred.get("deviceId").and_then(Value::as_str).unwrap_or("");
+    let user_id = cred.get("userId").and_then(Value::as_str).unwrap_or("");
+    let ts = now_ms();
+    let resp = http::post_json(
+        &format!("{XLUSER}/shield/captcha/init"),
+        &headers,
+        &json!({
+            "action": action,
+            "captcha_token": "",
+            "client_id": CLIENT_ID,
+            "device_id": device_id,
+            "meta": {
+                "client_version": CLIENT_VERSION,
+                "package_name": PACKAGE_NAME,
+                "user_id": user_id,
+                "timestamp": ts.to_string(),
+                "captcha_sign": captcha_sign(device_id, ts),
+            },
+        }),
+    )
+    .await
+    .map_err(biz_err)?;
+    let j = resp.json().map_err(biz_err)?;
+    if !js_str(j.get("url"), "").is_empty() {
+        return Err(biz_err("需要人机验证，请稍后再试"));
+    }
+    let token = js_str(j.get("captcha_token"), "");
+    if token.is_empty() {
+        return Err(biz_err("人机验证获取失败"));
+    }
+    Ok(token)
+}
+
+/// 取验证码 token：进程级缓存（按 userId 复用，5 分钟），失效即重取。
+async fn captcha_token(cred: &Value, action: &str) -> Result<String, (i32, String)> {
+    let user_id = cred
+        .get("userId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    if let Ok(g) = CAPTCHA.lock() {
+        if let Some(e) = g.as_ref() {
+            if e.user_id == user_id && e.expires_at > now_ms() && !e.token.is_empty() {
+                return Ok(e.token.clone());
+            }
+        }
+    }
+    let token = fetch_captcha_token(cred, action).await?;
+    if let Ok(mut g) = CAPTCHA.lock() {
+        *g = Some(CaptchaEntry {
+            user_id,
+            token: token.clone(),
+            expires_at: now_ms() + 5 * 60 * 1000,
+        });
+    }
+    Ok(token)
+}
+
 // ── 鉴权（带凭据轮换）──────────────────────────────────
 
-/// 刷新 access_token。Dart _refreshToken 任何失败 → null → _auth 抛过期；
-/// 这里所有失败路径统一映射同一文案。
-async fn refresh_access_token(cred: &Value) -> Result<String, (i32, String)> {
+/// 刷新 access_token，返回 (access_token, refresh_token)（响应缺 refresh_token
+/// 时沿用旧值）。所有失败路径统一映射「登录已过期，请重新绑定」。
+async fn refresh_access_token(cred: &Value) -> Result<(String, String), (i32, String)> {
     let refresh_token = cred.get("refreshToken").and_then(Value::as_str).unwrap_or("");
     if refresh_token.is_empty() {
         return Err(biz_err(EXPIRED));
     }
-    let resp = http::post_json(
-        "https://xluser-ssl.xunlei.com/xluser.core.auth.token/v1/auth/token",
-        // Dart 刷新头仅 UA + CT（CT 由 post_json 按 body 形态注入）。
-        &[("User-Agent".to_string(), UA.to_string())],
-        &json!({
-            "refresh_token": refresh_token,
-            "client_id": CLIENT_ID,
-            "grant_type": "refresh_token",
-        }),
+    let headers = base_headers(cred)?;
+    // 网页版形态：form 编码，不带 client_secret（带则 403 permission_denied）。
+    let resp = http::post_form(
+        &format!("{XLUSER}/auth/token"),
+        &headers,
+        vec![
+            ("client_id".to_string(), CLIENT_ID.to_string()),
+            ("grant_type".to_string(), "refresh_token".to_string()),
+            ("refresh_token".to_string(), refresh_token.to_string()),
+        ],
     )
     .await
     .map_err(|_| biz_err(EXPIRED))?;
@@ -155,51 +287,131 @@ async fn refresh_access_token(cred: &Value) -> Result<String, (i32, String)> {
     if at.is_empty() {
         return Err(biz_err(EXPIRED));
     }
-    Ok(at.to_string())
+    let rt = j.get("refresh_token").and_then(Value::as_str).unwrap_or("");
+    Ok((
+        at.to_string(),
+        if rt.is_empty() {
+            refresh_token.to_string()
+        } else {
+            rt.to_string()
+        },
+    ))
 }
 
-/// 取可用 access_token：缓存优先（无轮换）；否则刷新并产出新凭据集
-/// （键名对齐 Dart cred：accessToken/refreshToken/userId）。
+/// 轮换后的新凭据集（键名对齐 Dart cred）。
+fn rotated_cred(cred: &Value, access_token: &str, refresh_token: &str) -> Value {
+    let s =
+        |k: &str| cred.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    json!({
+        "accessToken": access_token,
+        "refreshToken": refresh_token,
+        "userId": s("userId"),
+        "deviceId": s("deviceId"),
+        "ua": s("ua"),
+    })
+}
+
+/// 取可用 access_token：缓存优先（无轮换）；否则刷新并产出新凭据集。
 async fn auth(cred: &Value) -> Result<(String, Option<Value>), (i32, String)> {
     let cached = cred.get("accessToken").and_then(Value::as_str).unwrap_or("");
     if !cached.is_empty() {
         return Ok((cached.to_string(), None));
     }
-    let at = refresh_access_token(cred).await?;
-    let s = |k: &str| cred.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let new_cred = json!({
-        "accessToken": at,
-        "refreshToken": s("refreshToken"),
-        "userId": s("userId"),
-    });
-    Ok((at, Some(new_cred)))
+    let (at, rt) = refresh_access_token(cred).await?;
+    Ok((at.clone(), Some(rotated_cred(cred, &at, &rt))))
+}
+
+/// 业务请求单发（GET 或 POST JSON）。
+async fn biz_send(
+    cred: &Value,
+    access_token: &str,
+    captcha_token: &str,
+    url: &str,
+    body: Option<&Value>,
+) -> Result<Value, (i32, String)> {
+    let headers = auth_headers(cred, access_token, captcha_token)?;
+    let resp = match body {
+        Some(b) => http::post_json(url, &headers, b).await,
+        None => http::get(url, &headers).await,
+    }
+    .map_err(biz_err)?;
+    resp.json().map_err(biz_err)
+}
+
+fn err_code(j: &Value) -> i64 {
+    j.get("error_code").and_then(Value::as_i64).unwrap_or(0)
+}
+
+/// 业务请求（OpenList XunLeiXCommon.Request 对齐）：
+/// error_code=9 → 重取验证码 token 重试；4121/4122/10/16 → 刷 access token
+/// 重试；仍失败按 error_description 报错。
+async fn biz_json(
+    cred: &Value,
+    method: &str,
+    url: &str,
+    body: Option<&Value>,
+) -> Result<(Value, Option<Value>), (i32, String)> {
+    let action = action_of(method, url);
+    let mut ct = captcha_token(cred, &action).await?;
+    let (mut at, mut rotated) = auth(cred).await?;
+    let mut j = biz_send(cred, &at, &ct, url, body).await?;
+    let mut code = err_code(&j);
+    if code == 9 {
+        ct = fetch_captcha_token(cred, &action).await?;
+        j = biz_send(cred, &at, &ct, url, body).await?;
+        code = err_code(&j);
+    }
+    if matches!(code, 4121 | 4122 | 10 | 16) {
+        let (nat, nrt) = refresh_access_token(cred).await?;
+        rotated = Some(rotated_cred(cred, &nat, &nrt));
+        at = nat;
+        j = biz_send(cred, &at, &ct, url, body).await?;
+        code = err_code(&j);
+    }
+    if code != 0 {
+        let msg = j
+            .get("error_description")
+            .and_then(Value::as_str)
+            .or_else(|| j.get("error").and_then(Value::as_str))
+            .unwrap_or("");
+        return Err(biz_err(if msg.is_empty() { "请求失败" } else { msg }));
+    }
+    Ok((j, rotated))
 }
 
 // ── op 实现 ──────────────────────────────────────────────
 
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
-    let (at, rotated) = auth(&req.cred).await?;
-    let valid = match http::get("https://api-pan.xunlei.com/drive/v1/about", &api_headers(&at)).await
-    {
-        Ok(resp) => resp.is_ok(),
-        Err(_) => false,
-    };
+    let (_, rotated) = biz_json(&req.cred, "GET", &about_url(), None).await?;
     Ok(CloudOut {
-        result: json!({ "valid": valid }),
+        result: json!({ "valid": true }),
         rotated_cred: rotated,
     })
 }
 
-/// 目录列表主体（list_dir 与转存回查共用；Dart listDir 同体）。
-async fn list_dir_at(at: &str, path: &str, cursor: &str) -> Result<Value, (i32, String)> {
-    let resp = http::get(&files_list_url(path, cursor), &api_headers(at))
-        .await
-        .map_err(biz_err)?;
-    if !resp.is_ok() {
-        return Err(biz_err("目录列表请求失败"));
-    }
-    let j = resp.json().map_err(biz_err)?;
+/// 目录列表主体（list_dir 与转存回查共用）。
+async fn list_files(
+    cred: &Value,
+    parent_id: &str,
+    page_token: &str,
+) -> Result<(Value, Option<Value>), (i32, String)> {
+    biz_json(cred, "GET", &files_list_url(parent_id, page_token), None).await
+}
+
+async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
+    let path = req.param_str("path");
+    let cursor = req.param_str("cursor");
+    let (j, rotated) = list_files(&req.cred, &path, &cursor).await?;
+    Ok(CloudOut {
+        result: list_from_json(&j),
+        rotated_cred: rotated,
+    })
+}
+
+/// files 列表响应 → list_result_json（list_dir / 转存回查共用映射）。
+fn list_from_json(j: &Value) -> Value {
     let mut files = Vec::new();
     if let Some(items) = j.get("files").and_then(Value::as_array) {
         for e in items {
@@ -207,24 +419,12 @@ async fn list_dir_at(at: &str, path: &str, cursor: &str) -> Result<Value, (i32, 
             let name = js_str(e.get("name"), "");
             let is_dir = e.get("kind").and_then(Value::as_str) == Some("drive#folder");
             let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
-            files.push(file_json(&id, &name, is_dir, size, Some(path), None, None));
+            files.push(file_json(&id, &name, is_dir, size, None, None, None));
         }
     }
     let next = js_str(j.get("next_page_token"), "");
     let next_cursor = if next.is_empty() { None } else { Some(next) };
-    Ok(list_result_json(files, next_cursor))
-}
-
-async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
-    require_cred(req)?;
-    let (at, rotated) = auth(&req.cred).await?;
-    let path = req.param_str("path");
-    let cursor = req.param_str("cursor");
-    let result = list_dir_at(&at, &path, &cursor).await?;
-    Ok(CloudOut {
-        result,
-        rotated_cred: rotated,
-    })
+    list_result_json(files, next_cursor)
 }
 
 /// 搜索结果条目 → CloudFile（映射纯函数，单测断言）。
@@ -247,15 +447,8 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if keyword.is_empty() {
         return Err(biz_err("缺少搜索关键词"));
     }
-    let (at, rotated) = auth(&req.cred).await?;
     let cursor = req.param_str("cursor");
-    let resp = http::get(&search_url(&keyword, &cursor), &api_headers(&at))
-        .await
-        .map_err(biz_err)?;
-    if !resp.is_ok() {
-        return Err(biz_err("搜索请求失败"));
-    }
-    let j = resp.json().map_err(biz_err)?;
+    let (j, rotated) = biz_json(&req.cred, "GET", &search_url(&keyword, &cursor), None).await?;
     let mut files = Vec::new();
     if let Some(items) = j.get("files").and_then(Value::as_array) {
         for e in items {
@@ -284,10 +477,13 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     } else {
         pwd
     };
-    // 分享解析不需要登录态（Dart 头仅 UA + CT）。
+    // 分享解析不需要登录态（Dalvik 下载 UA）。
     let headers = vec![
-        ("User-Agent".to_string(), UA.to_string()),
-        ("Content-Type".to_string(), "application/json".to_string()),
+        ("User-Agent".to_string(), BROWSER_UA.to_string()),
+        (
+            "Accept".to_string(),
+            "application/json;charset=UTF-8".to_string(),
+        ),
     ];
     let resp = http::get(&share_detail_url(&share_id, &pass_code), &headers)
         .await
@@ -331,7 +527,6 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 
 async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
-    let (at, rotated) = auth(&req.cred).await?;
     let share = req.param_obj("share");
     let token = share
         .get("shareToken")
@@ -355,22 +550,15 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             })
         })
         .collect();
-    let resp = http::post_json(
-        "https://api-pan.xunlei.com/drive/v1/share/restore",
-        &api_headers(&at),
-        &json!({
-            "share_id": share.get("shareId").and_then(Value::as_str).unwrap_or(""),
-            "pass_code_token": token,
-            "file_list": file_list,
-        }),
-    )
-    .await
-    .map_err(biz_err)?;
-    if !resp.is_ok() {
-        return Err(biz_err("转存失败"));
-    }
+    let body = json!({
+        "share_id": share.get("shareId").and_then(Value::as_str).unwrap_or(""),
+        "pass_code_token": token,
+        "file_list": file_list,
+    });
+    let (_, rotated) = biz_json(&req.cred, "POST", &format!("{API}/share/restore"), Some(&body)).await?;
     // 转存后 id 变化：按文件名回查根目录。
-    let listed = list_dir_at(&at, "", "").await?;
+    let (listed, rotated2) = list_files(&req.cred, "", "").await?;
+    let rotated = rotated2.or(rotated);
     let mut by_name: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
     if let Some(items) = listed.get("files").and_then(Value::as_array) {
         for f in items {
@@ -397,16 +585,9 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
-    let (at, rotated) = auth(&req.cred).await?;
     let file = req.param_obj("file");
     let file_id = file.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-    let resp = http::get(&file_meta_url(&file_id), &api_headers(&at))
-        .await
-        .map_err(biz_err)?;
-    if !resp.is_ok() {
-        return Err(biz_err("直链获取失败"));
-    }
-    let j = resp.json().map_err(biz_err)?;
+    let (j, rotated) = biz_json(&req.cred, "GET", &file_meta_url(&file_id), None).await?;
     let dl_url = js_str(j.get("web_content_link"), "");
     if dl_url.is_empty() {
         // 部分文件在 medias[].link.url 兜底。
@@ -423,7 +604,7 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
                     return Ok(CloudOut {
                         result: direct_link_json(
                             alt,
-                            json!({ "User-Agent": UA, "Referer": "https://pan.xunlei.com/" }),
+                            json!({ "User-Agent": BROWSER_UA }),
                             Some(name),
                             size,
                             Some(now_ms() + 30 * 60 * 1000),
@@ -440,7 +621,7 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut {
         result: direct_link_json(
             &dl_url,
-            json!({ "User-Agent": UA, "Referer": "https://pan.xunlei.com/" }),
+            json!({ "User-Agent": BROWSER_UA }),
             Some(name),
             size,
             Some(now_ms() + 30 * 60 * 1000),
@@ -469,45 +650,83 @@ mod tests {
 
     #[test]
     fn md5_hex_vectors() {
-        // 对齐 Dart md5Hex：小写 hex（登录密码传 md5）。
         assert_eq!(md5_hex("abc"), "900150983cd24fb0d6963f7d28e17f72");
         assert_eq!(md5_hex(""), "d41d8cd98f00b204e9800998ecf8427e");
     }
 
     #[test]
-    fn uuid_v4_format() {
-        // 对齐 Dart uuidV4：小写、连字符分段 8-4-4-4-12，版本 4、变体 8/9/a/b。
-        let u = uuid_v4();
-        let parts: Vec<&str> = u.split('-').collect();
-        assert_eq!(parts.len(), 5);
-        assert_eq!(
-            parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
-            vec![8, 4, 4, 4, 12]
-        );
-        assert!(u.chars().all(|c| c.is_ascii_hexdigit() || c == '-'));
-        assert!(u.chars().all(|c| !c.is_ascii_uppercase()));
-        assert_eq!(parts[2].chars().next(), Some('4'));
-        assert!(['8', '9', 'a', 'b'].contains(&parts[3].chars().next().unwrap()));
+    fn captcha_sign_shape() {
+        // "1." + 32 位小写 hex；9 盐逐条摘要（确定性可复算）。
+        let s = captcha_sign("dev1", 1729000000000);
+        assert!(s.starts_with("1."));
+        let hex = &s[2..];
+        assert_eq!(hex.len(), 32);
+        assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        // 同输入恒同输出。
+        assert_eq!(s, captcha_sign("dev1", 1729000000000));
+        assert_eq!(ALGORITHMS.len(), 9);
     }
 
     #[test]
-    fn api_headers_shape() {
-        let h = api_headers("at1");
-        assert_eq!(h[0].1, UA);
-        assert_eq!(h[1].1, "https://pan.xunlei.com/");
-        assert_eq!(h[2].1, "Bearer at1");
-        assert_eq!(h[3], ("Content-Type".to_string(), "application/json".to_string()));
-        // 空 token 不带 Authorization（对齐 Dart if (accessToken.isNotEmpty)）。
-        let h0 = api_headers("");
-        assert_eq!(h0.len(), 3);
-        assert!(!h0.iter().any(|(k, _)| k == "Authorization"));
+    fn captcha_sign_official_vector() {
+        // 网页版官方页面实测向量：deviceID + timestamp 逐字复现官方 sign。
+        assert_eq!(
+            captcha_sign("9d0bc3fe3e945a12a3d6b5882ea31cd4", 1792128233219),
+            "1.a213bb292c99017161615f707158e150"
+        );
+    }
+
+    #[test]
+    fn action_of_paths() {
+        assert_eq!(action_of("GET", &files_list_url("", "")), "GET:/drive/v1/files");
+        assert_eq!(
+            action_of("POST", &format!("{API}/share/restore")),
+            "POST:/drive/v1/share/restore"
+        );
+        assert_eq!(
+            action_of("POST", &format!("{XLUSER}/auth/signin")),
+            "POST:/v1/auth/signin"
+        );
+    }
+
+    #[test]
+    fn headers_shape() {
+        let cred = json!({ "ua": "UA1", "deviceId": "dev1" });
+        let h = base_headers(&cred).unwrap();
+        assert_eq!(
+            h,
+            vec![
+                ("User-Agent".to_string(), "UA1".to_string()),
+                ("Accept".to_string(), "application/json;charset=UTF-8".to_string()),
+                ("x-device-id".to_string(), "dev1".to_string()),
+                ("x-client-id".to_string(), CLIENT_ID.to_string()),
+                ("x-client-version".to_string(), CLIENT_VERSION.to_string()),
+            ]
+        );
+        // 旧凭据无 ua → 过期。
+        assert!(base_headers(&json!({ "accessToken": "a" })).is_err());
+        // 鉴权头追加 Bearer + X-Captcha-Token。
+        let ah = auth_headers(&cred, "at1", "ct1").unwrap();
+        assert!(ah.iter().any(|(k, v)| k == "Authorization" && v == "Bearer at1"));
+        assert!(ah.iter().any(|(k, v)| k == "X-Captcha-Token" && v == "ct1"));
+    }
+
+    #[test]
+    fn rotated_cred_keys() {
+        let cred = json!({ "userId": "u1", "deviceId": "d1", "ua": "UA1" });
+        let r = rotated_cred(&cred, "at2", "rt2");
+        assert_eq!(r["accessToken"], "at2");
+        assert_eq!(r["refreshToken"], "rt2");
+        assert_eq!(r["userId"], "u1");
+        assert_eq!(r["deviceId"], "d1");
+        assert_eq!(r["ua"], "UA1");
     }
 
     #[test]
     fn files_list_url_filters_encoded() {
         assert_eq!(
             files_list_url("", "pt1"),
-            "https://api-pan.xunlei.com/drive/v1/files?parent_id=&limit=100&page_token=pt1&filters=%7B%22phase%22%3A%7B%22in%22%3A%5B%22PHASE_TYPE_COMPLETE%22%5D%7D%2C%22trashed%22%3A%7B%22in%22%3Afalse%7D%7D"
+            "https://api-pan.xunlei.com/drive/v1/files?space=&__type=drive&refresh=true&__sync=true&parent_id=&page_token=pt1&with_audit=true&limit=100&filters=%7B%22phase%22%3A%7B%22eq%22%3A%22PHASE_TYPE_COMPLETE%22%7D%2C%22trashed%22%3A%7B%22eq%22%3Afalse%7D%7D"
         );
     }
 

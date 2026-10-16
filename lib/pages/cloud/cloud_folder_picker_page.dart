@@ -45,6 +45,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
 
   final List<_Crumb> _stack = [];
   List<CloudFile> _dirs = const [];
+  List<CloudFile> _files = const [];
   String? _cursor;
   bool _loading = true;
   bool _appending = false;
@@ -119,6 +120,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
       } else {
         _loading = true;
         _dirs = const [];
+        _files = const [];
         _cursor = null;
       }
     });
@@ -128,6 +130,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
       setState(() {
         _dirs = r.files.where((f) => f.isDir).toList();
+        _files = r.files.where((f) => !f.isDir).toList();
         _cursor = r.nextCursor;
         _loading = false;
         _appending = false;
@@ -328,10 +331,10 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (_dirs.isEmpty) {
+    if (_dirs.isEmpty && _files.isEmpty) {
       return Center(
         child: Text(
-          tr('没有子文件夹'),
+          tr('此文件夹为空'),
           style: TextStyle(
             fontSize: 13,
             color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -341,9 +344,10 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     }
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 12),
-      itemCount: _dirs.length + (_cursor != null ? 1 : 0),
+      itemCount:
+          _dirs.length + _files.length + (_cursor != null ? 1 : 0),
       itemBuilder: (context, i) {
-        if (i >= _dirs.length) {
+        if (i >= _dirs.length + _files.length) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
             child: Center(
@@ -359,6 +363,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
                     ),
             ),
           );
+        }
+        if (i >= _dirs.length) {
+          return _fileRow(_files[i - _dirs.length], scheme);
         }
         final d = _dirs[i];
         final cur = _stack.last.path;
@@ -403,6 +410,47 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 当前目录下的文件展示行（与文件夹行同样式，仅无勾选框、不可进入）。
+  Widget _fileRow(CloudFile f, ColorScheme scheme) {
+    const audioExts = {
+      '.mp3', '.flac', '.m4a', '.aac', '.wav', '.ogg', '.ape', '.wma',
+      '.opus', '.dsf', '.dff', '.mka',
+    };
+    final name = f.name.toLowerCase();
+    final isAudio =
+        audioExts.any((e) => name.endsWith(e));
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Icon(
+                  isAudio
+                      ? Icons.music_note_rounded
+                      : Icons.insert_drive_file_rounded,
+                  size: 20,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    f.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 40),
+        ],
+      ),
     );
   }
 

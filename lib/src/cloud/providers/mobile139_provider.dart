@@ -25,9 +25,14 @@ class Mobile139Provider extends CloudProvider {
   CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
 
   @override
-  // 直达网页版网盘应用（未登录会弹登录）。根路径 yun.139.com/ 是
-  // 纯营销落地页（装客户端推广），没有登录入口。
-  String get webviewLoginUrl => 'https://yun.139.com/w/';
+  // 直达网页版登录页：yun.139.com/w/ 的 SPA 路由 / 即登录页
+  //（path:"/",name:"login"）。移动 UA 只会得到营销页 + mcloud://
+  // 拉端深链接（WebView 报 ERR_UNKNOWN_URL_SCHEME），须用桌面 UA
+  // 才出网页版登录。
+  String get webviewLoginUrl => 'https://yun.139.com/w/#/';
+
+  @override
+  String get webviewUserAgent => CloudProvider.desktopWebviewUa;
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(

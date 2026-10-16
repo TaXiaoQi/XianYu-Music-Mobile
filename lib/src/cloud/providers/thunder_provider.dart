@@ -1,9 +1,22 @@
-// 迅雷云盘 provider（httpPassword：v3/login 账密接口，password 传 md5）。
+// 迅雷云盘 provider（webviewToken：WebView 打开 pan.xunlei.com 官方页，
+// 登录完成后轮询 localStorage 捕获 credentials + deviceid）。
+//
+// 2026-10-16 迁移：X App 账密通道（thunderx 参数 + BuildCustomUserAgent
+// 定制串）与网页版用户表按 client 维度隔离（X 参数报 not_found(5)），且
+// API 直调 auth/signin 有 IP/账号维度风控（review 4002，6h 不冷却），
+// 而浏览器登录正常——登录整体走 WebView 网页通道。
+// 捕获物：localStorage['credentials_Xqp0kJBXWhwaTpB6']（access_token/
+// refresh_token/user_id）+ localStorage['deviceid']（wdi10.<64hex>，
+// 签名/x-device-id 用前 32 位 hex）。
+// cred 存 accessToken/refreshToken/userId/deviceId(32hex)/ua（浏览器串，
+// 与 Rust 端 BROWSER_UA 保持同一串）；refresh 轮换后的凭据经响应
+// rotated_cred 带回、由 cloud_remote 统一回写本地凭据存储。
 //
 // XCloud 架构（与 PikPak 同构）；业务（列目录/分享/转存/直链）经
 // cloud_remote 桥转发内嵌 Rust（rust/src/cloud/thunder.rs）。
 
-import '../cloud_http.dart';
+import 'dart:convert';
+
 import '../cloud_provider.dart';
 import '../cloud_remote.dart';
 import '../cloud_types.dart';
@@ -12,11 +25,8 @@ import 'http_login_support.dart';
 class ThunderProvider extends CloudProvider {
   const ThunderProvider();
 
-  static const _ua =
-      'ANDROID-com.xunlei.downloadprovider/8.31.0.9726 netWorkType/5G '
-      'appid/40 deviceName/Xiaomi_M2004j7ac deviceModel/M2004J7AC '
-      'Oauth2Client/0.9';
-  static const _clientId = 'Xq00jqW5m1PrHnV8';
+  // 网页版 client（pan.xunlei.com）：用户表按 client 维度隔离。
+  static const _clientId = 'Xqp0kJBXWhwaTpB6';
 
   @override
   String get id => 'thunder';
@@ -28,73 +38,95 @@ class ThunderProvider extends CloudProvider {
   String get rootPath => '';
 
   @override
-  CloudLoginKind get loginKind => CloudLoginKind.httpPassword;
+  CloudLoginKind get loginKind => CloudLoginKind.webviewToken;
 
   @override
   Duration get directLinkTtl => const Duration(minutes: 30);
 
   @override
-  List<CloudLoginField> get loginFields => const [
-        CloudLoginField(key: 'username', label: '手机号 / 邮箱'),
-        CloudLoginField(key: 'password', label: '密码', obscure: true),
-      ];
+  String get webviewLoginUrl => 'https://pan.xunlei.com/';
+
+  /// 轮询脚本：必须是返回字符串的 JS 表达式（IIFE）。
+  /// credentials（含 refresh_token）出现即认为登录完成；deviceid 缺失时
+  /// 由 completeLogin 回退 md5(refresh_token)。
+  @override
+  CloudCaptureRule? get captureRule => CloudCaptureRule(
+        pollScript: '''
+(() => {
+  try {
+    var raw = window.localStorage.getItem('credentials_$_clientId');
+    if (!raw) return "";
+    var o = JSON.parse(raw);
+    var rt = String(o.refresh_token || '');
+    if (!rt) return "";
+    var dev = '';
+    try { dev = String(window.localStorage.getItem('deviceid') || ''); } catch (e2) {}
+    return JSON.stringify({
+      at: String(o.access_token || ''),
+      rt: rt,
+      uid: String(o.user_id || o.sub || ''),
+      nick: String(o.user_name || o.nick_name || ''),
+      dev: dev
+    });
+  } catch (e) { return ""; }
+})()''',
+        pollIntervalMs: 500,
+      );
 
   // ── 登录 ──────────────────────────────────────────────
 
   @override
-  Future<CloudAccount> loginWithFields(Map<String, String> fields) async {
-    final username = (fields['username'] ?? '').trim();
-    final password = fields['password'] ?? '';
-    if (username.isEmpty || password.isEmpty) {
-      throw const CloudException('请填写账号和密码');
+  Future<CloudAccount> completeLogin(CloudCaptureResult captured) async {
+    final raw = captured.token;
+    if (raw == null || raw.isEmpty) {
+      throw const CloudException('未捕获到登录凭据，请重新登录');
     }
-    HttpLoginGate.instance.ensureAllowed(id);
-    HttpLoginGate.instance.recordAttempt(id);
+    Map<String, dynamic> parsed;
     try {
-      final deviceId = uuidV4();
-      final resp = await cloudPostJson(
-        'https://xluser-ssl.xunlei.com/xluser.core.login/v3/login',
-        body: {
-          'client_id': _clientId,
-          'action': 'login',
-          'username': username,
-          'password': md5Hex(password),
-          'deviceid': deviceId,
-        },
-        headers: {'User-Agent': _ua, 'Content-Type': 'application/json'},
-      );
-      if (!resp.isOk) {
-        HttpLoginGate.instance.recordFailure(id);
-        throw const CloudException('登录失败');
-      }
-      final accessToken = (resp.json['access_token'] ?? '').toString();
-      final refreshToken = (resp.json['refresh_token'] ?? '').toString();
-      if (accessToken.isEmpty) {
-        HttpLoginGate.instance.recordFailure(id);
-        throw CloudException(
-            (resp.json['error_description'] ?? resp.json['error'] ?? '账号或密码错误')
-                .toString());
-      }
-      final userId = (resp.json['sub'] ?? resp.json['user_id'] ?? '')
-          .toString();
-      HttpLoginGate.instance.recordSuccess(id);
-      return CloudAccount(
-        provider: id,
-        accountId: userId.isEmpty ? md5Hex(username).substring(0, 12) : userId,
-        nickname: username,
-        cred: {
-          'accessToken': accessToken,
-          'refreshToken': refreshToken,
-          'userId': userId,
-        },
-        boundAt: DateTime.now(),
-      );
-    } on CloudException {
-      rethrow;
+      parsed = jsonDecode(raw) as Map<String, dynamic>;
     } catch (_) {
-      HttpLoginGate.instance.recordFailure(id);
-      throw const CloudException('登录失败，请稍后再试');
+      // 平台通道偶发返回转义形态（{\"rt\":...}）：包回引号整体解码还原。
+      Map<String, dynamic>? retry;
+      if (raw.contains(r'\"')) {
+        try {
+          final dec = jsonDecode('"$raw"');
+          if (dec is String) {
+            retry = jsonDecode(dec) as Map<String, dynamic>;
+          }
+        } catch (_) {}
+      }
+      if (retry == null) {
+        throw const CloudException('登录凭据解析失败，请重新登录');
+      }
+      parsed = retry;
     }
+    final refreshToken = (parsed['rt'] ?? '').toString();
+    if (refreshToken.isEmpty) {
+      throw const CloudException('未捕获到登录凭据，请重新登录');
+    }
+    final uid = (parsed['uid'] ?? '').toString();
+    final nick = (parsed['nick'] ?? '').toString();
+    // deviceid（wdi10.<64hex>）取前 32 位 hex；缺失回退 md5(refresh_token)。
+    var dev = (parsed['dev'] ?? '').toString();
+    if (dev.startsWith('wdi10.')) dev = dev.substring(6);
+    if (dev.length >= 32) dev = dev.substring(0, 32);
+    if (dev.length != 32 || !RegExp(r'^[0-9a-f]{32}$').hasMatch(dev)) {
+      dev = md5Hex(refreshToken);
+    }
+    final accountId = uid.isNotEmpty ? uid : md5Hex(refreshToken).substring(0, 12);
+    return CloudAccount(
+      provider: id,
+      accountId: accountId,
+      nickname: nick.isNotEmpty ? nick : '迅雷云盘',
+      cred: {
+        'accessToken': (parsed['at'] ?? '').toString(),
+        'refreshToken': refreshToken,
+        'userId': uid,
+        'deviceId': dev,
+        'ua': CloudProvider.desktopWebviewUa,
+      },
+      boundAt: DateTime.now(),
+    );
   }
 
   // ── 业务（rust 桥转发）─────────────────────────────────
