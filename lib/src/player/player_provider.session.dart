@@ -285,7 +285,12 @@ extension PlayerNotifierSession on PlayerNotifier {
       await _player.setVolume(vol);
 
       if (!currentItem.isOnline) {
-        if (PlayerNotifier._isRemotePath(currentItem.path)) {
+        if (currentItem.path.startsWith('cloud://')) {
+          // 网盘曲目：直链需起播时经 _playCloud 现取，恢复阶段不能预载——
+          // cloud:// 不是文件路径，喂给 DSP/ExoPlayer 只会「文件不存在」，
+          // 还会白烧 60s DSP 冷却，污染紧随其后的真实起播（2026-10-17 实测）
+          _restoredLocalPending = pos;
+        } else if (PlayerNotifier._isRemotePath(currentItem.path)) {
           final cached = await _preloadRemote(currentItem);
           await _updateRgGain(cached);
           await seek(pos);

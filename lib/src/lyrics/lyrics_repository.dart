@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/application_logger.dart';
 import '../core/app_http.dart';
 import '../core/db_path.dart';
+import '../cloud/cloud_filename.dart';
 import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_backup_import.dart';
@@ -127,6 +128,26 @@ class LyricsRepository {
       } else {
         AppLog.warn('lyric', '原生歌词兜底: 无结果');
       }
+      return '';
+    }
+    if (item.path.startsWith('cloud://')) {
+      // 网盘曲目：文件名反解 {artist,title} 走插件搜索（同 DLNA 被投链路）
+      var probe = item;
+      if (probe.artist.trim().isEmpty) {
+        final parts = parseCloudFileName(probe.title);
+        probe = QueueItem(
+          path: probe.path,
+          title: parts.title,
+          artist: parts.artist ?? '',
+          album: '',
+        );
+      }
+      final online = await _searchCastLyricSource(probe);
+      if (online != null) {
+        final payload = await _fetchLyricsJson(online);
+        if (payload.isNotEmpty && payload != 'null') return payload;
+      }
+      AppLog.debug('lyric', '网盘曲目无插件歌词: ${item.title}');
       return '';
     }
     if (item.path.startsWith('http://') || item.path.startsWith('https://')) {

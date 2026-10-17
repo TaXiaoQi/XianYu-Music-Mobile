@@ -25,6 +25,64 @@ use super::{biz_err, pre_parse_share, require_cred};
 const UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+/// 天翼网关把 COOKIE_LOGIN_USER 绑定到登录请求的出口 IP（实测 400 响应：
+/// InvalidSessionKey / "check ip error - curIp=x, cookiesIp=y"）。移动/
+/// 宽带 CGNAT 会在多个出口 IP 间轮换，跨出口的请求一律被拒。策略：优先
+/// 复用上次成功的独立连接池（保活连接出口稳定），命中 IP 错误则换新连接
+/// 重试，成功后重新记住该客户端。
+static PREFERRED_CLIENT: std::sync::RwLock<Option<reqwest::Client>> =
+    std::sync::RwLock::new(None);
+
+fn fresh_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap_or_default()
+}
+
+fn is_ip_session_error(out: &http::Outbound) -> bool {
+    !out.is_ok()
+        && (out.body.contains("check ip error") || out.body.contains("InvalidSessionKey"))
+}
+
+/// 会话绑 IP 的 GET：命中出口 IP 错误时换新连接重试（最多 3 次）。
+async fn get_ipbound(
+    url: &str,
+    headers: &[(String, String)],
+) -> Result<http::Outbound, String> {
+    let preferred = PREFERRED_CLIENT.read().ok().and_then(|g| g.clone());
+    if let Some(c) = &preferred {
+        let out = http::request_with_client(c, url, headers).await?;
+        if !is_ip_session_error(&out) {
+            return Ok(out);
+        }
+    }
+    let mut last_ip_err: Option<http::Outbound> = None;
+    for _ in 0..3 {
+        let c = fresh_client();
+        let out = http::request_with_client(&c, url, headers).await?;
+        if !is_ip_session_error(&out) {
+            if out.is_ok() {
+                if let Ok(mut g) = PREFERRED_CLIENT.write() {
+                    *g = Some(c);
+                }
+            }
+            return Ok(out);
+        }
+        last_ip_err = Some(out);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    // 新连接全部命中 IP 错误：退回共享池再试一次，仍错则返回最后的
+    // IP 错误响应（调用方按非 2xx 报错，信息带 curIp/cookiesIp）。
+    let out = http::get(url, headers).await?;
+    if !is_ip_session_error(&out) {
+        return Ok(out);
+    }
+    Ok(last_ip_err.unwrap_or(out))
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -68,7 +126,8 @@ fn file_id_of(data: &Value) -> String {
 fn auth_headers(cookie: &str) -> Vec<(String, String)> {
     let mut h = vec![
         ("User-Agent".into(), UA.into()),
-        ("Referer".into(), "https://cloud.189.cn/".into()),
+        ("Referer".into(), "https://cloud.189.cn/web/main/".into()),
+        ("Accept".into(), "application/json;charset=UTF-8".into()),
     ];
     if !cookie.is_empty() {
         h.push(("Cookie".into(), cookie.to_string()));
@@ -90,7 +149,7 @@ fn task_done(state: &str) -> bool {
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     // Dart 侧 try/catch 全吞：网络失败一律 valid=false。
-    let ok = match http::get(
+    let ok = match get_ipbound(
         "https://cloud.189.cn/api/open/file/listFiles.action?folderId=-11&pageNum=1&pageSize=1",
         &auth_headers(&req.cred_str("cookie")),
     )
@@ -110,29 +169,49 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         "https://cloud.189.cn/api/open/file/listFiles.action?folderId={}&pageNum={page}&pageSize=60",
         http::url_encode(&path)
     );
-    let resp = http::get(&url, &auth_headers(&req.cred_str("cookie")))
+    let cookie = req.cred_str("cookie");
+    let resp = get_ipbound(&url, &auth_headers(&cookie))
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("目录列表请求失败"));
+        let head: String = resp.body.chars().take(160).collect();
+        return Err(biz_err(&format!("目录列表请求失败(HTTP {}) {head}", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    let list = j
-        .pointer("/data/fileListAO/fileList")
-        .and_then(Value::as_array)
+    // 实测响应存在两种形态：open 网关为 {"data":{"fileListAO":…}}，
+    // PC web 会话为顶层 {"fileListAO":…}；且目录条目在 folderList
+    // （fileList 仅文件，根目录只有文件夹时 fileList 为空数组）。
+    let ao = j
+        .pointer("/data/fileListAO")
+        .or_else(|| j.get("fileListAO"))
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or(Value::Null);
     let mut files = Vec::new();
-    for e in &list {
-        files.push(file_json(
-            &jstr(e.get("id")),
-            &jstr(e.get("name")),
-            dart_bool(e.get("dir")) || dart_bool(e.get("isdir")),
-            num_i64(e.get("size")).unwrap_or(0),
-            Some(&path),
-            None,
-            None,
-        ));
+    if let Some(folders) = ao.get("folderList").and_then(Value::as_array) {
+        for e in folders {
+            files.push(file_json(
+                &jstr(e.get("id")),
+                &jstr(e.get("name")),
+                true, // folderList 内必为目录；实测条目无 dir/isdir 字段
+                0,
+                Some(&path),
+                None,
+                None,
+            ));
+        }
+    }
+    if let Some(list) = ao.get("fileList").and_then(Value::as_array) {
+        for e in list {
+            files.push(file_json(
+                &jstr(e.get("id")),
+                &jstr(e.get("name")),
+                dart_bool(e.get("dir")) || dart_bool(e.get("isdir")),
+                num_i64(e.get("size")).unwrap_or(0),
+                Some(&path),
+                None,
+                None,
+            ));
+        }
     }
     let next_cursor = if files.len() >= 60 {
         Some((page + 1).to_string())
@@ -142,11 +221,13 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
-/// 文件搜索 URL（纯函数，单测断言）：filename 关键词 + 全盘 folderId=-11，
-/// 翻页 pageNum/pageSize 照 list_dir 风格（60 条/页）。
+/// 文件搜索 URL（纯函数，单测断言）：filename 关键词 + 全盘 folderId=-11
+/// 递归搜索。路径**无 /api 前缀**（cloud.189.cn/open/file/searchFiles.action，
+/// 带 /api 的 open 路径 404，MediaHelp 等同域 Cookie 实现同款），参数含
+/// recursive=1（递归子目录）与 mediaType=0；翻页 pageNum，pageSize=1000。
 fn search_url(keyword: &str, page: i64) -> String {
     format!(
-        "https://cloud.189.cn/api/open/file/searchFiles.action?filename={}&folderId=-11&pageNum={page}&pageSize=60",
+        "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum={page}&recursive=1&mediaType=0&filename={}",
         http::url_encode(keyword)
     )
 }
@@ -177,25 +258,32 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("缺少搜索关键词"));
     }
     let page: i64 = req.param_str("cursor").parse().unwrap_or(1);
-    let resp = http::get(&search_url(&keyword, page), &auth_headers(&req.cred_str("cookie")))
-        .await
-        .map_err(biz_err)?;
+    let resp = get_ipbound(
+        &search_url(&keyword, page),
+        &auth_headers(&req.cred_str("cookie")),
+    )
+    .await
+    .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("搜索请求失败"));
+        return Err(biz_err(&format!("搜索请求失败(HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    // 接口形状防御式解析：data 包裹与裸 fileListAO 两种形态都接。
-    let list = j
-        .pointer("/data/fileListAO/fileList")
-        .or_else(|| j.pointer("/fileListAO/fileList"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
+    // 接口形状防御式解析：data 包裹与裸 fileListAO 两种形态都接；
+    // fileList + folderList 合并（搜索会返回匹配的文件夹，UI 侧按
+    // isAudio 过滤）。
     let mut files = Vec::new();
-    for e in &list {
-        files.push(file_from_search_item(e));
+    for key in ["fileList", "folderList"] {
+        let list = j
+            .pointer(&format!("/data/fileListAO/{key}"))
+            .or_else(|| j.pointer(&format!("/fileListAO/{key}")))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        for e in &list {
+            files.push(file_from_search_item(e));
+        }
     }
-    let next_cursor = if files.len() >= 60 {
+    let next_cursor = if files.len() >= 1000 {
         Some((page + 1).to_string())
     } else {
         None
@@ -408,16 +496,26 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         "https://cloud.189.cn/api/open/file/getFileDownloadUrl.action?fileId={}",
         http::url_encode(&jstr(file.get("id")))
     );
-    let resp = http::get(&url, &auth_headers(&req.cred_str("cookie")))
+    let resp = get_ipbound(&url, &auth_headers(&req.cred_str("cookie")))
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("直链获取失败"));
+        let head: String = resp.body.chars().take(160).collect();
+        return Err(biz_err(&format!(
+            "直链获取失败(HTTP {}) {head}",
+            resp.status
+        )));
     }
     let j = resp.json().map_err(biz_err)?;
-    let url = jstr(j.pointer("/data/fileDownloadUrl"));
+    // open 网关包 data，PC web 会话为顶层（对齐 listFiles 实测形态）。
+    let url = jstr(
+        j.pointer("/data/fileDownloadUrl")
+            .or_else(|| j.get("fileDownloadUrl"))
+            .filter(|v| !v.is_null()),
+    );
     if url.is_empty() {
-        return Err(biz_err("直链获取失败"));
+        let head: String = resp.body.chars().take(160).collect();
+        return Err(biz_err(&format!("直链为空 {head}")));
     }
     let final_url = resolve_final_url(&url, &[("User-Agent".into(), UA.into())]).await;
     let name = jstr(file.get("name"));
@@ -452,11 +550,12 @@ mod tests {
     fn headers_cookie_conditional() {
         let h = auth_headers("SESSION=x");
         assert_eq!(h[0].1, UA);
-        assert_eq!(h[1].1, "https://cloud.189.cn/");
-        assert_eq!(h[2].0, "Cookie");
-        assert_eq!(h[2].1, "SESSION=x");
+        assert_eq!(h[1].1, "https://cloud.189.cn/web/main/");
+        assert_eq!(h[2].1, "application/json;charset=UTF-8");
+        assert_eq!(h[3].0, "Cookie");
+        assert_eq!(h[3].1, "SESSION=x");
         // 空串不带 Cookie 头。
-        assert_eq!(auth_headers("").len(), 2);
+        assert_eq!(auth_headers("").len(), 3);
     }
 
     #[test]
@@ -509,13 +608,14 @@ mod tests {
 
     #[test]
     fn search_url_shape() {
+        // 无 /api 前缀 + recursive/mediaType 参数（对齐同域 Cookie 实现抓包）。
         assert_eq!(
             search_url("lo fi", 2),
-            "https://cloud.189.cn/api/open/file/searchFiles.action?filename=lo+fi&folderId=-11&pageNum=2&pageSize=60"
+            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum=2&recursive=1&mediaType=0&filename=lo+fi"
         );
         assert_eq!(
             search_url("周深", 1),
-            "https://cloud.189.cn/api/open/file/searchFiles.action?filename=%E5%91%A8%E6%B7%B1&folderId=-11&pageNum=1&pageSize=60"
+            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum=1&recursive=1&mediaType=0&filename=%E5%91%A8%E6%B7%B1"
         );
     }
 

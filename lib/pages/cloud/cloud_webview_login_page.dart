@@ -358,7 +358,7 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
                 pressScale: 0.92,
                 child: TextButton(
                   onPressed: _finishing ? null : _manualCookie,
-                  child: Text(tr(_provider.captureRule?.pollScript != null
+                  child: Text(tr(_provider.manualTokenInput
                       ? '填 Token'
                       : '填 Cookie')),
                 ),

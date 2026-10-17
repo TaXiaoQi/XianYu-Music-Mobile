@@ -22,6 +22,7 @@ impl Read for StreamingTempFileReader {
 			if let Some(ref flag) = self.post_check_pending {
 				if flag.load(Ordering::Relaxed) {
 					if self.download_failed.load(Ordering::Relaxed) {
+						record_eof_diag(self, "post_check_failed");
 						return Ok(0);
 					}
 					std::thread::sleep(Duration::from_millis(3));
@@ -34,11 +35,23 @@ impl Read for StreamingTempFileReader {
 				let max_read = (downloaded - self.pos).min(buf.len() as u64) as usize;
 				let n = self.file.read(&mut buf[..max_read])?;
 				self.pos += n as u64;
+				if n == 0 {
+					// pos < downloaded 但文件已到尾：计数器与实际文件长度失配（异常态）
+					record_eof_diag(self, "file_eof_before_counter");
+				}
 				return Ok(n);
 			}
 			if self.download_complete.load(Ordering::Relaxed)
 				|| self.download_failed.load(Ordering::Relaxed)
 			{
+				record_eof_diag(
+					self,
+					if self.download_failed.load(Ordering::Relaxed) {
+						"download_failed"
+					} else {
+						"download_complete"
+					},
+				);
 				return Ok(0);
 			}
 			// 注意：此 read() 在音频回调线程调用（经 rodio Decoder → Source::next()）。
@@ -48,6 +61,33 @@ impl Read for StreamingTempFileReader {
 			std::thread::sleep(Duration::from_millis(3));
 		}
 	}
+}
+
+/// 最近一次 reader 返回 Ok(0)（EOF）时的状态快照：正常播完的 EOF 会被覆盖，
+/// 只有解码线程报 UnexpectedEof 时由 decoder 读走，定位「为什么提前 EOF」。
+static LAST_EOF_DIAG: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+	std::sync::OnceLock::new();
+
+fn record_eof_diag(r: &StreamingTempFileReader, reason: &str) {
+	let file_len = r.file.metadata().map(|m| m.len()).unwrap_or(u64::MAX);
+	let slot = LAST_EOF_DIAG.get_or_init(|| std::sync::Mutex::new(None));
+	if let Ok(mut g) = slot.lock() {
+		*g = Some(format!(
+			"readerEOF[{reason}] pos={} downloaded={} complete={} failed={} file_len={} total={:?}",
+			r.pos,
+			r.downloaded_bytes.load(Ordering::Relaxed),
+			r.download_complete.load(Ordering::Relaxed),
+			r.download_failed.load(Ordering::Relaxed),
+			file_len,
+			r.total_bytes,
+		));
+	}
+}
+
+/// 读取并清除最近一次 reader EOF 快照（decoder UnexpectedEof 时拼接诊断）。
+pub(crate) fn take_eof_diag() -> Option<String> {
+	let slot = LAST_EOF_DIAG.get_or_init(|| std::sync::Mutex::new(None));
+	slot.lock().ok().and_then(|mut g| g.take())
 }
 
 impl Seek for StreamingTempFileReader {

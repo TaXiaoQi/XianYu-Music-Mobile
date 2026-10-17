@@ -197,10 +197,10 @@ class Ecloud189Provider extends CloudProvider {
     }
     // 5. toUrl 换 PC 会话（302 跳转链，逐跳采 Cookie）。
     final cookie = await _exchangePortalSession(jar, toUrl);
-    final userId = (body['userId'] ?? username).toString();
+    // accountId 固定取手机号：userId 仅部分响应携带，导致同号重复建账。
     return CloudAccount(
       provider: id,
-      accountId: userId,
+      accountId: username,
       nickname: username,
       cred: {'cookie': cookie},
       boundAt: DateTime.now(),
@@ -298,9 +298,10 @@ class Ecloud189Provider extends CloudProvider {
     _pendingSms.remove(s.username);
     final toUrl = (body['toUrl'] ?? '').toString();
     final cookie = await _exchangePortalSession(s.jar, toUrl);
+    // accountId 固定取手机号，与账密直登路径保持一致（防重复建账）。
     return CloudAccount(
       provider: id,
-      accountId: (body['userId'] ?? s.username).toString(),
+      accountId: s.username,
       nickname: s.username,
       cred: {'cookie': cookie},
       boundAt: DateTime.now(),

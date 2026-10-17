@@ -241,8 +241,12 @@ impl BlockProducer for SymphoniaDecoder {
                 Err(symphonia::core::errors::Error::IoError(ref e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
+                    let eof_diag =
+                        crate::player::stream_cache::take_eof_diag()
+                            .map(|d| format!(" {d}"))
+                            .unwrap_or_default();
                     record_decoder_error(&format!(
-                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e} (leftover={})",
+                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e} (leftover={}){eof_diag}",
                         self.leftover.len()
                     ));
                     self.eof = true;

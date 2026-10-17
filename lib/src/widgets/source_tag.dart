@@ -157,9 +157,8 @@ String songSourceLabel(
   String? onlineSongJson,
   String? pluginId,
 }) {
-  if (!isOnline) return tr('本地');
-
-  // 网盘来源：cloud:// 播放标识或 'cloud:<pid>' 来源值，显示盘名
+  // 网盘来源：cloud:// 播放标识或 'cloud:<pid>' 来源值，显示盘名。
+  // cloud:// 曲目 isOnline=false，必须先于本地判定，否则被标成「本地」。
   final src0 = (source != null && source.trim().isNotEmpty)
       ? source
       : (path.startsWith('cloud://')
@@ -172,6 +171,8 @@ String songSourceLabel(
     }
     return tr('网盘');
   }
+
+  if (!isOnline) return tr('本地');
 
   final showReal = ref.watch(settingsProvider
           .select((s) => s.valueOrNull?.showRealSourceName ?? false));

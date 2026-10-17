@@ -534,6 +534,9 @@ _AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
         s.outSampleRate,
         s.outChannels,
         s.outBitPerfect,
+        s.cloudSourceRate,
+        s.cloudSourceBits,
+        s.cloudSourceKbps,
       ),
     ),
   );
@@ -547,6 +550,25 @@ _AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
         codec = (song.codec ?? song.format).toUpperCase().trim();
         rate = song.sampleRate;
         bits = song.bitDepth;
+      } else if (item.isCloud) {
+        // 网盘曲目：path 是 cloud://<provider>/<account>/<urlEncodedJson>，
+        // 取尾段扩展名会吐 URL 编码乱码，改从上下文里的原始文件名取；
+        // 采样率/位深/码率来自起播后的直链头部探测（见 _probeCloudSourceFormat）。
+        try {
+          final file =
+              (jsonDecode(item.cloudInfoJson!) as Map)['file'] as Map?;
+          final name = (file?['name'] ?? '').toString();
+          final dot = name.lastIndexOf('.');
+          if (dot >= 0 && dot < name.length - 1) {
+            codec = name.substring(dot + 1).toUpperCase();
+          }
+        } catch (_) {}
+        rate = sel.$6;
+        bits = sel.$7 > 0 ? sel.$7 : null;
+        // 有损流（MP3 等）：位深无意义，把码率并入编码标签，如 MP3 320K
+        if (rate == 0 && sel.$8 > 0 && codec.isNotEmpty) {
+          codec = '$codec ${sel.$8}K';
+        }
       } else {
         // 不在曲库里的本地/远程文件：退到扩展名，至少能显示容器类型
         final dot = item.path.lastIndexOf('.');

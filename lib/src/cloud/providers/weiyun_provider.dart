@@ -36,19 +36,17 @@ class WeiyunProvider extends CloudProvider {
 
   @override
   CloudCaptureRule? get captureRule => CloudCaptureRule(
+        // 纯 Cookie 范式：登录落地 weiyun.com 即采 Cookie 自动完成。
+        // 原 pollScript 读 localStorage 的 weiyun_qq_openid/weiyun_wx_openid
+        // 键——该键名系设计稿拍脑袋，微云前端从不写入（恒空），导致
+        // Token 范式永不判定完成、登录后卡死不跳绑定（2026-10-17 实测）。
         doneUrlPattern: RegExp(r'weiyun\.com'),
-        pollScript: '''
-(() => {
-  var qq = null, wx = null;
-  try { qq = localStorage.getItem('weiyun_qq_openid'); } catch (e) {}
-  try { wx = localStorage.getItem('weiyun_wx_openid'); } catch (e) {}
-  if ((qq && qq.length) || (wx && wx.length)) {
-    return JSON.stringify({qq: qq, wx: wx});
-  }
-  return "";
-})()''',
-        pollIntervalMs: 500,
       );
+
+  @override
+  String? get manualInputHint =>
+      '粘贴网页版 Cookie（电脑浏览器登录微云 → F12 → Application → '
+      'Cookies，复制全串；需含 weiyun_session）';
 
   // ── 登录 ──────────────────────────────────────────────
 

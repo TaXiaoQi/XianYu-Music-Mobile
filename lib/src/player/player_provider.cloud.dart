@@ -140,6 +140,10 @@ extension PlayerNotifierCloud on PlayerNotifier {
         isPlaying: startPlayback,
         cloudSource: true,
       );
+      // 封面异步补齐：不阻塞起播（歌词由 LyricsRepository 按
+      // 同一文件名关键词走插件搜索，无需在此处理）
+      unawaited(_enrichCloudCover(item));
+      unawaited(_probeCloudSourceFormat(link, item));
     } catch (e) {
       // 直链可能已过期：清缓存重取一次；仍失败交上层按播放失败处理
       AppLog.warn('cloud', '网盘直链起播失败，重取一次: $e');
@@ -154,6 +158,178 @@ extension PlayerNotifierCloud on PlayerNotifier {
         isPlaying: startPlayback,
         cloudSource: true,
       );
+      unawaited(_enrichCloudCover(item));
+      unawaited(_probeCloudSourceFormat(fresh, item));
     }
   }
+
+  /// 网盘源格式探测结果：rate=采样率 bits=位深 kbps=有损码率（未知为 0）。
+  /// 网盘文件本就是本地上传的原文件，探测直链头部即可拿到与本地曲库
+  /// 同源的采样率/位深，徽标就能像本地一样显示完整（如 FLAC 24bit/44.1kHz）。
+  Future<void> _probeCloudSourceFormat(
+      CloudDirectLink link, QueueItem item) async {
+    final path = item.path;
+    state = state.copyWith(
+      cloudSourceRate: 0,
+      cloudSourceBits: 0,
+      cloudSourceKbps: 0,
+    );
+    try {
+      final req = await sharedHttpClient
+          .openUrl('GET', Uri.parse(link.url))
+          .timeout(const Duration(seconds: 8));
+      link.headers.forEach(req.headers.set);
+      req.headers.set('Range', 'bytes=0-65535');
+      final resp = await req.close().timeout(const Duration(seconds: 10));
+      if (resp.statusCode != 200 && resp.statusCode != 206) {
+        AppLog.debug('cloud', '网盘源格式探测失败: HTTP ${resp.statusCode}');
+        return;
+      }
+      final bytes = <int>[];
+      await for (final chunk in resp) {
+        bytes.addAll(chunk);
+        if (bytes.length >= 65536) break;
+      }
+      final fmt = _parseAudioHeaderFormat(bytes);
+      if (fmt == null) {
+        AppLog.debug('cloud', '网盘源格式探测: 无法识别的音频头');
+        return;
+      }
+      // 慢网探测期间可能已切歌：只在仍是这首时回填，避免串台
+      if (state.current?.path != path) return;
+      state = state.copyWith(
+        cloudSourceRate: fmt.rate,
+        cloudSourceBits: fmt.bits,
+        cloudSourceKbps: fmt.kbps,
+      );
+      AppLog.info('cloud',
+          '网盘源格式: rate=${fmt.rate} bits=${fmt.bits} kbps=${fmt.kbps}');
+    } catch (e) {
+      AppLog.debug('cloud', '网盘源格式探测失败: $e');
+    }
+  }
+
+  /// 网盘曲目封面补齐：文件名反解 {artist,title} → 插件搜索 →
+  /// 命中项封面 URL 回填当前队列条目（标题全等优先，否则取首条带封面项）。
+  Future<void> _enrichCloudCover(QueueItem item) async {
+    if (item.coverUrl?.isNotEmpty == true) return;
+    try {
+      final artist = item.artist.trim();
+      final parts = artist.isEmpty
+          ? parseCloudFileName(item.title)
+          : CloudNameParts(title: item.title, artist: artist);
+      if (parts.title.trim().isEmpty) return;
+      final keyword = (parts.artist ?? '').trim().isEmpty
+          ? parts.title
+          : '${parts.title} ${parts.artist}';
+      final manager = _ref.read(pluginManagerProvider);
+      final engine = await _ref.read(pluginEngineProvider.future);
+      final service = PluginSearchService(engine, manager.sources);
+      final all = await service.searchAll(keyword, limit: 10);
+      QueueItem? fallback;
+      for (final (ps, items) in all) {
+        for (final r in items) {
+          final qi = service.toQueueItem(ps, r);
+          if (qi.coverUrl?.isNotEmpty != true) continue;
+          fallback ??= qi;
+          if (qi.title.trim().toLowerCase() ==
+              parts.title.trim().toLowerCase()) {
+            _patchCloudCover(item.path, qi.coverUrl!);
+            return;
+          }
+        }
+      }
+      if (fallback != null) {
+        _patchCloudCover(item.path, fallback.coverUrl!);
+      } else {
+        AppLog.debug('cloud', '网盘封面补齐: 无插件命中 keyword=$keyword');
+      }
+    } catch (e) {
+      AppLog.warn('cloud', '网盘封面补齐失败: $e');
+    }
+  }
+
+  /// 把补齐的封面写回队列与当前曲目（按 path 定位，刷新播放页与媒体会话）。
+  void _patchCloudCover(String path, String coverUrl) {
+    final idx = state.queue.indexWhere((e) => e.path == path);
+    if (idx < 0) return;
+    final patched = state.queue[idx].copyWithCloudCover(coverUrl);
+    final queue = [...state.queue]..[idx] = patched;
+    state = state.copyWith(
+      queue: queue,
+      current: state.current?.path == path ? patched : state.current,
+    );
+    _syncToSystemMediaSession();
+  }
+}
+
+/// 网盘源格式探测结果：rate=采样率 bits=位深 kbps=有损码率（未知为 0）。
+typedef _CloudStreamFormat = ({int rate, int bits, int kbps});
+
+/// 从音频文件头部字节（≤64KB）解析源格式。覆盖网盘上传最常见的
+/// FLAC / WAV / MP3；其余容器（M4A/APE/OGG 等）返回 null，徽标退化为
+/// 仅扩展名。纯解析无 IO，方便单测。
+_CloudStreamFormat? _parseAudioHeaderFormat(List<int> b) {
+  if (b.length < 16) return null;
+  String tag(int off, int len) =>
+      String.fromCharCodes(b.sublist(off, off + len));
+
+  // FLAC：'fLaC' + STREAMINFO（类型 0，必为首元数据块）
+  if (tag(0, 4) == 'fLaC' && b.length >= 42 && (b[4] & 0x7F) == 0) {
+    var v = 0;
+    for (var i = 18; i < 26; i++) {
+      v = (v << 8) | b[i];
+    }
+    // 打包字段：[20b 采样率][3b 声道-1][5b 位深-1][36b 总样本数]
+    final rate = v >> 44;
+    final bits = ((v >> 36) & 0x1F) + 1;
+    if (rate > 0) return (rate: rate, bits: bits, kbps: 0);
+  }
+
+  // WAV：RIFF/WAVE，遍历块找 'fmt '
+  if (tag(0, 4) == 'RIFF' && tag(8, 4) == 'WAVE') {
+    var off = 12;
+    while (off + 8 <= b.length) {
+      final id = tag(off, 4);
+      final size =
+          b[off + 4] | (b[off + 5] << 8) | (b[off + 6] << 16) | (b[off + 7] << 24);
+      if (size <= 0) break;
+      if (id == 'fmt ' && off + 8 + 16 <= b.length) {
+        final d = off + 8;
+        final rate =
+            b[d + 4] | (b[d + 5] << 8) | (b[d + 6] << 16) | (b[d + 7] << 24);
+        final bits = b[d + 14] | (b[d + 15] << 8);
+        if (rate > 0) return (rate: rate, bits: bits, kbps: 0);
+      }
+      off += 8 + size + (size & 1); // 块按字对齐
+    }
+  }
+
+  // MP3：跳过 ID3v2，扫描首个合法 Layer III 帧头
+  var start = 0;
+  if (tag(0, 3) == 'ID3' && b.length >= 10) {
+    final size = ((b[6] & 0x7F) << 21) |
+        ((b[7] & 0x7F) << 14) |
+        ((b[8] & 0x7F) << 7) |
+        (b[9] & 0x7F);
+    start = 10 + size;
+  }
+  const br1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+  const br2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
+  const sr1 = [44100, 48000, 32000, 0];
+  const sr2 = [22050, 24000, 16000, 0];
+  const sr25 = [11025, 12000, 8000, 0];
+  for (var i = start; i + 4 <= b.length; i++) {
+    if (b[i] != 0xFF || (b[i + 1] & 0xE0) != 0xE0) continue;
+    final ver = (b[i + 1] >> 3) & 3; // 3=MPEG1 2=MPEG2 0=MPEG2.5
+    final layer = (b[i + 1] >> 1) & 3; // 1=Layer III
+    if (ver == 1 || layer != 1) continue;
+    final bIdx = b[i + 2] >> 4;
+    final sIdx = (b[i + 2] >> 2) & 3;
+    if (bIdx == 0 || bIdx == 15 || sIdx == 3) continue;
+    final kbps = ver == 3 ? br1[bIdx] : br2[bIdx];
+    final rate = ver == 3 ? sr1[sIdx] : (ver == 2 ? sr2[sIdx] : sr25[sIdx]);
+    if (kbps > 0 && rate > 0) return (rate: rate, bits: 0, kbps: kbps);
+  }
+  return null;
 }

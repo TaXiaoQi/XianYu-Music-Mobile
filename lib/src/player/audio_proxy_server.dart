@@ -119,6 +119,33 @@ class AudioProxyServer {
     _upstreamRejections[target] = (status, now);
   }
 
+  /// AppLog 底层 debugPrint 长消息会被截断：完整直链分片落日志，
+  /// 供网盘直链被上游拒绝时核对 URL 是否被中途改写。
+  void _logRejectedTarget(String target) {
+    const chunk = 600;
+    for (var i = 0; i < target.length; i += chunk) {
+      probeLog('rejected-url[$i] ${target.substring(i, (i + chunk).clamp(0, target.length))}');
+    }
+  }
+
+  /// 读取上游错误响应体头部（4xx XML 错误码定位用）。
+  Future<String> _readBodyHead(HttpClientResponse resp, int maxBytes) async {
+    try {
+      final builder = BytesBuilder(copy: false);
+      await for (final chunk in resp.timeout(_upstreamStall)) {
+        builder.add(chunk);
+        if (builder.length >= maxBytes) break;
+      }
+      final bytes = builder.takeBytes();
+      return utf8.decode(
+        bytes.sublist(0, min(bytes.length, maxBytes)),
+        allowMalformed: true,
+      );
+    } catch (e) {
+      return '<body-head-err:$e>';
+    }
+  }
+
   /// 该直链近期（TTL 内）是否被上游拒绝，返回状态码或 null
   int? lookupUpstreamRejection(String url) {
     final r = _upstreamRejections[url];
@@ -445,6 +472,24 @@ class AudioProxyServer {
         _applyUpstreamHeaders(ureq, upstreamHeaders);
         final uresp = await ureq.close().timeout(const Duration(seconds: 20));
         _recordUpstreamRejection(target, uresp.statusCode);
+        if (uresp.statusCode >= 400 &&
+            uresp.statusCode != HttpStatus.requestedRangeNotSatisfiable) {
+          final bodyHead = await _readBodyHead(uresp, 600);
+          probeLog('tail rejected status=${uresp.statusCode} body=$bodyHead');
+          // head 段已写出、状态码无法更改：读完错误体后截断连接，
+          // 让播放器立即判负，不再进转发循环（避免二次 listen 崩溃）
+          try {
+            await res.close();
+          } catch (e) {
+            AppLog.debug('proxy', '响应关闭失败: $e');
+          }
+          try {
+            ureq.abort();
+          } catch (e) {
+            AppLog.debug('proxy', '中断上游请求失败: $e');
+          }
+          return;
+        }
         unawaited(res.done.whenComplete(() {
           try {
             ureq.abort();
@@ -519,6 +564,35 @@ class AudioProxyServer {
       _applyUpstreamHeaders(ureq, upstreamHeaders);
       final uresp = await ureq.close().timeout(const Duration(seconds: 20));
       _recordUpstreamRejection(target, uresp.statusCode);
+      if (uresp.statusCode >= 400 &&
+          uresp.statusCode != HttpStatus.requestedRangeNotSatisfiable) {
+        final bodyHead = await _readBodyHead(uresp, 600);
+        probeLog('passthrough rejected status=${uresp.statusCode} body=$bodyHead');
+        _logRejectedTarget(target);
+        // 错误体已消费，直接回给客户端并终止：不能再进转发循环
+        //（单订阅流二次 listen 会抛 Stream has already been listened to，
+        // 还会让下游对着空 content-length 干等 10s 超时）
+        final res = req.response;
+        res.statusCode = uresp.statusCode;
+        final ctype = uresp.headers.value(HttpHeaders.contentTypeHeader);
+        if (ctype != null && ctype.isNotEmpty) {
+          res.headers.set(HttpHeaders.contentTypeHeader, ctype);
+        }
+        final body = utf8.encode(bodyHead);
+        res.contentLength = body.length;
+        res.add(body);
+        try {
+          await res.close();
+        } catch (e) {
+          AppLog.debug('proxy', '错误响应发送失败: $e');
+        }
+        try {
+          ureq.abort();
+        } catch (e) {
+          AppLog.debug('proxy', '中断上游请求失败: $e');
+        }
+        return;
+      }
 
       final res = req.response;
       res.statusCode = uresp.statusCode;

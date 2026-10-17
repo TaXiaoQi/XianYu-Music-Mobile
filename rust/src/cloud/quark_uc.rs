@@ -48,13 +48,14 @@ fn common_query(b: &Brand) -> String {
     format!("pr={}&fr=pc&sys=win32&ve=3.23.2", b.pr)
 }
 
-/// 文件搜索 URL（纯函数，单测断言）。端点 file/search 为设计稿形态：
-/// 公共 query 逐字照抄 list，p=1/f=1-2 为设计稿过滤参数，以抓包为准。
+/// 文件搜索 URL（纯函数，单测断言）。参数对齐网页端抓包形态
+/// （Pearsoon/quark、javOldDriver 等独立实现一致）：关键词参数名是
+/// q（非 keyword），_fetch_total/_sort/_is_hl 照抄，无 p/f 过滤参数。
 fn search_url(b: &Brand, keyword: &str, page: i64) -> String {
     format!(
-        "https://{}/1/clouddrive/file/search?{}&_page={page}&_size=50&p=1&f=1-2&keyword={}",
+        "https://{}/1/clouddrive/file/search?pr={}&fr=pc&_page={page}&_size=50&_fetch_total=1&_sort=file_type:desc,updated_at:desc&_is_hl=1&q={}",
         b.api_host,
-        common_query(b),
+        b.pr,
         http::url_encode(keyword)
     )
 }
@@ -96,6 +97,63 @@ fn headers_with_ua(b: &Brand, ua: &str) -> Vec<(String, String)> {
         ("User-Agent".into(), ua.to_string()),
         ("Referer".into(), format!("https://{}/", b.web_host)),
     ]
+}
+
+/// 直链播放请求头：下载链路 OSS 侧带 before-execute callback
+/// （cloud-auth.*.cn/outer/oss/checkplay），回调体引用下载请求的
+/// cookie/referer 头校验登录态，缺 Cookie 直接 RequestDeniedByCallback
+/// 「require login [auth not found]」（2026-10-17 真机实测）。
+fn playback_headers(b: &Brand, cookie: &str, ua: &str) -> Value {
+    json!({
+        "User-Agent": ua,
+        "Referer": format!("https://{}/", b.web_host),
+        "Cookie": cookie,
+    })
+}
+
+/// 直链签发响应的 Set-Cookie 鉴权锚刷新：__puus 系会随响应轮换，下载
+/// checkplay 校验的是签发时刻刷新的值，仍用登录时的旧值即使接口全通
+/// 也会被拒（「require login [auth miss]」，2026-10-17 真机实测）。
+/// 与 OpenList 一致：每次响应回写 __puus/__pus/__kps。返回更新后的
+/// cookie 对与是否有变化。
+fn rotate_auth_cookies(cred: &Value, resp: &http::Outbound) -> (Vec<(String, String)>, bool) {
+    const ANCHORS: [&str; 3] = ["__puus", "__pus", "__kps"];
+    let mut pairs: Vec<(String, String)> = cred
+        .as_object()
+        .map(|m| {
+            m.iter()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("").to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut changed = false;
+    for (k, v) in resp.set_cookie_pairs() {
+        if !ANCHORS.contains(&k.as_str()) || v.is_empty() {
+            continue;
+        }
+        match pairs.iter_mut().find(|(pk, _)| pk == &k) {
+            Some(p) => {
+                if p.1 != v {
+                    p.1 = v;
+                    changed = true;
+                }
+            }
+            None => {
+                pairs.push((k, v));
+                changed = true;
+            }
+        }
+    }
+    (pairs, changed)
+}
+
+/// 更新后的 cookie 对合并回原 cred（保留其余键），供 rotated_cred 回写。
+fn cred_with_cookie_pairs(cred: &Value, pairs: &[(String, String)]) -> Value {
+    let mut obj = cred.as_object().cloned().unwrap_or_default();
+    for (k, v) in pairs {
+        obj.insert(k.clone(), json!(v));
+    }
+    Value::Object(obj)
 }
 
 /// 凭据失效判定：服务端不再认这套 web cookie（401 / code=31001 require
@@ -220,7 +278,12 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             ));
         }
     }
-    let total = data.get("_total").and_then(Value::as_i64).unwrap_or(0);
+    // 总数在顶层 metadata._total（data._total 兜底）。
+    let total = j
+        .pointer("/metadata/_total")
+        .or_else(|| j.pointer("/data/_total"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     let has_next = page * 100 < total;
     let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
@@ -269,16 +332,19 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("搜索请求失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let data = j.get("data").cloned().unwrap_or(Value::Null);
-    let list = data.get("metadata").cloned().unwrap_or(Value::Null);
+    // 列表在 data.list；总数在顶层 metadata._total（data._total 兜底）。
+    let list = j.pointer("/data/list").cloned().unwrap_or(Value::Null);
     let mut files = Vec::new();
     if let Some(items) = list.as_array() {
         for e in items {
             files.push(file_from_search_item(e));
         }
     }
-    // 有更多判定照 list_dir：_total 对每页条数（此处 _size=50）。
-    let total = data.get("_total").and_then(Value::as_i64).unwrap_or(0);
+    let total = j
+        .pointer("/metadata/_total")
+        .or_else(|| j.pointer("/data/_total"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     let has_next = page * 50 < total;
     let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
@@ -377,6 +443,7 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if !resp.is_ok() {
         return Err(biz_err("分享直链获取失败"));
     }
+    let (pairs, rotated) = rotate_auth_cookies(&req.cred, &resp);
     let j = resp.json().map_err(biz_err)?;
     let dl = j
         .get("data")
@@ -389,13 +456,18 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    Ok(CloudOut::plain(direct_link_json(
+    let result = direct_link_json(
         &dl_url,
-        json!({ "User-Agent": desktop_ua(), "Referer": format!("https://{}/", b.web_host) }),
+        playback_headers(b, &http::cookie_header(&pairs), desktop_ua()),
         Some(name),
         size,
         Some(now_ms + 2 * 3600 * 1000),
-    )))
+    );
+    Ok(if rotated {
+        CloudOut::rotated(result, cred_with_cookie_pairs(&req.cred, &pairs))
+    } else {
+        CloudOut::plain(result)
+    })
 }
 
 /// 转存 → 轮询任务 → 完成后按文件名回查新 fid（转存后 fid 会变）。
@@ -507,7 +579,7 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 }
 
 /// route1：我的网盘文件直链（file/download 接口）。
-async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<Value, (i32, String)> {
+async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<CloudOut, (i32, String)> {
     let url = format!(
         "https://{}/1/clouddrive/file/download?{}",
         b.api_host,
@@ -523,6 +595,9 @@ async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<V
         }
         return Err(biz_err("直链获取失败"));
     }
+    // Set-Cookie 鉴权锚刷新必须先于 json 借用收尾：直链与本次新签的
+    // __puus 绑定，播放必须带上刷新值（见 rotate_auth_cookies 注释）。
+    let (pairs, rotated) = rotate_auth_cookies(&req.cred, &resp);
     let j = resp.json().map_err(biz_err)?;
     let dl = j.get("data").cloned().unwrap_or(Value::Null);
     let dl_url = extract_download_url(&dl).ok_or_else(|| biz_err("直链获取失败"))?;
@@ -532,13 +607,18 @@ async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<V
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    Ok(direct_link_json(
+    let result = direct_link_json(
         &dl_url,
-        json!({ "User-Agent": client_ua(b), "Referer": format!("https://{}/", b.web_host) }),
+        playback_headers(b, &http::cookie_header(&pairs), &client_ua(b)),
         Some(name),
         size,
         Some(now_ms + 2 * 3600 * 1000),
-    ))
+    );
+    Ok(if rotated {
+        CloudOut::rotated(result, cred_with_cookie_pairs(&req.cred, &pairs))
+    } else {
+        CloudOut::plain(result)
+    })
 }
 
 /// 免速兜底路由：fast-transfer sendToPC 通道（仅夸克；任何异常归一为直链失败）。
@@ -546,7 +626,7 @@ async fn direct_link_route2_quark(
     b: &Brand,
     req: &CloudReq,
     file: &Value,
-) -> Result<Value, (i32, String)> {
+) -> Result<CloudOut, (i32, String)> {
     let tok_url = "https://drive-social-api.quark.cn/1/clouddrive/chat/conv/file/acquire_dl_token?pr=quark&fr=pc".to_string();
     let tok_body = json!({ "file_id": file.get("id").cloned().unwrap_or(json!("")) });
     let tok_resp = http::post_json(&tok_url, &auth_headers(b, &req.cred), &tok_body)
@@ -576,6 +656,7 @@ async fn direct_link_route2_quark(
     if !resp.is_ok() {
         return Err(biz_err("直链获取失败"));
     }
+    let (pairs, rotated) = rotate_auth_cookies(&req.cred, &resp);
     let j = resp.json().map_err(|_| biz_err("直链获取失败"))?;
     let dl = j.get("data").cloned().unwrap_or(Value::Null);
     let dl_url = extract_download_url(&dl).ok_or_else(|| biz_err("直链获取失败"))?;
@@ -585,13 +666,18 @@ async fn direct_link_route2_quark(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
-    Ok(direct_link_json(
+    let result = direct_link_json(
         &dl_url,
-        json!({ "User-Agent": client_ua(b), "Referer": format!("https://{}/", b.web_host) }),
+        playback_headers(b, &http::cookie_header(&pairs), &client_ua(b)),
         Some(name),
         size,
         Some(now_ms + 2 * 3600 * 1000),
-    ))
+    );
+    Ok(if rotated {
+        CloudOut::rotated(result, cred_with_cookie_pairs(&req.cred, &pairs))
+    } else {
+        CloudOut::plain(result)
+    })
 }
 
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
@@ -599,11 +685,10 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let b = brand_of(&req.provider);
     let file = req.param_obj("file");
     match direct_link_route1(b, req, &file).await {
-        Ok(v) => Ok(CloudOut::plain(v)),
+        Ok(out) => Ok(out),
         Err(_) => {
             if req.provider == "quark" {
-                let v = direct_link_route2_quark(b, req, &file).await?;
-                Ok(CloudOut::plain(v))
+                direct_link_route2_quark(b, req, &file).await
             } else {
                 Err(biz_err("直链获取失败"))
             }
@@ -662,14 +747,14 @@ mod tests {
 
     #[test]
     fn search_url_shape() {
-        // 两家仅域名与 pr 不同，query 其余逐字一致。
+        // 两家仅域名与 pr 不同，query 其余逐字一致（网页端抓包形态：q= 关键词）。
         assert_eq!(
             search_url(&QUARK, "lofi beats", 2),
-            "https://drive-pc.quark.cn/1/clouddrive/file/search?pr=ucpro&fr=pc&sys=win32&ve=3.23.2&_page=2&_size=50&p=1&f=1-2&keyword=lofi+beats"
+            "https://drive-pc.quark.cn/1/clouddrive/file/search?pr=ucpro&fr=pc&_page=2&_size=50&_fetch_total=1&_sort=file_type:desc,updated_at:desc&_is_hl=1&q=lofi+beats"
         );
         assert_eq!(
             search_url(&UC, "flac", 1),
-            "https://pc-api.uc.cn/1/clouddrive/file/search?pr=UCBrowser&fr=pc&sys=win32&ve=3.23.2&_page=1&_size=50&p=1&f=1-2&keyword=flac"
+            "https://pc-api.uc.cn/1/clouddrive/file/search?pr=UCBrowser&fr=pc&_page=1&_size=50&_fetch_total=1&_sort=file_type:desc,updated_at:desc&_is_hl=1&q=flac"
         );
     }
 

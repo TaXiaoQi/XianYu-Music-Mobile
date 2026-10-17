@@ -490,6 +490,126 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let drive = drive_id(&at).await?;
     let file = req.param_obj("file");
     let file_id = file.get("id").and_then(Value::as_str).unwrap_or("");
+
+    // ===== [临时诊断] PDS 签名 URL 的 Referer 抄写策略对照实验 =====
+    // URL 带 x-oss-additional-headers=referer：缺头 400、值不符 403。
+    // A  = API 不带 Referer → 下载不带（服务端是否仍强制要求？）
+    // B  = API 带 Referer: xy-marker → 下载带同值（是否原样抄写？）
+    // B2 = B 的 URL 下载不带（应 400，对照组）
+    // B3 = B 的 URL 下载带 alipan（应 403，值须精确匹配）
+    async fn probe_status(url: &str, referer: Option<&str>) -> String {
+        if url.is_empty() {
+            return "EMPTY".into();
+        }
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => return format!("client-err:{e}"),
+        };
+        let mut r = client
+            .get(url)
+            .header("Range", "bytes=0-0")
+            .header("User-Agent", ua());
+        if let Some(rf) = referer {
+            r = r.header("Referer", rf);
+        }
+        match r.send().await {
+            Ok(resp) => format!("HTTP{}", resp.status().as_u16()),
+            Err(e) => format!("ERR:{e}"),
+        }
+    }
+    // 取完整响应 JSON（url / cdn_url / internal_url 三端点全要）
+    async fn get_dl_json(
+        at: &str,
+        drive: &str,
+        file_id: &str,
+        headers: &[(String, String)],
+    ) -> Result<Value, String> {
+        let resp = http::post_json(
+            "https://api.alipan.com/v2/file/get_download_url",
+            headers,
+            &json!({ "drive_id": drive, "file_id": file_id, "expire_sec": 14400 }),
+        )
+        .await?;
+        if !resp.is_ok() {
+            return Err("直链获取失败".into());
+        }
+        let j = resp.json()?;
+        Ok(j.pointer("/data").unwrap_or(&j).clone())
+    }
+    fn host_of(url: &str) -> &str {
+        url.split("://")
+            .nth(1)
+            .and_then(|s| s.split('/').next())
+            .unwrap_or("?")
+    }
+    let mut h_noref = auth_headers(&at);
+    h_noref.retain(|(k, _)| !k.eq_ignore_ascii_case("referer"));
+    let j = get_dl_json(&at, &drive, file_id, &h_noref)
+        .await
+        .map_err(|m| (500, format!("A获取失败: {m}")))?;
+    let u_url = j.get("url").and_then(Value::as_str).unwrap_or("");
+    let u_cdn = j
+        .get("cdn_url")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let u_int = j
+        .get("internal_url")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let s_url = probe_status(u_url, None).await;
+    let s_url2 = probe_status(u_url, Some("https://www.alipan.com/")).await;
+    let s_cdn = probe_status(u_cdn, None).await;
+    let s_cdn2 = probe_status(u_cdn, Some("https://www.alipan.com/")).await;
+    let s_int = probe_status(u_int, None).await;
+    // 主攻方案：/v2/file/download 直下 API（Bearer 头鉴权，返回文件流），
+    // 彻底绕开签名 URL 的 additional-headers=referer。
+    async fn probe_dl(url: &str, at: &str, auth: bool) -> String {
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => return format!("client-err:{e}"),
+        };
+        let mut r = client
+            .get(url)
+            .header("Range", "bytes=0-0")
+            .header("User-Agent", ua());
+        if auth {
+            r = r.header("Authorization", format!("Bearer {at}"));
+        }
+        match r.send().await {
+            Ok(resp) => {
+                let code = resp.status().as_u16();
+                let ct = resp
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                let cr = resp
+                    .headers()
+                    .get("content-range")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
+                format!("HTTP{code} ct={ct} cr={cr}")
+            }
+            Err(e) => format!("ERR:{e}"),
+        }
+    }
+    let dl_api =
+        format!("https://api.alipan.com/v2/file/download?drive_id={drive}&file_id={file_id}");
+    let d1 = probe_dl(&dl_api, &at, true).await;
+    let d2 = probe_dl(&dl_api, &at, false).await;
+    return Err(biz_err(format!(
+        "DIAG3 url(noref)={s_url} (alipan)={s_url2} cdn={s_cdn}/{s_cdn2} int={s_int} | DL(auth)={d1} | DL(noauth)={d2}"
+    )));
+    // ===== [临时诊断结束] =====
+
     let resp = http::post_json(
         "https://api.alipan.com/v2/file/get_download_url",
         &auth_headers(&at),
@@ -515,7 +635,11 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut {
         result: direct_link_json(
             &url,
-            json!({ "User-Agent": ua() }),
+            // PDS 生成的下载 URL 把 referer 写进 x-oss-additional-headers 参与
+            // OSS V4 签名（实测请求缺 Referer 直接 400 AuthorizationArgumentError
+            // "There were headers in x-oss-additional-headers which were not
+            // present in request headers"），必须带上（对齐 web 端 alipan.com）。
+            json!({ "User-Agent": ua(), "Referer": "https://www.alipan.com/" }),
             Some(name),
             size,
             Some(now_ms() + 4 * 3600 * 1000),

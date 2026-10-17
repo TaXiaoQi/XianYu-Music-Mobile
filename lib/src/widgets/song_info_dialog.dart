@@ -290,7 +290,9 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
     String pathText = item.path;
     String sourceText = tr('在线音源');
 
-    if (!item.isOnline) {
+    if (item.isCloud) {
+      sourceText = tr('网盘');
+    } else if (!item.isOnline) {
       sourceText = tr('本地音乐');
       quality = tr('原始音质');
       try {
