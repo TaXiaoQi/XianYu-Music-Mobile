@@ -93,11 +93,11 @@ extension _SearchResultPageSources on _SearchResultPageState {
     } catch (e) {
       AppLog.warn('search', '网盘搜索来源加载失败: $e');
     }
-    final result = items.isEmpty
-        ?   [
-            _SourceItem(id: 'local', name: tr('本地'), type: _SourceType.local)
-          ]
-        : items;
+    // 本地来源恒在首位（对齐桌面端）：有插件/网盘等网页来源时也保留本地搜索
+    final result = [
+      _SourceItem(id: 'local', name: tr('本地'), type: _SourceType.local),
+      ...items,
+    ];
     if (!mounted) return;
     final sessionSource = ref.read(searchSessionProvider).sourceId;
     final initial = sessionSource.isNotEmpty ? sessionSource : result.first.id;
