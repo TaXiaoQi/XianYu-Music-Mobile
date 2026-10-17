@@ -625,7 +625,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   bool _lastImmersive = false;
 
-  (bool, bool, bool, Color?)? _lastNavBarSent;
+  (bool, bool, bool, Color?, int)? _lastNavBarSent;
 
   @override
   Widget build(BuildContext context) {
@@ -793,7 +793,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         Theme.of(context).scaffoldBackgroundColor,
       );
     }
-    final navBarSent = (landscape, floating, hidden, navBarColor);
+    final navBarSent = (
+      landscape,
+      floating,
+      hidden,
+      navBarColor,
+      // 纳入当前页签：tab 间切换原签名不变、不重发，引擎/ROM 恰在此空档
+      // 涂黑三键区时无人对账（实测 Android 12 首启切底栏变黑，进二级页
+      // 才恢复——hidden 变化重发即愈）；纳入序号让每次切页签都重申
+      widget.navigationShell.currentIndex,
+    );
     if (navBarSent != _lastNavBarSent) {
       _lastNavBarSent = navBarSent;
       WidgetsBinding.instance.addPostFrameCallback((_) {
