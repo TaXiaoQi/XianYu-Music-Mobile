@@ -1,15 +1,20 @@
-// 123 云盘代理（移植自移动端 providers/pan123_provider.dart）。
+// 123 云盘代理（对齐 OpenList/AList 2026-07 驱动：web API 已整体迁至
+// yun.123pan.com，全接口追加 CRC-32 路径签名）。
 //
 // 关键行为对齐点：
-// - 请求头 _h：UA / Referer(https://www.123pan.com/) / Platform: web，
-//   token 非空时追加 Bearer；分享类接口仅带 UA（对齐 Dart 各调用点）。
-// - 123 盘无 platform 签名计算，Dart 源中签名相关仅 md5Hex（登录/账号 id
-//   路径使用；登录留在客户端，此处按纯函数移植并附单测）。
+// - 业务/分享接口 base = https://yun.123pan.com/b/api，URL 统一经
+//   sign_url() 追加 {timeSign}={ts}-{rand}-{dataSign}（对齐 AList
+//   signPath(path,"web","3")：k = crc32(yyyyMMddHHmm 逐位表映射，CST)，
+//   v = {ts}-{rand}-{crc32("{ts}|{rand}|{path}|web|3|{k}")}）。
+// - 请求头：UA / Referer+Origin(yun.123pan.com) / Platform: web /
+//   App-Version: 3，token 非空追加 Bearer；分享类不带登录态但头同全套。
+// - 列表/搜索统一走 file/list/new（搜索 SearchData=关键词），query 与
+//   响应对齐 AList（driveId/next/Page/event/operateType…；code==0 成功，
+//   InfoList/Next(-1 末页)，字段大小写双兜底）。
 // - DownloadUrl 字段实测可能是纯 URL / JSON 串 / 嵌套 data，统一防御解析
 //   （_extractDownloadUrl 逐行对齐，含 backup_download_url 兜底）。
 // - 分享 directPlayable=true：share_direct_link 直连 share/download/info，
-//   fileIds 传 jsonEncode([{FileId: id}])；提取码复用 share.passcode
-//   ?? share.shareToken。
+//   fileIds 传 jsonEncode([{FileId: id}])；提取码 PassCode/SharePwd 双写。
 // - transfer_share 在 Dart 中抛 UnsupportedError('该盘分享不支持转存')。
 // - 无 refresh_token 机制，无凭据轮换（rotated_cred 恒为 None）。
 
@@ -29,12 +34,14 @@ fn md5_hex(input: &str) -> String {
     format!("{:x}", md5::compute(input.as_bytes()))
 }
 
-/// 带登录态请求头（Dart _h）。
+/// 带登录态请求头（对齐 AList Request）。
 fn auth_headers(token: &str) -> Vec<(String, String)> {
     let mut h = vec![
         ("User-Agent".to_string(), UA.to_string()),
-        ("Referer".to_string(), "https://www.123pan.com/".to_string()),
+        ("Referer".to_string(), "https://yun.123pan.com/".to_string()),
+        ("Origin".to_string(), "https://yun.123pan.com".to_string()),
         ("Platform".to_string(), "web".to_string()),
+        ("App-Version".to_string(), "3".to_string()),
     ];
     if !token.is_empty() {
         h.push(("Authorization".to_string(), format!("Bearer {token}")));
@@ -42,9 +49,15 @@ fn auth_headers(token: &str) -> Vec<(String, String)> {
     h
 }
 
-/// 分享类请求头（Dart 分享接口仅带 UA）。
+/// 分享类请求头（无登录态，头同全套）。
 fn share_headers() -> Vec<(String, String)> {
-    vec![("User-Agent".to_string(), UA.to_string())]
+    vec![
+        ("User-Agent".to_string(), UA.to_string()),
+        ("Referer".to_string(), "https://yun.123pan.com/".to_string()),
+        ("Origin".to_string(), "https://yun.123pan.com".to_string()),
+        ("Platform".to_string(), "web".to_string()),
+        ("App-Version".to_string(), "3".to_string()),
+    ]
 }
 
 /// Dart `(v ?? fallback).toString()` 语义：字符串原样、数值转十进制，其余取 fallback。
@@ -63,46 +76,178 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-// ── URL 拼接（纯函数，单测对齐 Dart 模板串）─────────────────
+// ── CRC-32 路径签名（对齐 AList signPath，2024-09 起全接口强制）──────
 
-fn list_url(path: &str, page: i64) -> String {
-    format!(
-        "https://www.123pan.com/b/api/file/list/new?parentFileId={}&page={}&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false&SearchData=false",
-        http::url_encode(path),
-        page
+/// CRC-32（IEEE，反射 poly 0xEDB88320），对齐 Go crc32.ChecksumIEEE。
+fn crc32_ieee(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &b in data {
+        crc ^= b as u32;
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB88320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+/// 数字 0-9 → 签名表字符（AList signPath 的 table）。
+const SIGN_TABLE: &[u8] = b"adefghlmyijnopkqrstubcvsz";
+
+/// Unix 秒 → CST(UTC+8) 年月日时分（civil_from_days 算法，免时区库）。
+fn cst_ymdhm(unix_secs: i64) -> (i64, u32, u32, u32, u32) {
+    let secs = unix_secs + 8 * 3600;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    (
+        y,
+        m,
+        d,
+        (rem / 3600) as u32,
+        ((rem % 3600) / 60) as u32,
     )
 }
 
-/// 文件搜索 URL（纯函数，单测断言）：端点 file/search/info 为设计稿形态，
-/// 其余固定 query 逐字照抄 list_url（SearchData 由 false 换为关键词）。
+/// 签名键值对（k=timeSign，v={ts}-{rand}-{dataSign}）。随机数取系统纳秒
+/// 模 1e7+1（AList 为 round(1e7*rand)，同为 0..1e7 整数）。
+fn sign_path(path: &str) -> (String, String) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let ts = now.as_secs() as i64;
+    let (y, mo, d, h, mi) = cst_ymdhm(ts);
+    let digits = format!("{y:04}{mo:02}{d:02}{h:02}{mi:02}");
+    let mapped: Vec<u8> = digits
+        .bytes()
+        .map(|c| SIGN_TABLE[(c - b'0') as usize])
+        .collect();
+    let time_sign = crc32_ieee(&mapped);
+    let random = (now.subsec_nanos() as i64) % 10_000_001;
+    let data = format!("{ts}|{random}|{path}|web|3|{time_sign}");
+    let data_sign = crc32_ieee(data.as_bytes());
+    (time_sign.to_string(), format!("{ts}-{random}-{data_sign}"))
+}
+
+/// base + query 追加签名段（签名的 path 为不含 query 的裸路径）。
+fn sign_url(path: &str, query: &str, sign: &(String, String)) -> String {
+    if query.is_empty() {
+        format!("https://yun.123pan.com{path}?{}={}", sign.0, sign.1)
+    } else {
+        format!("https://yun.123pan.com{path}?{query}&{}={}", sign.0, sign.1)
+    }
+}
+
+// ── URL 拼接（纯函数，单测以固定 sign 对齐 AList 模板）───────────────
+
+fn list_url(path: &str, page: i64) -> String {
+    sign_url(
+        "/b/api/file/list/new",
+        &format!(
+            "driveId=0&limit=100&next=0&orderBy=file_id&orderDirection=desc&parentFileId={}&trashed=false&SearchData=&Page={page}&OnlyLookAbnormalFile=0&event=homeListFile&operateType=4&inDirectSpace=false",
+            http::url_encode(path)
+        ),
+        &sign_path("/b/api/file/list/new"),
+    )
+}
+
+/// 文件搜索复用 file/list/new（SearchData=关键词，AList 同参形态）。
 fn search_url(keyword: &str, page: i64) -> String {
-    format!(
-        "https://www.123pan.com/b/api/file/search/info?SearchData={}&page={page}&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false",
-        http::url_encode(keyword)
+    sign_url(
+        "/b/api/file/list/new",
+        &format!(
+            "driveId=0&limit=100&next=0&orderBy=file_id&orderDirection=desc&parentFileId=0&trashed=false&SearchData={}&Page={page}&OnlyLookAbnormalFile=0&event=homeListFile&operateType=4&inDirectSpace=false",
+            http::url_encode(keyword)
+        ),
+        &sign_path("/b/api/file/list/new"),
     )
 }
 
 fn share_get_url(share_key: &str, pass_code: &str) -> String {
-    format!(
-        "https://www.123pan.com/b/api/share/get?shareKey={}&PassCode={}&orderBy=file_id&orderDirection=asc",
-        http::url_encode(share_key),
-        http::url_encode(pass_code)
+    sign_url(
+        "/b/api/share/get",
+        &format!(
+            "limit=100&next=0&orderBy=file_id&orderDirection=desc&parentFileId=0&Page=1&shareKey={}&PassCode={}&SharePwd={}",
+            http::url_encode(share_key),
+            http::url_encode(pass_code),
+            http::url_encode(pass_code)
+        ),
+        &sign_path("/b/api/share/get"),
     )
 }
 
 fn share_download_info_url(share_key: &str, pass_code: &str, file_ids_json: &str) -> String {
-    format!(
-        "https://www.123pan.com/b/api/share/download/info?shareKey={}&PassCode={}&fileIds={}",
-        http::url_encode(share_key),
-        http::url_encode(pass_code),
-        http::url_encode(file_ids_json)
+    sign_url(
+        "/b/api/share/download/info",
+        &format!(
+            "shareKey={}&PassCode={}&SharePwd={}&fileIds={}",
+            http::url_encode(share_key),
+            http::url_encode(pass_code),
+            http::url_encode(pass_code),
+            http::url_encode(file_ids_json)
+        ),
+        &sign_path("/b/api/share/download/info"),
     )
 }
 
 fn download_info_url(file_id: &str) -> String {
-    format!(
-        "https://www.123pan.com/b/api/file/download_info?driveId=0&fileId={}&Referer=",
-        http::url_encode(file_id)
+    sign_url(
+        "/b/api/file/download_info",
+        &format!("driveId=0&fileId={}", http::url_encode(file_id)),
+        &sign_path("/b/api/file/download_info"),
+    )
+}
+
+/// 新网关成功 code==0（旧 200 兼容）；非成功取 message。
+fn check_code(j: &Value, fallback_msg: &str) -> Result<(), (i32, String)> {
+    let code = j.get("code").and_then(Value::as_i64).unwrap_or(0);
+    if code != 0 && code != 200 {
+        let msg = j
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or(fallback_msg);
+        return Err(biz_err(msg));
+    }
+    Ok(())
+}
+
+/// Type/Size 大小写双兜底（新网关 PascalCase，旧接口 camelCase）。
+fn item_type(e: &Value) -> Option<i64> {
+    e.get("Type")
+        .and_then(Value::as_i64)
+        .or_else(|| e.get("type").and_then(Value::as_i64))
+}
+
+fn item_size(e: &Value) -> i64 {
+    e.get("Size")
+        .and_then(Value::as_i64)
+        .or_else(|| e.get("size").and_then(Value::as_i64))
+        .unwrap_or(0)
+}
+
+fn item_id(e: &Value) -> String {
+    js_str(
+        e.get("FileId").filter(|v| !v.is_null()).or_else(|| e.get("fileId")),
+        "",
+    )
+}
+
+fn item_name(e: &Value) -> String {
+    js_str(
+        e.get("FileName").filter(|v| !v.is_null()).or_else(|| e.get("filename")),
+        "",
     )
 }
 
@@ -111,15 +256,12 @@ fn download_info_url(file_id: &str) -> String {
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let token = req.cred_str("token");
-    for host in ["https://www.123pan.com", "https://123pan.com"] {
-        let url = format!("{host}/b/api/user/info");
-        // Dart 逐 host try/catch：任何异常继续下一 host。
-        if let Ok(resp) = http::get(&url, &auth_headers(&token)).await {
-            if resp.is_ok() {
-                if let Ok(j) = resp.json() {
-                    if j.get("code").and_then(Value::as_i64) == Some(200) {
-                        return Ok(CloudOut::plain(json!({ "valid": true })));
-                    }
+    let url = sign_url("/b/api/user/info", "", &sign_path("/b/api/user/info"));
+    if let Ok(resp) = http::get(&url, &auth_headers(&token)).await {
+        if resp.is_ok() {
+            if let Ok(j) = resp.json() {
+                if check_code(&j, "").is_ok() {
+                    return Ok(CloudOut::plain(json!({ "valid": true })));
                 }
             }
         }
@@ -139,37 +281,50 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("目录列表请求失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let list = j
-        .get("data")
-        .and_then(|d| d.get("InfoList"))
+    check_code(&j, "目录列表请求失败")?;
+    let data = j.get("data").cloned().unwrap_or(Value::Null);
+    let items = data
+        .get("InfoList")
+        .and_then(Value::as_array)
         .cloned()
-        .unwrap_or(Value::Null);
+        .unwrap_or_default();
     let mut files = Vec::new();
-    if let Some(items) = list.as_array() {
-        for e in items {
-            let id = js_str(e.get("fileId"), "");
-            let name = js_str(e.get("filename"), "");
-            let is_dir = e.get("type").and_then(Value::as_i64) == Some(1);
-            let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
-            let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), &path);
-            files.push(file_json(&id, &name, is_dir, size, Some(&parent), None, None));
-        }
+    for e in &items {
+        let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), &path);
+        files.push(file_json(
+            &item_id(e),
+            &item_name(e),
+            item_type(e) == Some(1),
+            item_size(e),
+            Some(&parent),
+            None,
+            None,
+        ));
     }
-    let has_next = files.len() >= 100;
-    let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
+    // 翻页：Next=="-1" 或空页即末页（AList 同语义）；cursor 仍为页码。
+    let next = js_str(data.get("Next").filter(|v| !v.is_null()), "-1");
+    let next_cursor = if !items.is_empty() && next != "-1" {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
-/// file/search/info 的 data.InfoList 条目 → CloudFile（映射纯函数，单测断言）。
+/// file/list/new 的 data.InfoList 条目 → CloudFile（映射纯函数，单测断言）。
 /// 播放（download_info）只需 fileId；parentFileId 一并带回（搜索无目录上下文，
 /// 缺省回空串）。
 fn file_from_search_item(e: &Value) -> Value {
-    let id = js_str(e.get("fileId"), "");
-    let name = js_str(e.get("filename"), "");
-    let is_dir = e.get("type").and_then(Value::as_i64) == Some(1);
-    let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
     let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), "");
-    file_json(&id, &name, is_dir, size, Some(&parent), None, None)
+    file_json(
+        &item_id(e),
+        &item_name(e),
+        item_type(e) == Some(1),
+        item_size(e),
+        Some(&parent),
+        None,
+        None,
+    )
 }
 
 /// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格），
@@ -189,19 +344,23 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("搜索请求失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let list = j
-        .get("data")
-        .and_then(|d| d.get("InfoList"))
+    check_code(&j, "搜索请求失败")?;
+    let data = j.get("data").cloned().unwrap_or(Value::Null);
+    let items = data
+        .get("InfoList")
+        .and_then(Value::as_array)
         .cloned()
-        .unwrap_or(Value::Null);
+        .unwrap_or_default();
     let mut files = Vec::new();
-    if let Some(items) = list.as_array() {
-        for e in items {
-            files.push(file_from_search_item(e));
-        }
+    for e in &items {
+        files.push(file_from_search_item(e));
     }
-    let has_next = files.len() >= 100;
-    let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
+    let next = js_str(data.get("Next").filter(|v| !v.is_null()), "-1");
+    let next_cursor = if !items.is_empty() && next != "-1" {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
@@ -248,8 +407,8 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
                 e.get("FileName").filter(|v| !v.is_null()).or_else(|| e.get("filename")),
                 "",
             );
-            let is_dir = e.get("Type").and_then(Value::as_i64) == Some(1);
-            let size = e.get("Size").and_then(Value::as_i64).unwrap_or(0);
+            let is_dir = item_type(e) == Some(1);
+            let size = item_size(e);
             files.push(file_json(&id, &name, is_dir, size, None, None, None));
         }
     }
@@ -413,50 +572,90 @@ mod tests {
     }
 
     #[test]
+    fn crc32_ieee_vectors() {
+        // 标准向量（与 Go crc32.ChecksumIEEE 同为 IEEE 实现）。
+        assert_eq!(crc32_ieee(b""), 0);
+        assert_eq!(crc32_ieee(b"123456789"), 0xCBF4_3926);
+        assert_eq!(
+            crc32_ieee(b"The quick brown fox jumps over the lazy dog"),
+            0x414F_A339
+        );
+    }
+
+    #[test]
     fn auth_headers_shape() {
         let h = auth_headers("tok123");
         assert_eq!(h[0].0, "User-Agent");
-        assert_eq!(h[1].1, "https://www.123pan.com/");
-        assert_eq!(h[2], ("Platform".to_string(), "web".to_string()));
-        assert_eq!(h[3].1, "Bearer tok123");
+        assert_eq!(h[1].1, "https://yun.123pan.com/");
+        assert_eq!(h[2], ("Origin".to_string(), "https://yun.123pan.com".to_string()));
+        assert_eq!(h[3], ("Platform".to_string(), "web".to_string()));
+        assert_eq!(h[4], ("App-Version".to_string(), "3".to_string()));
+        assert_eq!(h[5].1, "Bearer tok123");
         // 空 token 不带 Authorization。
         let h0 = auth_headers("");
-        assert_eq!(h0.len(), 3);
+        assert_eq!(h0.len(), 5);
         assert!(!h0.iter().any(|(k, _)| k == "Authorization"));
     }
 
     #[test]
-    fn list_url_shape() {
+    fn sign_url_shape() {
+        // 签名段 {timeSign}={ts}-{rand}-{dataSign} 追加在 query 之后。
         assert_eq!(
-            list_url("0", 1),
-            "https://www.123pan.com/b/api/file/list/new?parentFileId=0&page=1&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false&SearchData=false"
+            sign_url(
+                "/b/api/user/info",
+                "",
+                &("123".to_string(), "1790000000-42-456".to_string()),
+            ),
+            "https://yun.123pan.com/b/api/user/info?123=1790000000-42-456"
         );
         assert_eq!(
-            list_url("a b", 2),
-            "https://www.123pan.com/b/api/file/list/new?parentFileId=a+b&page=2&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false&SearchData=false"
+            sign_url(
+                "/b/api/file/list/new",
+                "driveId=0&Page=1",
+                &("9".to_string(), "1-2-3".to_string()),
+            ),
+            "https://yun.123pan.com/b/api/file/list/new?driveId=0&Page=1&9=1-2-3"
         );
     }
 
     #[test]
-    fn search_url_shape() {
-        // SearchData 换为关键词，其余固定 query 逐字照抄 list_url。
-        assert_eq!(
-            search_url("lo fi", 2),
-            "https://www.123pan.com/b/api/file/search/info?SearchData=lo+fi&page=2&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false"
-        );
-        assert_eq!(
-            search_url("周深", 1),
-            "https://www.123pan.com/b/api/file/search/info?SearchData=%E5%91%A8%E6%B7%B1&page=1&limit=100&orderBy=file_id&orderDirection=asc&trashed=false&OnlyAbnormal=false"
-        );
+    fn url_builders_yun_host_and_signed() {
+        // 全部 URL 迁 yun.123pan.com 且以 {timeSign}={ts}-{rand}-{sign} 结尾。
+        let u = list_url("0", 1);
+        assert!(u.starts_with(
+            "https://yun.123pan.com/b/api/file/list/new?driveId=0&limit=100&next=0&orderBy=file_id&orderDirection=desc&parentFileId=0&trashed=false&SearchData=&Page=1&OnlyLookAbnormalFile=0&event=homeListFile&operateType=4&inDirectSpace=false&"
+        ));
+        let s = search_url("lo fi", 2);
+        assert!(s.contains("SearchData=lo+fi"));
+        assert!(s.contains("&Page=2&"));
+        assert!(s.starts_with("https://yun.123pan.com/b/api/file/list/new?"));
+        let g = share_get_url("abc123", "pwd9");
+        assert!(g.starts_with(
+            "https://yun.123pan.com/b/api/share/get?limit=100&next=0&orderBy=file_id&orderDirection=desc&parentFileId=0&Page=1&shareKey=abc123&PassCode=pwd9&SharePwd=pwd9&"
+        ));
+        let file_ids = serde_json::to_string(&json!([{ "FileId": "42" }])).unwrap();
+        assert_eq!(file_ids, r#"[{"FileId":"42"}]"#);
+        let d = share_download_info_url("s1", "", &file_ids);
+        assert!(d.starts_with(
+            "https://yun.123pan.com/b/api/share/download/info?shareKey=s1&PassCode=&SharePwd=&fileIds=%5B%7B%22FileId%22%3A%2242%22%7D%5D&"
+        ));
+        let dl = download_info_url("42");
+        assert!(dl.starts_with("https://yun.123pan.com/b/api/file/download_info?driveId=0&fileId=42&"));
+        // 尾段签名值形如 {ts}-{rand}-{sign}（两个 -），键为 timeSign 数值串。
+        let kv = dl.rsplit('&').next().unwrap();
+        let (k, v) = kv.split_once('=').unwrap();
+        assert!(!k.is_empty());
+        assert_eq!(v.matches('-').count(), 2);
     }
 
     #[test]
     fn file_from_search_item_maps_fields() {
+        // 新网关 PascalCase。
         let e = json!({
-            "fileId": "f1",
-            "filename": "a.flac",
-            "type": 0,
-            "size": 123,
+            "FileId": "f1",
+            "FileName": "a.flac",
+            "Type": 0,
+            "Size": 123,
             "parentFileId": "p0",
         });
         let f = file_from_search_item(&e);
@@ -465,30 +664,12 @@ mod tests {
         assert_eq!(f["isDir"], false);
         assert_eq!(f["size"], 123);
         assert_eq!(f["parentId"], "p0");
-        // type==1 判目录；parentFileId 缺失回空串（搜索无目录上下文）。
+        // type==1 判目录；parentFileId 缺失回空串（搜索无目录上下文）；
+        // 旧接口 camelCase 字段兜底。
         let d = file_from_search_item(&json!({ "fileId": 9, "filename": "dir", "type": 1 }));
         assert_eq!(d["isDir"], true);
         assert_eq!(d["id"], "9");
         assert_eq!(d["parentId"], "");
-    }
-
-    #[test]
-    fn share_urls_shape() {
-        assert_eq!(
-            share_get_url("abc123", "pwd9"),
-            "https://www.123pan.com/b/api/share/get?shareKey=abc123&PassCode=pwd9&orderBy=file_id&orderDirection=asc"
-        );
-        // fileIds 为 jsonEncode([{FileId: id}]) 再编码。
-        let file_ids = serde_json::to_string(&json!([{ "FileId": "42" }])).unwrap();
-        assert_eq!(file_ids, r#"[{"FileId":"42"}]"#);
-        assert_eq!(
-            share_download_info_url("s1", "", &file_ids),
-            "https://www.123pan.com/b/api/share/download/info?shareKey=s1&PassCode=&fileIds=%5B%7B%22FileId%22%3A%2242%22%7D%5D"
-        );
-        assert_eq!(
-            download_info_url("42"),
-            "https://www.123pan.com/b/api/file/download_info?driveId=0&fileId=42&Referer="
-        );
     }
 
     #[test]
