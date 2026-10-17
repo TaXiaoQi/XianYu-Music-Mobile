@@ -21,6 +21,11 @@ const String _kCloudCredsKey = 'xianyu.cloud.creds.v1';
 const String _kCloudAesKey = 'xianyu.cloud.aes_key.v1';
 const String _kCloudSealPrefix = 'xy1:';
 
+/// 遗留兜底账号 ID 形态：早期版本 accountId 取 md5(cookie/refreshToken)
+/// 前 12 位 hex（每次登录都变，重复登录即产生重复账号）。现役账号 ID 均
+/// 为服务端 uid 或昵称哈希（u_ 前缀）。
+final RegExp _legacyIdRe = RegExp(r'^[0-9a-f]{12}$');
+
 class CloudCredentialsStore {
   CloudCredentialsStore._();
 
@@ -100,7 +105,21 @@ class CloudCredentialsStore {
     } catch (e) {
       AppLog.warn('cloud', '网盘凭据读取失败: $e');
     }
+    // 遗留兜底账号清理：同盘存在稳定 ID 账号时，清除遗留 12 位裸 hex 条目
+    //（旧版重复登录产生的重复账号）。只剩单条遗留时不清理（仍是有效绑定）。
+    var removed = 0;
+    map.forEach((k, list) {
+      if (list.length <= 1) return;
+      if (!list.any((a) => !_legacyIdRe.hasMatch(a.accountId))) return;
+      final before = list.length;
+      list.removeWhere((a) => _legacyIdRe.hasMatch(a.accountId));
+      removed += before - list.length;
+    });
     _cache = map;
+    if (removed > 0) {
+      AppLog.debug('cloud', '清理遗留兜底账号 $removed 条');
+      await _persist();
+    }
     return map;
   }
 
@@ -141,6 +160,9 @@ class CloudCredentialsStore {
   }
 
   /// 新增/更新账号（按 provider+accountId upsert）。
+  ///
+  /// 新账号为稳定 ID 时，顺带清除同盘遗留 12 位裸 hex 条目（旧版
+  /// Cookie/refreshToken 哈希 ID，重复登录产生的重复账号）。
   Future<void> saveAccount(CloudAccount account) async {
     final map = await _ensureLoaded();
     final list = [...?map[account.provider]];
@@ -149,6 +171,14 @@ class CloudCredentialsStore {
       list[idx] = account;
     } else {
       list.add(account);
+    }
+    if (!_legacyIdRe.hasMatch(account.accountId)) {
+      final before = list.length;
+      list.removeWhere(
+          (a) => a.accountId != account.accountId && _legacyIdRe.hasMatch(a.accountId));
+      if (list.length != before) {
+        AppLog.debug('cloud', '清理遗留兜底账号 ${before - list.length} 条');
+      }
     }
     map[account.provider] = list;
     await _persist();
