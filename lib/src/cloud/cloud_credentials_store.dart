@@ -8,25 +8,30 @@
 // exportForSync/importFromSync 供二期增量接入。
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:encrypt/encrypt.dart';
+import 'package:flutter/foundation.dart' hide Key;
 
 import '../core/application_logger.dart';
 import '../core/secure_store.dart';
+import 'cloud_folder_selection_store.dart';
 import 'cloud_types.dart';
 
 const String _kCloudCredsKey = 'xianyu.cloud.creds.v1';
 const String _kCloudAesKey = 'xianyu.cloud.aes_key.v1';
 const String _kCloudSealPrefix = 'xy1:';
 
+/// 同步串保留键：随凭据密封串携带的目录选择（`providerId|accountId → [path]`）。
+/// 旧版客户端导入时只认 List 值会自动忽略该键，新旧双向兼容。
+const String _kFolderSelSyncKey = '__fsel__';
+
 /// 遗留兜底账号 ID 形态：早期版本 accountId 取 md5(cookie/refreshToken)
 /// 前 12 位 hex（每次登录都变，重复登录即产生重复账号）。现役账号 ID 均
 /// 为服务端 uid 或昵称哈希（u_ 前缀）。
 final RegExp _legacyIdRe = RegExp(r'^[0-9a-f]{12}$');
 
-class CloudCredentialsStore {
+class CloudCredentialsStore extends ChangeNotifier {
   CloudCredentialsStore._();
 
   static final CloudCredentialsStore instance = CloudCredentialsStore._();
@@ -135,6 +140,8 @@ class CloudCredentialsStore {
     }
     // 本地状态已变化，无论写盘成败都通知 sync 层（由其决定是否上传）
     onPersisted?.call();
+    // 变更通知（绑定页等监听者自动刷新；登录同步落盘后 UI 即时跟随）
+    notifyListeners();
   }
 
   Future<List<CloudAccount>> accountsFor(String providerId) async {
@@ -218,19 +225,39 @@ class CloudCredentialsStore {
   ///
   /// 账号派生密钥（三端可互解，服务端无明文）重新密封本地凭据 JSON，
   /// 密文不出本类、本地落盘仍用设备密钥。未绑定任何盘返回 null。
+  /// 密封明文附带保留键 `__fsel__` 携带目录选择，跨设备一并同步。
   Future<String?> exportForSync(String ciyuanxiId) async {
     final map = await _ensureLoaded();
     if (map.isEmpty) return null;
-    final json =
-        jsonEncode(map.map((k, v) => MapEntry(k, v.map((a) => a.toJson()).toList())));
-    return _sealWithKey(json, _syncKey(ciyuanxiId));
+    final payload = <String, Object>{
+      for (final e in map.entries)
+        e.key: e.value.map((a) => a.toJson()).toList(),
+    };
+    final folderSel = await CloudFolderSelectionStore.instance.allPaths();
+    if (folderSel.isNotEmpty) {
+      payload[_kFolderSelSyncKey] = folderSel;
+    }
+    return _sealWithKey(jsonEncode(payload), _syncKey(ciyuanxiId));
   }
 
   /// 二期同步：导入跨设备密封串（与导出格式一致，指纹去重合并）。
+  /// 保留键 `__fsel__` 的目录选择合并进本地目录选择存储。
   Future<void> importFromSync(String sealed, String ciyuanxiId) async {
     final plain = _unsealWithKey(sealed, _syncKey(ciyuanxiId));
     if (plain == null) throw const CloudException('同步凭据解密失败');
     final raw = jsonDecode(plain) as Map<String, dynamic>;
+    final folderSelRaw = raw.remove(_kFolderSelSyncKey);
+    if (folderSelRaw is Map) {
+      final sel = <String, List<String>>{};
+      folderSelRaw.forEach((k, v) {
+        if (k is! String || k.isEmpty || v is! List) return;
+        final paths = v.whereType<String>().where((p) => p.isNotEmpty).toList();
+        if (paths.isNotEmpty) sel[k] = paths;
+      });
+      if (sel.isNotEmpty) {
+        await CloudFolderSelectionStore.instance.mergePaths(sel);
+      }
+    }
     final merged = await _ensureLoaded();
     raw.forEach((k, v) {
       if (v is! List) return;

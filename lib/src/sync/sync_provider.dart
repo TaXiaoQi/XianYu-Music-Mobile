@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/account_api.dart';
 import '../auth/auth_provider.dart';
 import '../cloud/cloud_credentials_store.dart';
+import '../cloud/cloud_folder_selection_store.dart';
 import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../core/settings.dart';
@@ -223,6 +224,8 @@ class SyncNotifier extends StateNotifier<SyncState> {
     );
     // 网盘凭据变更（绑定/解绑/轮换）→ 防抖后自动上传
     CloudCredentialsStore.onPersisted = _scheduleCloudCredsUpload;
+    // 网盘目录选择变更（勾选/取消勾选/同步合并）→ 随凭据密封串一并上传
+    CloudFolderSelectionStore.onPersisted = _scheduleCloudCredsUpload;
   }
 
   final Ref _ref;

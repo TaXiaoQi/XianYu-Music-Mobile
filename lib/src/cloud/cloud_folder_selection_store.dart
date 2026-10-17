@@ -23,6 +23,10 @@ class CloudFolderSelectionStore {
   static final CloudFolderSelectionStore instance =
       CloudFolderSelectionStore._();
 
+  /// 目录选择落盘后的变更通知（sync 层注册做云端自动上传；未注册时为
+  /// no-op）。勾选/取消勾选/同步合并都会触发，回调内自行处理防抖。
+  static void Function()? onPersisted;
+
   Map<String, List<String>>? _cache;
 
   Future<Map<String, List<String>>> _ensureLoaded() async {
@@ -61,6 +65,35 @@ class CloudFolderSelectionStore {
     return map[cloudFolderSelKey(providerId, accountId)] ?? const [];
   }
 
+  /// 全量导出（跨设备同步随凭据密封串携带）。
+  Future<Map<String, List<String>>> allPaths() async {
+    final map = await _ensureLoaded();
+    return map.map((k, v) => MapEntry(k, List<String>.of(v)));
+  }
+
+  /// 合并云端目录选择（并集去重，不动本地已有条目）。
+  Future<void> mergePaths(Map<String, List<String>> incoming) async {
+    if (incoming.isEmpty) return;
+    final map = await _ensureLoaded();
+    var changed = false;
+    incoming.forEach((k, v) {
+      final paths = v.where((p) => p.isNotEmpty).toList();
+      if (paths.isEmpty) return;
+      final merged = [...?map[k]];
+      final before = merged.length;
+      for (final p in paths) {
+        if (!merged.contains(p)) merged.add(p);
+      }
+      if (merged.length != before) {
+        map[k] = merged;
+        changed = true;
+      }
+    });
+    if (!changed) return;
+    await _persist();
+    onPersisted?.call();
+  }
+
   /// 覆盖写入某账号的已选列表（空列表 = 清空，键也会移除）。
   Future<void> setPaths(
     String providerId,
@@ -70,10 +103,12 @@ class CloudFolderSelectionStore {
     final map = await _ensureLoaded();
     final k = cloudFolderSelKey(providerId, accountId);
     if (paths.isEmpty) {
+      if (!map.containsKey(k)) return;
       map.remove(k);
     } else {
       map[k] = paths.toList();
     }
     await _persist();
+    onPersisted?.call();
   }
 }

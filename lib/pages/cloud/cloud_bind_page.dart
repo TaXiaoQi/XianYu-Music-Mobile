@@ -34,7 +34,15 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
   @override
   void initState() {
     super.initState();
+    // 凭据落盘即自动刷新：登录同步后台导入绑定后，页面无需重启即跟随
+    CloudCredentialsStore.instance.addListener(_reload);
     _reload();
+  }
+
+  @override
+  void dispose() {
+    CloudCredentialsStore.instance.removeListener(_reload);
+    super.dispose();
   }
 
   Future<void> _reload() async {
