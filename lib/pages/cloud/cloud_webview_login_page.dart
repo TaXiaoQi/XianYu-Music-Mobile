@@ -195,7 +195,7 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   Future<void> _manualCookie() async {
     if (_finishing || !mounted) return;
     final rule = _provider.captureRule;
-    final isTokenKind = rule?.pollScript != null;
+    final isTokenKind = _provider.manualTokenInput;
     final names = rule?.cookieNames ?? const [];
     final controller = TextEditingController();
     var raw = '';
@@ -208,14 +208,15 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              isTokenKind
-                  ? tr('粘贴网页版的 refresh_token（浏览器 F12 → Application → '
-                      'Local Storage 里找 refresh_token 字段），或完整 tokenInfo JSON')
-                  : (names.isEmpty
-                      ? tr('粘贴已登录账号的 Cookie')
-                      : tr('粘贴已登录账号的 Cookie，需包含 {names}', {
-                          'names': names.join('、'),
-                        })),
+              _provider.manualInputHint ??
+                  (isTokenKind
+                      ? tr('粘贴网页版的 refresh_token（浏览器 F12 → Application → '
+                          'Local Storage 里找 refresh_token 字段），或完整 tokenInfo JSON')
+                      : (names.isEmpty
+                          ? tr('粘贴已登录账号的 Cookie')
+                          : tr('粘贴已登录账号的 Cookie，需包含 {names}', {
+                              'names': names.join('、'),
+                            }))),
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 12),
@@ -229,7 +230,11 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
               onChanged: (v) => raw = v,
               decoration: InputDecoration(
                 border: const OutlineInputBorder(),
-                hintText: isTokenKind ? 'refresh_token' : 'kps=xxx; sign=xxx',
+                hintText: isTokenKind
+                    ? 'refresh_token'
+                    : (names.isEmpty
+                        ? 'BDUSS=xxx; STOKEN=xxx'
+                        : 'kps=xxx; sign=xxx'),
               ),
             ),
           ],

@@ -36,6 +36,13 @@ abstract class CloudProvider {
   /// WebView 捕获规则（webview 组；非 WebView 登录盘为 null）。
   CloudCaptureRule? get captureRule => null;
 
+  /// 手动填兜底形态：true=填 Token（refresh_token/tokenInfo，凭据不在
+  /// Cookie 的盘），false=填 Cookie。默认按有无 pollScript 推断。
+  bool get manualTokenInput => captureRule?.pollScript != null;
+
+  /// 手动填弹窗说明文案（null=按形态用默认文案）。
+  String? get manualInputHint => null;
+
   /// WebView 登录壳 HTML（非 null 时登录页 loadHtmlString 渲染本页，
   /// 不再直接 loadRequest(webviewLoginUrl)——供需要 iframe/postMessage
   /// 桥接的盘（阿里）在壳页里完成 OAuth 流程）。

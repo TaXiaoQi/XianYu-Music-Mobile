@@ -82,6 +82,38 @@ class BaiduProvider extends CloudProvider {
   @override
   Duration get directLinkTtl => const Duration(hours: 8);
 
+  // 手动填兜底：Cookie（WebView 会话签发的 BDUSS 被降权，但电脑浏览器
+  // 登录后复制的 Cookie 实测可用——网页 API 轨）；OAuth 凭据仍兼容
+  // token JSON/refresh_token 手填，等 AppKey 注入后走授权页。
+  @override
+  bool get manualTokenInput => false;
+
+  @override
+  String? get manualInputHint =>
+      '粘贴网页版 Cookie（电脑浏览器登录百度网盘 → F12 → Application → '
+      'Cookies，需含 BDUSS，建议带上 STOKEN）';
+
+  /// 手填 Cookie 串解析（k=v 对，分号/换行分隔，兼容 F12 复制的
+  /// 「k: v」形态）；无 BDUSS 返回 null（回落 Token/授权码语义）。
+  Map<String, String>? _parseCookieInput(String raw) {
+    if (!raw.contains('BDUSS')) return null;
+    final pairs = <String, String>{};
+    for (final piece in raw.split(RegExp(r'[;\n\r]'))) {
+      final p = piece.trim();
+      if (p.isEmpty) continue;
+      final eq = p.indexOf('=');
+      final i = eq >= 0 ? eq : p.indexOf(':');
+      if (i <= 0) continue;
+      final k = p.substring(0, i).trim();
+      final v = p.substring(i + 1).trim();
+      if (RegExp(r'^[A-Za-z0-9_]+$').hasMatch(k) && v.isNotEmpty) {
+        pairs[k] = v;
+      }
+    }
+    if (!pairs.containsKey('BDUSS')) return null;
+    return pairs;
+  }
+
   // ── 登录（OAuth code 换 token）────────────────────────
 
   @override
@@ -90,6 +122,47 @@ class BaiduProvider extends CloudProvider {
     if (raw.isEmpty) {
       throw const CloudException('未捕获到授权凭据，请重试');
     }
+
+    // 手填 Cookie：含 BDUSS 的网页 Cookie 直接落库为 Cookie 轨凭据。
+    // 昵称/uid 尽力取（网页 getinfo），失败则显示名 + BDUSS 哈希兜底。
+    final cookiePairs = _parseCookieInput(raw);
+    if (cookiePairs != null) {
+      var nickname = displayName;
+      var accountId = md5Hex(cookiePairs['BDUSS']!).substring(0, 12);
+      try {
+        final resp = await cloudGet(
+          'https://pan.baidu.com/api/user/getinfo?ref=client&clienttype=0&web=1',
+          headers: {
+            ..._webHeaders,
+            'Referer': 'https://pan.baidu.com/disk/main',
+            'Cookie': cookieHeader(cookiePairs),
+          },
+        );
+        if (resp.isOk) {
+          final j = jsonDecode(resp.body);
+          final info =
+              j is Map<String, dynamic> ? (j['user_info'] ?? j['data']) : null;
+          if (info is Map<String, dynamic>) {
+            final name =
+                (info['username'] ?? info['user_name'] ?? '').toString();
+            if (name.isNotEmpty) nickname = name;
+            final uid =
+                (info['id'] ?? info['user_id'] ?? info['baidu_id'])?.toString();
+            if (uid != null && uid.isNotEmpty && uid != '0') accountId = uid;
+          }
+        }
+      } catch (_) {
+        // 昵称/uid 拿不到不影响绑定。
+      }
+      return CloudAccount(
+        provider: id,
+        accountId: accountId,
+        nickname: nickname,
+        cred: cookiePairs,
+        boundAt: DateTime.now(),
+      );
+    }
+
     // 手填兼容：完整 token JSON 直接解析；裸串当 refresh_token。
     Map<String, dynamic>? parsed;
     try {
