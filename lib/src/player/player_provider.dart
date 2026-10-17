@@ -227,6 +227,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   final Set<String> _onlineReSearchDone = {};
   bool _shareLinkPlayback = false;
   String? _sessionQualityOverride;
+
+  /// 已做过自动升档尝试的在线歌曲 path（每首每次会话限一次，防循环）
+  final Set<String> _autoUpgradeTried = {};
   double? _replayAnchorSecs;
 
   double? _restoredOnlinePending;
@@ -830,7 +833,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         'onlineSongJson=${json?.isNotEmpty ?? false}');
     if (json != null && json.isNotEmpty) {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
-      final s0 = _ref.read(settingsProvider).valueOrNull;
+      // 设置若仍在加载（冷启动首播），valueOrNull 为 null 会静默回退到
+      // 快照/320k，导致「默认音质=母带」首播却落在 HQ——先等设置就绪
+      AppSettings? s0;
+      try {
+        s0 = await _ref.read(settingsProvider.future);
+      } catch (e) {
+        AppLog.warn('play', '设置读取失败，回退缓存值: $e');
+        s0 = _ref.read(settingsProvider).valueOrNull;
+      }
       final fb0 = s0?.onlineQualityFallbackBehavior ?? 'lower';
       final preferred = _sessionQualityOverride ??
           s0?.onlineDefaultQuality ??
@@ -885,6 +896,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
         _refreshQualityMenuState(probe);
         unawaited(_prewarmOnlineSizes(item));
+        unawaited(_maybeAutoUpgradeQuality(item, preferred, fb0));
         _probeMvsAround(item);
         return;
       }

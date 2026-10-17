@@ -88,6 +88,10 @@ class SongQualityProbe {
   final int maxConcurrency;
 
   final Map<String, Future<QualityProbeResult?>> _perQuality = {};
+
+  /// 档位级失败冷却：失败结果不永久缓存，冷却后允许重试
+  /// （冷启动解析超时等瞬时失败不应把整首歌钉死在低音质档）
+  final Map<String, DateTime> _failCooldownUntil = {};
   final List<QualityProbeResult> _done = [];
 
   String? lastFailureReason;
@@ -191,6 +195,11 @@ class SongQualityProbe {
     if (existing != null) return existing;
     if (_disposed) return Future.value(null);
     if (failedRecently || _rateLimited) return Future.value(null);
+    final failAt = _failCooldownUntil[quality];
+    if (failAt != null) {
+      if (DateTime.now().isBefore(failAt)) return Future.value(null);
+      _failCooldownUntil.remove(quality);
+    }
 
     final future = _runInSlot(() async {
       if (_disposed) return null;
@@ -235,8 +244,16 @@ class SongQualityProbe {
         cek: res.cek,
       );
     });
-    _perQuality[quality] = future;
-    return future;
+    final wrapped = future.then((res) {
+      if (res == null && !_disposed) {
+        // 失败只冷却不钉死：移除缓存条目，冷却期后可重试
+        _perQuality.remove(quality);
+        _failCooldownUntil[quality] = DateTime.now().add(kProbeFailCooldown);
+      }
+      return res;
+    });
+    _perQuality[quality] = wrapped;
+    return wrapped;
   }
 
   int _rankOrMax(String q) {

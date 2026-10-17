@@ -162,6 +162,35 @@ extension PlayerNotifierQuality on PlayerNotifier {
     );
   }
 
+  /// 起播落到低于目标音质时（冷启动解析超时等瞬时失败），待播放稳定后
+  /// 后台重试目标档并保进度无缝升档。每首歌每次会话仅尝试一次：
+  /// 升档自身触发的再降档不会重试（防循环）；等待期间用户切歌、手动
+  /// 动档或暂停则放弃（避免覆盖用户选择、避免把暂停态拉起）。
+  Future<void> _maybeAutoUpgradeQuality(
+      QueueItem item, String preferred, String fallback) async {
+    if (fallback == 'pause') return;
+    final wantRank = kQualityLadder.indexOf(preferred);
+    if (wantRank < 0) return;
+    final started = state.currentQuality;
+    if (started == null || kQualityLadder.indexOf(started) >= wantRank) return;
+    if (_autoUpgradeTried.contains(item.path)) return;
+    _autoUpgradeTried.add(item.path);
+    if (_autoUpgradeTried.length > 32) {
+      _autoUpgradeTried.remove(_autoUpgradeTried.first);
+    }
+    final overrideAtSchedule = _sessionQualityOverride;
+    await Future<void>.delayed(const Duration(seconds: 4));
+    if (state.current?.path != item.path) return;
+    if (_sessionQualityOverride != overrideAtSchedule) return;
+    if (state.currentQuality != started || !state.isPlaying) return;
+    AppLog.info('quality',
+        '[quality] 起播 $started 低于目标 $preferred，自动升档');
+    final ok = await switchQuality(preferred);
+    if (!ok) {
+      AppLog.debug('quality', '[quality] 自动升档 $preferred 未成功');
+    }
+  }
+
   Future<bool> switchQuality(String quality) async {
     final item = state.current;
     if (item == null || !item.isOnline) return false;
