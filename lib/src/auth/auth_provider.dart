@@ -291,6 +291,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       AppLog.warn('auth', '凭据恢复失败: $e');
     } finally {
       _restoreDone.complete();
+      // 恢复完成后静默拉一次最新资料：本地缓存的用户信息可能落后
+      // （头像/昵称在他端修改或审核刚通过），不刷新的话「我的」页
+      // 头像要进过账号二级页（getProfile）才会更新
+      if (_token != null && _token!.isNotEmpty) {
+        unawaited(getProfile());
+      }
     }
   }
 
