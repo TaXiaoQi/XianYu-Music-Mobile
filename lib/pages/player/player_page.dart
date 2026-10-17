@@ -243,61 +243,63 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
         colorScheme: bgScheme,
         iconTheme: Theme.of(context).iconTheme.copyWith(color: Colors.white),
       ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          Positioned.fill(child: ColoredBox(color: playerBaseColor)),
-          Positioned.fill(child: _BlurredCoverBackground(current: current)),
-          if (showFlowingBackground)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: PlayerFlowingBackground(
-                  primary: scheme.primary,
-                  secondary: scheme.secondary,
-                  tertiary: scheme.tertiary,
-                  baseColor: playerBaseColor,
+      // 下滑退出：整页（背景+前景）作为一张卡片跟手平移、顶部随手势
+      // 长出圆角，露出下层主页——与 pop 转场整页滑下的观感一致
+      child: _DragDismissSheet(
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Positioned.fill(child: ColoredBox(color: playerBaseColor)),
+            Positioned.fill(child: _BlurredCoverBackground(current: current)),
+            if (showFlowingBackground)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: PlayerFlowingBackground(
+                    primary: scheme.primary,
+                    secondary: scheme.secondary,
+                    tertiary: scheme.tertiary,
+                    baseColor: playerBaseColor,
+                  ),
                 ),
               ),
-            ),
-          if (mv.ready && mv.controller != null)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedSlide(
-                  offset: hideMvVideo ? const Offset(-0.08, 0) : Offset.zero,
-                  duration: _mvSwitchDuration,
-                  curve: _mvSwitchCurve,
-                  child: AnimatedOpacity(
-                    opacity: hideMvVideo ? 0 : 1,
+            if (mv.ready && mv.controller != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedSlide(
+                    offset: hideMvVideo ? const Offset(-0.08, 0) : Offset.zero,
                     duration: _mvSwitchDuration,
                     curve: _mvSwitchCurve,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        LayoutBuilder(
-                          builder: (context, cons) {
-                            final ar = mv.controller!.value.aspectRatio;
-                            final w = cons.maxWidth;
-                            final h = cons.maxHeight;
-                            final vw = w >= h * ar ? h * ar : w;
-                            final vh = w >= h * ar ? h : w / ar;
-                            return Align(
-                              child: SizedBox(
-                                width: vw,
-                                height: vh,
-                                child: VideoPlayer(mv.controller!),
-                              ),
-                            );
-                          },
-                        ),
-                        Container(color: const Color(0x66000000)),
-                      ],
+                    child: AnimatedOpacity(
+                      opacity: hideMvVideo ? 0 : 1,
+                      duration: _mvSwitchDuration,
+                      curve: _mvSwitchCurve,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, cons) {
+                              final ar = mv.controller!.value.aspectRatio;
+                              final w = cons.maxWidth;
+                              final h = cons.maxHeight;
+                              final vw = w >= h * ar ? h * ar : w;
+                              final vh = w >= h * ar ? h : w / ar;
+                              return Align(
+                                child: SizedBox(
+                                  width: vw,
+                                  height: vh,
+                                  child: VideoPlayer(mv.controller!),
+                                ),
+                              );
+                            },
+                          ),
+                          Container(color: const Color(0x66000000)),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          _DragDismissSheet(
-            child: Listener(
+            Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) {
                 _chromeVisibleAtPointerDown = _chromeVisible;
@@ -346,8 +348,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                       hasRomaji: hasRomaji,
                     ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

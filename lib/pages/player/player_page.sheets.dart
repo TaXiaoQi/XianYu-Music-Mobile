@@ -59,13 +59,19 @@ class _DragDismissSheetState extends State<_DragDismissSheet>
 
   @override
   Widget build(BuildContext context) {
+    // 顶部圆角随手势进度长出（前 24px 内 0→24），回弹同步收缩
+    final radius = _dragY >= 24.0 ? 24.0 : _dragY;
     return GestureDetector(
       onVerticalDragUpdate: _onDragUpdate,
       onVerticalDragEnd: _onDragEnd,
       onVerticalDragCancel: _settleBack,
       child: Transform.translate(
         offset: Offset(0, _dragY),
-        child: widget.child,
+        child: ClipRRect(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(radius)),
+          clipBehavior: radius > 0 ? Clip.antiAlias : Clip.none,
+          child: widget.child,
+        ),
       ),
     );
   }
