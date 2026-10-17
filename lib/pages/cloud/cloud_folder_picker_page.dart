@@ -246,7 +246,15 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
               Chip(
                 label: Text(
                   _dirNameOf(k),
-                  style: const TextStyle(fontSize: 12),
+                  style: TextStyle(
+                    fontSize: 12,
+                    // 壁纸模式下 Chip 默认底色是不透明白块，改卡片感知填充
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                backgroundColor: appCardFill(context, ref),
+                side: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.6),
                 ),
                 visualDensity: VisualDensity.compact,
                 onDeleted: () => setState(() => _selected.remove(k)),
