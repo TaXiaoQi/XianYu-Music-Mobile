@@ -88,10 +88,24 @@ class ThunderProvider extends CloudProvider {
           var dbg = 'status=' + xhr.status;
           if (xhr.status === 200) {
             var u = JSON.parse(xhr.responseText);
-            var n = String(u.username || u.nick_name || u.nickname ||
-              (u.User && u.User.username) || '');
-            if (n) nick = n;
-          } else { dbg += ' body=' + String(xhr.responseText || '').substring(0, 160); }
+            var scopes = [u, u.User, u.data, u.user, u.result];
+            var n = '';
+            for (var si = 0; si < scopes.length && !n; si++) {
+              var x = scopes[si];
+              if (x && typeof x === 'object') {
+                n = String(x.username || x.nick_name || x.nickname ||
+                  x.userName || x.name || '');
+              }
+            }
+            if (n) {
+              nick = n;
+            } else {
+              dbg += ' body=' + String(xhr.responseText || '')
+                .substring(0, 240);
+            }
+          } else {
+            dbg += ' body=' + String(xhr.responseText || '').substring(0, 160);
+          }
           window.localStorage.setItem('__xysdk_nick_dbg', dbg);
         }
       } catch (e3) {}
