@@ -116,7 +116,7 @@ class _WallpaperCard extends ConsumerWidget {
     return PressableScale(
       child: Material(
       clipBehavior: Clip.antiAlias,
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openPreview(context),

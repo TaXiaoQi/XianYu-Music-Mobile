@@ -47,7 +47,7 @@ class RemoteLibraryPage extends ConsumerWidget {
                       ),
                     ),
                     if (state.sources.isEmpty && !state.loading)
-                      _buildEmptyHint(context, scheme)
+                      _buildEmptyHint(context, ref, scheme)
                     else
                       for (final source in state.sources)
                         _SourceCard(source: source),
@@ -70,10 +70,11 @@ class RemoteLibraryPage extends ConsumerWidget {
     );
   }
 
-  Widget _buildEmptyHint(BuildContext context, ColorScheme scheme) => Container(
+  Widget _buildEmptyHint(
+      BuildContext context, WidgetRef ref, ColorScheme scheme) => Container(
         padding: const EdgeInsets.symmetric(vertical: 36),
         decoration: BoxDecoration(
-          color: appCardColor(context),
+          color: appCardFill(context, ref),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -98,7 +99,7 @@ class RemoteLibraryPage extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -202,7 +203,7 @@ class _SourceCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(

@@ -184,7 +184,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
             child: Container(
             height: 92,
             decoration: BoxDecoration(
-              color: appCardColor(context),
+              color: appCardFill(context, ref),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: _treeUri != null

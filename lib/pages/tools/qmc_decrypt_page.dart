@@ -255,7 +255,7 @@ class _QmcDecryptPageState extends ConsumerState<QmcDecryptPage> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 4),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(

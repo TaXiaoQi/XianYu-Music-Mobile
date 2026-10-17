@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 
@@ -26,7 +27,7 @@ Future<HumanCaptchaPayload?> showHumanCaptchaDialog(
   );
 }
 
-class HumanCaptchaDialog extends StatefulWidget {
+class HumanCaptchaDialog extends ConsumerStatefulWidget {
   const HumanCaptchaDialog({
     super.key,
     required this.title,
@@ -38,10 +39,11 @@ class HumanCaptchaDialog extends StatefulWidget {
   final AuthNotifier notifier;
 
   @override
-  State<HumanCaptchaDialog> createState() => _HumanCaptchaDialogState();
+  ConsumerState<HumanCaptchaDialog> createState() =>
+      _HumanCaptchaDialogState();
 }
 
-class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
+class _HumanCaptchaDialogState extends ConsumerState<HumanCaptchaDialog> {
   HumanCaptchaConfig? _config;
   HumanCaptcha? _captcha;
   bool _loading = true;
@@ -216,7 +218,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: appCardColor(context),
+            color: appCardFill(context, ref),
             borderRadius: BorderRadius.circular(12),
           ),
           clipBehavior: Clip.antiAlias,
@@ -268,7 +270,7 @@ class _HumanCaptchaDialogState extends State<HumanCaptchaDialog> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            color: appCardColor(context),
+            color: appCardFill(context, ref),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(

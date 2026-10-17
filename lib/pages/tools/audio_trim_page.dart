@@ -487,7 +487,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -536,7 +536,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -647,7 +647,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -747,7 +747,7 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(

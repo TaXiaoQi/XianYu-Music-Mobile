@@ -124,7 +124,7 @@ class _TvLoginConfirmPageState extends ConsumerState<TvLoginConfirmPage> {
                     const SizedBox(height: 28),
                     Container(
                       decoration: BoxDecoration(
-                        color: appCardColor(context),
+                        color: appCardFill(context, ref),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(

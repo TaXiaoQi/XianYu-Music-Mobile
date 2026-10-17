@@ -475,7 +475,7 @@ class _WallpaperUploadSheetState extends ConsumerState<_WallpaperUploadSheet> {
       child: Container(
         height: videoReady ? 200 : 160,
         decoration: BoxDecoration(
-          color: appCardColor(context),
+          color: appCardFill(context, ref),
           borderRadius: BorderRadius.circular(14),
         ),
         child: _picked == null

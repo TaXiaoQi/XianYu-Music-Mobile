@@ -437,7 +437,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
               padding: const EdgeInsets.only(bottom: 8),
               child: PressableScale(
                 child: Material(
-                  color: appCardColor(context),
+                  color: appCardFill(context, ref),
                   clipBehavior: Clip.antiAlias,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),

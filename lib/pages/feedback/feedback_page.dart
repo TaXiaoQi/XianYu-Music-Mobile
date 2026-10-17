@@ -666,7 +666,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                   errorBuilder: (_, _, _) => Container(
                     width: 80,
                     height: 80,
-                    color: appCardColor(context),
+                    color: appCardFill(context, ref),
                     child: Icon(Icons.broken_image,
                         color: scheme.outline),
                   ),
@@ -703,7 +703,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: appCardColor(context),
+                  color: appCardFill(context, ref),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
@@ -843,7 +843,7 @@ class _FeedbackCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     return PressableScale(
       child: Material(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
         onTap: onTap,
@@ -898,7 +898,7 @@ class _FeedbackCard extends ConsumerWidget {
                         errorBuilder: (_, _, _) => Container(
                           width: 56,
                           height: 56,
-                          color: appCardColor(context),
+                          color: appCardFill(context, ref),
                         ),
                       ),
                     ),
@@ -924,12 +924,12 @@ class _FeedbackCard extends ConsumerWidget {
   }
 }
 
-class _FeedbackDetailDialog extends StatelessWidget {
+class _FeedbackDetailDialog extends ConsumerWidget {
   const _FeedbackDetailDialog({required this.item});
   final FeedbackItem item;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     return AlertDialog(
       title: Text(item.title.isEmpty ? tr('反馈详情') : item.title),
@@ -996,7 +996,7 @@ class _FeedbackDetailDialog extends StatelessWidget {
                             errorBuilder: (_, _, _) => Container(
                               width: 90,
                               height: 90,
-                              color: appCardColor(context),
+                              color: appCardFill(context, ref),
                               child: Icon(Icons.broken_image,
                                   color: scheme.outline),
                             ),

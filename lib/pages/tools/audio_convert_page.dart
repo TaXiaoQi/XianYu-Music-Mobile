@@ -413,7 +413,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
   Widget _buildMetadataOptions(ColorScheme scheme) {
     return Container(
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Material(
@@ -484,7 +484,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -551,7 +551,7 @@ class _AudioConvertPageState extends ConsumerState<AudioConvertPage> {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 4),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(

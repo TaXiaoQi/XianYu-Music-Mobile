@@ -219,7 +219,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 2),
       decoration: BoxDecoration(
-        color: appCardColor(context),
+        color: appCardFill(context, ref),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -347,7 +347,7 @@ class _CommentSheetState extends ConsumerState<CommentSheet> {
   }
 }
 
-class _CommentTile extends StatelessWidget {
+class _CommentTile extends ConsumerWidget {
   const _CommentTile({
     required this.item,
     required this.expanded,
@@ -363,7 +363,7 @@ class _CommentTile extends StatelessWidget {
   final String Function(int?) fmtLike;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final time = fmtTime(item.createAt);
     final meta = [
@@ -457,7 +457,7 @@ class _CommentTile extends StatelessWidget {
                             margin: const EdgeInsets.only(top: 8),
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: appCardColor(context),
+                              color: appCardFill(context, ref),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Column(
@@ -546,19 +546,19 @@ class _CommentTile extends StatelessWidget {
   }
 }
 
-class _Avatar extends StatelessWidget {
+class _Avatar extends ConsumerWidget {
   const _Avatar({required this.url, this.size = 36});
 
   final String? url;
   final double size;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     if (url == null || url!.isEmpty) {
       return CircleAvatar(
         radius: size / 2,
-        backgroundColor: appCardColor(context),
+        backgroundColor: appCardFill(context, ref),
         child: Icon(Icons.person, size: size * 0.55, color: scheme.onSurfaceVariant),
       );
     }
@@ -570,7 +570,7 @@ class _Avatar extends StatelessWidget {
         fit: BoxFit.cover,
         errorWidget: (_, _, _) => CircleAvatar(
           radius: size / 2,
-          backgroundColor: appCardColor(context),
+          backgroundColor: appCardFill(context, ref),
           child: Icon(Icons.person,
               size: size * 0.55, color: scheme.onSurfaceVariant),
         ),

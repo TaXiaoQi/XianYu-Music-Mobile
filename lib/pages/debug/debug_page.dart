@@ -477,7 +477,7 @@ class _CardGroup extends ConsumerWidget {
     }
 
     return Material(
-      color: appCardColor(context),
+      color: appCardFill(context, ref),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),

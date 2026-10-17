@@ -806,7 +806,7 @@ class _MatchListView extends ConsumerWidget {
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: appCardColor(context),
+          color: appCardFill(context, ref),
           child: Text(
             tr('识别到 {n} 首匹配', {'n': matches.length}),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
