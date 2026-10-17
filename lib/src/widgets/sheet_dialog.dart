@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../core/app_colors.dart';
 import 'predictive_dialog_route.dart';
 
 Future<T?> showSheetDialog<T>(
@@ -13,6 +12,8 @@ Future<T?> showSheetDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
     builder: (dialogContext) {
+      // 跟随当前主题（含壁纸模式字体颜色），不还原基础 scheme：
+      // dialogTheme 已随字体颜色翻转，还原会把白卡片/深文字拼回深底上
       final dialog = Dialog(
         insetPadding:
             const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
@@ -27,15 +28,7 @@ Future<T?> showSheetDialog<T>(
           ),
         ),
       );
-      final base = Theme.of(dialogContext).brightness == Brightness.dark
-          ? darkBaseScheme
-          : lightBaseScheme;
-      return base == null
-          ? dialog
-          : Theme(
-              data: Theme.of(dialogContext).copyWith(colorScheme: base),
-              child: dialog,
-            );
+      return dialog;
     },
   );
 }
@@ -49,13 +42,10 @@ Future<T?> showBottomSheetDialog<T>(
     context: context,
     barrierDismissible: barrierDismissible,
     builder: (dialogContext) {
-      final base = Theme.of(dialogContext).brightness == Brightness.dark
-          ? darkBaseScheme
-          : lightBaseScheme;
-      final scheme = base ?? Theme.of(dialogContext).colorScheme;
-      final themed = Theme(data: base == null ? Theme.of(dialogContext) : Theme.of(dialogContext).copyWith(colorScheme: base), child: builder(dialogContext));
+      final theme = Theme.of(dialogContext);
+      final themed = Theme(data: theme, child: builder(dialogContext));
       return Material(
-        color: scheme.surface,
+        color: theme.colorScheme.surface,
         clipBehavior: Clip.antiAlias,
         elevation: 20,
         shadowColor: Colors.black45,

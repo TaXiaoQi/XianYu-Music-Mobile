@@ -18,12 +18,6 @@ Color appScaffoldBackground(BuildContext context, WidgetRef ref) {
       : appSurfaceBg(context);
 }
 
-ColorScheme? lightBaseScheme;
-ColorScheme? darkBaseScheme;
-
-TextTheme? lightBaseTextTheme;
-TextTheme? darkBaseTextTheme;
-
 Color appSurfaceBg(BuildContext context) {
   final dark = Theme.of(context).brightness == Brightness.dark;
   return dark ? const Color(0xFF222222) : const Color(0xFFF4F4F6);

@@ -270,7 +270,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final darkTransitions = transitions();
     final lightScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.light);
-    lightBaseScheme = lightScheme;
     final lightBase = ThemeData(
       colorScheme: lightScheme,
       scaffoldBackgroundColor: Colors.transparent,
@@ -296,11 +295,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       pageTransitionsTheme: lightTransitions,
       useMaterial3: true,
     );
-    lightBaseTextTheme = lightBase.textTheme;
     _lightTheme = _applyWallpaperTextMode(lightBase, textMode, darkTheme: false);
     final darkScheme =
         _schemeWithExactAccent(accent: seed, brightness: Brightness.dark);
-    darkBaseScheme = darkScheme;
     _darkTheme = ThemeData(
       colorScheme: darkScheme.copyWith(
         surface: const Color(0xFF262626),
@@ -333,7 +330,6 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
       pageTransitionsTheme: darkTransitions,
       useMaterial3: true,
     );
-    darkBaseTextTheme = _darkTheme!.textTheme;
     _darkTheme = _applyWallpaperTextMode(_darkTheme!, textMode, darkTheme: true);
   }
 
@@ -355,6 +351,9 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
     final ColorScheme containers;
     if (mode == WallpaperTextColor.light) {
       containers = base.colorScheme.copyWith(
+        // surface 一并翻转：底部弹层 Material(color: surface) 等直接画
+        // surface 的容器要与深容器/白字配套，否则白底白字
+        surface: const Color(0xFF262626),
         surfaceContainerLowest: const Color(0xFF1f1f1f),
         surfaceContainerLow: const Color(0xFF262626),
         surfaceContainer: const Color(0xFF2c2c2c),

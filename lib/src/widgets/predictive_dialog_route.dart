@@ -1,20 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../core/app_colors.dart';
 import 'predictive_back_transitions.dart';
-
-WidgetBuilder _restoreBaseTheme(BuildContext context, WidgetBuilder builder) {
-  final t = Theme.of(context);
-  final dark = t.brightness == Brightness.dark;
-  final scheme = dark ? darkBaseScheme : lightBaseScheme;
-  final tt = dark ? darkBaseTextTheme : lightBaseTextTheme;
-  if (scheme == null) return builder;
-  return (innerContext) => Theme(
-        data: t.copyWith(colorScheme: scheme, textTheme: tt ?? t.textTheme),
-        child: Builder(builder: builder),
-      );
-}
 
 class PredictiveBackDialogRoute<T> extends PageRoute<T> {
   PredictiveBackDialogRoute({
@@ -77,7 +64,11 @@ class PredictiveBackDialogRoute<T> extends PageRoute<T> {
             ),
             Center(
               child: DialogKeyboardLift(
-                child: _restoreBaseTheme(context, builder)(context),
+                // 弹窗直接跟随当前主题（含壁纸模式字体颜色翻转后的
+                // dialogTheme/容器色），不再还原基础主题——历史上曾靠
+                // 还原绕过白底白字，后来 dialogTheme 已整体翻转深底，
+                // 再还原会变成深底黑字不可读
+                child: builder(context),
               ),
             ),
           ],
@@ -203,7 +194,7 @@ class PredictiveBackSheetRoute<T> extends PageRoute<T> {
               alignment: Alignment.bottomCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: maxWidth),
-                child: _restoreBaseTheme(context, builder)(context),
+                child: builder(context),
               ),
             ),
           ),
