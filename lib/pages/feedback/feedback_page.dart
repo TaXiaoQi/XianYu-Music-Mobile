@@ -398,6 +398,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
                   ? tr('请描述你的功能建议…')
                   : tr('请描述你遇到的问题…'),
               filled: true,
+              // 壁纸模式下用卡片感知填充，避免主题默认色变成不透明色块
+              fillColor: appCardFill(context, ref),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
@@ -514,6 +516,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               decoration: InputDecoration(
                 hintText: tr('请填写内测申请理由…'),
                 filled: true,
+                fillColor: appCardFill(context, ref),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
