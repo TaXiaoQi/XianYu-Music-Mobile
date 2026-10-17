@@ -155,8 +155,8 @@ const Map<String, String> enDictManual = {
   'VIP歌曲': 'VIP song',
   '安装插件': 'Install plugin',
   '安装音源': 'Install music source',
-  '安装音源插件后生成推荐':
-      'Recommendations are generated after a source plugin is installed',
+  '添加本地音乐或安装音源插件后再试':
+      'Add local music or install a source plugin and try again',
   '每日推荐获取失败，点击重试': 'Failed to load daily picks, tap to retry',
   '按标题': 'By title',
   '按歌手': 'By artist',

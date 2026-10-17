@@ -385,25 +385,6 @@ class _CloudSearchTask {
       this.cred, this.keyword, {this.roots = const []});
 }
 
-/// 是否存在「支持搜索且已绑定」或「已绑定且选了文件夹（走范围遍历）」
-/// 的网盘（无插件时判断是否仍生成日推）。
-Future<bool> _anyBoundSearchableDrive() async {
-  for (final p in cloudProviders) {
-    try {
-      final accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
-      if (accounts.isEmpty) continue;
-      if (p.supportsSearch) return true;
-      // 盘侧不支持搜索：账号选了文件夹即可走范围遍历参与
-      if ((await CloudFolderSelectionStore.instance
-              .pathsFor(p.id, accounts.first.accountId))
-          .isNotEmpty) {
-        return true;
-      }
-    } catch (_) {}
-  }
-  return false;
-}
-
 /// 网盘候选收集：推荐歌手名作关键词对各支持搜索的绑定盘并发 searchFiles
 /// 首页，文件名解析出的歌手/歌名任一段命中推荐歌手才收。strategyId 固定
 /// 'cloud'，dedup 分数带 +0.05 偏置（同 key 竞争时网盘略优先），全局限量。
@@ -874,12 +855,9 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
       } catch (_) {}
     }
 
+    // 登录即生成：插件/网盘/本地任一来源都能出候选（全部缺失时候选为空，
+    // 由页面空态提示补充来源），不再把插件作为前置门槛
     final pluginSources = ref.watch(pluginManagerProvider).sources;
-    if (!pluginSources.any((s) => s.enabled) &&
-        !await _anyBoundSearchableDrive() &&
-        localSongs.isEmpty) {
-      return const DailyRecommendState(items: []);
-    }
 
     final data = await ref
         .read(authProvider.notifier)

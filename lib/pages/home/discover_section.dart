@@ -165,7 +165,7 @@ class _DailyCard extends ConsumerWidget {
                     ? tr('每日推荐获取失败，点击重试')
                     : notLoggedIn
                         ? tr('登录后解锁每日推荐')
-                        : tr('安装音源插件后生成推荐'),
+                        : tr('添加本地音乐或安装音源插件后再试'),
                 style: TextStyle(
                     fontSize: 13, color: scheme.onSurfaceVariant),
               ),
