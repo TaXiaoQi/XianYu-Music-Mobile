@@ -78,6 +78,11 @@ abstract class CloudProvider {
   Future<CloudAccount> submitSmsCode(String username, String smsCode) =>
       throw UnsupportedError('该盘不支持短信验证码');
 
+  /// 重发设备校验验证码（收到 [CloudSmsRequiredException] 后由 UI 弹窗
+  /// 内的「发送验证码」按钮调用；弹窗打开时不自动发码）。
+  Future<void> resendDeviceSms(String username) =>
+      throw UnsupportedError('该盘不支持短信验证码');
+
   /// 创建扫码会话（qrCode）。
   Future<CloudQrLoginSession> createQrLogin() =>
       throw UnsupportedError('该盘不支持扫码登录');

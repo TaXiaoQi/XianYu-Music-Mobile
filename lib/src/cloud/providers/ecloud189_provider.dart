@@ -100,7 +100,17 @@ class Ecloud189Provider extends CloudProvider {
     }
   }
 
-  /// 现役账密登录全链；要求设备短信二次校验时发码并暂存会话。
+  /// 重发设备校验验证码（UI 弹窗「发送验证码」按钮调用）。
+  @override
+  Future<void> resendDeviceSms(String username) async {
+    final pending = _pendingSms[username];
+    if (pending == null) {
+      throw const CloudException('登录会话已失效，请重新登录');
+    }
+    await _sendDeviceSms(pending);
+  }
+
+  /// 现役账密登录全链；要求设备短信二次校验时暂存会话，发码由 UI 手动触发。
   Future<CloudAccount> _passwordLogin(
       String username, String password) async {
     // 1. loginUrl.action：302 跳链逐跳采 Cookie，落点取 lt/reqId/appId。
@@ -189,7 +199,7 @@ class Ecloud189Provider extends CloudProvider {
         username: username,
       );
       _pendingSms[username] = session;
-      await _sendDeviceSms(session);
+      // 不自动发码：由 UI 弹窗内的「发送验证码」按钮手动触发 resendDeviceSms。
       throw CloudSmsRequiredException(username);
     }
     if (result != 0) {

@@ -25,6 +25,9 @@ import '../../src/widgets/press_scale.dart';
 /// 不支持的盘（token 范式）不经本页，绑定页直接路由网页登录。
 enum _LoginMode { cookie, fields }
 
+/// StatefulBuilder setter 尚未就绪时的占位（对比用，避免空指针）。
+void _noopSet(void Function() _) {}
+
 class CloudPasswordLoginPage extends ConsumerStatefulWidget {
   const CloudPasswordLoginPage({super.key, required this.providerId});
 
@@ -184,9 +187,52 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
     }
   }
 
-  /// 验证码输入弹窗（同新建歌单的输入范式），确认后提交完成绑定。
+  /// 验证码输入弹窗（同新建歌单的输入范式）：打开时不自动发码，弹窗内
+  /// 「发送验证码」按钮手动触发，60 秒冷却防连点；确认后提交完成绑定。
   Future<void> _promptSmsCode(String username) async {
     final controller = TextEditingController();
+    // 弹窗内状态放外层闭包：StatefulBuilder 重建不会重置。
+    var cooldown = 0;
+    var sending = false;
+    Timer? timer;
+    var setDlg = _noopSet;
+    void safeSet(void Function() fn) {
+      if (setDlg != _noopSet) setDlg(fn);
+    }
+
+    Future<void> send() async {
+      if (sending || cooldown > 0) return;
+      safeSet(() => sending = true);
+      try {
+        await _provider.resendDeviceSms(username);
+        if (!mounted) return;
+        showXianYuToast(context, tr('验证码已发送'));
+        safeSet(() => cooldown = 60);
+        timer?.cancel();
+        timer = Timer.periodic(const Duration(seconds: 1), (t) {
+          if (!mounted) {
+            t.cancel();
+            return;
+          }
+          safeSet(() {
+            if (--cooldown <= 0) {
+              cooldown = 0;
+              t.cancel();
+            }
+          });
+        });
+      } catch (e) {
+        AppLog.warn('cloud', '${_provider.id} 发送验证码失败: $e');
+        if (!mounted) return;
+        showXianYuToast(
+          context,
+          e is CloudException ? e.message : tr('验证码发送失败'),
+        );
+      } finally {
+        safeSet(() => sending = false);
+      }
+    }
+
     final code = await showPredictiveDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -194,7 +240,7 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(tr('检测到新设备登录，验证码已发送至 {username}',
+            Text(tr('检测到新设备登录，验证码将发送至 {username}',
                 {'username': username})),
             const SizedBox(height: 12),
             TextField(
@@ -217,6 +263,24 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
           ),
           PressableScale(
             pressScale: 0.92,
+            child: StatefulBuilder(
+              builder: (ctx, setSb) {
+                setDlg = setSb;
+                return TextButton(
+                  onPressed: (sending || cooldown > 0) ? null : send,
+                  child: Text(
+                    sending
+                        ? tr('发送中…')
+                        : (cooldown > 0
+                            ? tr('{s} 秒', {'s': '$cooldown'})
+                            : tr('发送验证码')),
+                  ),
+                );
+              },
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
             child: FilledButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
               child:   Text(tr('确定')),
@@ -225,6 +289,7 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
         ],
       ),
     );
+    timer?.cancel();
     if (code == null || code.isEmpty) return;
     if (!mounted) return;
     setState(() => _submitting = true);
@@ -315,7 +380,7 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
                       setState(() => _mode = s.first),
                 ),
               ],
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
               if (showCookie)
                 _buildCookieForm(scheme)
               else
@@ -363,9 +428,9 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
             ),
           ),
         ],
-        const SizedBox(height: 14),
+        const SizedBox(height: 20),
         Padding(
-          padding: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.only(bottom: 26),
           child: TextField(
             controller: _cookieCtrl,
             maxLines: 5,
@@ -427,7 +492,8 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   }) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      // 26px：给浮出的 label 留出上探空间，避免与上方内容视觉重叠
+      padding: const EdgeInsets.only(bottom: 26),
       child: TextField(
         controller: ctrl,
         obscureText: obscure,
