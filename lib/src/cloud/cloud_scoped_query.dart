@@ -26,16 +26,22 @@ Future<List<CloudFile>> scopedSearchAudio({
   final out = <CloudFile>[];
   for (final root in roots) {
     final queue = <String>[root];
+    var dirs = 0;
     while (queue.isNotEmpty) {
       final cur = queue.removeAt(0);
+      dirs++;
       String? cursor; // 首页为 null，有 nextCursor 才翻页
       while (true) {
         final CloudListResult r;
         try {
           r = await provider.listDir(cred, cur, cursor: cursor);
-        } catch (_) {
-          break; // 单文件夹失败不影响其余范围
+        } catch (e) {
+          // 单文件夹失败不影响其余范围；留痕便于诊断遍历断链
+          AppLog.warn('cloud',
+              '[scopedSearch] ${provider.id} 列目录失败 dir=$cur cursor=$cursor: $e');
+          break;
         }
+        var hits = 0;
         for (final f in r.files) {
           if (f.isDir) {
             final next =
@@ -47,20 +53,26 @@ Future<List<CloudFile>> scopedSearchAudio({
               f.name.toLowerCase().contains(kw) &&
               seen.add(f.id)) {
             out.add(f);
+            hits++;
           }
         }
+        AppLog.debug('cloud',
+            '[scopedSearch] ${provider.id} dir=$cur cursor=$cursor files=${r.files.length} hits=$hits next=${r.nextCursor}');
         cursor = r.nextCursor;
         if (cursor == null || cursor.isEmpty) break;
       }
     }
+    AppLog.debug(
+        'cloud', '[scopedSearch] ${provider.id} root=$root dirs=$dirs hits 累计=${out.length}');
   }
   return out;
 }
 
 /// 网盘关键词搜索统一入口（搜索结果页 / 日推共用）：
-/// 已选文件夹 → 只遍历选定范围；未选目录 → 默认全部目录（先试盘侧
-/// 搜索，快且支持翻页；接口变更/限流——如迅雷「无效的文件过滤器」
-/// ——则回退根目录全盘遍历）。任何已绑定盘都不再因盘侧搜索失败而搜空。
+/// 已选文件夹 → 优先只遍历选定范围（快）；范围内无命中则自动扩大到
+/// 全盘（搜索是全局动作，勾选范围只是加速——勾选的文件夹未必包含
+/// 目标文件）。未选目录 → 先盘侧搜索（快且支持翻页），接口变更/限流
+/// ——如迅雷「无效的文件过滤器」——则回退根目录全盘遍历。
 Future<List<CloudFile>> cloudKeywordSearchAudio({
   required CloudProvider provider,
   required Map<String, String> cred,
@@ -69,16 +81,22 @@ Future<List<CloudFile>> cloudKeywordSearchAudio({
 }) async {
   final kw = keyword.trim();
   if (kw.isEmpty) return const [];
+  AppLog.debug('cloud',
+      '[scopedSearch] ${provider.id} kw=$kw selectedRoots=$selectedRoots');
   if (selectedRoots.isNotEmpty) {
-    return scopedSearchAudio(
+    final scoped = await scopedSearchAudio(
         provider: provider, cred: cred, roots: selectedRoots, keyword: kw);
+    if (scoped.isNotEmpty) return scoped;
+    AppLog.debug('cloud',
+        '[scopedSearch] ${provider.id} 范围内无命中，扩大到全盘遍历');
   }
   try {
     final res = await provider.searchFiles(cred, kw);
-    return res.files.where((f) => !f.isDir && f.isAudio).toList();
+    final hits = res.files.where((f) => !f.isDir && f.isAudio).toList();
+    if (hits.isNotEmpty) return hits;
   } catch (e) {
     AppLog.warn('cloud', '${provider.id} 盘侧搜索失败，回退全盘遍历: $e');
-    return scopedSearchAudio(
-        provider: provider, cred: cred, roots: [provider.rootPath], keyword: kw);
   }
+  return scopedSearchAudio(
+      provider: provider, cred: cred, roots: [provider.rootPath], keyword: kw);
 }
