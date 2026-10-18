@@ -487,7 +487,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             }
         }
     }
-    // 文件（task=5，pg 翻页；info!=0 表示还有下一页）。
+    // 文件（task=5，pg 翻页；info==0 表示还有下一页）。
     let list = doupload(
         &cookie,
         &uid,
@@ -517,7 +517,17 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             files.push(file_json(&token, &name, false, size, Some(&path), None, Some(&token)));
         }
     }
-    let has_next = list.get("info").and_then(Value::as_i64).unwrap_or(0) != 0;
+    // 蓝奏云 task=5 语义（对齐 comm.js）：info==0 还有下一页，info==1
+    // 已到最后一页——与直觉相反，判断不能写 != 0。
+    // 实测（2026-10-18）：请求页码超出范围时蓝奏云仍返回 info==0 且
+    // text 为空——此时必须停止，否则全盘遍历会无限翻页。空页判定用
+    // 原始 text 条数（files 已按音频扩展名过滤，不能反映真实空页）。
+    let raw_page_count = list
+        .get("text")
+        .and_then(Value::as_array)
+        .map_or(0, |a| a.len());
+    let has_next =
+        list.get("info").and_then(Value::as_i64).unwrap_or(1) == 0 && raw_page_count > 0;
     let next_cursor = if has_next {
         Some((page + 1).to_string())
     } else {
