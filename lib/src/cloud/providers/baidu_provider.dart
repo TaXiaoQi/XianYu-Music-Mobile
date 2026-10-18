@@ -37,9 +37,9 @@ class BaiduProvider extends CloudProvider {
       '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
   Map<String, String> get _webHeaders => {
-        'User-Agent': _ua,
-        'Referer': 'https://pan.baidu.com/',
-      };
+    'User-Agent': _ua,
+    'Referer': 'https://pan.baidu.com/',
+  };
 
   @override
   String get id => 'baidu';
@@ -63,9 +63,9 @@ class BaiduProvider extends CloudProvider {
 
   @override
   CloudCaptureRule? get captureRule => const CloudCaptureRule(
-        // 轮询 location.href 抽 code；兜底抓页面里渲染的 access_token
-        // （部分授权形态直出 token，带 at: 前缀与 code 区分）。
-        pollScript: '''
+    // 轮询 location.href 抽 code；兜底抓页面里渲染的 access_token
+    // （部分授权形态直出 token，带 at: 前缀与 code 区分）。
+    pollScript: '''
 (() => {
   try {
     var m = location.href.match(/[?&#]code=([0-9a-zA-Z._-]{10,})/);
@@ -76,8 +76,46 @@ class BaiduProvider extends CloudProvider {
   } catch (e) {}
   return "";
 })()''',
-        pollIntervalMs: 500,
-      );
+    pollIntervalMs: 500,
+  );
+
+  /// AppKey 未注入（占位符）时 OAuth 授权页必然报 invalid_client，
+  /// WebView 改渲染引导壳页：明示该通道不可用，指引用户走右上角
+  /// 「填 Cookie」；壳页是纯静态展示，无需 baseUrl。
+  @override
+  String? get webviewShellHtml =>
+      _clientId == '__BAIDU_APPKEY__' ? _guideShellHtml : null;
+
+  static const _guideShellHtml = '''
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;padding:24px 20px;background:#fff;color:#333;
+  font:15px/1.7 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif}
+h3{font-size:17px;margin:0 0 12px}
+ol{padding-left:20px;margin:0}
+li{margin:8px 0}
+code{background:#f2f2f2;border-radius:4px;padding:1px 5px;font-size:13px}
+.tip{margin-top:16px;padding:10px 12px;background:#fff7e6;border-radius:8px;
+  font-size:13px;color:#8a6116}
+</style>
+</head>
+<body>
+<h3>网页授权通道未开放</h3>
+<p>开放平台 AppKey 尚未配置，OAuth 授权页不可用。</p>
+<p>绑定请按以下步骤：</p>
+<ol>
+  <li>在<b>电脑浏览器</b>登录 <code>pan.baidu.com</code></li>
+  <li>回到本页点右上角「<b>填 Cookie</b>」</li>
+  <li>粘贴 Cookie（浏览器导出插件的 JSON 或 F12 复制的文本均可，需含 <code>BDUSS</code>）</li>
+</ol>
+<div class="tip">注意：App 内 WebView 登录种下的 Cookie 会被百度服务端降权（接口全报 -6），必须使用电脑浏览器登录后导出的 Cookie。</div>
+</body>
+</html>
+''';
 
   @override
   Duration get directLinkTtl => const Duration(hours: 8);
@@ -93,10 +131,52 @@ class BaiduProvider extends CloudProvider {
       '粘贴网页版 Cookie（电脑浏览器登录百度网盘 → F12 → Application → '
       'Cookies，需含 BDUSS，建议带上 STOKEN）';
 
-  /// 手填 Cookie 串解析（k=v 对，分号/换行分隔，兼容 F12 复制的
-  /// 「k: v」形态）；无 BDUSS 返回 null（回落 Token/授权码语义）。
+  /// 手填 Cookie 解析：优先识别浏览器导出插件的 JSON 形态（数组
+  /// [{name,value},…] / {cookies:[…]} / 平面对象 {name:value}），
+  /// 再回落 k=v 对文本（分号/换行分隔，兼容 F12 复制的「k: v」形态）；
+  /// 无 BDUSS 返回 null（回落 Token/授权码语义）。
   Map<String, String>? _parseCookieInput(String raw) {
-    if (!raw.contains('BDUSS')) return null;
+    final pairs = _parseCookieJson(raw) ?? _parseCookiePlain(raw);
+    if (pairs == null || !pairs.containsKey('BDUSS')) return null;
+    return pairs;
+  }
+
+  Map<String, String>? _parseCookieJson(String raw) {
+    final t = raw.trim();
+    if (!t.startsWith('[') && !t.startsWith('{')) return null;
+    dynamic dec;
+    try {
+      dec = jsonDecode(t);
+    } catch (_) {
+      return null;
+    }
+    if (dec is Map<String, dynamic> && dec['cookies'] is! List) {
+      // 平面对象 {"BDUSS": "...", ...}
+      final pairs = <String, String>{};
+      dec.forEach((k, v) {
+        if (v != null) pairs[k] = v.toString();
+      });
+      return pairs;
+    }
+    final List<dynamic> items;
+    if (dec is List) {
+      items = dec;
+    } else {
+      items = dec['cookies'] as List<dynamic>;
+    }
+    final pairs = <String, String>{};
+    for (final e in items) {
+      if (e is! Map) continue;
+      final k = (e['name'] ?? e['key'] ?? '').toString();
+      final v = (e['value'] ?? '').toString();
+      if (k.isNotEmpty && v.isNotEmpty && v != 'undefined') {
+        pairs[k] = v;
+      }
+    }
+    return pairs;
+  }
+
+  Map<String, String>? _parseCookiePlain(String raw) {
     final pairs = <String, String>{};
     for (final piece in raw.split(RegExp(r'[;\n\r]'))) {
       final p = piece.trim();
@@ -110,7 +190,6 @@ class BaiduProvider extends CloudProvider {
         pairs[k] = v;
       }
     }
-    if (!pairs.containsKey('BDUSS')) return null;
     return pairs;
   }
 
@@ -140,14 +219,15 @@ class BaiduProvider extends CloudProvider {
         );
         if (resp.isOk) {
           final j = jsonDecode(resp.body);
-          final info =
-              j is Map<String, dynamic> ? (j['user_info'] ?? j['data']) : null;
+          final info = j is Map<String, dynamic>
+              ? (j['user_info'] ?? j['data'])
+              : null;
           if (info is Map<String, dynamic>) {
-            final name =
-                (info['username'] ?? info['user_name'] ?? '').toString();
+            final name = (info['username'] ?? info['user_name'] ?? '')
+                .toString();
             if (name.isNotEmpty) nickname = name;
-            final uid =
-                (info['id'] ?? info['user_id'] ?? info['baidu_id'])?.toString();
+            final uid = (info['id'] ?? info['user_id'] ?? info['baidu_id'])
+                ?.toString();
             if (uid != null && uid.isNotEmpty && uid != '0') accountId = uid;
           }
         }
@@ -199,9 +279,7 @@ class BaiduProvider extends CloudProvider {
         resp = await cloudPostForm(
           'https://openapi.baidu.com/oauth/2.0/token',
           body,
-          headers: const {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
+          headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
         );
       } catch (e) {
         AppLog.warn('cloud', '百度OAuth换token请求异常: $e');
@@ -213,8 +291,10 @@ class BaiduProvider extends CloudProvider {
         if (dec is Map<String, dynamic>) j = dec;
       } catch (_) {}
       if (j == null || j['access_token'] == null) {
-        AppLog.warn('cloud',
-            '百度OAuth换token失败 status=${resp.status} body=${resp.body.length > 200 ? resp.body.substring(0, 200) : resp.body}');
+        AppLog.warn(
+          'cloud',
+          '百度OAuth换token失败 status=${resp.status} body=${resp.body.length > 200 ? resp.body.substring(0, 200) : resp.body}',
+        );
         throw const CloudException('授权凭据无效或已过期，请重新登录');
       }
       accessToken = j['access_token'].toString();
@@ -238,8 +318,9 @@ class BaiduProvider extends CloudProvider {
     } catch (e) {
       AppLog.warn('cloud', '百度uinfo获取异常: $e');
     }
-    final expiresAt =
-        DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch;
+    final expiresAt = DateTime.now()
+        .add(const Duration(days: 30))
+        .millisecondsSinceEpoch;
     return CloudAccount(
       provider: id,
       accountId: uid.isNotEmpty ? uid : md5Hex(accessToken).substring(0, 12),
@@ -264,8 +345,7 @@ class BaiduProvider extends CloudProvider {
     Map<String, String> cred,
     String path, {
     String? cursor,
-  }) =>
-      rustListDir(id, cred, path, cursor: cursor);
+  }) => rustListDir(id, cred, path, cursor: cursor);
 
   @override
   bool get supportsSearch => true;
@@ -275,8 +355,7 @@ class BaiduProvider extends CloudProvider {
     Map<String, String> cred,
     String keyword, {
     String? cursor,
-  }) =>
-      rustSearchFiles(id, cred, keyword, cursor: cursor);
+  }) => rustSearchFiles(id, cred, keyword, cursor: cursor);
 
   @override
   Future<CloudShareParse> parseShareLink(String url, String? pwd) async {
@@ -289,13 +368,13 @@ class BaiduProvider extends CloudProvider {
   Future<List<CloudFile>> transferShareFiles(
     Map<String, String> cred,
     CloudShareParse share,
-  ) =>
-      rustTransferShare(id, cred, share);
+  ) => rustTransferShare(id, cred, share);
 
   @override
   Future<CloudDirectLink> getDirectLink(
-          Map<String, String> cred, CloudFile file) =>
-      rustDirectLink(id, cred, file);
+    Map<String, String> cred,
+    CloudFile file,
+  ) => rustDirectLink(id, cred, file);
 
   /// 分享列表/转存需要登录态；未绑定直接报。
   Future<Map<String, String>> _soleCredOrThrow() async {
