@@ -1728,4 +1728,7 @@ const Map<String, String> enDictManual = {
   '下一首': 'Next',
   '开始播放': 'Play',
   '连接': 'Connect',
+  '记住密码': 'Remember password',
+  '账号默认记住，勾选后密码也保存在本机':
+      'Account is always remembered; checking this also saves the password on this device',
 };
