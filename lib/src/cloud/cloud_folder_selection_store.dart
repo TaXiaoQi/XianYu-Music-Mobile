@@ -9,8 +9,11 @@
 
 import 'dart:convert';
 
+import 'package:collection/collection.dart';
+
 import '../core/application_logger.dart';
 import '../core/secure_store.dart';
+import 'cloud_credentials_store.dart';
 
 const String _kFolderSelKey = 'xianyu.cloud.folder_sel.v1';
 
@@ -72,12 +75,14 @@ class CloudFolderSelectionStore {
   }
 
   /// 合并云端目录选择（并集去重，不动本地已有条目）。
-  Future<void> mergePaths(Map<String, List<String>> incoming) async {
-    if (incoming.isEmpty) return;
+  /// 返回是否发生变化。旧格式同步串（无时间戳）回退用。
+  /// 注意：空串路径是合法条目（id 型盘如迅雷/PikPak 根目录 id 为空串）。
+  Future<bool> mergePaths(Map<String, List<String>> incoming) async {
+    if (incoming.isEmpty) return false;
     final map = await _ensureLoaded();
     var changed = false;
     incoming.forEach((k, v) {
-      final paths = v.where((p) => p.isNotEmpty).toList();
+      final paths = v.whereType<String>().toList();
       if (paths.isEmpty) return;
       final merged = [...?map[k]];
       final before = merged.length;
@@ -89,9 +94,32 @@ class CloudFolderSelectionStore {
         changed = true;
       }
     });
-    if (!changed) return;
+    if (!changed) return false;
     await _persist();
     onPersisted?.call();
+    return true;
+  }
+
+  /// 云端较新时的整体替换（v2 同步专用）。
+  ///
+  /// 取消勾选/清空要能跨设备传播，必须覆盖而非并集。返回是否发生变化；
+  /// 无变化不落盘不通知（防止拉取→上传的同步风暴）。
+  Future<bool> replaceAllPaths(Map<String, List<String>> incoming) async {
+    final map = await _ensureLoaded();
+    final normalized = <String, List<String>>{
+      for (final e in incoming.entries)
+        if (e.key.isNotEmpty) e.key: e.value.toSet().toList(),
+    }..removeWhere((k, v) => v.isEmpty);
+    final same = map.length == normalized.length &&
+        map.entries.every((e) =>
+            normalized.containsKey(e.key) &&
+            const ListEquality<String>()
+                .equals(normalized[e.key] ?? const [], e.value));
+    if (same) return false;
+    _cache = normalized;
+    await _persist();
+    onPersisted?.call();
+    return true;
   }
 
   /// 覆盖写入某账号的已选列表（空列表 = 清空，键也会移除）。
@@ -106,9 +134,21 @@ class CloudFolderSelectionStore {
       if (!map.containsKey(k)) return;
       map.remove(k);
     } else {
-      map[k] = paths.toList();
+      // 空串路径合法：id 型盘（迅雷/PikPak）根目录 id 为空串，
+      // 消费方 listDir('') 即列根目录。仅全部为空才视为清空。
+      final next = paths;
+      if (const ListEquality<String>().equals(map[k] ?? const [], next)) {
+        return;
+      }
+      if (next.isEmpty) {
+        map.remove(k);
+      } else {
+        map[k] = next;
+      }
     }
     await _persist();
+    // 用户勾选变更并入共享同步时钟（凭据与目录选择同载荷上传）
+    await CloudCredentialsStore.instance.noteLocalChange();
     onPersisted?.call();
   }
 }

@@ -1,8 +1,13 @@
 part of 'sync_provider.dart';
 
-/// 网盘凭据云同步：把本地 AES 密封的凭据串整包上云 / 拉取合并。
-/// 服务端只见 `xy1:` 密文；绑定/解绑/凭据轮换经 store.onPersisted 钩子
-/// 触发防抖自动上传，登录后与手动同步走 upload/download 全量路径。
+/// 网盘凭据云同步（v2 对比流程）。
+///
+/// 服务端只见 `xy1:` 密文。绑定/解绑/凭据轮换/目录勾选经 store.onPersisted
+/// 钩子触发防抖自动上传，登录后与手动同步走 upload/download 全量路径：
+/// - 上传仅在本地向变化未同步（changeAt != syncedAt）时执行，无变化跳过；
+/// - 下载带时间戳（`__ts__`）的串时云端较新才整体替换应用，本地较新跳过，
+///   防止轮换类盘（阿里 refresh_token 单次有效）新凭据被云端旧包打回；
+/// - 旧格式串（无时间戳）回退并集合并。
 class CloudCredsSyncService {
   CloudCredsSyncService(this._ref, this._lens);
 
@@ -17,10 +22,28 @@ class CloudCredsSyncService {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
       final uid = _ciyuanxiId;
-      final sealed = uid.isEmpty
-          ? null
-          : await CloudCredentialsStore.instance.exportForSync(uid);
-      if (sealed == null || sealed.isEmpty) {
+      if (uid.isEmpty) {
+        _lens.item = _lens.item.copyWith(
+          syncing: false,
+          lastSummary: tr('未登录，跳过上传'),
+          lastTime: DateTime.now(),
+          errors: [],
+        );
+        return;
+      }
+      final store = CloudCredentialsStore.instance;
+      await store.ensureLoaded();
+      if (!store.needsUpload) {
+        _lens.item = _lens.item.copyWith(
+          syncing: false,
+          lastSummary: tr('网盘账号无变化，跳过上传'),
+          lastTime: DateTime.now(),
+          errors: [],
+        );
+        return;
+      }
+      final sealed = await store.exportForSync(uid);
+      if (sealed == null) {
         _lens.item = _lens.item.copyWith(
           syncing: false,
           lastSummary: tr('未绑定网盘账号，跳过上传'),
@@ -30,6 +53,7 @@ class CloudCredsSyncService {
         return;
       }
       await _api.uploadCloudCreds(sealed);
+      await store.markSynced();
       _lens.item = _lens.item.copyWith(
         syncing: false,
         lastSummary: tr('网盘账号已上传'),
@@ -54,11 +78,13 @@ class CloudCredsSyncService {
         );
         return;
       }
-      // 指纹去重合并进本地（不覆盖本地已有绑定）
-      await CloudCredentialsStore.instance.importFromSync(sealed, _ciyuanxiId);
+      final r = await CloudCredentialsStore.instance
+          .importFromSync(sealed, _ciyuanxiId);
       _lens.item = _lens.item.copyWith(
         syncing: false,
-        lastSummary: tr('已拉取云端网盘账号'),
+        lastSummary: r.applied
+            ? (r.changed ? tr('已应用云端网盘账号') : tr('网盘账号与云端一致'))
+            : tr('本地较新，跳过云端下发'),
         lastTime: DateTime.now(),
         errors: [],
       );
