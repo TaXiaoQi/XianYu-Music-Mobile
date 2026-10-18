@@ -25,7 +25,17 @@ class _PlayerCoverPage extends Page<void> {
           // 反向转场直接一团糟。打断路径：取消出向副本即止——页面沿
           // 反向转场滑回底部，播放条在拔页后淡入，封面天然归位，
           // 无需第二次飞行
-          if (route.animation?.status != AnimationStatus.completed) {
+          //
+          // 注意：pop 时 framework 先启动反向转场再回调本钩子，正常
+          // 关闭时 status 已是 reverse——区分正常关闭与「未开完被掐断」
+          // 看开页是否曾到达 completed（见 _openedCompleted）
+          final animStatus = route.animation?.status;
+          final interrupted = animStatus == null ||
+              (animStatus == AnimationStatus.reverse &&
+                  !route._openedCompleted) ||
+              (animStatus != AnimationStatus.completed &&
+                  animStatus != AnimationStatus.reverse);
+          if (interrupted) {
             FlyingCover.instance.cancel();
             return;
           }
@@ -86,6 +96,28 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
 
   final WidgetBuilder builder;
   final bool predictiveBack;
+
+  // 开页转场是否曾到达 completed：pop 回调时 framework 已启动反向
+  // 转场（didPop 先 reverse 再回调 PopScope，status 已是 reverse），
+  // 无法凭 status 区分「正常关闭」与「开页未完成被掐断」——用该标记
+  // 记录开页是否完成过，供 PopScope 打断判定
+  bool _openedCompleted = false;
+
+  void _onAnimationStatus(AnimationStatus status) {
+    if (status == AnimationStatus.completed) _openedCompleted = true;
+  }
+
+  @override
+  void install() {
+    super.install();
+    animation?.addStatusListener(_onAnimationStatus);
+  }
+
+  @override
+  void dispose() {
+    animation?.removeStatusListener(_onAnimationStatus);
+    super.dispose();
+  }
 
   @override
   // 系统返回手势不应被“预测动画开关”禁用；播放页是独立 Navigator，
@@ -150,9 +182,25 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(curved),
-          child: FadeTransition(
-            opacity: fade,
-            child: RouteStaticSnapshot(animation: animation, child: child),
+          child: AnimatedBuilder(
+            animation: curved,
+            builder: (context, child) {
+              // 整页滑动期间顶部圆角随进度长出再收平（中段峰值 24），
+              // 与下滑退出拖动卡片的圆角观感一致；静止时归零不留圆角
+              final t = curved.value;
+              final radius = 96.0 * t * (1 - t);
+              return ClipRRect(
+                borderRadius: BorderRadius.vertical(
+                  top: Radius.circular(radius),
+                ),
+                clipBehavior: radius > 0.5 ? Clip.antiAlias : Clip.none,
+                child: child,
+              );
+            },
+            child: FadeTransition(
+              opacity: fade,
+              child: RouteStaticSnapshot(animation: animation, child: child),
+            ),
           ),
         );
         if (phase == PredictiveBackPhase.idle ||
