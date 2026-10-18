@@ -102,8 +102,10 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
     final path = ctx.path;
     if (_scheduled.contains(path)) return;
     _scheduled.add(path);
-    // 索引已有条目（此前探测成功过）：无需再走网络
-    if (state[path] != null) return;
+    // 索引已有**封面**条目（此前探测完整成功过）：无需再走网络。
+    // 空封面条目（历史失败/仅拿到时长的）允许重探补封面——否则旧失败
+    // 结果会永久挡住封面/歌词（幂等由 _scheduled 保证）。
+    if (state[path]?.coverPath != null) return;
     // 入池为闭包，_probeTask 不在这里直接调用（否则绕过并发池）
     _enqueue(
       () => _probeTask(ctx, durationHintSecs),
@@ -206,7 +208,31 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
             : provider.getDirectLink(cred ?? const {}, ctx.file));
         DirectLinkCache.instance.put(ctx.path, link);
       }
-      await _probeDirect(link.url, link.headers, ctx.path, durationHintSecs);
+      final entry = await _probeDirect(
+        link.url,
+        link.headers,
+        ctx.path,
+        durationHintSecs,
+      );
+      if (entry == null && cached != null) {
+        // 缓存直链探测失败（如旧版本回退缓存的 dl1 限速链，头部 2MB
+        // 拉不完）：弃缓存换新链重试一次，自愈坏链缓存。
+        DirectLinkCache.instance.invalidate(ctx.path);
+        final fresh = await (fromShare
+            ? provider.getShareDirectLink(
+                cred ?? const {},
+                ctx.share!,
+                ctx.file,
+              )
+            : provider.getDirectLink(cred ?? const {}, ctx.file));
+        DirectLinkCache.instance.put(ctx.path, fresh);
+        await _probeDirect(
+          fresh.url,
+          fresh.headers,
+          ctx.path,
+          durationHintSecs,
+        );
+      }
     } catch (e) {
       // 失败静默：列表期探测不打扰用户（播放期探针仍会兜底）
       AppLog.debug('cloud', '头部元数据预探失败: ${ctx.file.name} $e');
@@ -235,10 +261,13 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
         jsonDecode(json) as Map<String, dynamic>,
       );
       state = {...state, cloudPath: entry};
+      AppLog.debug('cloud',
+          '[head-meta] 探测成功 host=${Uri.tryParse(url)?.host} cover=${entry.coverPath != null} dur=${entry.durationSecs}');
       return entry;
     } catch (e) {
       _failed.add(cloudPath);
-      AppLog.debug('cloud', '头部元数据探测失败: $cloudPath $e');
+      AppLog.debug('cloud',
+          '头部元数据探测失败 host=${Uri.tryParse(url)?.host}: $e');
       return null;
     }
   }

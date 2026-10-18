@@ -502,28 +502,86 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("直链获取失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let url = j
-        .get("url")
-        .or_else(|| j.pointer("/data/url"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+    let field = |k: &str| {
+        j.get(k)
+            .or_else(|| j.pointer(&format!("/data/{k}")))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let url = field("url");
     if url.is_empty() {
         return Err(biz_err("直链获取失败"));
     }
+    // dl1 直连节点对非会员限速严重（实测手机端断流级 <3KB/s，喂不满
+    // FLAC 实时码率，也拉不动 2MB 头部预探——封面/时长/内嵌歌词全丢）；
+    // API 同时返回 cdn_url（真正的 CDN 边缘节点）。探测可用则优先用
+    // （直链带 4h 缓存，探测每 4h 一次，开销可忽略）。与桌面端同构，
+    // 另透传探测诊断（cdnProbe）供 Dart 侧 logcat 排查。
+    let mut final_url = url.clone();
+    let mut cdn_probe = "empty".to_string();
+    let cdn = field("cdn_url");
+    if !cdn.is_empty() {
+        // 5s：移动网络首次连 CDN（DNS+TLS）可能偏慢；探测失败会回退
+        // 断流级 dl1，预探必挂，宁可多等几秒（直链 4h 缓存，开销可忽略）。
+        let probe = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(5000))
+            .build()
+        {
+            Err(e) => Err(format!("client_err({e})")),
+            Ok(c) => {
+                match c
+                    .get(&cdn)
+                    .header("Range", "bytes=0-0")
+                    .header("User-Agent", ua())
+                    .header("Referer", "https://www.aliyundrive.com/")
+                    .send()
+                    .await
+                {
+                    Err(e) => Err(format!(
+                        "err({})",
+                        if e.is_timeout() {
+                            "timeout"
+                        } else if e.is_connect() {
+                            "connect"
+                        } else {
+                            "request"
+                        }
+                    )),
+                    Ok(r) => {
+                        let st = r.status();
+                        Ok(st)
+                    }
+                }
+            }
+        };
+        match probe {
+            Err(note) => cdn_probe = note,
+            Ok(st) => {
+                if st.is_success() {
+                    final_url = cdn;
+                    cdn_probe = format!("ok({st})");
+                } else {
+                    cdn_probe = format!("reject({st})");
+                }
+            }
+        }
+    }
     let name = file.get("name").and_then(Value::as_str).unwrap_or("");
     let size = file.get("size").and_then(Value::as_i64);
+    let mut result = direct_link_json(
+        &final_url,
+        // PDS 生成的下载 URL 把 referer 写进 x-oss-additional-headers 参与
+        // OSS V4 签名：缺头 400 AuthorizationArgumentError，值不符 403。
+        // 实测必须带 https://www.aliyundrive.com/（alipan.com 会 403）。
+        json!({ "User-Agent": ua(), "Referer": "https://www.aliyundrive.com/" }),
+        Some(name),
+        size,
+        Some(now_ms() + 4 * 3600 * 1000),
+    );
+    result["cdnProbe"] = json!(cdn_probe);
     Ok(CloudOut {
-        result: direct_link_json(
-            &url,
-            // PDS 生成的下载 URL 把 referer 写进 x-oss-additional-headers 参与
-            // OSS V4 签名：缺头 400 AuthorizationArgumentError，值不符 403。
-            // 实测必须带 https://www.aliyundrive.com/（alipan.com 会 403）。
-            json!({ "User-Agent": ua(), "Referer": "https://www.aliyundrive.com/" }),
-            Some(name),
-            size,
-            Some(now_ms() + 4 * 3600 * 1000),
-        ),
+        result,
         rotated_cred: rotated,
     })
 }

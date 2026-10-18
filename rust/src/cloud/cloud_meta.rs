@@ -167,7 +167,11 @@ pub async fn probe_head(
     ssrf::validate_url_ip_literal(url)?;
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
+        // 移动网速下慢 CDN 拉 2MB 需要余量（超时表现为 chunk 阶段
+        // "error decoding response body"，修复解析后渐进 break 通常远快于此）。
+        // 实测阿里非会员无 cdn_url，手机到 dl1 断流级 <3KB/s：128KB 首个
+        // 解析检查点要 ~45s，120s 保底熬到检查点后渐进 break。
+        .timeout(std::time::Duration::from_secs(120))
         .build()
         .map_err(|e| format!("client 构建失败: {e}"))?;
     let mut req = client
@@ -229,9 +233,15 @@ pub async fn probe_head(
         };
         acc.extend_from_slice(&chunk);
         if acc.len() >= next_try {
-            if let Some(payload) =
-                extract_head_bytes(covers_dir, &acc, total_bytes, url, cloud_path, duration_hint)
-            {
+            if let Some(payload) = extract_head_bytes(
+                data_dir,
+                covers_dir,
+                &acc,
+                total_bytes,
+                url,
+                cloud_path,
+                duration_hint,
+            ) {
                 emitted = Some(payload);
                 break;
             }
@@ -249,7 +259,15 @@ pub async fn probe_head(
         return Err("响应为空".to_string());
     }
     let payload = emitted.take().or_else(|| {
-        extract_head_bytes(covers_dir, &acc, total_bytes, url, cloud_path, duration_hint)
+        extract_head_bytes(
+            data_dir,
+            covers_dir,
+            &acc,
+            total_bytes,
+            url,
+            cloud_path,
+            duration_hint,
+        )
     });
     match payload {
         Some(payload) => {
@@ -280,7 +298,10 @@ pub async fn probe_head(
 }
 
 /// 从缓冲的头部字节解析（临时文件供 lofty 按路径读，用完即删）。
+/// tmp_dir 必须是应用可写目录（Android 上 std::env::temp_dir 回退
+/// /data/local/tmp，应用进程无写权限，写入静默失败→一律「解析无收获」）。
 fn extract_head_bytes(
+    tmp_dir: &Path,
     covers_dir: &Path,
     bytes: &[u8],
     total_bytes: u64,
@@ -294,11 +315,53 @@ fn extract_head_bytes(
         url.hash(&mut h);
         h.finish()
     };
-    let tmp = std::env::temp_dir().join(format!("xym-cloud-head-{nonce:016x}.bin"));
+    // lofty 的 Probe::guess_file_type 按扩展名识别容器，固定 ".bin" 会直接
+    // 解析失败（表现为 2MB 拉满却「解析无收获」），后缀必须还原真实类型
+    let ext = probe_file_ext(url, bytes);
+    let tmp = tmp_dir.join(format!("xym-cloud-head-{nonce:016x}{ext}"));
     std::fs::write(&tmp, bytes).ok()?;
     let payload = extract_meta(covers_dir, &tmp, total_bytes, url, cloud_path, duration_hint);
     let _ = std::fs::remove_file(&tmp);
     payload
+}
+
+/// 探针临时文件的扩展名：依次取 URL 路径扩展名 → 头部魔数嗅探，兜底 ".mp3"。
+fn probe_file_ext(url: &str, bytes: &[u8]) -> String {
+    if let Some(rest) = url.split("://").nth(1) {
+        let path = rest.split('?').next().unwrap_or("");
+        let last = path.rsplit('/').next().unwrap_or("");
+        if let Some(dot) = last.rfind('.') {
+            let ext = &last[dot + 1..];
+            let ok = !ext.is_empty()
+                && ext.len() <= 5
+                && ext.chars().all(|c| c.is_ascii_alphanumeric());
+            if ok {
+                return format!(".{}", ext.to_ascii_lowercase());
+            }
+        }
+    }
+    if bytes.starts_with(b"fLaC") {
+        return ".flac".into();
+    }
+    if bytes.starts_with(b"ID3") {
+        return ".mp3".into();
+    }
+    if bytes.len() > 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0 {
+        return ".mp3".into();
+    }
+    if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE" {
+        return ".wav".into();
+    }
+    if bytes.starts_with(b"OggS") {
+        return ".ogg".into();
+    }
+    if bytes.len() > 12 && &bytes[4..8] == b"ftyp" {
+        return ".m4a".into();
+    }
+    if bytes.starts_with(b"MAC ") {
+        return ".ape".into();
+    }
+    ".mp3".into()
 }
 
 /// 从部分缓存文件提取内嵌元数据；无任何收获时返回 None。

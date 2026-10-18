@@ -209,6 +209,12 @@ Future<CloudDirectLink> rustDirectLink(
   if (result is! Map<String, dynamic>) {
     throw const CloudException('网盘数据解析失败');
   }
+  // 阿里直链附带 CDN 探测诊断（cdnProbe）：排查封面/歌词预探断流问题。
+  final cdnProbe = result['cdnProbe'];
+  if (cdnProbe != null) {
+    AppLog.debug('cloud',
+        '[direct-link] cdnProbe=$cdnProbe host=${Uri.tryParse((result['url'] ?? '').toString())?.host}');
+  }
   return _directLinkFromJson(result);
 }
 
