@@ -10,6 +10,7 @@
 
 import 'cloud_provider.dart';
 import 'cloud_types.dart';
+import '../core/application_logger.dart';
 
 /// 在 [roots] 指定的文件夹范围内搜索文件名含 [keyword] 的音频。
 /// 返回结果按遍历顺序去重（同 id 只留一条）；网络异常的子文件夹跳过。
@@ -54,4 +55,30 @@ Future<List<CloudFile>> scopedSearchAudio({
     }
   }
   return out;
+}
+
+/// 网盘关键词搜索统一入口（搜索结果页 / 日推共用）：
+/// 已选文件夹 → 只遍历选定范围；未选目录 → 默认全部目录（先试盘侧
+/// 搜索，快且支持翻页；接口变更/限流——如迅雷「无效的文件过滤器」
+/// ——则回退根目录全盘遍历）。任何已绑定盘都不再因盘侧搜索失败而搜空。
+Future<List<CloudFile>> cloudKeywordSearchAudio({
+  required CloudProvider provider,
+  required Map<String, String> cred,
+  required List<String> selectedRoots,
+  required String keyword,
+}) async {
+  final kw = keyword.trim();
+  if (kw.isEmpty) return const [];
+  if (selectedRoots.isNotEmpty) {
+    return scopedSearchAudio(
+        provider: provider, cred: cred, roots: selectedRoots, keyword: kw);
+  }
+  try {
+    final res = await provider.searchFiles(cred, kw);
+    return res.files.where((f) => !f.isDir && f.isAudio).toList();
+  } catch (e) {
+    AppLog.warn('cloud', '${provider.id} 盘侧搜索失败，回退全盘遍历: $e');
+    return scopedSearchAudio(
+        provider: provider, cred: cred, roots: [provider.rootPath], keyword: kw);
+  }
 }

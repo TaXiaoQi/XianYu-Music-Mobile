@@ -405,10 +405,9 @@ Future<void> _collectCloudCandidates(
       final accounts = await CloudCredentialsStore.instance.accountsFor(p.id);
       if (accounts.isEmpty) continue;
       final acc = accounts.first; // 同盘多账号取首个
-      // 已选文件夹范围：非空则只遍历这些文件夹（不支持搜索的盘也借此参与）
+      // 已选文件夹范围：非空则只遍历这些文件夹；没选目录默认全部目录
       final roots =
           await CloudFolderSelectionStore.instance.pathsFor(p.id, acc.accountId);
-      if (!p.supportsSearch && roots.isEmpty) continue;
       for (final kw in keywords) {
         tasks.add(_CloudSearchTask(p.id, acc.accountId, p.displayName, acc.cred, kw,
             roots: roots));
@@ -425,18 +424,14 @@ Future<void> _collectCloudCandidates(
       try {
         final provider = cloudProviderById(task.providerId);
         if (provider == null) continue;
-        // 有已选文件夹 → 只遍历选定范围；否则走盘侧全盘搜索
-        final List<CloudFile> hits;
-        if (task.roots.isNotEmpty) {
-          hits = await scopedSearchAudio(
-            provider: provider,
-            cred: task.cred,
-            roots: task.roots,
-            keyword: task.keyword,
-          );
-        } else {
-          hits = (await provider.searchFiles(task.cred, task.keyword)).files;
-        }
+        // 已选范围只遍历选定文件夹；没选目录默认全部目录（盘侧搜索
+        // 失败自动回退根目录全盘遍历）
+        final hits = await cloudKeywordSearchAudio(
+          provider: provider,
+          cred: task.cred,
+          selectedRoots: task.roots,
+          keyword: task.keyword,
+        );
         final total = hits.length;
         for (var rank = 0; rank < total && cloudCount < _maxCloudCandidates; rank++) {
           final f = hits[rank];

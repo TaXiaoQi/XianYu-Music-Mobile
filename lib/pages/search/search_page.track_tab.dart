@@ -169,17 +169,26 @@ class _TrackTabState extends ConsumerState<_TrackTab>
         final isFav = item != null && favorites.contains(item.path);
         final cloudItem = e.cloudItem;
         if (cloudItem != null) {
-          // 网盘条目：无封面无专辑，subtitle 展示解析歌手（缺省为盘名）
+          // 网盘条目：无封面无专辑，subtitle 展示解析歌手（缺省为盘名）。
+          // 播放时同样送出封面飞行动画（无图时飞行占位封面）。
           return _stagger.wrap(
             i,
             _rowShell(i, cloudItem.path,
-            PressableScale(
-              child: CoverRow(
+            Builder(
+              builder: (rowContext) {
+                BuildContext? coverCtx;
+                return PressableScale(
+                  child: CoverRow(
               background: themeTintOrNull(ref, 'sr.item'),
-              cover: OnlineCover(
-                  url: cloudItem.coverUrl,
-                  size: m.songCover,
-                  radius: m.songRadius),
+              cover: Builder(
+                builder: (c) {
+                  coverCtx = c;
+                  return OnlineCover(
+                      url: cloudItem.coverUrl,
+                      size: m.songCover,
+                      radius: m.songRadius);
+                },
+              ),
               title: highlightedText(cloudItem.title, q, scheme.primary,
                   maxLines: 1,
                   style: TextStyle(
@@ -221,8 +230,25 @@ class _TrackTabState extends ConsumerState<_TrackTab>
               ],
             ),
             onLongPress: () => _openActions(i),
-            onTap: () => _play(i),
+            onTap: () async {
+                try {
+                  final from = _coverSourceRect(rowContext, coverCtx);
+                  _play(i);
+                  if (from == null) return;
+                  if (!await FlyingCover.instance.waitTargetReady()) return;
+                  await FlyingCover.instance.launch(
+                    fromRect: from,
+                    songPath: cloudItem.path,
+                    networkUrl: cloudItem.coverUrl,
+                    radius: m.songRadius,
+                  );
+                } catch (e) {
+                  AppLog.debug('search', '封面飞入动画失败: $e');
+                }
+              },
               ),
+                );
+              },
             ),
             ),
           );
@@ -379,19 +405,13 @@ extension _TrackTabActions on _TrackTabState {
         final acc = accounts.first;
         final roots =
             await CloudFolderSelectionStore.instance.pathsFor(pid, acc.accountId);
-        final List<CloudFile> files;
-        if (roots.isNotEmpty) {
-          final hits = await scopedSearchAudio(
-            provider: provider,
-            cred: acc.cred,
-            roots: roots,
-            keyword: q,
-          );
-          files = hits.where((f) => !f.isDir && f.isAudio).toList();
-        } else {
-          final res = await provider.searchFiles(acc.cred, q);
-          files = res.files.where((f) => !f.isDir && f.isAudio).toList();
-        }
+        // 没选目录默认全部目录：盘侧搜索失败自动回退根目录全盘遍历
+        final files = await cloudKeywordSearchAudio(
+          provider: provider,
+          cred: acc.cred,
+          selectedRoots: roots,
+          keyword: q,
+        );
         for (final f in files) {
           final ctx = CloudPlayContext(
               provider: pid, accountId: acc.accountId, file: f);

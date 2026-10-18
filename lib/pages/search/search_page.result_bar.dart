@@ -71,19 +71,13 @@ extension _SearchResultPageSources on _SearchResultPageState {
         }
       }
     }
-    // 网盘来源尾部追加：已绑定且「盘侧支持搜索」或「账号选了文件夹
-    // （走范围遍历）」的盘；同盘多账号共用一个来源
+    // 网盘来源尾部追加：所有已绑定盘（没选目录默认全部目录，盘侧搜索
+    // 失败回退全盘遍历）；同盘多账号共用一个来源
     try {
       for (final p in cloudProviders) {
         final accounts =
             await CloudCredentialsStore.instance.accountsFor(p.id);
         if (accounts.isEmpty) continue;
-        if (!p.supportsSearch) {
-          // 盘侧不支持搜索：账号选了文件夹才可作为来源（范围遍历搜索）
-          final roots = await CloudFolderSelectionStore.instance
-              .pathsFor(p.id, accounts.first.accountId);
-          if (roots.isEmpty) continue;
-        }
         items.add(_SourceItem(
             id: 'cloud:${p.id}',
             name: p.displayName,
