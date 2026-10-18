@@ -32,19 +32,19 @@ class CloudPlayContext {
       'cloud://$provider/$accountId/${Uri.encodeComponent(jsonEncode(file.toJson()))}';
 
   Map<String, dynamic> toJson() => {
-        'provider': provider,
-        'accountId': accountId,
-        'file': file.toJson(),
-        if (share != null)
-          'share': {
-            'providerId': share!.providerId,
-            'shareId': share!.shareId,
-            'shareToken': share!.shareToken,
-            'passcode': share!.passcode,
-            'directPlayable': share!.directPlayable,
-            'files': share!.files.map((f) => f.toJson()).toList(),
-          },
-      };
+    'provider': provider,
+    'accountId': accountId,
+    'file': file.toJson(),
+    if (share != null)
+      'share': {
+        'providerId': share!.providerId,
+        'shareId': share!.shareId,
+        'shareToken': share!.shareToken,
+        'passcode': share!.passcode,
+        'directPlayable': share!.directPlayable,
+        'files': share!.files.map((f) => f.toJson()).toList(),
+      },
+  };
 
   static CloudPlayContext? tryParse(String? raw) {
     if (raw == null || raw.isEmpty) return null;
@@ -64,7 +64,8 @@ class CloudPlayContext {
                 shareToken: shareJson['shareToken']?.toString(),
                 passcode: shareJson['passcode']?.toString(),
                 directPlayable: shareJson['directPlayable'] == true,
-                files: (shareJson['files'] as List?)
+                files:
+                    (shareJson['files'] as List?)
                         ?.whereType<Map<String, dynamic>>()
                         .map(CloudFile.fromJson)
                         .toList() ??
@@ -85,16 +86,15 @@ QueueItem cloudPlayQueueItem(
   String? title,
   String? artist,
   String? coverUrl,
-}) =>
-    QueueItem(
-      path: ctx.path,
-      title: title ?? ctx.file.name,
-      artist: artist ?? '',
-      album: '',
-      coverUrl: coverUrl,
-      source: 'cloud:${ctx.provider}',
-      cloudInfoJson: jsonEncode(ctx.toJson()),
-    );
+}) => QueueItem(
+  path: ctx.path,
+  title: title ?? ctx.file.name,
+  artist: artist ?? '',
+  album: '',
+  coverUrl: coverUrl,
+  source: 'cloud:${ctx.provider}',
+  cloudInfoJson: jsonEncode(ctx.toJson()),
+);
 
 extension PlayerNotifierCloud on PlayerNotifier {
   /// 网盘曲目播放：直链缓存 → getDirectLink/getShareDirectLink → 在线管线。
@@ -111,8 +111,10 @@ extension PlayerNotifierCloud on PlayerNotifier {
     // 凭据：先按绑定的 accountId 精确取，再退该盘单账号便捷读取
     var cred = ctx.accountId == '_' || ctx.accountId.isEmpty
         ? null
-        : await CloudCredentialsStore.instance
-            .credFor(provider.id, ctx.accountId);
+        : await CloudCredentialsStore.instance.credFor(
+            provider.id,
+            ctx.accountId,
+          );
     cred ??= await CloudCredentialsStore.instance.soleCredFor(provider.id);
 
     final fromShare = ctx.share != null && ctx.share!.directPlayable;
@@ -144,6 +146,7 @@ extension PlayerNotifierCloud on PlayerNotifier {
       // 同一文件名关键词走插件搜索，无需在此处理）
       unawaited(_enrichCloudCover(item));
       unawaited(_probeCloudSourceFormat(link, item));
+      unawaited(_probeCloudHeadMeta(link, item));
     } catch (e) {
       // 直链可能已过期：清缓存重取一次；仍失败交上层按播放失败处理
       AppLog.warn('cloud', '网盘直链起播失败，重取一次: $e');
@@ -160,6 +163,7 @@ extension PlayerNotifierCloud on PlayerNotifier {
       );
       unawaited(_enrichCloudCover(item));
       unawaited(_probeCloudSourceFormat(fresh, item));
+      unawaited(_probeCloudHeadMeta(fresh, item));
     }
   }
 
@@ -167,7 +171,9 @@ extension PlayerNotifierCloud on PlayerNotifier {
   /// 网盘文件本就是本地上传的原文件，探测直链头部即可拿到与本地曲库
   /// 同源的采样率/位深，徽标就能像本地一样显示完整（如 FLAC 24bit/44.1kHz）。
   Future<void> _probeCloudSourceFormat(
-      CloudDirectLink link, QueueItem item) async {
+    CloudDirectLink link,
+    QueueItem item,
+  ) async {
     final path = item.path;
     state = state.copyWith(
       cloudSourceRate: 0,
@@ -202,8 +208,10 @@ extension PlayerNotifierCloud on PlayerNotifier {
         cloudSourceBits: fmt.bits,
         cloudSourceKbps: fmt.kbps,
       );
-      AppLog.info('cloud',
-          '网盘源格式: rate=${fmt.rate} bits=${fmt.bits} kbps=${fmt.kbps}');
+      AppLog.info(
+        'cloud',
+        '网盘源格式: rate=${fmt.rate} bits=${fmt.bits} kbps=${fmt.kbps}',
+      );
     } catch (e) {
       AppLog.debug('cloud', '网盘源格式探测失败: $e');
     }
@@ -261,6 +269,36 @@ extension PlayerNotifierCloud on PlayerNotifier {
     );
     _syncToSystemMediaSession();
   }
+
+  /// 播放期头部元数据兜底（复用起播直链，省一次直链解析）：探测结果
+  /// 与列表期共享索引；内嵌封面命中时回填当前条目，coverPath 在展示层
+  /// 优先于 coverUrl，媒体会话/手表/状态栏同步随之带上。
+  Future<void> _probeCloudHeadMeta(CloudDirectLink link, QueueItem item) async {
+    try {
+      final entry = await _ref
+          .read(cloudHeadMetaProvider.notifier)
+          .probeWithDirectLink(link.url, link.headers, item.path);
+      final cover = entry?.coverPath;
+      if (cover != null && cover.isNotEmpty) {
+        _patchCloudCoverPath(item.path, cover);
+      }
+    } catch (e) {
+      AppLog.debug('cloud', '网盘头部元数据兜底失败: $e');
+    }
+  }
+
+  /// 把内嵌封面落盘路径写回队列与当前曲目（按 path 定位，刷新播放页与媒体会话）。
+  void _patchCloudCoverPath(String path, String coverPath) {
+    final idx = state.queue.indexWhere((e) => e.path == path);
+    if (idx < 0) return;
+    final patched = state.queue[idx].copyWith(coverPath: coverPath);
+    final queue = [...state.queue]..[idx] = patched;
+    state = state.copyWith(
+      queue: queue,
+      current: state.current?.path == path ? patched : state.current,
+    );
+    _syncToSystemMediaSession();
+  }
 }
 
 /// 网盘源格式探测结果：rate=采样率 bits=位深 kbps=有损码率（未知为 0）。
@@ -292,7 +330,10 @@ _CloudStreamFormat? _parseAudioHeaderFormat(List<int> b) {
     while (off + 8 <= b.length) {
       final id = tag(off, 4);
       final size =
-          b[off + 4] | (b[off + 5] << 8) | (b[off + 6] << 16) | (b[off + 7] << 24);
+          b[off + 4] |
+          (b[off + 5] << 8) |
+          (b[off + 6] << 16) |
+          (b[off + 7] << 24);
       if (size <= 0) break;
       if (id == 'fmt ' && off + 8 + 16 <= b.length) {
         final d = off + 8;
@@ -308,13 +349,31 @@ _CloudStreamFormat? _parseAudioHeaderFormat(List<int> b) {
   // MP3：跳过 ID3v2，扫描首个合法 Layer III 帧头
   var start = 0;
   if (tag(0, 3) == 'ID3' && b.length >= 10) {
-    final size = ((b[6] & 0x7F) << 21) |
+    final size =
+        ((b[6] & 0x7F) << 21) |
         ((b[7] & 0x7F) << 14) |
         ((b[8] & 0x7F) << 7) |
         (b[9] & 0x7F);
     start = 10 + size;
   }
-  const br1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+  const br1 = [
+    0,
+    32,
+    40,
+    48,
+    56,
+    64,
+    80,
+    96,
+    112,
+    128,
+    160,
+    192,
+    224,
+    256,
+    320,
+    0,
+  ];
   const br2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0];
   const sr1 = [44100, 48000, 32000, 0];
   const sr2 = [22050, 24000, 16000, 0];

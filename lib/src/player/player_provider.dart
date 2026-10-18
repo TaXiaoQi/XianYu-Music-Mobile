@@ -18,6 +18,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../auth/account_api.dart';
 import '../cloud/cloud_credentials_store.dart';
 import '../cloud/cloud_filename.dart';
+import '../cloud/cloud_head_meta.dart';
 import '../cloud/cloud_registry.dart';
 import '../cloud/cloud_types.dart';
 import '../cloud/direct_link_cache.dart';
@@ -79,7 +80,6 @@ final Set<String> _prewarmKeys = {};
 
 PlayerNotifier? activePlayerNotifier;
 
-
 const Object _noChange = Object();
 
 typedef BeforePlayGate = Future<void> Function();
@@ -101,13 +101,13 @@ BeforePlayGate? beforePlayGate;
 
 class _GatedAudioPlayer extends AudioPlayer {
   _GatedAudioPlayer()
-      : super(
-          handleInterruptions: false,
-          // 鸿蒙不走 just_audio 内置本地代理：在线流的 headers/Range/206 全由
-          // app 侧 AudioProxyServer（AudioHeadCache）自足代理，AVPlayer 直连它
-          // 即可；内置代理层在鸿蒙上曾致在线播放静默失败（fatal/404），绕开。
-          useProxyForRequestHeaders: !PlatformCaps.isOhos,
-        );
+    : super(
+        handleInterruptions: false,
+        // 鸿蒙不走 just_audio 内置本地代理：在线流的 headers/Range/206 全由
+        // app 侧 AudioProxyServer（AudioHeadCache）自足代理，AVPlayer 直连它
+        // 即可；内置代理层在鸿蒙上曾致在线播放静默失败（fatal/404），绕开。
+        useProxyForRequestHeaders: !PlatformCaps.isOhos,
+      );
 
   @override
   Future<void> play() async {
@@ -157,7 +157,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     WidgetsBinding.instance.addObserver(this);
     activePlayerNotifier = this;
     audioHandler?.bindNotifier(this);
-    _ref.read(sleepTimerProvider.notifier).onFire = (_) => _sleepFadeOutAndPause();
+    _ref.read(sleepTimerProvider.notifier).onFire = (_) =>
+        _sleepFadeOutAndPause();
     _subscribePlayerStreams();
     _init();
   }
@@ -237,10 +238,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   double? _restoredOnlinePending;
   double? _restoredLocalPending;
+
   /// 已预排给 Rust 的「下一首」下标（-1 = 未预排）；无缝拼接发生时按它推进队列。
   int _gaplessNextIndex = -1;
+
   /// 已预排的路径，避免对同一首重复下发预排。
   String? _gaplessNextPath;
+
   /// 最近一次看到的无缝拼接次数（来自 device_info 的 transitionSeq）。
   int _lastTransitionSeq = 0;
 
@@ -298,8 +302,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
       if (playing != state.isPlaying) {
         if (!playing) {
-          AppLog.warn('playgate',
-              'player PAUSED proc=${ps.processingState} origin=$_pauseOrigin');
+          AppLog.warn(
+            'playgate',
+            'player PAUSED proc=${ps.processingState} origin=$_pauseOrigin',
+          );
         } else {
           AppLog.info('playgate', 'player PLAY proc=${ps.processingState}');
         }
@@ -331,7 +337,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (!event.begin) {
           if (_interruptedByInterruption) {
             _interruptedByInterruption = false;
-            final auto = _ref.read(settingsProvider).valueOrNull
+            final auto =
+                _ref
+                    .read(settingsProvider)
+                    .valueOrNull
                     ?.autoResumeAfterInterruption ??
                 true;
             if (auto && !state.isPlaying && state.current != null) {
@@ -343,7 +352,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           return;
         }
         if (event.type == AudioInterruptionType.duck) return;
-        if (event.type == AudioInterruptionType.unknown && mvSuppressFocusLoss) {
+        if (event.type == AudioInterruptionType.unknown &&
+            mvSuppressFocusLoss) {
           AppLog.warn('playgate', 'ignore focus loss (mv active)');
           return;
         }
@@ -378,11 +388,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 跳过静音：设置一改就下发给正在跑的 Rust 管线；管线没起来时不发，
     // 起播时会随启动请求一起带上（见 _tryStartExclusive/_tryStartDspPipeline）。
     _ref.listen(
-      settingsProvider.select((s) => (
-            s.valueOrNull?.skipSilenceEnabled ?? false,
-            s.valueOrNull?.skipSilenceThresholdDb ?? -45.0,
-            s.valueOrNull?.skipSilenceKeepMs ?? 500,
-          )),
+      settingsProvider.select(
+        (s) => (
+          s.valueOrNull?.skipSilenceEnabled ?? false,
+          s.valueOrNull?.skipSilenceThresholdDb ?? -45.0,
+          s.valueOrNull?.skipSilenceKeepMs ?? 500,
+        ),
+      ),
       (prev, next) {
         if (prev == next) return;
         _pushSkipSilence(next.$1, next.$2, next.$3);
@@ -391,10 +403,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 曲间淡入淡出：设置一变就下发给正在跑的管线；管线没起来时不发，
     // 起播后 _startExclusivePolling 会补齐（见 _pushCrossfade）。
     _ref.listen(
-      settingsProvider.select((s) => (
-            s.valueOrNull?.crossfadeEnabled ?? false,
-            s.valueOrNull?.crossfadeSeconds ?? 5,
-          )),
+      settingsProvider.select(
+        (s) => (
+          s.valueOrNull?.crossfadeEnabled ?? false,
+          s.valueOrNull?.crossfadeSeconds ?? 5,
+        ),
+      ),
       (prev, next) {
         if (prev == next) return;
         _pushCrossfade(next.$1, next.$2);
@@ -423,8 +437,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 下载完成联运：正在播的在线歌被下载完成 → 无缝换本地源（保进度续播）。
     // 只在 history 新增 songPath 命中当前曲目时触发，重播/删除不触发。
     _ref.listen(
-      downloadProvider
-          .select((s) => s.history.map((h) => h.songPath).toSet()),
+      downloadProvider.select((s) => s.history.map((h) => h.songPath).toSet()),
       (prev, next) {
         if (prev == null || next.length <= prev.length) return;
         final cur = state.current;
@@ -448,7 +461,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
     });
     _ref.listen(
-      settingsProvider.select((s) => s.valueOrNull?.usbExclusiveOutput ?? false),
+      settingsProvider.select(
+        (s) => s.valueOrNull?.usbExclusiveOutput ?? false,
+      ),
       (prev, next) {
         if (prev != next) _onExclusiveSettingChanged(next);
       },
@@ -460,11 +475,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       },
     );
     _ref.listen(
-      settingsProvider.select((s) => (
-            s.valueOrNull?.volumeBalanceEnabled ?? false,
-            s.valueOrNull?.volumeBalanceGainOffsetDb ?? 0,
-            s.valueOrNull?.volumeBalancePreventClipping ?? true,
-          )),
+      settingsProvider.select(
+        (s) => (
+          s.valueOrNull?.volumeBalanceEnabled ?? false,
+          s.valueOrNull?.volumeBalanceGainOffsetDb ?? 0,
+          s.valueOrNull?.volumeBalancePreventClipping ?? true,
+        ),
+      ),
       (prev, next) {
         if (prev != next) _onVolumeBalanceSettingChanged();
       },
@@ -485,8 +502,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final pos = state.position;
     final playing = state.isPlaying;
     final idx = state.queueIndex;
-    AppLog.info('play',
-        '[download-switch] ${cur.title} 下载完成，切本地源 $local @${pos.toStringAsFixed(1)}s');
+    AppLog.info(
+      'play',
+      '[download-switch] ${cur.title} 下载完成，切本地源 $local @${pos.toStringAsFixed(1)}s',
+    );
     if (idx < 0 || idx >= state.queue.length) return;
     await _playAt(idx, startAtSecs: pos, continueStatsSession: true);
     if (!playing && state.isPlaying) {
@@ -508,8 +527,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _playEpoch++;
     final epoch = _playEpoch;
     final wasPlaying = state.isPlaying;
-    _replayAnchorSecs =
-        (continueStatsSession && startAtSecs > 0) ? startAtSecs : null;
+    _replayAnchorSecs = (continueStatsSession && startAtSecs > 0)
+        ? startAtSecs
+        : null;
 
     AppLog.info('play', '_playAt index=$index path=${state.queue[index].path}');
     unawaited(_ensureNotificationPermission());
@@ -548,14 +568,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       // 「自动换源」模式下失败标记不拦截：标记只代表「当时的源」失败过，
       // 插件更新/换装后必须重新尝试解析与换源，否则整源歌曲被盲目跳过，
       // 自动换源永远没有出场机会
-      final failBehavior = _ref
-              .read(settingsProvider)
-              .valueOrNull
-              ?.onlineFailureBehavior ??
+      final failBehavior =
+          _ref.read(settingsProvider).valueOrNull?.onlineFailureBehavior ??
           'stop';
       if (failBehavior != 'autoswitch') {
-        AppLog.info(
-            'play', '[playAt] 快速跳过已失败音源歌曲 path=${item.path}');
+        AppLog.info('play', '[playAt] 快速跳过已失败音源歌曲 path=${item.path}');
         _skipDepth++;
         final next = _pickNextIndex();
         if (next >= 0 && next != index) {
@@ -575,8 +592,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _replayAnchorSecs = null;
         return;
       }
-      AppLog.info('play',
-          '[playAt] 自动换源模式重试已失败音源歌曲 path=${item.path}');
+      AppLog.info('play', '[playAt] 自动换源模式重试已失败音源歌曲 path=${item.path}');
     }
     final prev = state.current;
     if (_activeProbeKey != null && (prev == null || prev.path != item.path)) {
@@ -606,59 +622,59 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _syncToSystemMediaSession();
     _precacheNextCover();
     try {
-        if (_ref.read(dlnaCastProvider).isCasting) {
-          await _stopExclusive();
-          if (epoch != _playEpoch) return;
-          await _castFollowPlay(item, epoch, startAtSecs: startAtSecs);
-          if (epoch != _playEpoch) return;
-        } else if (item.isOnline) {
-          await _stopExclusive();
-          if (epoch != _playEpoch) return;
-          if (sameSongReplay && startAtSecs > 0) {
-            _replayAnchorSecs = startAtSecs;
-          }
-          try {
-            await _player.stop();
-          } catch (e) {
-            AppLog.warn('player', '播放器停止失败: $e');
-          }
-          if (epoch != _playEpoch) return;
-          await _playOnline(
-            item,
-            startAtSecs: startAtSecs,
-            startPlayback: !continueStatsSession || wasPlaying,
-          );
-          if (epoch != _playEpoch) return;
-        } else if (item.path.startsWith('cloud://')) {
-          // 网盘曲目：解析直链后复用在线 URL 管线（代理/DSP/ExoPlayer 全复用）
-          await _stopExclusive();
-          if (epoch != _playEpoch) return;
-          try {
-            await _player.stop();
-          } catch (e) {
-            AppLog.warn('player', '播放器停止失败: $e');
-          }
-          if (epoch != _playEpoch) return;
-          state = state.copyWith(resolving: true);
-          await _playCloud(
-            item,
-            startAtSecs: startAtSecs,
-            startPlayback: !continueStatsSession || wasPlaying,
-          );
-          if (epoch != _playEpoch) return;
-        } else if (_isRemotePath(item.path)) {
-          await _stopExclusive();
-          if (epoch != _playEpoch) return;
-          try {
-            await _player.stop();
-          } catch (e) {
-            AppLog.warn('player', '播放器停止失败: $e');
-          }
-          if (epoch != _playEpoch) return;
-          _rgGain = 1.0;
-          await _playRemote(item);
-          if (epoch != _playEpoch) return;
-        } else {
+      if (_ref.read(dlnaCastProvider).isCasting) {
+        await _stopExclusive();
+        if (epoch != _playEpoch) return;
+        await _castFollowPlay(item, epoch, startAtSecs: startAtSecs);
+        if (epoch != _playEpoch) return;
+      } else if (item.isOnline) {
+        await _stopExclusive();
+        if (epoch != _playEpoch) return;
+        if (sameSongReplay && startAtSecs > 0) {
+          _replayAnchorSecs = startAtSecs;
+        }
+        try {
+          await _player.stop();
+        } catch (e) {
+          AppLog.warn('player', '播放器停止失败: $e');
+        }
+        if (epoch != _playEpoch) return;
+        await _playOnline(
+          item,
+          startAtSecs: startAtSecs,
+          startPlayback: !continueStatsSession || wasPlaying,
+        );
+        if (epoch != _playEpoch) return;
+      } else if (item.path.startsWith('cloud://')) {
+        // 网盘曲目：解析直链后复用在线 URL 管线（代理/DSP/ExoPlayer 全复用）
+        await _stopExclusive();
+        if (epoch != _playEpoch) return;
+        try {
+          await _player.stop();
+        } catch (e) {
+          AppLog.warn('player', '播放器停止失败: $e');
+        }
+        if (epoch != _playEpoch) return;
+        state = state.copyWith(resolving: true);
+        await _playCloud(
+          item,
+          startAtSecs: startAtSecs,
+          startPlayback: !continueStatsSession || wasPlaying,
+        );
+        if (epoch != _playEpoch) return;
+      } else if (_isRemotePath(item.path)) {
+        await _stopExclusive();
+        if (epoch != _playEpoch) return;
+        try {
+          await _player.stop();
+        } catch (e) {
+          AppLog.warn('player', '播放器停止失败: $e');
+        }
+        if (epoch != _playEpoch) return;
+        _rgGain = 1.0;
+        await _playRemote(item);
+        if (epoch != _playEpoch) return;
+      } else {
         var target = item.path;
         if (target.startsWith('http://') || target.startsWith('https://')) {
           await _stopExclusive();
@@ -672,22 +688,28 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         } else if (SafChannel.isSafPath(target)) {
           final tmp = await getTemporaryDirectory();
           target = await SafChannel.ensureLocalPlaybackCopy(
-              target, p.join(tmp.path, 'saf_playback'));
+            target,
+            p.join(tmp.path, 'saf_playback'),
+          );
         }
         await _updateRgGain(target);
         final s = _ref.read(settingsProvider).valueOrNull;
         final isDsd = _isDsdPath(target);
         final exclusiveCapable =
             !_isTranscodePath(target) || _isNativeExclusiveFormat(target);
-        final useExclusive = exclusiveCapable &&
+        final useExclusive =
+            exclusiveCapable &&
             ((s?.usbExclusiveOutput ?? false) ||
                 (isDsd && (s?.dsdNativePassthrough ?? false)));
         var started = false;
         if (useExclusive) {
           await _stopExclusive();
           if (epoch != _playEpoch) return;
-          started = await _tryStartExclusive(target,
-              startAtSecs: startAtSecs, isPlaying: true);
+          started = await _tryStartExclusive(
+            target,
+            startAtSecs: startAtSecs,
+            isPlaying: true,
+          );
           if (epoch != _playEpoch) {
             await _stopExclusive();
             return;
@@ -702,13 +724,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             AppLog.warn('player', '播放器停止失败: $e');
           }
           if (_isTranscodePath(target)) {
-            final result =
-                await RemoteLibraryService(_ref).transcodeToWav(target);
+            final result = await RemoteLibraryService(
+              _ref,
+            ).transcodeToWav(target);
             target = result.path;
             await _updateRgGain(target);
           }
-          started = await _tryStartDspPipeline(target,
-              startAtSecs: startAtSecs, isPlaying: true);
+          started = await _tryStartDspPipeline(
+            target,
+            startAtSecs: startAtSecs,
+            isPlaying: true,
+          );
           if (epoch != _playEpoch) {
             await _stopExclusive();
             return;
@@ -778,13 +804,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final allowSwitch = !_shareLinkPlayback
             ? true
             : (_ref
-                        .read(settingsProvider)
-                        .valueOrNull
-                        ?.sharePlaybackFailureBehavior ??
-                    'pause') ==
-                'replace';
+                          .read(settingsProvider)
+                          .valueOrNull
+                          ?.sharePlaybackFailureBehavior ??
+                      'pause') ==
+                  'replace';
         if (allowSwitch) {
-          final switched = await _autoSwitchSource(item, force: _shareLinkPlayback);
+          final switched = await _autoSwitchSource(
+            item,
+            force: _shareLinkPlayback,
+          );
           if (switched) {
             _shareLinkPlayback = false;
             return;
@@ -792,10 +821,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         }
       }
       if (item.isOnline && _skipDepth < state.queue.length) {
-        final behavior = _ref
-                .read(settingsProvider)
-                .valueOrNull
-                ?.onlineFailureBehavior ??
+        final behavior =
+            _ref.read(settingsProvider).valueOrNull?.onlineFailureBehavior ??
             'stop';
         if (behavior == 'skip') {
           _markOnlineSourceFailed(item);
@@ -816,9 +843,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       } else {
         AppLog.error('play', '本地播放失败 path=${item.path} error=$e');
         state = state.copyWith(
-            error: e is PluginEngineException
-                ? e.message
-                : tr('本地播放失败：{e}', {'e': e.toString()}));
+          error: e is PluginEngineException
+              ? e.message
+              : tr('本地播放失败：{e}', {'e': e.toString()}),
+        );
       }
       _syncToSystemMediaSession();
     }
@@ -832,8 +860,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     bool startPlayback = true,
   }) async {
     final json = item.onlineSongJson;
-    AppLog.info('play', '[playOnline] ${item.title} path=${item.path} '
-        'onlineSongJson=${json?.isNotEmpty ?? false}');
+    AppLog.info(
+      'play',
+      '[playOnline] ${item.title} path=${item.path} '
+          'onlineSongJson=${json?.isNotEmpty ?? false}',
+    );
     if (json != null && json.isNotEmpty) {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
       // 设置若仍在加载（冷启动首播），valueOrNull 为 null 会静默回退到
@@ -846,55 +877,72 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         s0 = _ref.read(settingsProvider).valueOrNull;
       }
       final fb0 = s0?.onlineQualityFallbackBehavior ?? 'lower';
-      final preferred = _sessionQualityOverride ??
+      final preferred =
+          _sessionQualityOverride ??
           s0?.onlineDefaultQuality ??
           item.onlineQuality ??
           '320k';
       final candidates = _qualityCandidates(preferred, fb0);
-      AppLog.info('play', '[playOnline] pluginId=${songJson['pluginId']} '
-          'source=${songJson['source']} format=${songJson['format']} '
-          'preferred=$preferred candidates=$candidates');
+      AppLog.info(
+        'play',
+        '[playOnline] pluginId=${songJson['pluginId']} '
+            'source=${songJson['source']} format=${songJson['format']} '
+            'preferred=$preferred candidates=$candidates',
+      );
 
       final key = _songProbeKey(songJson, item);
       final probe = onlineQualityProbeRegistry.ensure(
-          key, _buildResolveCallback(songJson, item));
+        key,
+        _buildResolveCallback(songJson, item),
+      );
       _activeProbeKey = key;
 
       final start = await probe
           .startBest(preferred, candidates)
           .timeout(const Duration(seconds: 45), onTimeout: () => null);
-      AppLog.info('play',
-          '[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
-          'available=${probe.availableQualities} probing=${probe.probing}');
+      AppLog.info(
+        'play',
+        '[playOnline] probe startBest result=${start == null ? 'NULL' : 'url=${start.url} q=${start.quality}'} '
+            'available=${probe.availableQualities} probing=${probe.probing}',
+      );
       if (start != null) {
         state = state.copyWith(resolving: false);
         try {
-          await _startOnlineUrl(start.url,
-              headers: start.headers,
-              item: item,
-              ekey: start.ekey,
-              cek: start.cek,
-              startAtSecs: startAtSecs,
-              isPlaying: startPlayback);
+          await _startOnlineUrl(
+            start.url,
+            headers: start.headers,
+            item: item,
+            ekey: start.ekey,
+            cek: start.cek,
+            startAtSecs: startAtSecs,
+            isPlaying: startPlayback,
+          );
           state = state.copyWith(currentQuality: start.quality);
         } on _StartOnlineTimeoutException {
           final lowerChain = _lowerQualityChain(start.quality, candidates);
           if (lowerChain.isEmpty) rethrow;
-          AppLog.warn('play', '[playOnline] 起播超时，降级音质重试 '
-              'q=${start.quality} -> $lowerChain');
+          AppLog.warn(
+            'play',
+            '[playOnline] 起播超时，降级音质重试 '
+                'q=${start.quality} -> $lowerChain',
+          );
           final retry = await probe
               .startBest(lowerChain.first, lowerChain)
               .timeout(const Duration(seconds: 45), onTimeout: () => null);
           if (retry == null) rethrow;
-          AppLog.info('play',
-              '[playOnline] 降级重试 q=${retry.quality} url=${retry.url}');
-          await _startOnlineUrl(retry.url,
-              headers: retry.headers,
-              item: item,
-              ekey: retry.ekey,
-              cek: retry.cek,
-              startAtSecs: startAtSecs,
-              isPlaying: startPlayback);
+          AppLog.info(
+            'play',
+            '[playOnline] 降级重试 q=${retry.quality} url=${retry.url}',
+          );
+          await _startOnlineUrl(
+            retry.url,
+            headers: retry.headers,
+            item: item,
+            ekey: retry.ekey,
+            cek: retry.cek,
+            startAtSecs: startAtSecs,
+            isPlaying: startPlayback,
+          );
           state = state.copyWith(currentQuality: retry.quality);
         }
         _refreshQualityMenuState(probe);
@@ -904,9 +952,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return;
       }
       final reason = probe.lastFailureReason;
-      throw StateError(reason == null
-          ? tr('无法获取播放链接')
-          : _shortResolveReason(reason));
+      throw StateError(
+        reason == null ? tr('无法获取播放链接') : _shortResolveReason(reason),
+      );
     }
     final url = await _resolveOnlineUrl(item);
     if (url == null) throw StateError(tr('无法获取播放链接'));
@@ -916,23 +964,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final infoMap = jsonDecode(infoJson) as Map<String, dynamic>;
         final seedKey = _songProbeKey(infoMap, item);
         onlineQualityProbeRegistry.seed(
-            seedKey, url.quality ?? '320k', url.url,
-            headers: url.headers, ekey: url.ekey, cek: url.cek);
+          seedKey,
+          url.quality ?? '320k',
+          url.url,
+          headers: url.headers,
+          ekey: url.ekey,
+          cek: url.cek,
+        );
       } catch (_) {
         // 解析失败按默认值处理
       }
     }
-    state = state.copyWith(
-      resolving: false,
-      currentQuality: url.quality,
+    state = state.copyWith(resolving: false, currentQuality: url.quality);
+    await _startOnlineUrl(
+      url.url,
+      headers: url.headers,
+      item: item,
+      ekey: url.ekey,
+      cek: url.cek,
+      startAtSecs: startAtSecs,
+      isPlaying: startPlayback,
     );
-    await _startOnlineUrl(url.url,
-        headers: url.headers,
-        item: item,
-        ekey: url.ekey,
-        cek: url.cek,
-        startAtSecs: startAtSecs,
-        isPlaying: startPlayback);
     unawaited(_prewarmOnlineSizes(item));
     _probeMvsAround(item);
   }
@@ -983,8 +1035,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   static const List<String> _qualityLadder = [
-    'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
-    'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
+    'mgg',
+    '128k',
+    '192k',
+    '320k',
+    'flac',
+    'flac24bit',
+    'hires',
+    'vinyl',
+    'dolby',
+    'atmos',
+    'atmos_plus',
+    'master',
   ];
 
   static List<String> _qualityCandidates(
@@ -1054,8 +1116,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       return true;
     }
     return const [
-      '.mgg', '.mgg0', '.mggl', '.mflac', '.mflac0',
-      '.qmc0', '.qmc2', '.qmc3', '.qmcflac', '.qmcogg',
+      '.mgg',
+      '.mgg0',
+      '.mggl',
+      '.mflac',
+      '.mflac0',
+      '.qmc0',
+      '.qmc2',
+      '.qmc3',
+      '.qmcflac',
+      '.qmcogg',
     ].any(lower.endsWith);
   }
 
@@ -1064,8 +1134,16 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (_isDsdPath(lower)) return true;
     if (lower.endsWith('.aif') || lower.endsWith('.aiff')) return true;
     return const [
-      '.mgg', '.mgg0', '.mggl', '.mflac', '.mflac0',
-      '.qmc0', '.qmc2', '.qmc3', '.qmcflac', '.qmcogg',
+      '.mgg',
+      '.mgg0',
+      '.mggl',
+      '.mflac',
+      '.mflac0',
+      '.qmc0',
+      '.qmc2',
+      '.qmc3',
+      '.qmcflac',
+      '.qmcogg',
     ].any(lower.endsWith);
   }
 
@@ -1088,9 +1166,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   final Map<String, String> _decryptPathCache = {};
 
   static bool _matchOnlineTitle(String a, String b) {
-    String norm(String s) => s
-        .toLowerCase()
-        .replaceAll(RegExp(r'[\s\-_（）()【】\[\].、，,·/\\+&]'), '');
+    String norm(String s) =>
+        s.toLowerCase().replaceAll(RegExp(r'[\s\-_（）()【】\[\].、，,·/\\+&]'), '');
     final na = norm(a);
     final nb = norm(b);
     if (na == nb) return true;
@@ -1153,8 +1230,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> pauseFromSystem({String origin = 'unknown'}) async {
     if (!state.isPlaying) return;
     _pauseOrigin = origin;
-    final st =
-        StackTrace.current.toString().split('\n').take(3).join(' <- ');
+    final st = StackTrace.current.toString().split('\n').take(3).join(' <- ');
     AppLog.warn('playgate', 'pauseFromSystem[$origin] $st');
     await toggle();
   }
@@ -1218,9 +1294,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> toggle({String origin = 'unknown'}) async {
     if (state.current == null) return;
     if (origin != 'unknown') _pauseOrigin = origin;
-    AppLog.info('playgate',
-        'toggle cur=${state.isPlaying ? "play->pause" : "pause->play"} '
-        'origin=$_pauseOrigin');
+    AppLog.info(
+      'playgate',
+      'toggle cur=${state.isPlaying ? "play->pause" : "pause->play"} '
+          'origin=$_pauseOrigin',
+    );
     _pauseOrigin = 'unknown';
     if (_ref.read(dlnaCastProvider).isCasting) {
       final cast = _ref.read(dlnaCastProvider.notifier);
@@ -1386,10 +1464,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       state = state.copyWith(isPlaying: false);
       _syncToSystemMediaSession();
       if (item.isOnline) {
-        final behavior = _ref
-                .read(settingsProvider)
-                .valueOrNull
-                ?.onlineFailureBehavior ??
+        final behavior =
+            _ref.read(settingsProvider).valueOrNull?.onlineFailureBehavior ??
             'stop';
         final switched = await _autoSwitchSource(item);
         if (switched) return;
@@ -1407,9 +1483,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           error: tr('播放失败：{e}', {'e': e.toString()}),
           isPlaying: false,
         );
-        _showPlaybackToast(behavior == 'autoswitch'
-            ? tr('在线播放失败，已自动换源无果，请重试或更换音源')
-            : tr('在线播放失败：{e}', {'e': e.toString()}));
+        _showPlaybackToast(
+          behavior == 'autoswitch'
+              ? tr('在线播放失败，已自动换源无果，请重试或更换音源')
+              : tr('在线播放失败：{e}', {'e': e.toString()}),
+        );
         _syncToSystemMediaSession();
       } else {
         if (state.current?.path != item.path) return;
@@ -1429,10 +1507,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _playbackErrorHandling = true;
     try {
       state = state.copyWith(isPlaying: false, resolving: true);
-      final behavior = _ref
-              .read(settingsProvider)
-              .valueOrNull
-              ?.onlineFailureBehavior ??
+      final behavior =
+          _ref.read(settingsProvider).valueOrNull?.onlineFailureBehavior ??
           'skip';
       final switched = await _autoSwitchSource(item);
       if (switched) return;
@@ -1449,11 +1525,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final msg = behavior == 'autoswitch'
           ? tr('在线音源已失效，未能自动换源')
           : tr('在线音源已失效');
-      state = state.copyWith(
-        error: msg,
-        isPlaying: false,
-        resolving: false,
-      );
+      state = state.copyWith(error: msg, isPlaying: false, resolving: false);
       _showPlaybackToast(msg);
       _syncToSystemMediaSession();
     } finally {
@@ -1483,8 +1555,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final dur = state.duration;
     if (dur > 0 && pos >= dur - 0.3) {
       _resetStallTracking();
-      AppLog.warn('play',
-          '[stall] 进度到达末尾未收到 completed，兜底切歌 pos=$pos dur=$dur');
+      AppLog.warn('play', '[stall] 进度到达末尾未收到 completed，兜底切歌 pos=$pos dur=$dur');
       unawaited(_onTrackEnd());
       return;
     }
@@ -1493,9 +1564,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     final required = item.isOnline ? 12 : 4;
     if (_stallTicks >= required && (unknownDur || nearEnd)) {
       _resetStallTracking();
-      AppLog.warn('play',
-          '[stall] 进度停滞判定为播放结束 pos=$pos dur=$dur '
-          'online=${item.isOnline} ticks=$required');
+      AppLog.warn(
+        'play',
+        '[stall] 进度停滞判定为播放结束 pos=$pos dur=$dur '
+            'online=${item.isOnline} ticks=$required',
+      );
       unawaited(_onTrackEnd());
     }
   }
@@ -1566,8 +1639,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
           actualMs > 0 &&
           actualMs < declaredMs * 0.5 &&
           actualMs < 15000) {
-        AppLog.warn('play', '[onTrackEnd] 在线流异常完成 '
-            'declared=${declaredMs}ms actual=${actualMs}ms path=${ended.path}');
+        AppLog.warn(
+          'play',
+          '[onTrackEnd] 在线流异常完成 '
+              'declared=${declaredMs}ms actual=${actualMs}ms path=${ended.path}',
+        );
         await _handleBrokenOnlineStream(ended);
         return;
       }
@@ -1617,7 +1693,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 }
 
 final volumeProvider = Provider<double>((ref) {
-  return ref.watch(settingsProvider.select((s) => s.valueOrNull?.volume)) ?? 1.0;
+  return ref.watch(settingsProvider.select((s) => s.valueOrNull?.volume)) ??
+      1.0;
 });
 
 final playerProvider = StateNotifierProvider<PlayerNotifier, PlaybackState>(

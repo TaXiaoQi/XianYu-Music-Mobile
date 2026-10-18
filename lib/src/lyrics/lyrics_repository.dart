@@ -7,6 +7,7 @@ import '../core/application_logger.dart';
 import '../core/app_http.dart';
 import '../core/db_path.dart';
 import '../cloud/cloud_filename.dart';
+import '../cloud/cloud_head_meta.dart';
 import '../i18n/i18n.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_backup_import.dart';
@@ -75,8 +76,10 @@ class LyricsRepository {
         final mainText = pickPluginMainText(pluginRes);
         final tlyric = (pluginRes['tlyric'] as String?)?.trim() ?? '';
         final encrypted = pluginLyricLooksEncrypted(mainText);
-        AppLog.debug('lyric',
-            '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}');
+        AppLog.debug(
+          'lyric',
+          '插件歌词: keys=${pluginRes.keys.toList()} mainLen=${mainText.length} encrypted=$encrypted tLen=${tlyric.length}',
+        );
         if (encrypted) {
           final decrypted = await decryptEncryptedLyric(mainText);
           if (decrypted != null && decrypted.trim().isNotEmpty) {
@@ -85,7 +88,10 @@ class LyricsRepository {
             if (tlyric.isNotEmpty && pluginLyricLooksEncrypted(tlyric)) {
               final dt = await decryptEncryptedLyric(tlyric);
               if (dt != null && dt.trim().isNotEmpty) {
-                combined = composePluginLyricsRaw(combined, alignTranslationToMainLyric(combined, dt));
+                combined = composePluginLyricsRaw(
+                  combined,
+                  alignTranslationToMainLyric(combined, dt),
+                );
               }
             }
             final payload = await parseLyrics(rawLyrics: combined);
@@ -97,14 +103,22 @@ class LyricsRepository {
         if (mainText.trim().isNotEmpty && !encrypted) {
           if (tlyric.isNotEmpty && !mainText.contains('tlyric')) {
             return parseLyrics(
-                rawLyrics: composePluginLyricsRaw(mainText, alignTranslationToMainLyric(mainText, tlyric)));
+              rawLyrics: composePluginLyricsRaw(
+                mainText,
+                alignTranslationToMainLyric(mainText, tlyric),
+              ),
+            );
           }
           if (tlyric.isEmpty) {
             final native = await fetchNativeLyricResult(item);
             final nTrans = native?['tlyric']?.trim() ?? '';
             if (nTrans.isNotEmpty && !mainText.contains('tlyric')) {
               return parseLyrics(
-                  rawLyrics: composePluginLyricsRaw(mainText, alignTranslationToMainLyric(mainText, nTrans)));
+                rawLyrics: composePluginLyricsRaw(
+                  mainText,
+                  alignTranslationToMainLyric(mainText, nTrans),
+                ),
+              );
             }
           }
           return parseLyrics(rawLyrics: mainText);
@@ -120,9 +134,13 @@ class LyricsRepository {
         final t = (native['tlyric'] ?? '').trim();
         if (main.isNotEmpty) {
           return parseLyrics(
-              rawLyrics: t.isNotEmpty && !main.contains('tlyric')
-                  ? composePluginLyricsRaw(main, alignTranslationToMainLyric(main, t))
-                  : main);
+            rawLyrics: t.isNotEmpty && !main.contains('tlyric')
+                ? composePluginLyricsRaw(
+                    main,
+                    alignTranslationToMainLyric(main, t),
+                  )
+                : main,
+          );
         }
         AppLog.warn('lyric', '原生歌词兜底: 结果主文本为空 keys=${native.keys.toList()}');
       } else {
@@ -131,7 +149,21 @@ class LyricsRepository {
       return '';
     }
     if (item.path.startsWith('cloud://')) {
-      // 网盘曲目：文件名反解 {artist,title} 走插件搜索（同 DLNA 被投链路）
+      // 内嵌歌词优先（网盘曲目头部元数据预探结果，索引命中零开销；
+      // 播放期兜底在途时短暂等待）。无内嵌再按文件名反解走插件搜索
+      // （同 DLNA 被投链路）。
+      try {
+        final notifier = _ref.read(cloudHeadMetaProvider.notifier);
+        final meta =
+            notifier.entryFor(item.path) ?? await notifier.waitFor(item.path);
+        final embedded = meta?.lyricsRaw;
+        if (embedded != null && embedded.trim().isNotEmpty) {
+          AppLog.info('lyric', '网盘曲目内嵌歌词命中: len=${embedded.length}');
+          return await parseLyrics(rawLyrics: embedded);
+        }
+      } catch (e) {
+        AppLog.debug('lyric', '网盘内嵌歌词读取失败: $e');
+      }
       var probe = item;
       if (probe.artist.trim().isEmpty) {
         final parts = parseCloudFileName(probe.title);
@@ -179,8 +211,10 @@ class LyricsRepository {
   /// 拉取 DLNA 直传歌词原文（桌面端 httpd 伺服的纯文本）。
   /// 目标是局域网桌面端设备，显式放行私网地址。
   Future<String> _fetchLyricText(String url) async {
-    final res = await appGet(Uri.parse(url), allowPrivateHost: true)
-        .timeout(const Duration(seconds: 8));
+    final res = await appGet(
+      Uri.parse(url),
+      allowPrivateHost: true,
+    ).timeout(const Duration(seconds: 8));
     if (res.statusCode != HttpStatus.ok) return '';
     return await res.transform(utf8.decoder).join();
   }
@@ -199,7 +233,10 @@ class LyricsRepository {
       final service = PluginSearchService(engine, manager.sources);
       final all = await service.searchAll(keyword, limit: 10);
       final hit = all.where((e) => e.$2.isNotEmpty).length;
-      AppLog.info('lyric', 'DLNA 歌词搜索完成: 命中源=$hit/${all.length} keyword=$keyword');
+      AppLog.info(
+        'lyric',
+        'DLNA 歌词搜索完成: 命中源=$hit/${all.length} keyword=$keyword',
+      );
       for (final (ps, items) in all) {
         if (items.isNotEmpty) {
           final qi = service.toQueueItem(ps, items.first);
@@ -216,7 +253,8 @@ class LyricsRepository {
   Future<String?> decryptEncryptedLyric(String hex) async {
     try {
       final out = await decryptPluginLyric(
-          encryptedHex: hex.replaceAll(RegExp(r'\s'), ''));
+        encryptedHex: hex.replaceAll(RegExp(r'\s'), ''),
+      );
       final s = out.trim();
       return s.isEmpty ? null : s;
     } catch (e) {
@@ -238,18 +276,23 @@ class LyricsRepository {
         if (musicInfo is Map<String, dynamic>) songInfo = musicInfo;
         final pid = parsed['pluginId'] as String?;
         if (pid != null && pid.isNotEmpty) pluginId = pid;
-      } catch (_) { /* 解析失败按默认值处理 */ }
+      } catch (_) {
+        /* 解析失败按默认值处理 */
+      }
     }
     if (songInfo == null && item.onlineInfoJson != null) {
       try {
         songInfo = jsonDecode(item.onlineInfoJson!) as Map<String, dynamic>;
-      } catch (_) { /* 解析失败按默认值处理 */ }
+      } catch (_) {
+        /* 解析失败按默认值处理 */
+      }
     }
     if (songInfo == null || songInfo.isEmpty) {
       AppLog.warn('lyric', '原生歌词兜底: 无 songInfo');
       return null;
     }
-    var sourceKey = (songInfo['source'] ?? songInfo['platform']) as String? ??
+    var sourceKey =
+        (songInfo['source'] ?? songInfo['platform']) as String? ??
         item.source ??
         '';
     if (!_nativeLyricSources.contains(sourceKey)) {
@@ -263,11 +306,15 @@ class LyricsRepository {
           final matches = sources.where((s) => s.id == pluginId).toList();
           if (matches.isNotEmpty) {
             final meta = await engine.ensureLoaded(matches.first) ?? const {};
-            final label = <String?>[
-              meta['platform']?.toString(),
-              meta['pluginName']?.toString(),
-              matches.first.name,
-            ].firstWhere((e) => (e ?? '').trim().isNotEmpty, orElse: () => null);
+            final label =
+                <String?>[
+                  meta['platform']?.toString(),
+                  meta['pluginName']?.toString(),
+                  matches.first.name,
+                ].firstWhere(
+                  (e) => (e ?? '').trim().isNotEmpty,
+                  orElse: () => null,
+                );
             mapped = lxSourceKeyForPlatform(label ?? '');
           }
         } catch (e) {
@@ -276,7 +323,10 @@ class LyricsRepository {
       }
       sourceKey = mapped;
       if (!_nativeLyricSources.contains(sourceKey)) {
-        AppLog.warn('lyric', '原生歌词兜底: 无法确定原生源 key (sourceKey=$sourceKey pluginId=$pluginId)');
+        AppLog.warn(
+          'lyric',
+          '原生歌词兜底: 无法确定原生源 key (sourceKey=$sourceKey pluginId=$pluginId)',
+        );
         return null;
       }
     }
@@ -297,8 +347,9 @@ class LyricsRepository {
         },
       );
       if (obj == null) return null;
-      final lengths =
-          obj.map((k, v) => MapEntry(k, v is String ? v.length : 0));
+      final lengths = obj.map(
+        (k, v) => MapEntry(k, v is String ? v.length : 0),
+      );
       AppLog.debug('lyric', '原生歌词兜底: 字段长度=$lengths');
       return {
         for (final e in obj.entries)
@@ -341,11 +392,12 @@ class LyricsRepository {
 
 String pickPluginMainText(Map<String, dynamic> res) {
   return (res['lxlyric'] ??
-          res['yrc'] ??
-          res['qrc'] ??
-          res['eslrc'] ??
-          res['lyric'] ??
-          res['rawLrc']) as String? ??
+              res['yrc'] ??
+              res['qrc'] ??
+              res['eslrc'] ??
+              res['lyric'] ??
+              res['rawLrc'])
+          as String? ??
       '';
 }
 
@@ -404,8 +456,9 @@ int? _lrcLineStampMs(String line) {
   final seconds = int.tryParse(match.group(2)!);
   if (minutes == null || seconds == null || seconds >= 60) return null;
   final fraction = match.group(3);
-  final millis =
-      fraction == null ? 0 : int.tryParse(fraction.padRight(3, '0').substring(0, 3)) ?? 0;
+  final millis = fraction == null
+      ? 0
+      : int.tryParse(fraction.padRight(3, '0').substring(0, 3)) ?? 0;
   return minutes * 60000 + seconds * 1000 + millis;
 }
 
@@ -600,94 +653,103 @@ List<LyricLine> _parseLyricsJson(String jsonStr) {
           final wEnd = (w['end'] as num?)?.toDouble() ?? 0.0;
           final wRomaji = (w['romaji'] as String?)?.trim();
           if (wText.isNotEmpty) {
-            words.add(LyricWord(
-              text: wText,
-              start: wStart,
-              end: wEnd,
-              romaji: (wRomaji != null && wRomaji.isNotEmpty)
-                  ? wRomaji
-                  : null,
-            ));
+            words.add(
+              LyricWord(
+                text: wText,
+                start: wStart,
+                end: wEnd,
+                romaji: (wRomaji != null && wRomaji.isNotEmpty)
+                    ? wRomaji
+                    : null,
+              ),
+            );
           }
         }
       }
     }
 
     if (text.isNotEmpty) {
-      lines.add(LyricLine(
-        timeMs: (timeSec * 1000).toInt(),
-        endTimeMs: (endTimeSec * 1000).round(),
-        text: text,
-        translation: translation,
-        romaji: romaji,
-        words: words,
-        secondary: secondary,
-        speaker: (item['speaker'] as String?)?.trim().isNotEmpty == true
-            ? (item['speaker'] as String).trim()
-            : null,
-        isBg: item['isBg'] == true,
-        isDuet: item['isDuet'] == true,
-        isDuetPartner: item['isDuetPartner'] == true,
-      ));
+      lines.add(
+        LyricLine(
+          timeMs: (timeSec * 1000).toInt(),
+          endTimeMs: (endTimeSec * 1000).round(),
+          text: text,
+          translation: translation,
+          romaji: romaji,
+          words: words,
+          secondary: secondary,
+          speaker: (item['speaker'] as String?)?.trim().isNotEmpty == true
+              ? (item['speaker'] as String).trim()
+              : null,
+          isBg: item['isBg'] == true,
+          isDuet: item['isDuet'] == true,
+          isDuetPartner: item['isDuetPartner'] == true,
+        ),
+      );
     }
   }
   return lines;
 }
 
 List<LyricLine> _normalizeBoundaries(List<LyricLine> lines) {
-    final result = <LyricLine>[];
-    for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final startMs = line.timeMs.toDouble();
-      final nextStartMs = i + 1 < lines.length
-          ? lines[i + 1].timeMs.toDouble()
-          : double.infinity;
+  final result = <LyricLine>[];
+  for (var i = 0; i < lines.length; i++) {
+    final line = lines[i];
+    final startMs = line.timeMs.toDouble();
+    final nextStartMs = i + 1 < lines.length
+        ? lines[i + 1].timeMs.toDouble()
+        : double.infinity;
 
-      var endMs = line.endTimeMs.toDouble();
-      if (endMs <= startMs) {
-        if (nextStartMs.isFinite) {
-          final gap = nextStartMs - startMs;
-          final leadIn = math.min(300.0, gap * 0.25);
-          endMs = nextStartMs - leadIn;
-        } else {
-          endMs = startMs + 5000;
-        }
+    var endMs = line.endTimeMs.toDouble();
+    if (endMs <= startMs) {
+      if (nextStartMs.isFinite) {
+        final gap = nextStartMs - startMs;
+        final leadIn = math.min(300.0, gap * 0.25);
+        endMs = nextStartMs - leadIn;
+      } else {
+        endMs = startMs + 5000;
       }
-      endMs = math.max(endMs, startMs + 40);
+    }
+    endMs = math.max(endMs, startMs + 40);
 
-      final words = <LyricWord>[];
-      for (var j = 0; j < line.words.length; j++) {
-        final w = line.words[j];
-        final wStartMs = w.start * 1000.0;
-        var wEndMs = w.end * 1000.0;
-        if (j + 1 < line.words.length) {
-          wEndMs = math.min(wEndMs, line.words[j + 1].start * 1000.0);
-        }
-        wEndMs = math.min(wEndMs, endMs);
-        wEndMs = math.max(wEndMs, wStartMs + 20);
+    final words = <LyricWord>[];
+    for (var j = 0; j < line.words.length; j++) {
+      final w = line.words[j];
+      final wStartMs = w.start * 1000.0;
+      var wEndMs = w.end * 1000.0;
+      if (j + 1 < line.words.length) {
+        wEndMs = math.min(wEndMs, line.words[j + 1].start * 1000.0);
+      }
+      wEndMs = math.min(wEndMs, endMs);
+      wEndMs = math.max(wEndMs, wStartMs + 20);
 
-        final chars = w.text.runes.toList();
-        if (chars.length > 1) {
-          final durMs = (wEndMs - wStartMs) / chars.length;
-          for (var c = 0; c < chars.length; c++) {
-            words.add(LyricWord(
+      final chars = w.text.runes.toList();
+      if (chars.length > 1) {
+        final durMs = (wEndMs - wStartMs) / chars.length;
+        for (var c = 0; c < chars.length; c++) {
+          words.add(
+            LyricWord(
               text: String.fromCharCode(chars[c]),
               start: (wStartMs + durMs * c) / 1000.0,
               end: (wStartMs + durMs * (c + 1)) / 1000.0,
               romaji: c == 0 ? w.romaji : null,
-            ));
-          }
-        } else {
-          words.add(LyricWord(
+            ),
+          );
+        }
+      } else {
+        words.add(
+          LyricWord(
             text: w.text,
             start: wStartMs / 1000.0,
             end: wEndMs / 1000.0,
             romaji: w.romaji,
-          ));
-        }
+          ),
+        );
       }
+    }
 
-      result.add(LyricLine(
+    result.add(
+      LyricLine(
         timeMs: line.timeMs,
         endTimeMs: endMs.round(),
         text: line.text,
@@ -695,10 +757,11 @@ List<LyricLine> _normalizeBoundaries(List<LyricLine> lines) {
         romaji: line.romaji,
         words: words,
         secondary: line.secondary,
-      ));
-    }
-    return result;
+      ),
+    );
   }
+  return result;
+}
 
 final lyricsRepositoryProvider = Provider<LyricsRepository>(
   (ref) => LyricsRepository(ref),
@@ -710,8 +773,9 @@ List<LyricLine> localizeLyricLines(List<LyricLine> lines) {
     for (final l in lines)
       l.copyWith(
         text: localizeLyricText(l.text),
-        translation:
-            l.translation == null ? null : localizeLyricText(l.translation!),
+        translation: l.translation == null
+            ? null
+            : localizeLyricText(l.translation!),
         secondary: [for (final s in l.secondary) localizeLyricText(s)],
         words: [
           for (final w in l.words)

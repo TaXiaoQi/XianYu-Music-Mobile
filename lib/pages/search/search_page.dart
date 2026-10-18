@@ -9,6 +9,7 @@ import '../../src/auth/account_api.dart';
 import '../../src/cloud/cloud_credentials_store.dart';
 import '../../src/cloud/cloud_filename.dart';
 import '../../src/cloud/cloud_folder_selection_store.dart';
+import '../../src/cloud/cloud_head_meta.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_scoped_query.dart';
 import '../../src/cloud/cloud_types.dart';
@@ -102,8 +103,9 @@ class _SearchPageState extends ConsumerState<SearchPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final floating = ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     final statusBar = MediaQuery.paddingOf(context).top;
 
     return Scaffold(
@@ -115,15 +117,17 @@ class _SearchPageState extends ConsumerState<SearchPage>
             _SuggestionView(
               query: _suggestQuery,
               keywords: _keywords,
-              topPadding:
-                  floating ? statusBar + 66 : GlassTopBar.height(context),
+              topPadding: floating
+                  ? statusBar + 66
+                  : GlassTopBar.height(context),
               onSubmit: _submitSearch,
             )
           else
             SearchIdleView(
               onSearch: _submitSearch,
-              topPadding:
-                  floating ? statusBar + 66 : GlassTopBar.height(context),
+              topPadding: floating
+                  ? statusBar + 66
+                  : GlassTopBar.height(context),
             ),
           if (floating)
             Positioned(
@@ -153,63 +157,65 @@ class _SearchPageState extends ConsumerState<SearchPage>
             )
           else
             Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: searchBoxFill(context, ref),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                alignment: Alignment.centerLeft,
-                child: TextField(
-                  controller: _ctrl,
-                  autofocus: true,
-                  textInputAction: TextInputAction.search,
-                  style: const TextStyle(fontSize: 15),
-                  textAlignVertical: TextAlignVertical.center,
-                  onChanged: _onChanged,
-                  onSubmitted: (q) => _submitSearch(q),
-                  decoration: InputDecoration(
-                    hintText: tr('搜索音乐、歌手、专辑、歌单'),
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                    border: InputBorder.none,
-                    suffixIcon: _ctrl.text.isEmpty
-                        ? null
-                        : PressableScale(
-                            pressScale: 0.88,
-                            child: IconButton(
-                              icon: const Icon(Icons.clear, size: 20),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                  width: 32, height: 40),
-                              onPressed: _clearInput,
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: searchBoxFill(context, ref),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  alignment: Alignment.centerLeft,
+                  child: TextField(
+                    controller: _ctrl,
+                    autofocus: true,
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(fontSize: 15),
+                    textAlignVertical: TextAlignVertical.center,
+                    onChanged: _onChanged,
+                    onSubmitted: (q) => _submitSearch(q),
+                    decoration: InputDecoration(
+                      hintText: tr('搜索音乐、歌手、专辑、歌单'),
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                      border: InputBorder.none,
+                      suffixIcon: _ctrl.text.isEmpty
+                          ? null
+                          : PressableScale(
+                              pressScale: 0.88,
+                              child: IconButton(
+                                icon: const Icon(Icons.clear, size: 20),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 32,
+                                  height: 40,
+                                ),
+                                onPressed: _clearInput,
+                              ),
                             ),
-                          ),
-                  ),
-                ),
-              ),
-              actions: [
-                PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    tooltip: tr('搜索'),
-                    icon: const Icon(Icons.search),
-                    style: IconButton.styleFrom(
-                      backgroundColor: scheme.primary,
-                      foregroundColor: scheme.onPrimary,
                     ),
-                    onPressed: () => _submitSearch(_ctrl.text),
                   ),
                 ),
-              ],
+                actions: [
+                  PressableScale(
+                    pressScale: 0.88,
+                    child: IconButton(
+                      tooltip: tr('搜索'),
+                      icon: const Icon(Icons.search),
+                      style: IconButton.styleFrom(
+                        backgroundColor: scheme.primary,
+                        foregroundColor: scheme.onPrimary,
+                      ),
+                      onPressed: () => _submitSearch(_ctrl.text),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -275,7 +281,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     final tabBar = TabBar(
       controller: _tab,
       dividerColor: Colors.transparent,
-      tabs:   [
+      tabs: [
         Tab(text: tr('单曲')),
         Tab(text: tr('歌手')),
         Tab(text: tr('专辑')),
@@ -293,10 +299,7 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
         : TabBarView(
             controller: _tab,
             children: [
-              _TrackTab(
-                keyword: keyword,
-                source: selected,
-              ),
+              _TrackTab(keyword: keyword, source: selected),
               _CatalogTab(
                 kind: _CatalogKind.artist,
                 keyword: keyword,
@@ -333,8 +336,9 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
     }
 
     final statusBar = MediaQuery.paddingOf(context).top;
-    final floating = ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     final wallpaperGap = ref.watch(wallpaperActiveProvider) ? 8.0 : 0.0;
     final chromeBottom = PreferredSizeProxy(
       height: tabBar.preferredSize.height + wallpaperGap + 40,
@@ -356,87 +360,86 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
         backgroundColor: appScaffoldBackground(context, ref),
         resizeToAvoidBottomInset: false,
         body: Stack(
-        children: [
-          SizedBox.expand(
-            child: _withContentTopInset(contentArea, topInset + 6),
-          ),
-          if (floating)
-            Positioned(
-              top: statusBar + 8,
-              left: 12,
-              right: 12,
-              child: FloatingSearchTopBar(
-                onBack: () => context.pop(),
-                field: FloatingGlassSearchField(
-                  controller: _queryCtrl,
-                  readOnly: true,
-                  onTap: _goToSearchPage,
-                  hint: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
-                ),
-                action: PressableScale(
-                  pressScale: 0.88,
-                  child: BiliPaiIconButton(
-                    icon: Icons.search,
-                    tooltip: tr('返回搜索'),
-                    color: scheme.primary,
-                    onTap: _goToSearchPage,
-                  ),
-                ),
-                tabPill: FloatingTabPill(child: tabBar),
-                bottomPill: _buildSourceBar(floating: true),
-              ),
-            )
-          else
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: const BackButton(),
-              title: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: searchBoxFill(context, ref),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                alignment: Alignment.centerLeft,
-                child: TextField(
-                  controller: _queryCtrl,
-                  readOnly: true,
-                  onTap: _goToSearchPage,
-                  style: const TextStyle(fontSize: 15),
-                  textAlignVertical: TextAlignVertical.center,
-                  decoration: InputDecoration(
-                    hintText:
-                        keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                    border: InputBorder.none,
-                  ),
-                ),
-              ),
-              actions: [
-                PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    tooltip: tr('返回搜索'),
-                    icon: const Icon(Icons.search),
-                    style: IconButton.styleFrom(
-                      backgroundColor: scheme.primary,
-                      foregroundColor: scheme.onPrimary,
-                    ),
-                    onPressed: _goToSearchPage,
-                  ),
-                ),
-              ],
-              bottom: chromeBottom,
-              ),
+          children: [
+            SizedBox.expand(
+              child: _withContentTopInset(contentArea, topInset + 6),
             ),
-        ],
+            if (floating)
+              Positioned(
+                top: statusBar + 8,
+                left: 12,
+                right: 12,
+                child: FloatingSearchTopBar(
+                  onBack: () => context.pop(),
+                  field: FloatingGlassSearchField(
+                    controller: _queryCtrl,
+                    readOnly: true,
+                    onTap: _goToSearchPage,
+                    hint: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
+                  ),
+                  action: PressableScale(
+                    pressScale: 0.88,
+                    child: BiliPaiIconButton(
+                      icon: Icons.search,
+                      tooltip: tr('返回搜索'),
+                      color: scheme.primary,
+                      onTap: _goToSearchPage,
+                    ),
+                  ),
+                  tabPill: FloatingTabPill(child: tabBar),
+                  bottomPill: _buildSourceBar(floating: true),
+                ),
+              )
+            else
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: GlassTopBar(
+                  leading: const BackButton(),
+                  title: Container(
+                    height: 40,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    decoration: BoxDecoration(
+                      color: searchBoxFill(context, ref),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    alignment: Alignment.centerLeft,
+                    child: TextField(
+                      controller: _queryCtrl,
+                      readOnly: true,
+                      onTap: _goToSearchPage,
+                      style: const TextStyle(fontSize: 15),
+                      textAlignVertical: TextAlignVertical.center,
+                      decoration: InputDecoration(
+                        hintText: keyword.isEmpty ? tr('搜索音乐、歌手、专辑、歌单') : null,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    PressableScale(
+                      pressScale: 0.88,
+                      child: IconButton(
+                        tooltip: tr('返回搜索'),
+                        icon: const Icon(Icons.search),
+                        style: IconButton.styleFrom(
+                          backgroundColor: scheme.primary,
+                          foregroundColor: scheme.onPrimary,
+                        ),
+                        onPressed: _goToSearchPage,
+                      ),
+                    ),
+                  ],
+                  bottom: chromeBottom,
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
   }
 
   Widget _withContentTopInset(Widget contentArea, double inset) {
@@ -477,8 +480,13 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
 
 // ==================== 公共组件 ====================
 
-Widget _emptyHint(String message, ColorScheme scheme,
-    {required String source, String? actionLabel, VoidCallback? onAction}) {
+Widget _emptyHint(
+  String message,
+  ColorScheme scheme, {
+  required String source,
+  String? actionLabel,
+  VoidCallback? onAction,
+}) {
   return Center(
     child: Column(
       mainAxisSize: MainAxisSize.min,

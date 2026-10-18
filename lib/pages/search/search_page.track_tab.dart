@@ -1,4 +1,5 @@
 part of 'search_page.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 // ==================== 单曲 tab ====================
@@ -7,10 +8,7 @@ class _TrackTab extends ConsumerStatefulWidget {
   final String keyword;
   final _SourceItem source;
 
-  const _TrackTab({
-    required this.keyword,
-    required this.source,
-  });
+  const _TrackTab({required this.keyword, required this.source});
 
   @override
   ConsumerState<_TrackTab> createState() => _TrackTabState();
@@ -40,9 +38,11 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   List<String> _paths = const [];
   final ScrollController _scroll = ScrollController();
   String _searchError = '';
-  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
-    if (mounted) setState(() {});
-  });
+  late final StaggerWindow _stagger = StaggerWindow(
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   bool get wantKeepAlive => true;
@@ -81,8 +81,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     final favorites = ref.watch(favoritesProvider);
 
     if (q.isEmpty) {
-      return _emptyHint(
-          tr('输入关键词搜索音乐'), scheme, source: widget.source.name);
+      return _emptyHint(tr('输入关键词搜索音乐'), scheme, source: widget.source.name);
     }
     if (_loading && _results.isEmpty) {
       return const Center(child: CircularProgressIndicator());
@@ -97,8 +96,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       );
     }
     if (_results.isEmpty) {
-      return _emptyHint(
-          tr('没有找到相关歌曲'), scheme, source: widget.source.name);
+      return _emptyHint(tr('没有找到相关歌曲'), scheme, source: widget.source.name);
     }
 
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
@@ -108,236 +106,295 @@ class _TrackTabState extends ConsumerState<_TrackTab>
       children: [
         ListView.builder(
           controller: _scroll,
-          padding: EdgeInsets.only(
-            top: topInset,
-            bottom: bottomInset,
-          ),
-      itemCount: _results.length,
-      itemBuilder: (context, i) {
-        final e = _results[i];
-        if (e.isLocal) {
-          final s = e.localSong!;
-          return _stagger.wrap(
-            i,
-            _rowShell(i, s.path,
-            Builder(
-              builder: (rowContext) {
-                BuildContext? coverCtx;
-                return PressableScale(
-                  child: CoverRow(
-                background: themeTintOrNull(ref, 'sr.item'),
-                cover: Builder(
-                  builder: (c) {
-                    coverCtx = c;
-                    return SongCover(song: s, size: m.songCover);
+          padding: EdgeInsets.only(top: topInset, bottom: bottomInset),
+          itemCount: _results.length,
+          itemBuilder: (context, i) {
+            final e = _results[i];
+            if (e.isLocal) {
+              final s = e.localSong!;
+              return _stagger.wrap(
+                i,
+                _rowShell(
+                  i,
+                  s.path,
+                  Builder(
+                    builder: (rowContext) {
+                      BuildContext? coverCtx;
+                      return PressableScale(
+                        child: CoverRow(
+                          background: themeTintOrNull(ref, 'sr.item'),
+                          cover: Builder(
+                            builder: (c) {
+                              coverCtx = c;
+                              return SongCover(song: s, size: m.songCover);
+                            },
+                          ),
+                          title: highlightedText(
+                            s.title,
+                            q,
+                            scheme.primary,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: m.titleSize,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            [
+                              s.artist,
+                              s.album,
+                              tr('本地'),
+                            ].where((x) => x.isNotEmpty).join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: m.subtitleSize,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          verticalPadding: m.vPad,
+                          onTap: () async {
+                            final from = _coverSourceRect(rowContext, coverCtx);
+                            _play(i);
+                            if (from == null) return;
+                            if (!await FlyingCover.instance.waitTargetReady())
+                              return;
+                            await FlyingCover.instance.launch(
+                              fromRect: from,
+                              songPath: s.path,
+                              thumbPath: s.coverThumbPath,
+                              radius: m.songRadius,
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            }
+            final item = _queueItem(i);
+            final isFav = item != null && favorites.contains(item.path);
+            final cloudItem = e.cloudItem;
+            if (cloudItem != null) {
+              // 网盘条目：无封面无专辑，subtitle 展示解析歌手（缺省为盘名）。
+              // 头部元数据预探命中时补内嵌封面与时长（无则维持原样）。
+              // 播放时同样送出封面飞行动画（无图时飞行占位封面）。
+              final cloudMeta = ref.watch(
+                cloudHeadMetaProvider,
+              )[cloudItem.path];
+              return _stagger.wrap(
+                i,
+                _rowShell(
+                  i,
+                  cloudItem.path,
+                  Builder(
+                    builder: (rowContext) {
+                      BuildContext? coverCtx;
+                      return PressableScale(
+                        child: CoverRow(
+                          background: themeTintOrNull(ref, 'sr.item'),
+                          cover: Builder(
+                            builder: (c) {
+                              coverCtx = c;
+                              return OnlineCover(
+                                url: cloudItem.coverUrl,
+                                filePath: cloudMeta?.coverPath,
+                                size: m.songCover,
+                                radius: m.songRadius,
+                              );
+                            },
+                          ),
+                          title: highlightedText(
+                            cloudItem.title,
+                            q,
+                            scheme.primary,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: m.titleSize,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            [
+                              cloudItem.artist,
+                              cloudItem.album,
+                              if (cloudMeta?.durationSecs != null)
+                                _fmtDuration(cloudMeta!.durationSecs!),
+                            ].where((x) => x.isNotEmpty).join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: m.subtitleSize,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          verticalPadding: m.vPad,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              PressableScale(
+                                pressScale: 0.88,
+                                child: IconButton(
+                                  icon: Icon(
+                                    isFav
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    size: 20,
+                                    color: isFav
+                                        ? scheme.primary
+                                        : scheme.onSurfaceVariant,
+                                  ),
+                                  tooltip: tr('收藏'),
+                                  onPressed: () => _toggleFavorite(i),
+                                ),
+                              ),
+                              PressableScale(
+                                pressScale: 0.88,
+                                child: IconButton(
+                                  icon: const Icon(Icons.more_horiz, size: 22),
+                                  color: scheme.onSurfaceVariant,
+                                  tooltip: tr('更多'),
+                                  onPressed: () => _openActions(i),
+                                ),
+                              ),
+                            ],
+                          ),
+                          onLongPress: () => _openActions(i),
+                          onTap: () async {
+                            try {
+                              final from = _coverSourceRect(
+                                rowContext,
+                                coverCtx,
+                              );
+                              _play(i);
+                              if (from == null) return;
+                              if (!await FlyingCover.instance.waitTargetReady())
+                                return;
+                              await FlyingCover.instance.launch(
+                                fromRect: from,
+                                songPath: cloudItem.path,
+                                networkUrl: cloudItem.coverUrl,
+                                radius: m.songRadius,
+                              );
+                            } catch (e) {
+                              AppLog.debug('search', '封面飞入动画失败: $e');
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              );
+            }
+            final r = e.pluginResult!;
+            return _stagger.wrap(
+              i,
+              _rowShell(
+                i,
+                item?.path ?? '',
+                Builder(
+                  builder: (rowContext) {
+                    BuildContext? coverCtx;
+                    return PressableScale(
+                      child: CoverRow(
+                        background: themeTintOrNull(ref, 'sr.item'),
+                        cover: Builder(
+                          builder: (c) {
+                            coverCtx = c;
+                            return OnlineCover(
+                              url: r.img,
+                              size: m.songCover,
+                              radius: m.songRadius,
+                            );
+                          },
+                        ),
+                        title: highlightedText(
+                          r.name,
+                          q,
+                          scheme.primary,
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: m.titleSize,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          [
+                            r.singer,
+                            r.albumName,
+                            widget.source.name,
+                          ].where((x) => x.isNotEmpty).join(' · '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: m.subtitleSize,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                        verticalPadding: m.vPad,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            PressableScale(
+                              pressScale: 0.88,
+                              child: IconButton(
+                                icon: Icon(
+                                  isFav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  size: 20,
+                                  color: isFav
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                                tooltip: tr('收藏'),
+                                onPressed: () => _toggleFavorite(i),
+                              ),
+                            ),
+                            Text(
+                              r.interval,
+                              style: TextStyle(
+                                fontSize: m.subtitleSize,
+                                color: scheme.outline,
+                              ),
+                            ),
+                            PressableScale(
+                              pressScale: 0.88,
+                              child: IconButton(
+                                icon: const Icon(Icons.more_horiz, size: 22),
+                                color: scheme.onSurfaceVariant,
+                                tooltip: tr('更多'),
+                                onPressed: () => _openActions(i),
+                              ),
+                            ),
+                          ],
+                        ),
+                        onLongPress: () => _openActions(i),
+                        onTap: () async {
+                          try {
+                            final from = _coverSourceRect(rowContext, coverCtx);
+                            _play(i);
+                            if (from == null) return;
+                            if (!await FlyingCover.instance.waitTargetReady())
+                              return;
+                            await FlyingCover.instance.launch(
+                              fromRect: from,
+                              networkUrl: r.img,
+                              radius: m.songRadius,
+                            );
+                          } catch (e) {
+                            AppLog.debug('search', '封面飞入动画失败: $e');
+                          }
+                        },
+                      ),
+                    );
                   },
                 ),
-                title: highlightedText(s.title, q, scheme.primary,
-                    maxLines: 1,
-                    style: TextStyle(
-                        fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-                subtitle: Text(
-                  [s.artist, s.album, tr('本地')]
-                      .where((x) => x.isNotEmpty)
-                      .join(' · '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-                ),
-                verticalPadding: m.vPad,
-                onTap: () async {
-                  final from = _coverSourceRect(rowContext, coverCtx);
-                  _play(i);
-                  if (from == null) return;
-                  if (!await FlyingCover.instance.waitTargetReady()) return;
-                  await FlyingCover.instance.launch(
-                    fromRect: from,
-                    songPath: s.path,
-                    thumbPath: s.coverThumbPath,
-                    radius: m.songRadius,
-                  );
-                },
-                ),
-                );
-              },
-            ),
-            ),
-          );
-        }
-        final item = _queueItem(i);
-        final isFav = item != null && favorites.contains(item.path);
-        final cloudItem = e.cloudItem;
-        if (cloudItem != null) {
-          // 网盘条目：无封面无专辑，subtitle 展示解析歌手（缺省为盘名）。
-          // 播放时同样送出封面飞行动画（无图时飞行占位封面）。
-          return _stagger.wrap(
-            i,
-            _rowShell(i, cloudItem.path,
-            Builder(
-              builder: (rowContext) {
-                BuildContext? coverCtx;
-                return PressableScale(
-                  child: CoverRow(
-              background: themeTintOrNull(ref, 'sr.item'),
-              cover: Builder(
-                builder: (c) {
-                  coverCtx = c;
-                  return OnlineCover(
-                      url: cloudItem.coverUrl,
-                      size: m.songCover,
-                      radius: m.songRadius);
-                },
-              ),
-              title: highlightedText(cloudItem.title, q, scheme.primary,
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                [cloudItem.artist, cloudItem.album]
-                    .where((x) => x.isNotEmpty)
-                    .join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-              ),
-              verticalPadding: m.vPad,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    icon: Icon(
-                      isFav ? Icons.favorite : Icons.favorite_border,
-                      size: 20,
-                      color: isFav ? scheme.primary : scheme.onSurfaceVariant,
-                    ),
-                    tooltip: tr('收藏'),
-                    onPressed: () => _toggleFavorite(i),
-                  ),
-                ),
-                PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    icon: const Icon(Icons.more_horiz, size: 22),
-                    color: scheme.onSurfaceVariant,
-                    tooltip: tr('更多'),
-                    onPressed: () => _openActions(i),
-                  ),
-                ),
-              ],
-            ),
-            onLongPress: () => _openActions(i),
-            onTap: () async {
-                try {
-                  final from = _coverSourceRect(rowContext, coverCtx);
-                  _play(i);
-                  if (from == null) return;
-                  if (!await FlyingCover.instance.waitTargetReady()) return;
-                  await FlyingCover.instance.launch(
-                    fromRect: from,
-                    songPath: cloudItem.path,
-                    networkUrl: cloudItem.coverUrl,
-                    radius: m.songRadius,
-                  );
-                } catch (e) {
-                  AppLog.debug('search', '封面飞入动画失败: $e');
-                }
-              },
-              ),
-                );
-              },
-            ),
-            ),
-          );
-        }
-        final r = e.pluginResult!;
-        return _stagger.wrap(
-          i,
-          _rowShell(i, item?.path ?? '',
-          Builder(
-            builder: (rowContext) {
-              BuildContext? coverCtx;
-              return PressableScale(
-                child: CoverRow(
-              background: themeTintOrNull(ref, 'sr.item'),
-              cover: Builder(
-                builder: (c) {
-                  coverCtx = c;
-                  return OnlineCover(
-                      url: r.img, size: m.songCover, radius: m.songRadius);
-                },
-              ),
-              title: highlightedText(r.name, q, scheme.primary,
-                  maxLines: 1,
-                  style: TextStyle(
-                      fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                [r.singer, r.albumName, widget.source.name]
-                    .where((x) => x.isNotEmpty)
-                    .join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-              ),
-              verticalPadding: m.vPad,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    icon: Icon(
-                      isFav ? Icons.favorite : Icons.favorite_border,
-                      size: 20,
-                      color: isFav ? scheme.primary : scheme.onSurfaceVariant,
-                    ),
-                    tooltip: tr('收藏'),
-                    onPressed: () => _toggleFavorite(i),
-                  ),
-                ),
-                Text(
-                  r.interval,
-                  style: TextStyle(
-                      fontSize: m.subtitleSize, color: scheme.outline),
-                ),
-                PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    icon: const Icon(Icons.more_horiz, size: 22),
-                    color: scheme.onSurfaceVariant,
-                    tooltip: tr('更多'),
-                    onPressed: () => _openActions(i),
-                  ),
-                ),
-              ],
-            ),
-            onLongPress: () => _openActions(i),
-            onTap: () async {
-                try {
-                  final from = _coverSourceRect(rowContext, coverCtx);
-                  _play(i);
-                  if (from == null) return;
-                  if (!await FlyingCover.instance.waitTargetReady()) return;
-                  await FlyingCover.instance.launch(
-                    fromRect: from,
-                    networkUrl: r.img,
-                    radius: m.songRadius,
-                  );
-                } catch (e) {
-                  AppLog.debug('search', '封面飞入动画失败: $e');
-                }
-              },
               ),
             );
-            },
-          ),
-          ),
-        );
-      },
+          },
         ),
         SongListScrollFabs(
           controller: _scroll,
@@ -353,23 +410,32 @@ class _TrackTabState extends ConsumerState<_TrackTab>
 
   /// 行首槽位：序号/播放标识（桌面端同款），搜索结果不可拖拽
   Widget _rowShell(int i, String songPath, Widget row) => Stack(
-        children: [
-          Padding(padding: const EdgeInsets.only(left: 44), child: row),
-          Positioned(
-            left: 8,
-            top: 0,
-            bottom: 0,
-            width: 36,
-            child: Center(
-              child: SongRowLeading(index: i, songPath: songPath),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Padding(padding: const EdgeInsets.only(left: 44), child: row),
+      Positioned(
+        left: 8,
+        top: 0,
+        bottom: 0,
+        width: 36,
+        child: Center(
+          child: SongRowLeading(index: i, songPath: songPath),
+        ),
+      ),
+    ],
+  );
 }
 
 extension _TrackTabActions on _TrackTabState {
   List<PluginSource> _plugins() => ref.read(pluginManagerProvider).sources;
+
+  /// 秒 → m:ss（超 1 小时 h:mm:ss）。
+  String _fmtDuration(int secs) {
+    final h = secs ~/ 3600;
+    final m = (secs % 3600) ~/ 60;
+    final s = secs % 60;
+    final mm = h > 0 ? m.toString().padLeft(2, '0') : '$m';
+    return '${h > 0 ? '$h:' : ''}$mm:${s.toString().padLeft(2, '0')}';
+  }
 
   Future<void> _search(String q, String hash) async {
     final src = widget.source;
@@ -386,12 +452,14 @@ extension _TrackTabActions on _TrackTabState {
       if (src.isLocal) {
         final dbPath = await ref.read(dbPathProvider.future);
         final json = await searchLibrarySongs(
-            dbPath: dbPath, query: q, limit: BigInt.from(100));
+          dbPath: dbPath,
+          query: q,
+          limit: BigInt.from(100),
+        );
         final list = (jsonDecode(json) as List)
             .map((e) => Song.fromJson(e as Map<String, dynamic>))
             .toList();
-        out.addAll(list.map((s) =>
-            _TrackEntry(isLocal: true, localSong: s)));
+        out.addAll(list.map((s) => _TrackEntry(isLocal: true, localSong: s)));
         ref.read(accountApiProvider).reportSearch(q, 'local', list.length);
       } else if (src.type == _SourceType.cloud) {
         // 网盘来源：取该盘首个账号凭据做文件名搜索，逐个预构造可播放条目。
@@ -399,12 +467,13 @@ extension _TrackTabActions on _TrackTabState {
         final pid = src.cloudProviderId!;
         final provider = cloudProviderById(pid);
         if (provider == null) throw StateError(tr('该网盘暂未支持'));
-        final accounts =
-            await CloudCredentialsStore.instance.accountsFor(pid);
+        final accounts = await CloudCredentialsStore.instance.accountsFor(pid);
         if (accounts.isEmpty) throw StateError(tr('网盘账号未绑定或已失效'));
         final acc = accounts.first;
-        final roots =
-            await CloudFolderSelectionStore.instance.pathsFor(pid, acc.accountId);
+        final roots = await CloudFolderSelectionStore.instance.pathsFor(
+          pid,
+          acc.accountId,
+        );
         // 没选目录默认全部目录：盘侧搜索失败自动回退根目录全盘遍历
         final files = await cloudKeywordSearchAudio(
           provider: provider,
@@ -414,16 +483,23 @@ extension _TrackTabActions on _TrackTabState {
         );
         for (final f in files) {
           final ctx = CloudPlayContext(
-              provider: pid, accountId: acc.accountId, file: f);
+            provider: pid,
+            accountId: acc.accountId,
+            file: f,
+          );
+          // 列表期头部元数据预探调度（内嵌封面/时长）：去重、限并发、失败静默
+          ref.read(cloudHeadMetaProvider.notifier).scheduleCloudContext(ctx);
           final parts = parseCloudFileName(f.name);
-          out.add(_TrackEntry(
-            isLocal: false,
-            cloudItem: cloudPlayQueueItem(
-              ctx,
-              title: parts.title,
-              artist: parts.artist ?? provider.displayName,
+          out.add(
+            _TrackEntry(
+              isLocal: false,
+              cloudItem: cloudPlayQueueItem(
+                ctx,
+                title: parts.title,
+                artist: parts.artist ?? provider.displayName,
+              ),
             ),
-          ));
+          );
         }
         ref
             .read(accountApiProvider)
@@ -437,8 +513,15 @@ extension _TrackTabActions on _TrackTabState {
         } else {
           items = await engine.searchInPlugin(src.plugin!, src.lxKey!, q);
         }
-        out.addAll(items.map((r) => _TrackEntry(
-            isLocal: false, pluginSource: src.plugin, pluginResult: r)));
+        out.addAll(
+          items.map(
+            (r) => _TrackEntry(
+              isLocal: false,
+              pluginSource: src.plugin,
+              pluginResult: r,
+            ),
+          ),
+        );
         ref.read(accountApiProvider).reportSearch(q, 'online', items.length);
       }
     } catch (e) {
@@ -469,9 +552,7 @@ extension _TrackTabActions on _TrackTabState {
     if (engine == null) {
       return [
         for (final e in out)
-          e.isLocal
-              ? (e.localSong?.path ?? '')
-              : (e.cloudItem?.path ?? ''),
+          e.isLocal ? (e.localSong?.path ?? '') : (e.cloudItem?.path ?? ''),
       ];
     }
     final service = PluginSearchService(engine, _plugins());
@@ -480,7 +561,7 @@ extension _TrackTabActions on _TrackTabState {
         e.isLocal
             ? (e.localSong?.path ?? '')
             : (e.cloudItem?.path ??
-                service.toQueueItem(e.pluginSource!, e.pluginResult!).path),
+                  service.toQueueItem(e.pluginSource!, e.pluginResult!).path),
     ];
   }
 
@@ -524,7 +605,11 @@ extension _TrackTabActions on _TrackTabState {
     final wasFav = ref.read(favoritesProvider).contains(item.path);
     ref.read(favoritesProvider.notifier).toggle(item);
     showXianYuToast(
-        context, wasFav ? tr('已取消收藏：{t}', {'t': item.title}) : tr('已收藏：{t}', {'t': item.title}));
+      context,
+      wasFav
+          ? tr('已取消收藏：{t}', {'t': item.title})
+          : tr('已收藏：{t}', {'t': item.title}),
+    );
   }
 
   QueueItem? _queueItem(int index) {
@@ -535,8 +620,9 @@ extension _TrackTabActions on _TrackTabState {
     if (cloudItem != null) return cloudItem;
     final engine = ref.read(pluginEngineProvider).valueOrNull;
     if (engine == null) return null;
-    return PluginSearchService(engine, _plugins())
-        .toQueueItem(e.pluginSource!, e.pluginResult!);
+    return PluginSearchService(
+      engine,
+      _plugins(),
+    ).toQueueItem(e.pluginSource!, e.pluginResult!);
   }
 }
-

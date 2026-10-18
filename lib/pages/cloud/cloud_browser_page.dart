@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/cloud/cloud_credentials_store.dart';
+import '../../src/cloud/cloud_head_meta.dart';
 import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
@@ -13,6 +14,7 @@ import '../../src/i18n/i18n.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/online_cover.dart';
 
 /// 网盘浏览页：我的网盘目录浏览 + 点播音频文件。
 ///
@@ -57,8 +59,9 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
   }
 
   Future<void> _init() async {
-    final accounts =
-        await CloudCredentialsStore.instance.accountsFor(_provider.id);
+    final accounts = await CloudCredentialsStore.instance.accountsFor(
+      _provider.id,
+    );
     if (!mounted) return;
     if (accounts.isEmpty) {
       setState(() {
@@ -67,8 +70,7 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
       });
       return;
     }
-    final id = widget.accountId ??
-        accounts.first.accountId; // 传入账号已解绑时回退第一个
+    final id = widget.accountId ?? accounts.first.accountId; // 传入账号已解绑时回退第一个
     final valid = accounts.any((a) => a.accountId == id)
         ? id
         : accounts.first.accountId;
@@ -85,7 +87,10 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
   Future<Map<String, String>> _cred() async {
     final id = _accountId;
     if (id != null) {
-      final cred = await CloudCredentialsStore.instance.credFor(_provider.id, id);
+      final cred = await CloudCredentialsStore.instance.credFor(
+        _provider.id,
+        id,
+      );
       if (cred != null) return cred;
     }
     final sole = await CloudCredentialsStore.instance.soleCredFor(_provider.id);
@@ -95,9 +100,7 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
   /// 进入子目录：path 型盘条目携带绝对路径，id 型盘回退用 id。
   void _enter(CloudFile dir) {
     final cur = _stack.last.path;
-    final next = (dir.path != null &&
-            dir.path!.isNotEmpty &&
-            dir.path != cur)
+    final next = (dir.path != null && dir.path!.isNotEmpty && dir.path != cur)
         ? dir.path!
         : dir.id;
     setState(() => _stack.add(_Crumb(next, dir.name)));
@@ -126,7 +129,11 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
     Map<String, String> cred = const {};
     try {
       cred = await _cred();
-      final r = await _provider.listDir(cred, path, cursor: more ? _cursor : null);
+      final r = await _provider.listDir(
+        cred,
+        path,
+        cursor: more ? _cursor : null,
+      );
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
       setState(() {
         _files = more ? [..._files, ...r.files] : r.files;
@@ -134,22 +141,28 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
         _loading = false;
         _appending = false;
       });
+      // 列表期头部元数据预探调度（内嵌封面/时长）：会话内按 path 去重、
+      // 并发 4、失败静默；本地索引命中零网络
+      final metaNotifier = ref.read(cloudHeadMetaProvider.notifier);
+      for (final f in r.files) {
+        if (f.isDir || !f.isAudio) continue;
+        final ctx = _contextFor(f);
+        if (ctx != null) metaNotifier.scheduleCloudContext(ctx);
+      }
     } catch (e) {
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
       final credKeys = cred.keys.toList();
       final rtHead = (cred['refreshToken'] ?? '').toString();
       AppLog.warn(
-          'cloud',
-          '列目录失败 path=$path: ${e is CloudException ? e.message : e}'
-          ' | credKeys=$credKeys rtLen=${rtHead.length} rtHead=${rtHead.length > 8 ? rtHead.substring(0, 8) : rtHead}');
+        'cloud',
+        '列目录失败 path=$path: ${e is CloudException ? e.message : e}'
+            ' | credKeys=$credKeys rtLen=${rtHead.length} rtHead=${rtHead.length > 8 ? rtHead.substring(0, 8) : rtHead}',
+      );
       setState(() {
         _loading = false;
         _appending = false;
       });
-      showXianYuToast(
-        context,
-        e is CloudException ? e.message : tr('目录加载失败'),
-      );
+      showXianYuToast(context, e is CloudException ? e.message : tr('目录加载失败'));
     }
   }
 
@@ -173,6 +186,15 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
     return '${(size / 1024 / 1024 / 1024).toStringAsFixed(2)} GB';
   }
 
+  /// 秒 → m:ss（超 1 小时 h:mm:ss）。
+  String _fmtDuration(int secs) {
+    final h = secs ~/ 3600;
+    final m = (secs % 3600) ~/ 60;
+    final s = secs % 60;
+    final mm = h > 0 ? m.toString().padLeft(2, '0') : '$m';
+    return '${h > 0 ? '$h:' : ''}$mm:${s.toString().padLeft(2, '0')}';
+  }
+
   CloudPlayContext? _contextFor(CloudFile f) {
     for (final a in _accounts) {
       if (a.accountId == _accountId) {
@@ -192,10 +214,9 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
       showXianYuToast(context, tr('网盘账号未绑定或已失效'));
       return;
     }
-    await ref
-        .read(playerProvider.notifier)
-        .playQueue([cloudPlayQueueItem(ctx, artist: _provider.displayName)],
-            startIndex: 0);
+    await ref.read(playerProvider.notifier).playQueue([
+      cloudPlayQueueItem(ctx, artist: _provider.displayName),
+    ], startIndex: 0);
   }
 
   Future<void> _download(CloudFile f) async {
@@ -208,10 +229,13 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
     if (!await dn.requireDownloadDir(context)) return;
     try {
       await dn.downloadCloud(
-          cloudPlayQueueItem(ctx, artist: _provider.displayName));
+        cloudPlayQueueItem(ctx, artist: _provider.displayName),
+      );
       if (!mounted) return;
-      showXianYuToast(context,
-          tr('开始下载：{title}，请留意通知查看下载进度', {'title': f.name}));
+      showXianYuToast(
+        context,
+        tr('开始下载：{title}，请留意通知查看下载进度', {'title': f.name}),
+      );
     } catch (e) {
       if (!mounted) return;
       showXianYuToast(context, e.toString());
@@ -319,8 +343,9 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
                       _stack[i].name,
                       style: TextStyle(
                         fontSize: 13,
-                        fontWeight:
-                            i == _stack.length - 1 ? FontWeight.w600 : null,
+                        fontWeight: i == _stack.length - 1
+                            ? FontWeight.w600
+                            : null,
                         color: i == _stack.length - 1
                             ? scheme.onSurface
                             : scheme.primary,
@@ -355,9 +380,7 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
       ..sort((a, b) => a.name.compareTo(b.name));
     final audio = _files.where((f) => !f.isDir && f.isAudio).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
-    final others = _files
-        .where((f) => !f.isDir && !f.isAudio)
-        .toList()
+    final others = _files.where((f) => !f.isDir && !f.isAudio).toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     final ordered = [...dirs, ...audio, ...others];
 
@@ -375,10 +398,7 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
                     )
                   : Text(
                       tr('加载更多'),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.primary,
-                      ),
+                      style: TextStyle(fontSize: 13, color: scheme.primary),
                     ),
             ),
             onTap: _appending ? null : () => _load(more: true),
@@ -386,20 +406,32 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
         }
         final f = ordered[i];
         final playable = f.isDir || f.isAudio;
+        // 音频条目消费头部元数据预探结果：内嵌封面 + 时长
+        final ctx = f.isAudio ? _contextFor(f) : null;
+        final meta = ctx != null
+            ? ref.watch(cloudHeadMetaProvider)[ctx.path]
+            : null;
         return ListTile(
-          leading: Icon(
-            f.isDir
-                ? Icons.folder_rounded
-                : (f.isAudio
-                    ? Icons.music_note_rounded
-                    : Icons.insert_drive_file_rounded),
-            size: 22,
-            color: f.isDir
-                ? scheme.primary
-                : (f.isAudio
-                    ? scheme.primary
-                    : scheme.onSurfaceVariant.withValues(alpha: 0.4)),
-          ),
+          leading: f.isAudio && (meta?.coverPath?.isNotEmpty == true)
+              ? OnlineCover(
+                  url: null,
+                  filePath: meta!.coverPath,
+                  size: 40,
+                  radius: 6,
+                )
+              : Icon(
+                  f.isDir
+                      ? Icons.folder_rounded
+                      : (f.isAudio
+                            ? Icons.music_note_rounded
+                            : Icons.insert_drive_file_rounded),
+                  size: 22,
+                  color: f.isDir
+                      ? scheme.primary
+                      : (f.isAudio
+                            ? scheme.primary
+                            : scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                ),
           title: Text(
             f.name,
             maxLines: 1,
@@ -411,10 +443,14 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
                   : scheme.onSurfaceVariant.withValues(alpha: 0.45),
             ),
           ),
-          subtitle: f.isDir || f.size <= 0
+          subtitle: f.isDir || (f.size <= 0 && meta?.durationSecs == null)
               ? null
               : Text(
-                  _sizeText(f.size),
+                  [
+                    if (meta?.durationSecs != null)
+                      _fmtDuration(meta!.durationSecs!),
+                    if (f.size > 0) _sizeText(f.size),
+                  ].join(' · '),
                   style: TextStyle(
                     fontSize: 11,
                     color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
