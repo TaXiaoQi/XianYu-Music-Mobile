@@ -278,7 +278,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("目录列表请求失败"));
+        return Err(biz_err(format!("目录列表请求失败 (HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
     check_code(&j, "目录列表请求失败")?;
@@ -481,15 +481,16 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("直链获取失败"));
+        return Err(biz_err(format!("直链获取失败 (HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    if j.get("code").and_then(Value::as_i64) != Some(0) {
-        return Err(biz_err("直链获取失败"));
-    }
+    check_code(&j, "直链获取失败")?;
     let dl_url = extract_download_url(j.get("data").unwrap_or(&Value::Null));
     if dl_url.is_empty() {
-        return Err(biz_err("直链获取失败"));
+        return Err(biz_err(format!(
+            "直链获取失败（未返回下载地址，code={})",
+            j.get("code").and_then(Value::as_i64).unwrap_or(-1)
+        )));
     }
     let name = file.get("name").and_then(Value::as_str).unwrap_or("");
     let size = file.get("size").and_then(Value::as_i64);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/account_api.dart';
+import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../sync/playlist_song_sync_state.dart';
 import '../widgets/app_toast.dart';
@@ -115,29 +116,50 @@ Future<void> confirmRemovePlaylist(
   );
   if (scope == null || !context.mounted) return;
   final manager = ref.read(playlistManagerProvider.notifier);
+  AppLog.debug('playlist', '删除歌单 scope=$scope cloudId=$cloudId');
   switch (scope) {
     case 'local':
       // 记录下载跳过，防止下次同步 diff 把云端歌单重新 create 回来
       await PlaylistSongSyncState.addDownloadSkipPlaylistIds([cloudId]);
       await manager.remove(playlist.id);
     case 'all':
-      await _deleteCloud(context, ref, cloudId);
-      await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
+      // 本地先删、UI 立即生效：云端删除若挂死（底层 fetchTimeoutMs 未生效时
+      // 请求会无限等待），原实现整条 await 链停在半路，本地删除走不到，
+      // 用户感知为"选了删除全部没反应"。云端删失败时保留下载跳过记录，
+      // 防止下次同步 diff 把云端歌单重新拉回来。
       await manager.remove(playlist.id);
+      // 本地已删完，context 仍挂在此页；_deleteCloud 内部对 toast 有 mounted 守卫
+      // ignore: use_build_context_synchronously
+      final cloudOk = await _deleteCloud(context, ref, cloudId);
+      AppLog.debug('playlist', '删除歌单(all) 云端删除 ok=$cloudOk');
+      if (cloudOk) {
+        await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
+      }
     default:
-      await _deleteCloud(context, ref, cloudId);
-      await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
-      await manager.detachCloud(playlist.id);
+      // 仅保留本地：云端删除失败时不解除绑定——detach 后上传同步会把它
+      // 当新歌单重新传回云端，删除等于没发生；保留 cloudId 等用户重试。
+      if (await _deleteCloud(context, ref, cloudId)) {
+        await PlaylistSongSyncState.removeDownloadSkipPlaylistIds([cloudId]);
+        await manager.detachCloud(playlist.id);
+      }
   }
 }
 
-Future<void> _deleteCloud(
+/// 云端歌单删除。返回是否成功；Dart 侧硬超时兜底——底层超时失效导致请求
+/// 挂死时，20s 后放行失败路径，不再阻塞调用方收尾。
+Future<bool> _deleteCloud(
     BuildContext context, WidgetRef ref, String cloudId) async {
   try {
-    await ref.read(accountApiProvider).deleteCloudPlaylist(cloudId);
-  } catch (_) {
+    await ref
+        .read(accountApiProvider)
+        .deleteCloudPlaylist(cloudId)
+        .timeout(const Duration(seconds: 20));
+    return true;
+  } catch (e) {
+    AppLog.warn('playlist', '云端歌单删除失败: $e');
     if (context.mounted) {
       showXianYuToast(context, tr('云端删除失败，请稍后重试'));
     }
+    return false;
   }
 }

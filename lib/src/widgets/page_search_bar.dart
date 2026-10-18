@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../i18n/i18n.dart';
+import '../cloud/cloud_credentials_store.dart';
 import '../plugin/plugin_provider.dart';
 import '../theme/theme_icon.dart';
 import 'glass_settings.dart';
@@ -40,6 +41,8 @@ class PageSearchBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    final hasPlugin = ref.watch(pluginManagerProvider
+        .select((s) => s.sources.any((p) => p.enabled)));
     return PressableScale(
       pressScale: 0.92,
       child: Material(
@@ -67,31 +70,44 @@ class PageSearchBar extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (onRecognize != null &&
-                    ref.watch(pluginManagerProvider
-                        .select((s) => s.sources.any((p) => p.enabled)))) ...[
-                  const SizedBox(width: 8),
-                  PressableScale(
-                    pressScale: 0.88,
-                    child: GestureDetector(
-                      onTap: onRecognize,
-                      behavior: HitTestBehavior.opaque,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 5),
-                        decoration: BoxDecoration(
-                          color:
-                              const Color(0xFFEC4141).withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: themeSlotIcon(ref, 'entry.mic',
-                            fallback: Icons.mic_none,
-                            size: 17,
-                            color: const Color(0xFFEC4141)),
-                      ),
-                    ),
+                // 识曲入口：有启用插件或已绑定网盘任一即显示——
+                // 识别结果可经插件在线匹配，也可在网盘曲库内命中
+                if (onRecognize != null)
+                  ListenableBuilder(
+                    listenable: CloudCredentialsStore.instance,
+                    builder: (context, _) {
+                      if (!(hasPlugin ||
+                          CloudCredentialsStore.instance.hasAnyBound)) {
+                        return const SizedBox.shrink();
+                      }
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(width: 8),
+                          PressableScale(
+                            pressScale: 0.88,
+                            child: GestureDetector(
+                              onTap: onRecognize,
+                              behavior: HitTestBehavior.opaque,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEC4141)
+                                      .withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: themeSlotIcon(ref, 'entry.mic',
+                                    fallback: Icons.mic_none,
+                                    size: 17,
+                                    color: const Color(0xFFEC4141)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
                   ),
-                ],
               ],
             ),
           ),

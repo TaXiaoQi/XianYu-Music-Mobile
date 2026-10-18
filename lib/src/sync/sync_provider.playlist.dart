@@ -243,7 +243,9 @@ class PlaylistSyncService {
     final keepAll = await PlaylistSongSyncState.allCloudKeepSongs();
     final pendingAll = await PlaylistSongSyncState.allPendingDeletedSongs();
     final target = SyncOpsTarget(
-      playlists: working,
+      // loadAll 在无本地歌单时返回 const []，applySyncOps 会 add 新建歌单，
+      // 必须拷贝为可增长列表，否则 "Cannot add to an unmodifiable list"
+      playlists: List.of(working),
       resolveSong: (payload) =>
           _songFromSyncPayload(payload, index.byPath, index.byMeta),
       isSongKept: (cloudId, path) =>
