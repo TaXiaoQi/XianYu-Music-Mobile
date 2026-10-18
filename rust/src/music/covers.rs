@@ -646,3 +646,35 @@ pub fn save_artist_avatar_auto(bytes: &[u8], covers_dir: &std::path::Path) -> Op
 		None
 	}
 }
+
+/// 云盘曲目内嵌封面落盘（网盘头部预探专用，对齐桌面 save_embedded_thumb）：
+/// 按图内容指纹共享缓存（同名即同图，跨曲目/跨会话复用），返回绝对路径。
+/// 直接存原图字节（内嵌封面一般 ≤1MB，无需缩放，Image.file 自行解码）。
+pub fn save_embedded_cover_from_bytes(bytes: &[u8], covers_dir: &std::path::Path) -> Option<String> {
+	let ext = if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+		"jpg"
+	} else if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+		"png"
+	} else if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
+		"webp"
+	} else if bytes.starts_with(b"GIF8") {
+		"gif"
+	} else {
+		return None;
+	};
+
+	let sha256_hex = generate_content_hash(bytes);
+	let target_path = covers_dir.join(format!("cloud-embed-{}.{}", sha256_hex, ext));
+
+	if !covers_dir.exists() {
+		if std::fs::create_dir_all(covers_dir).is_err() {
+			return None;
+		}
+	}
+
+	if let Some(path_str) = persist_bytes_atomically(bytes, &target_path) {
+		Some(normalize_path(&path_str))
+	} else {
+		None
+	}
+}

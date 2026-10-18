@@ -2487,3 +2487,45 @@ pub async fn cloud_proxy(req_json: String) -> Result<String, String> {
         .map_err(|(_, m)| m)
         .and_then(|v| serde_json::to_string(&v).map_err(|e| e.to_string()))
 }
+
+// =========================================================================
+// 网盘内嵌元数据头部预探（自桌面端 cloud_meta 移植：列表期封面/歌词/时长预取）
+// =========================================================================
+
+/// 读取本地元数据索引（data_dir/cloud_meta_index.json）。
+/// 返回 {cloudPath: {cloudPath,url?,lyricsRaw?,coverPath?,durationSecs?}} JSON，
+/// 无索引返回 "{}"。
+pub fn cloud_meta_load_index(data_dir: String) -> Result<String, String> {
+    let map = crate::cloud::cloud_meta::load_index(std::path::Path::new(&data_dir));
+    serde_json::to_string(&map).map_err(|e| format!("索引序列化失败: {e}"))
+}
+
+/// 头部元数据预探：Range 拉头 2MB 渐进解析内嵌封面/歌词/时长，成功返回
+/// payload JSON（coverPath 为落盘封面绝对路径），失败 Err(简短原因)。
+/// 索引命中时不碰网络直接返回；封面/索引由本端落盘。
+///
+/// - `cache_root`：封面缓存根目录（调用方传 coverCacheRoot，封面落在其
+///   covers 子目录，与本地曲库封面同一缓存体系）
+/// - `headers_json`：直链请求头（JSON object，空串走默认 UA）
+/// - `duration_hint_secs`：已知时长提示（播放器实测值，0 表示未知）
+pub async fn cloud_meta_probe_head(
+    data_dir: String,
+    cache_root: String,
+    url: String,
+    headers_json: String,
+    cloud_path: String,
+    duration_hint_secs: i64,
+) -> Result<String, String> {
+    let headers = crate::cloud::cloud_meta::parse_headers_json(&headers_json)?;
+    let covers_dir = crate::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
+    let payload = crate::cloud::cloud_meta::probe_head(
+        std::path::Path::new(&data_dir),
+        &covers_dir,
+        &url,
+        headers.as_ref(),
+        &cloud_path,
+        duration_hint_secs.max(0) as u32,
+    )
+    .await?;
+    serde_json::to_string(&payload).map_err(|e| format!("payload 序列化失败: {e}"))
+}

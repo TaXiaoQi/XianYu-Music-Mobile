@@ -9,6 +9,7 @@
 
 pub mod aliyun;
 pub mod baidu;
+pub mod cloud_meta;
 pub mod ecloud189;
 pub mod http;
 pub mod lanzou;

@@ -1880,6 +1880,36 @@ Future<double> audioProbeDuration({required String path}) =>
 Future<String> cloudProxy({required String reqJson}) =>
     RustLib.instance.api.crateApiCloudProxy(reqJson: reqJson);
 
+/// 读取本地元数据索引（data_dir/cloud_meta_index.json）。
+/// 返回 {cloudPath: {cloudPath,url?,lyricsRaw?,coverPath?,durationSecs?}} JSON，
+/// 无索引返回 "{}"。
+Future<String> cloudMetaLoadIndex({required String dataDir}) =>
+    RustLib.instance.api.crateApiCloudMetaLoadIndex(dataDir: dataDir);
+
+/// 头部元数据预探：Range 拉头 2MB 渐进解析内嵌封面/歌词/时长，成功返回
+/// payload JSON（coverPath 为落盘封面绝对路径），失败 Err(简短原因)。
+/// 索引命中时不碰网络直接返回；封面/索引由本端落盘。
+///
+/// - `cache_root`：封面缓存根目录（调用方传 coverCacheRoot，封面落在其
+///   covers 子目录，与本地曲库封面同一缓存体系）
+/// - `headers_json`：直链请求头（JSON object，空串走默认 UA）
+/// - `duration_hint_secs`：已知时长提示（播放器实测值，0 表示未知）
+Future<String> cloudMetaProbeHead({
+  required String dataDir,
+  required String cacheRoot,
+  required String url,
+  required String headersJson,
+  required String cloudPath,
+  required PlatformInt64 durationHintSecs,
+}) => RustLib.instance.api.crateApiCloudMetaProbeHead(
+  dataDir: dataDir,
+  cacheRoot: cacheRoot,
+  url: url,
+  headersJson: headersJson,
+  cloudPath: cloudPath,
+  durationHintSecs: durationHintSecs,
+);
+
 /// 已保存远程源的表单覆盖项（编辑时密码留空则沿用存储密码）。
 class WebdavSourceOverrides {
   final String? baseUrl;
