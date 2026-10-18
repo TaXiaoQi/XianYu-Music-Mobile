@@ -59,13 +59,11 @@ class CloudNameParts {
   const CloudNameParts({required this.title, this.artist});
 }
 
-/// 文件名 → {artist, title}。分隔符优先级：' - ' > '–' > '-' > '_'；
-/// 两段默认段1=歌手、段2=歌名；三段以上余段并回歌名。
-/// [swapIfArtist] 返回 true 时交换两段（段2 命中歌手名单的场景，日推用）。
-CloudNameParts parseCloudFileName(
-  String raw, {
-  bool Function(String seg)? swapIfArtist,
-}) {
+/// 文件名 → {artist, title}。分隔符优先级：' - ' > '–' > '-' > '_'。
+/// 网盘音频文件名拆歌名/歌手：主流命名是「歌名 - 歌手」（天天-陶喆、
+/// 7 Years-Lukas Graham），两段默认段1=歌名、段2=歌手；三段以上余段
+/// 并回歌手。单段整体作歌名。
+CloudNameParts parseCloudFileName(String raw) {
   final name = cleanCloudFileName(raw);
   if (name.isEmpty) return CloudNameParts(title: raw);
   List<String> segments;
@@ -85,8 +83,5 @@ CloudNameParts parseCloudFileName(
   final s2 = segments.sublist(1).join(' - ').trim();
   if (s1.isEmpty) return CloudNameParts(title: s2);
   if (s2.isEmpty) return CloudNameParts(title: s1);
-  if (swapIfArtist != null && swapIfArtist(s2)) {
-    return CloudNameParts(title: s1, artist: s2);
-  }
-  return CloudNameParts(title: s2, artist: s1);
+  return CloudNameParts(title: s1, artist: s2);
 }
