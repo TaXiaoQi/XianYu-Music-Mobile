@@ -50,7 +50,8 @@ class HttpLoginGate {
 
   Duration _waitDuration(String providerId, DateTime last) {
     final fails = _failCount[providerId] ?? 0;
-    final shift = fails > 4 ? 4 : fails; // 30s * 2^n，封顶 10 分钟
+    // 首次失败不退避（手滑输错只等最小间隔）；从第二次失败开始翻倍，封顶 10 分钟
+    final shift = fails <= 1 ? 0 : (fails - 1 > 4 ? 4 : fails - 1);
     var backoff = _minInterval * (1 << shift);
     if (backoff > _maxBackoff) backoff = _maxBackoff;
     final elapsed = DateTime.now().difference(last);
