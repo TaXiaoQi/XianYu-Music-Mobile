@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -132,21 +132,28 @@ class PluginListState {
   final bool loading;
   final String? error;
 
+  /// 插件 id 别名表（旧 id → 现行 id）：插件更新会换 sha256 id，收藏/
+  /// 播放队列里存的旧 pluginId 沿该表换算后再匹配（见 updateScript）
+  final Map<String, String> idAliases;
+
   const PluginListState({
     this.sources = const [],
     this.loading = false,
     this.error,
+    this.idAliases = const {},
   });
 
   PluginListState copyWith({
     List<PluginSource>? sources,
     bool? loading,
     String? error,
+    Map<String, String>? idAliases,
   }) {
     return PluginListState(
       sources: sources ?? this.sources,
       loading: loading ?? this.loading,
       error: error,
+      idAliases: idAliases ?? this.idAliases,
     );
   }
 }
@@ -208,7 +215,8 @@ class PluginManager extends StateNotifier<PluginListState> {
   Future<void> refresh() async {
     final engine = await _getEngine();
     final sources = await engine.store.loadSources();
-    state = PluginListState(sources: sources);
+    final idAliases = await engine.store.loadAliases();
+    state = PluginListState(sources: sources, idAliases: idAliases);
   }
 
   Future<PluginSource> installFromScript(
@@ -293,7 +301,7 @@ class PluginManager extends StateNotifier<PluginListState> {
 
     final list = [...state.sources, source];
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    state = state.copyWith(sources: list);
     await PluginSyncState.clearTombstones([source.id]);
     return source;
   }
@@ -431,7 +439,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       return s;
     }).toList();
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    state = state.copyWith(sources: list);
 
     final source = list.firstWhere((s) => s.id == id);
     if (!source.enabled) {
@@ -450,7 +458,7 @@ class PluginManager extends StateNotifier<PluginListState> {
         .map((s) => s.id == id ? s.copyWith(updateAvailable: value) : s)
         .toList();
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    state = state.copyWith(sources: list);
   }
 
   Future<void> toggleAll(bool enabled) async {
@@ -461,7 +469,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     final list =
         state.sources.map((s) => s.copyWith(enabled: enabled)).toList();
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    state = state.copyWith(sources: list);
     for (final s in changed) {
       if (!enabled) {
         await engine.destroy(s.id);
@@ -477,7 +485,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     await engine.store.deleteScript(id);
     final list = state.sources.where((s) => s.id != id).toList();
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    state = state.copyWith(sources: list);
     engine.bakaManager.clearCache(id);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
@@ -495,7 +503,7 @@ class PluginManager extends StateNotifier<PluginListState> {
         .toList();
     final list = sortPluginSources(remapped);
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    state = state.copyWith(sources: list);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
@@ -521,7 +529,13 @@ class PluginManager extends StateNotifier<PluginListState> {
     await engine.store.deleteScript(oldId);
     final list = state.sources.where((s) => s.id != oldId).toList();
     await engine.store.saveSources(list);
-    state = PluginListState(sources: list);
+    // id 变更入别名表：收藏/播放队列存的旧 pluginId 仍可换算到现行插件
+    //（来源标签、播放解析都依赖 id 匹配）；链尾若也是旧键则压缩成直达
+    final aliases = Map<String, String>.of(state.idAliases)
+      ..removeWhere((_, v) => v == oldId)
+      ..[oldId] = newSource.id;
+    await engine.store.saveAliases(aliases);
+    state = state.copyWith(sources: list, idAliases: aliases);
     engine.bakaManager.clearCache(oldId);
     if (newSource.id != oldId) engine.bakaManager.clearCache(newSource.id);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});

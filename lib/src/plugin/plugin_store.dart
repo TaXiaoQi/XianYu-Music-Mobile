@@ -9,6 +9,7 @@ import 'plugin_models.dart';
 
 class PluginStore {
   static const _sourcesKey = 'xianyu_plugin_sources_v4';
+  static const _aliasesKey = 'xianyu_plugin_id_aliases_v1';
 
   final String dataDir;
 
@@ -34,6 +35,26 @@ class PluginStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
         _sourcesKey, jsonEncode(sources.map((e) => e.toJson()).toList()));
+  }
+
+  /// 插件 id 别名表（旧 id → 现行 id）：插件更新即换 sha256 id（脚本内容
+  /// 哈希），收藏/播放队列里存的旧 pluginId 靠这张表换算，避免来源标签
+  /// 降级「在线」、播放解析走失效分支
+  Future<Map<String, String>> loadAliases() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_aliasesKey);
+    if (raw == null || raw.isEmpty) return const {};
+    try {
+      final j = jsonDecode(raw) as Map<String, dynamic>;
+      return j.map((k, v) => MapEntry(k, v.toString()));
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> saveAliases(Map<String, String> aliases) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_aliasesKey, jsonEncode(aliases));
   }
 
   Future<String> saveScript(String pluginId, String script) async {

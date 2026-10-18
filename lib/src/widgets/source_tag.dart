@@ -180,10 +180,19 @@ String songSourceLabel(
   final pid = pluginId ?? _pluginIdFromJson(onlineSongJson);
   if (pid != null && pid.isNotEmpty) {
     final pluginState = ref.watch(pluginManagerProvider);
-    for (final p in pluginState.sources) {
-      if (p.id == pid) {
-        return showReal ? resolveRealSourceName(p.name) : p.name;
+    // 插件更新即换 sha256 id（updateScript 销毁旧 id 并记录别名），
+    // 收藏/队列行存的旧 pluginId 沿别名链换算后再匹配，避免标签
+    // 降级「在线」；限深防环
+    var effId = pid;
+    for (var i = 0; i < 8; i++) {
+      for (final p in pluginState.sources) {
+        if (p.id == effId) {
+          return showReal ? resolveRealSourceName(p.name) : p.name;
+        }
       }
+      final next = pluginState.idAliases[effId];
+      if (next == null || next.isEmpty) break;
+      effId = next;
     }
   }
 

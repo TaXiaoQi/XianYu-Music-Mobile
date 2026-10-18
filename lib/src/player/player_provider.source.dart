@@ -553,6 +553,17 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         musicInfo.remove('url');
       }
       var source = sources.where((s) => s.id == pluginId).toList();
+      if (source.isEmpty) {
+        // 插件更新换 sha256 id 后行内仍是旧 pluginId：沿别名表换算
+        // 再匹配，免走启发式修复（行缺 source 键时启发式必然失败）
+        final aliases = await engine.store.loadAliases();
+        var cur = pluginId;
+        for (var i = 0; i < 8 && aliases[cur] != null; i++) {
+          cur = aliases[cur]!;
+          source = sources.where((s) => s.id == cur).toList();
+          if (source.isNotEmpty) break;
+        }
+      }
       var labelOverride = _songPlatformLabel(format, sourceKey, musicInfo);
       if (labelOverride.trim().isEmpty) {
         labelOverride = await _platformLabelFromPluginMeta(engine, pluginId);
