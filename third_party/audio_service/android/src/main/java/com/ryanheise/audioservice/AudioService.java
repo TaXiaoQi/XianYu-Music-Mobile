@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.net.Uri;
@@ -18,6 +19,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.support.v4.media.MediaBrowserCompat;
 import android.support.v4.media.MediaDescriptionCompat;
 import android.support.v4.media.MediaMetadataCompat;
@@ -62,6 +64,8 @@ public class AudioService extends MediaBrowserServiceCompat {
     private static final String SHARED_PREFERENCES_NAME = "audio_service_preferences";
 
     private static final int NOTIFICATION_ID = 1124;
+    // Android 16 Live Updates 实时活动通知（ColorOS 16 流体云胶囊载体），与媒体通知并存
+    private static final int LIVE_UPDATE_NOTIFICATION_ID = 1125;
     private static final int REQUEST_CONTENT_INTENT = 1000;
     public static final String NOTIFICATION_CLICK_ACTION = "com.ryanheise.audioservice.NOTIFICATION_CLICK";
     public static final String CUSTOM_ACTION_STOP = "com.ryanheise.audioservice.action.STOP";
@@ -284,6 +288,15 @@ public class AudioService extends MediaBrowserServiceCompat {
     private int repeatMode;
     private int shuffleMode;
     private boolean notificationCreated;
+    // 实时活动通知是否在架上（取消是幂等的，用标记避免重复 cancel IPC）
+    private boolean liveUpdatePosted;
+    // 进度条重发节流锚点（elapsedRealtime 毫秒），播放中约 1Hz 重发推进进度
+    private long lastLiveUpdatePostMs;
+    // 实时活动进度锚点：setState 时快照（elapsedRealtime 基准，自洽可推算；
+    // Dart 传入的 updateTime 是墙钟基准，跨时钟换算不可靠故不直接使用）
+    private long liveUpdatePosMs;
+    private long liveUpdateAnchorMs;
+    private float liveUpdateSpeed = 1f;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private VolumeProviderCompat volumeProvider;
 
@@ -310,6 +323,8 @@ public class AudioService extends MediaBrowserServiceCompat {
         repeatMode = 0;
         shuffleMode = 0;
         notificationCreated = false;
+        liveUpdatePosted = false;
+        lastLiveUpdatePostMs = 0;
         playing = false;
         processingState = AudioProcessingState.idle;
         mediaSession = new MediaSessionCompat(this, "media-session");
@@ -364,6 +379,8 @@ public class AudioService extends MediaBrowserServiceCompat {
     public void onDestroy() {
         cancelTaskRemovedKill();
         super.onDestroy();
+        stopLiveUpdateTicker();
+        cancelLiveUpdateNotification();
         if (listener != null) {
             listener.onDestroy();
             listener = null;
@@ -528,6 +545,9 @@ public class AudioService extends MediaBrowserServiceCompat {
         AudioProcessingState oldProcessingState = this.processingState;
         this.processingState = processingState;
         this.playing = playing;
+        this.liveUpdatePosMs = position;
+        this.liveUpdateAnchorMs = SystemClock.elapsedRealtime();
+        this.liveUpdateSpeed = speed;
         this.repeatMode = repeatMode;
         this.shuffleMode = shuffleMode;
 
@@ -754,6 +774,142 @@ public class AudioService extends MediaBrowserServiceCompat {
         }
     }
 
+    // ================= Android 16 Live Updates（ColorOS 16 流体云）=================
+    // ColorOS 16 流体胶囊的第三方官方通道是原生 Live Updates API，而媒体样式
+    // MediaStyle 不在推广资格样式清单内（标准/BigText/Call/Progress/Metric 五种），
+    // 媒体通知本身上不了岛。故播放期间并行发一条 ProgressStyle 实时活动通知：
+    // 标题/正文/封面与媒体通知一致，进度条按已播/未播两段着色。仅 API 36+ 且
+    // oplus 系 ROM（OPPO/一加/realme）发送——其他平台不会把实时活动做成胶囊，
+    // 只会在通知抽屉多出一条重复的 ongoing 通知；用户在系统设置关闭「推广通知」
+    // 时同样跳过（canPostPromotedNotifications）。
+
+    private static boolean isOplusRom() {
+        String manufacturer = Build.MANUFACTURER;
+        if (manufacturer == null) return false;
+        switch (manufacturer.toLowerCase(java.util.Locale.ROOT)) {
+            case "oppo":
+            case "oneplus":
+            case "realme":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // 推广请求等价载荷：等价于 NotificationCompat.Builder#setRequestPromotedOngoing(true)。
+    // 用字面量而非 Notification.EXTRA_REQUEST_PROMOTED_ONGOING 符号：该 extra 于
+    // API 36.1 引入，而 Flutter 工具链会把插件模块 compileSdk 压到 36，符号解析不到；
+    // 值取自 API 37 平台 jar 的常量池（android.requestPromotedOngoing），运行时一致
+    private static Bundle promotedExtras() {
+        Bundle extras = new Bundle();
+        extras.putBoolean("android.requestPromotedOngoing", true);
+        return extras;
+    }
+
+    void updateLiveUpdateNotification(boolean force) {
+        if (Build.VERSION.SDK_INT < 36) return;
+        if (!playing || mediaMetadata == null
+                || processingState == AudioProcessingState.idle
+                || processingState == AudioProcessingState.error) {
+            cancelLiveUpdateNotification();
+            return;
+        }
+        if (!isOplusRom()) return;
+        NotificationManager notificationManager = getNotificationManager();
+        if (!notificationManager.canPostPromotedNotifications()) return;
+        long now = SystemClock.elapsedRealtime();
+        if (!force && now - lastLiveUpdatePostMs < 900) return;
+        lastLiveUpdatePostMs = now;
+        notificationManager.notify(LIVE_UPDATE_NOTIFICATION_ID, buildLiveUpdateNotification());
+        liveUpdatePosted = true;
+        // 每次发卡后续期下一跳：setMetadata 里的 removeCallbacksAndMessages(null)
+        // 会清掉待发的 ticker，靠这里的续期让进度循环在曲目切换后自愈
+        handler.removeCallbacks(liveUpdateTicker);
+        handler.postDelayed(liveUpdateTicker, 1000);
+    }
+
+    private void cancelLiveUpdateNotification() {
+        if (!liveUpdatePosted) return;
+        liveUpdatePosted = false;
+        getNotificationManager().cancel(LIVE_UPDATE_NOTIFICATION_ID);
+    }
+
+    private void startLiveUpdateTicker() {
+        // 立即出卡，随后由 updateLiveUpdateNotification 内部按 1Hz 续期
+        handler.removeCallbacks(liveUpdateTicker);
+        handler.post(liveUpdateTicker);
+    }
+
+    private void stopLiveUpdateTicker() {
+        handler.removeCallbacks(liveUpdateTicker);
+    }
+
+    private final Runnable liveUpdateTicker = new Runnable() {
+        @Override
+        public void run() {
+            if (!playing) return;
+            updateLiveUpdateNotification(true);
+        }
+    };
+
+    @RequiresApi(36)
+    private Notification buildLiveUpdateNotification() {
+        // 有效进度：从 setState 锚点按 (position, speed, anchor) 推算实时位置，
+        // 让两次重发之间进度条起点尽量连续
+        long durationMs = mediaMetadata.getLong(MediaMetadataCompat.METADATA_KEY_DURATION);
+        if (durationMs <= 0) durationMs = 1;
+        long posMs = liveUpdatePosMs;
+        if (playing) {
+            posMs += (long) ((SystemClock.elapsedRealtime() - liveUpdateAnchorMs)
+                    * liveUpdateSpeed);
+        }
+        if (posMs < 0) posMs = 0;
+        if (posMs > durationMs) posMs = durationMs;
+
+        Notification.Builder builder = new Notification.Builder(this, notificationChannelId)
+                .setSmallIcon(getResourceId(config.androidNotificationIcon))
+                .setShowWhen(false)
+                // 推广资格要件：ongoing、contentTitle、无 RemoteViews、
+                // 不 colorized、渠道重要性非 MIN（沿用媒体通知的 LOW 渠道）。
+                // 推广请求走 EXTRA_REQUEST_PROMOTED_ONGOING：框架 Builder 未暴露
+                // setRequestPromotedOngoing（android-37.0 jar 落后于 API 索引）
+                .setOngoing(true)
+                .setExtras(promotedExtras())
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setDeleteIntent(buildDeletePendingIntent())
+                .setContentIntent(contentIntent);
+        MediaDescriptionCompat description = mediaMetadata.getDescription();
+        if (description.getTitle() != null)
+            builder.setContentTitle(description.getTitle());
+        if (description.getSubtitle() != null)
+            builder.setContentText(description.getSubtitle());
+        synchronized (this) {
+            if (artBitmap != null)
+                builder.setLargeIcon(artBitmap);
+        }
+        // 与媒体通知一致的动作键（自定义动作只进 PlaybackState，不上通知条）
+        for (MediaControl control : controls) {
+            if (control.customAction != null) continue;
+            PendingIntent actionIntent = buildMediaButtonPendingIntent(control.actionCode);
+            if (actionIntent == null) continue;
+            builder.addAction(new Notification.Action.Builder(
+                    Icon.createWithResource(this, getResourceId(control.icon)),
+                    control.label, actionIntent).build());
+        }
+        Notification.ProgressStyle style = new Notification.ProgressStyle()
+                .setStyledByProgress(false)
+                .setProgress((int) posMs)
+                .setProgressTrackerIcon(Icon.createWithResource(this,
+                        getResourceId(config.androidNotificationIcon)))
+                .setProgressSegments(Arrays.asList(
+                        new Notification.ProgressStyle.Segment((int) posMs).setColor(0xFF9E9E9E),
+                        new Notification.ProgressStyle.Segment((int) (durationMs - posMs))
+                                .setColor(0xFF424242)));
+        builder.setStyle(style);
+        return builder.build();
+    }
+    // ==================== Android 16 Live Updates 结束 ====================
+
     private void enterPlayingState() {
         ContextCompat.startForegroundService(this, new Intent(AudioService.this, AudioService.class));
         if (!mediaSession.isActive())
@@ -762,9 +918,14 @@ public class AudioService extends MediaBrowserServiceCompat {
         acquireWakeLock();
         mediaSession.setSessionActivity(contentIntent);
         internalStartForeground();
+        // 播放即发起实时活动（ColorOS 16 流体云胶囊），暂停即撤卡——
+        // 实时活动只代表「正在进行」的活动，暂停后继续挂胶囊不符合规范
+        startLiveUpdateTicker();
     }
 
     private void exitPlayingState() {
+        stopLiveUpdateTicker();
+        cancelLiveUpdateNotification();
         if (config.androidStopForegroundOnPause) {
             exitForegroundState();
         }
@@ -799,6 +960,8 @@ public class AudioService extends MediaBrowserServiceCompat {
         if (mediaSession.isActive()) {
             mediaSession.setActive(false);
         }
+        stopLiveUpdateTicker();
+        cancelLiveUpdateNotification();
         // Force cancellation of the notification
         getNotificationManager().cancel(NOTIFICATION_ID);
     }
@@ -856,6 +1019,8 @@ public class AudioService extends MediaBrowserServiceCompat {
         mediaSession.setMetadata(mediaMetadata);
         handler.removeCallbacksAndMessages(null);
         handler.post(this::updateNotification);
+        // 曲目切换时立即换标题/封面（force 绕过 1Hz 节流）；暂停中会走取消分支，无害
+        handler.post(() -> updateLiveUpdateNotification(true));
     }
 
     private MediaMetadataCompat putArtToMetadata(MediaMetadataCompat mediaMetadata) {

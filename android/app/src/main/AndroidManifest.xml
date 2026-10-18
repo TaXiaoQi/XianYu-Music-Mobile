@@ -31,6 +31,9 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <!-- Android 13+：媒体控制通知需运行时申请通知权限，否则系统静默拦截 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Android 16+ Live Updates 推广通知（ColorOS 16 流体云胶囊的官方第三方通道）：
+         非运行时权限，仅 oplus 系 ROM + API 36+ 生效，其余平台忽略 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
     <!-- 听歌识曲：麦克风录音 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- 扫码登录：相机扫码（桌面端二维码） -->

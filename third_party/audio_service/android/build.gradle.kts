@@ -41,7 +41,10 @@ tasks.withType<JavaCompile>().configureEach {
 
 android {
     namespace = "com.ryanheise.audioservice"
-    compileSdk = 35
+    // 37：Android 16 Live Updates（ColorOS 16 流体云胶囊）用到 API 36 新通知 API
+    //（ProgressStyle / EXTRA_REQUEST_PROMOTED_ONGOING 等），需 36+ 才能编译；
+    // 运行时行为按 Build.VERSION.SDK_INT >= 36 门控，minSdk 19 不受影响
+    compileSdk = 37
 
     defaultConfig {
         minSdk = 19
