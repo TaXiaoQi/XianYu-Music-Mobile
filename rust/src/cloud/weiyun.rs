@@ -455,15 +455,22 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let file = req.param_obj("file");
+    // 微云按 file_id + pdir_key 寻址：缺 pdir_key 报 Invalid dirkey
+    // （list_dir 已把父目录 dir_key 写进 parentId；根目录为空则不带）。
+    let mut file_entry = json!({
+        "file_id": jstr(file.get("id")),
+        "filename": jstr(file.get("name")),
+    });
+    let pdir_key = jstr(file.get("parentId"));
+    if !pdir_key.is_empty() {
+        file_entry["pdir_key"] = json!(pdir_key);
+    }
     let rsp = goapi(
         "weiyunQdiskClient",
         "DiskFileBatchDownload",
         2402,
         json!({
-            "file_list": [{
-                "file_id": jstr(file.get("id")),
-                "filename": jstr(file.get("name")),
-            }],
+            "file_list": [file_entry],
             "download_type": 0,
         }),
         &req.cred,

@@ -56,7 +56,243 @@ fn h_headers(cookie: &str) -> Vec<(String, String)> {
 
 /// 直链播放请求头（Dart 固定 {'User-Agent': _ua}）。
 fn direct_link_headers() -> Value {
-    json!({ "User-Agent": UA })
+    // 蓝奏直链与解析时的 UA 绑定：/file/ 链接须带解析会话同一 PC UA，
+    // 否则返回 200 OK 的 ~4KB HTML 挑战页（封面/歌词/时长/播放全挂）。
+    json!({ "User-Agent": PC_UA })
+}
+
+/// acw_sc__v2 位置重排表 + 异或 mask（直链域 lanrar.com 等套了阿里云
+/// WAF：无 cookie 请求一律 200 + ~4.3KB 混淆 JS 挑战页；页面算法固定——
+/// 40 位 hex arg1 按位置表重排后与固定 mask 逐字节异或即 cookie 值，
+/// 2026-10 实测算出的 cookie 有效）。
+const ACW_POS: [usize; 40] = [
+    15, 35, 29, 24, 33, 16, 1, 38, 10, 9, 19, 31, 40, 27, 22, 23, 25, 13, 6, 11, 39, 18, 20, 8,
+    14, 21, 32, 26, 2, 30, 7, 4, 17, 5, 3, 28, 34, 37, 12, 36,
+];
+const ACW_MASK: &str = "3000176000856006061501533003690027800375";
+
+/// 挑战页 arg1 → acw_sc__v2 cookie 值（q[z]=arg1[m[z]-1] 重排后逐字节异或）。
+fn acw_sc_v2(arg1: &str) -> Option<String> {
+    let bytes = arg1.as_bytes();
+    if bytes.len() != 40 {
+        return None;
+    }
+    let mut reordered = [0u8; 40];
+    for (z, &pos) in ACW_POS.iter().enumerate() {
+        reordered[z] = bytes[pos - 1];
+    }
+    let mask = ACW_MASK.as_bytes();
+    let mut out = String::with_capacity(40);
+    for i in (0..40).step_by(2) {
+        let a = u8::from_str_radix(std::str::from_utf8(&reordered[i..i + 2]).ok()?, 16).ok()?;
+        let b = u8::from_str_radix(std::str::from_utf8(&mask[i..i + 2]).ok()?, 16).ok()?;
+        out.push_str(&format!("{:02x}", a ^ b));
+    }
+    Some(out)
+}
+
+fn is_acw_challenge(body: &str) -> bool {
+    body.len() > 256 && body.contains("var arg1='") && body.contains("acw_sc__v2")
+}
+
+/// 直链域 WAF 预过：探一次直链，遇挑战页算 cookie 并合并响应 Set-Cookie
+/// 重试一次。返回（需随直链下发的 Cookie 头, 最后一轮响应体）——响应体
+/// 供二次验证页解包（4766 字节「验证并下载」页带 file/sign 常量）。
+/// 未遇挑战 cookie=None；两轮仍挑战 cookie=None 放弃。
+async fn acw_probe(direct_url: &str) -> (Option<String>, String) {
+    let mut cookies: Vec<(String, String)> = Vec::new();
+    let pairs_str = |c: &[(String, String)]| {
+        c.iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    for _ in 0..2 {
+        let mut h = vec![
+            ("User-Agent".to_string(), PC_UA.to_string()),
+            // 8KB：验证页 ~4.8KB 全量入 body，真音频也不会拉大。
+            ("Range".to_string(), "bytes=0-8191".to_string()),
+        ];
+        if !cookies.is_empty() {
+            h.push(("Cookie".to_string(), pairs_str(&cookies)));
+        }
+        let Ok(resp) = http::request("GET", direct_url, &h, None).await else {
+            return (None, String::new());
+        };
+        if !is_acw_challenge(&resp.body) {
+            for (k, val) in resp.set_cookie_pairs() {
+                cookies.retain(|(k2, _)| k2 != &k);
+                cookies.push((k, val));
+            }
+            // 验证会话与「无 Range 的完整 GET」绑定：浏览器点下载是不带
+            // Range 的，Range 探测建立的会话在 ajax.php 校验时被拒（报
+            // 「验证码错误」）。识别出验证页后按浏览器方式无 Range 重取
+            // 一次——服务端在验证会话内仍回 ~4.8KB 页面，不会真拉文件流。
+            if resp.body.contains("ajax.php") {
+                let h2 = vec![
+                    ("User-Agent".to_string(), PC_UA.to_string()),
+                    ("Cookie".to_string(), pairs_str(&cookies)),
+                ];
+                if let Ok(resp2) = http::request("GET", direct_url, &h2, None).await {
+                    for (k, val) in resp2.set_cookie_pairs() {
+                        cookies.retain(|(k2, _)| k2 != &k);
+                        cookies.push((k, val));
+                    }
+                    return (Some(pairs_str(&cookies)), resp2.body);
+                }
+            }
+            return (
+                if cookies.is_empty() { None } else { Some(pairs_str(&cookies)) },
+                resp.body,
+            );
+        }
+        let arg1 = match resp
+            .body
+            .split("var arg1='")
+            .nth(1)
+            .and_then(|s| s.split('\'').next())
+        {
+            Some(a) => a.to_string(),
+            None => return (None, resp.body),
+        };
+        let v = match acw_sc_v2(&arg1) {
+            Some(v) => v,
+            None => return (None, resp.body),
+        };
+        cookies.retain(|(k, _)| k != "acw_sc__v2");
+        cookies.push(("acw_sc__v2".to_string(), v));
+        for (k, val) in resp.set_cookie_pairs() {
+            cookies.retain(|(k2, _)| k2 != &k);
+            cookies.push((k, val));
+        }
+    }
+    (None, String::new())
+}
+
+/// 验证页 JS data 常量提取：'file':'...' 与 'sign':'...'（页面硬编码）。
+fn extract_verify_file_sign(body: &str) -> Option<(String, String)> {
+    let re = regex::Regex::new(r"'(file|sign)'\s*:\s*'([^']+)'").ok()?;
+    let mut file = String::new();
+    let mut sign = String::new();
+    for c in re.captures_iter(body) {
+        match c.get(1).map(|m| m.as_str()) {
+            Some("file") => file = c[2].to_string(),
+            Some("sign") => sign = c[2].to_string(),
+            _ => {}
+        }
+    }
+    (!file.is_empty() && !sign.is_empty()).then_some((file, sign))
+}
+
+/// 验证页 el 取值线索（诊断用）：down_r 调用实参 / el 赋值 / onclick。
+fn extract_verify_el_hints(body: &str) -> String {
+    let mut hints: Vec<String> = Vec::new();
+    if let Ok(re) = regex::Regex::new(r"down_r\s*\(\s*([^)\s]{1,16})\s*\)") {
+        for c in re.captures_iter(body) {
+            hints.push(format!("down_r({})", &c[1]));
+        }
+    }
+    if let Ok(re) = regex::Regex::new(r"\bel\s*=\s*([^;<\s]{1,24})") {
+        for c in re.captures_iter(body) {
+            hints.push(format!("el={}", &c[1]));
+        }
+    }
+    if let Ok(re) = regex::Regex::new(r#"onclick\s*=\s*["']([^"']{1,40})["']"#) {
+        for c in re.captures_iter(body) {
+            hints.push(format!("onclick={}", &c[1]));
+        }
+    }
+    hints.join(" ")
+}
+
+/// 直链域二次验证页（「验证并下载」，4766 字节）：页面 JS down_r() 就是
+/// POST 同目录 ajax.php（file/el/sign 表单，X-Requested-With），响应
+/// {zt:'1', url} 即真地址——纯协议复刻，el 三档从 1 试到 3。非验证页
+/// 返回 None；解包失败 Err 带 ajax 响应摘要（供上层诊断）。
+async fn unpack_lanrar_verify(
+    direct: &str,
+    cookie: Option<&str>,
+    body: &str,
+) -> Result<Option<String>, String> {
+    if !body.contains("ajax.php") {
+        return Ok(None);
+    }
+    let (file, sign) = extract_verify_file_sign(body)
+        .ok_or_else(|| "验证页缺 file/sign 常量".to_string())?;
+    let el_hints = extract_verify_el_hints(body);
+    let ajax_url = resolve_url(direct, "ajax.php");
+    let origin = direct.split_once("://").map(|(scheme, rest)| {
+        let host = rest.split('/').next().unwrap_or("");
+        format!("{scheme}://{host}")
+    });
+    let mut last = String::new();
+    for el in ["1", "2", "3"] {
+        let mut h = vec![
+            ("User-Agent".to_string(), PC_UA.to_string()),
+            ("Referer".to_string(), direct.to_string()),
+            ("X-Requested-With".to_string(), "XMLHttpRequest".to_string()),
+        ];
+        if let Some(o) = &origin {
+            h.push(("Origin".to_string(), o.clone()));
+        }
+        if let Some(c) = cookie {
+            h.push(("Cookie".to_string(), c.to_string()));
+        }
+        let resp = http::post_form(
+            &ajax_url,
+            &h,
+            vec![
+                ("file".to_string(), file.clone()),
+                ("el".to_string(), el.to_string()),
+                ("sign".to_string(), sign.clone()),
+            ],
+        )
+        .await
+        .map_err(|e| format!("ajax 网络失败: {e}"))?;
+        last = format!(
+            "el={el} status={} body={}",
+            resp.status,
+            &resp.body[..resp.body.len().min(200)]
+        );
+        if let Ok(j) = resp.json() {
+            if j.get("zt").and_then(Value::as_str) == Some("1") {
+                let url = j.get("url").and_then(Value::as_str).unwrap_or("");
+                if !url.is_empty() {
+                    return Ok(Some(resolve_url(&ajax_url, url)));
+                }
+                last = format!("{last} (zt=1 但 url 空)");
+            }
+        }
+    }
+    // el 取值线索随错误透出（logcat 可见），用于对照页面真实调用方式。
+    if el_hints.is_empty() {
+        Err(last)
+    } else {
+        Err(format!("{last} | el线索: {el_hints}"))
+    }
+}
+
+/// 直链 json 统一组装：UA 头 + acw WAF cookie（预过挑战）+ 二次验证页
+/// 解包（ajax.php 换真地址）。验证页解包失败直接报错（带 ajax 响应摘要
+/// 透传到 Dart 预探日志），不回退验证页 URL——那对探针/播放器毫无用处。
+async fn direct_link_json_with_waf(
+    direct: &str,
+    name: &str,
+    size: i64,
+    expire_ms: i64,
+) -> Result<Value, (i32, String)> {
+    let mut headers = direct_link_headers();
+    let (cookie, probe_body) = acw_probe(direct).await;
+    if let Some(c) = &cookie {
+        headers["Cookie"] = json!(c);
+    }
+    match unpack_lanrar_verify(direct, cookie.as_deref(), &probe_body).await {
+        Ok(Some(real)) => {
+            Ok(direct_link_json(&real, headers, Some(name), Some(size), Some(expire_ms)))
+        }
+        Ok(None) => Ok(direct_link_json(direct, headers, Some(name), Some(size), Some(expire_ms))),
+        Err(d) => Err(biz_err(format!("蓝奏验证页解包失败: {d}"))),
+    }
 }
 
 /// Dart (x ?? '').toString() 语义：null/缺失 → ''，字符串原样，其余 JSON 序列化。
@@ -359,13 +595,7 @@ async fn direct_from_share_page(
     let direct = direct_from_page(&target, pwd)
         .await
         .ok_or_else(|| biz_err("分享已失效"))?;
-    Ok(direct_link_json(
-        &direct,
-        direct_link_headers(),
-        Some(name),
-        Some(size),
-        Some(now_ms() + 20 * 60 * 1000),
-    ))
+    Ok(direct_link_json_with_waf(&direct, name, size, now_ms() + 20 * 60 * 1000).await?)
 }
 
 // ── op 实现 ─────────────────────────────────────────────
@@ -619,13 +849,9 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let expire = now_ms() + 20 * 60 * 1000;
     let token = jstr(file.get("token"));
     if token.starts_with("http") {
-        return Ok(CloudOut::plain(direct_link_json(
-            &token,
-            direct_link_headers(),
-            Some(&name),
-            Some(size),
-            Some(expire),
-        )));
+        return Ok(CloudOut::plain(
+            direct_link_json_with_waf(&token, &name, size, expire).await?,
+        ));
     }
     // token 是分享页地址 → 重新解析（分享密码回填）。
     let pwd = jstr(share.get("passcode"));
@@ -640,13 +866,9 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         if f.get("name").and_then(Value::as_str) == Some(name.as_str())
             && f_token.starts_with("http")
         {
-            return Ok(CloudOut::plain(direct_link_json(
-                &f_token,
-                direct_link_headers(),
-                Some(&name),
-                Some(size),
-                Some(expire),
-            )));
+            return Ok(CloudOut::plain(
+                direct_link_json_with_waf(&f_token, &name, size, expire).await?,
+            ));
         }
     }
     Err(biz_err("分享已失效"))
@@ -678,6 +900,34 @@ mod tests {
         );
         // 与 Dart 逐段 replaceAll 一致：&amp; 先还原，&lt; 再还原。
         assert_eq!(html_unescape("&amp;lt;"), "<");
+    }
+
+    #[test]
+    fn acw_sc_v2_algorithm() {
+        // 浏览器执行挑战页 JS 的实测样本（2026-10）。
+        assert_eq!(
+            acw_sc_v2("388CB9CA1F823E5E9B1E5115A727DB455AA936A0").as_deref(),
+            Some("6ad54956f1916217a58daab9d554e2ccbc07a05c")
+        );
+        let challenge = format!(
+            "<html><script>var arg1='A';{}</script>",
+            "x".repeat(300) + "acw_sc__v2"
+        );
+        assert!(is_acw_challenge(&challenge));
+        assert!(!is_acw_challenge("short"));
+    }
+
+    #[test]
+    fn extract_verify_file_sign_sample() {
+        // 设备探针日志实拍验证页（2026-10，节选 data 行）。
+        let page = r#"<script> $.ajax({ type : 'post', url : 'ajax.php',
+            data : { 'file':'UDhWdV10U3cGIwZqB3xTfVN5A2JWb1NiASgGd11kVDdQN1Nh==','el':el,'sign':'AzIFZQ5qBWMFYFMzC2YCOwdvAjUHOQ==' },
+            dataType : 'json' }); </script>"#;
+        let (file, sign) = extract_verify_file_sign(page).unwrap();
+        assert_eq!(file, "UDhWdV10U3cGIwZqB3xTfVN5A2JWb1NiASgGd11kVDdQN1Nh==");
+        assert_eq!(sign, "AzIFZQ5qBWMFYFMzC2YCOwdvAjUHOQ==");
+        // 非验证页返回 None。
+        assert!(extract_verify_file_sign("<html>普通页</html>").is_none());
     }
 
     #[test]

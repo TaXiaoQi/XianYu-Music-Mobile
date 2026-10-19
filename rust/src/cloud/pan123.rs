@@ -291,7 +291,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let mut files = Vec::new();
     for e in &items {
         let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), &path);
-        files.push(file_json(
+        let mut f = file_json(
             &item_id(e),
             &item_name(e),
             item_type(e) == Some(1),
@@ -299,7 +299,14 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             Some(&parent),
             None,
             None,
-        ));
+        );
+        // download_info 必须带 S3KeyFlag/Etag（缺 S3KeyFlag 报「请输入S3keyFlag」、
+        // 缺 Etag 报「请输入Etag」）；CloudFile 固定 schema 丢未知字段，统一塞进
+        // token 跨页传递（lanzou 传 'f:<id>' 同惯例）。
+        if let Some(t) = s3_token(&js_str(e.get("S3KeyFlag"), ""), &js_str(e.get("Etag"), "")) {
+            f["token"] = json!(t);
+        }
+        files.push(f);
     }
     // 翻页：Next=="-1" 或空页即末页（AList 同语义）；cursor 仍为页码。
     let next = js_str(data.get("Next").filter(|v| !v.is_null()), "-1");
@@ -316,7 +323,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 /// 缺省回空串）。
 fn file_from_search_item(e: &Value) -> Value {
     let parent = js_str(e.get("parentFileId").filter(|v| !v.is_null()), "");
-    file_json(
+    let mut f = file_json(
         &item_id(e),
         &item_name(e),
         item_type(e) == Some(1),
@@ -324,7 +331,33 @@ fn file_from_search_item(e: &Value) -> Value {
         Some(&parent),
         None,
         None,
-    )
+    );
+    if let Some(t) = s3_token(&js_str(e.get("S3KeyFlag"), ""), &js_str(e.get("Etag"), "")) {
+        f["token"] = json!(t);
+    }
+    f
+}
+
+/// download_info 所需 list 字段 → token 复合串（"S3KeyFlag:x|Etag:y"，
+/// 全空返回 None 保持 token=null）。
+fn s3_token(s3: &str, etag: &str) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    if !s3.is_empty() {
+        parts.push(format!("S3KeyFlag:{s3}"));
+    }
+    if !etag.is_empty() {
+        parts.push(format!("Etag:{etag}"));
+    }
+    if parts.is_empty() { None } else { Some(parts.join("|")) }
+}
+
+/// 从复合 token 串取某参数值（"S3KeyFlag:x|Etag:y" → key="Etag" → "y"）。
+fn token_param<'a>(token: &'a str, key: &str) -> Option<&'a str> {
+    let prefix = format!("{key}:");
+    token
+        .split('|')
+        .find_map(|p| p.strip_prefix(prefix.as_str()))
+        .filter(|v| !v.is_empty())
 }
 
 /// 文件搜索：keyword 必填，cursor 为页码（与 list_dir 同风格），
@@ -455,10 +488,13 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if j.get("code").and_then(Value::as_i64) != Some(0) {
         return Err(biz_err("分享直链获取失败"));
     }
-    let dl_url = extract_download_url(j.get("data").unwrap_or(&Value::Null));
+    let dl_url = unwrap_interstitial_url(&extract_download_url(
+        j.get("data").unwrap_or(&Value::Null),
+    ));
     if dl_url.is_empty() {
         return Err(biz_err("分享直链获取失败"));
     }
+    let dl_url = follow_123_210(&dl_url).await;
     let name = file.get("name").and_then(Value::as_str).unwrap_or("");
     let size = file.get("size").and_then(Value::as_i64);
     Ok(CloudOut::plain(direct_link_json(
@@ -477,23 +513,46 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let token = req.cred_str("token");
     let file = req.param_obj("file");
     let file_id = file.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-    let resp = http::get(&download_info_url(&file_id), &auth_headers(&token))
-        .await
-        .map_err(biz_err)?;
+    let size = file.get("size").and_then(Value::as_i64);
+    let name = file.get("name").and_then(Value::as_str).unwrap_or("");
+    // 123 盘已把 download_info 从 GET 改为 POST（GET 该路由裸 404；
+    // POST 无凭据也返回业务 JSON，实测路由在 yun 域）。body 缺 Size
+    // 报「请输入Size」、缺 S3KeyFlag 报「请输入S3keyFlag」、缺 FileName
+    // 报「请输入FileName」、缺 Etag 报「请输入Etag」——均由 list_dir
+    // 塞进 file.token（"S3KeyFlag:x|Etag:y"）跨页带来。
+    let mut body = json!({
+        "driveId": 0,
+        "fileId": file_id,
+        "FileName": name,
+        "Size": size.unwrap_or(0),
+        "os": "web",
+    });
+    if let Some(tok) = file.get("token").and_then(Value::as_str) {
+        if let Some(s3) = token_param(tok, "S3KeyFlag") {
+            body["S3KeyFlag"] = json!(s3);
+        }
+        if let Some(et) = token_param(tok, "Etag") {
+            body["Etag"] = json!(et);
+        }
+    }
+    let resp = http::post_json(&download_info_url(&file_id), &auth_headers(&token), &body)
+    .await
+    .map_err(biz_err)?;
     if !resp.is_ok() {
         return Err(biz_err(format!("直链获取失败 (HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
     check_code(&j, "直链获取失败")?;
-    let dl_url = extract_download_url(j.get("data").unwrap_or(&Value::Null));
+    let dl_url = unwrap_interstitial_url(&extract_download_url(
+        j.get("data").unwrap_or(&Value::Null),
+    ));
     if dl_url.is_empty() {
         return Err(biz_err(format!(
             "直链获取失败（未返回下载地址，code={})",
             j.get("code").and_then(Value::as_i64).unwrap_or(-1)
         )));
     }
-    let name = file.get("name").and_then(Value::as_str).unwrap_or("");
-    let size = file.get("size").and_then(Value::as_i64);
+    let dl_url = follow_123_210(&dl_url).await;
     Ok(CloudOut::plain(direct_link_json(
         &dl_url,
         json!({ "User-Agent": UA }),
@@ -501,6 +560,62 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         size,
         Some(now_ms() + 3600 * 1000),
     )))
+}
+
+/// 123 直链防盗链中转页（cjjd18.com 等 index 页）：真实地址 base64 藏在
+/// 页面 URL 自身的 ?params=<b64> 查询参数里——页面 JS 就是 atob(params)
+/// 后作下载地址（is_s3=1 直接用；非 s3 时该地址回 210 JSON {redirect_url}，
+/// 交给请求方 HTTP 层跟随）。无 params 参数则原样返回。
+fn unwrap_interstitial_url(url: &str) -> String {
+    let Some((_, q)) = url.split_once('?') else {
+        return url.to_string();
+    };
+    let Some(raw) = q.split('&').find_map(|kv| kv.strip_prefix("params=")) else {
+        return url.to_string();
+    };
+    // 查询串可能 percent 编码（+/= 会被编码），先解 percent（GetQueryString
+    // 语义：不做 '+'→空格转换）再 base64（atob 语义，标准字母表为主）。
+    use base64::Engine as _;
+    let b64 = urlencoding::decode(raw).unwrap_or_else(|_| raw.into());
+    use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
+    let decoded = STANDARD
+        .decode(b64.as_ref())
+        .or_else(|_| URL_SAFE.decode(b64.as_ref()))
+        .or_else(|_| URL_SAFE_NO_PAD.decode(b64.as_ref()));
+    // 对齐页面 decodeURI：解码结果应为明文 URL，仅做 http 前缀校验防误解。
+    match decoded {
+        Ok(b) if b.starts_with(b"http") => String::from_utf8_lossy(&b).into_owned(),
+        _ => url.to_string(),
+    }
+}
+
+/// 中转解包后地址的非 s3 档：GET 返回 210 JSON {code:0,data:{redirect_url}}
+/// （页面 JS xhr 分支同逻辑），再跟一跳换最终 CDN 地址。带 Range 0-0 防
+/// 真·文件地址误拉全量；GET 失败/非 210/无 redirect_url 一律原样返回，
+/// 由请求方拿原地址自行尝试。
+async fn follow_123_210(url: &str) -> String {
+    let headers = vec![
+        ("User-Agent".to_string(), UA.to_string()),
+        ("Range".to_string(), "bytes=0-0".to_string()),
+    ];
+    let Ok(resp) = http::get(url, &headers).await else {
+        return url.to_string();
+    };
+    if resp.status != 210 {
+        return url.to_string();
+    }
+    let Ok(j) = resp.json() else {
+        return url.to_string();
+    };
+    let red = j
+        .pointer("/data/redirect_url")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if red.is_empty() {
+        url.to_string()
+    } else {
+        red.to_string()
+    }
 }
 
 /// DownloadUrl 可能是纯 URL、JSON 串或嵌套 data，统一防御解析
@@ -651,13 +766,15 @@ mod tests {
 
     #[test]
     fn file_from_search_item_maps_fields() {
-        // 新网关 PascalCase。
+        // 新网关 PascalCase；S3KeyFlag/Etag 复合塞进 token。
         let e = json!({
             "FileId": "f1",
             "FileName": "a.flac",
             "Type": 0,
             "Size": 123,
             "parentFileId": "p0",
+            "S3KeyFlag": "s3k",
+            "Etag": "et1",
         });
         let f = file_from_search_item(&e);
         assert_eq!(f["id"], "f1");
@@ -665,12 +782,55 @@ mod tests {
         assert_eq!(f["isDir"], false);
         assert_eq!(f["size"], 123);
         assert_eq!(f["parentId"], "p0");
+        assert_eq!(f["token"], "S3KeyFlag:s3k|Etag:et1");
         // type==1 判目录；parentFileId 缺失回空串（搜索无目录上下文）；
-        // 旧接口 camelCase 字段兜底。
+        // 旧接口 camelCase 字段兜底；无 S3KeyFlag/Etag 时 token 保持 null。
         let d = file_from_search_item(&json!({ "fileId": 9, "filename": "dir", "type": 1 }));
         assert_eq!(d["isDir"], true);
         assert_eq!(d["id"], "9");
         assert_eq!(d["parentId"], "");
+        assert!(d["token"].is_null());
+    }
+
+    #[test]
+    fn s3_token_and_param_roundtrip() {
+        assert_eq!(
+            s3_token("s3k", "et1").as_deref(),
+            Some("S3KeyFlag:s3k|Etag:et1")
+        );
+        // 单边缺省仍编码另一边；全空 None。
+        assert_eq!(s3_token("", "et1").as_deref(), Some("Etag:et1"));
+        assert_eq!(s3_token("s3k", "").as_deref(), Some("S3KeyFlag:s3k"));
+        assert_eq!(s3_token("", ""), None);
+        let tok = s3_token("s3k", "et1").unwrap();
+        assert_eq!(token_param(&tok, "S3KeyFlag"), Some("s3k"));
+        assert_eq!(token_param(&tok, "Etag"), Some("et1"));
+        assert_eq!(token_param(&tok, "Other"), None);
+        // 值含 '|' 不产生（编码端不含分隔符），空值段被过滤。
+        assert_eq!(token_param("S3KeyFlag:|Etag:", "Etag"), None);
+    }
+
+    #[test]
+    fn unwrap_interstitial_url_cases() {
+        use base64::Engine as _;
+        let real = "https://download.example.com/file.flac";
+        // 标准字母表（含 +/= padding，percent 编码后入查询串）。
+        let b64 = base64::engine::general_purpose::STANDARD.encode(real);
+        let inter = format!(
+            "https://web-pro2.cjjd18.com/index?params={}&is_s3=1",
+            urlencoding::encode(&b64)
+        );
+        assert_eq!(unwrap_interstitial_url(&inter), real);
+        // URL_SAFE 无 padding 变体兜底。
+        let b64u = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(real);
+        let inter2 = format!("https://x/index?params={b64u}");
+        assert_eq!(unwrap_interstitial_url(&inter2), real);
+        // 无 params / 非 base64：原样返回。
+        assert_eq!(
+            unwrap_interstitial_url("https://a.com/b.mp3"),
+            "https://a.com/b.mp3"
+        );
+        assert_eq!(unwrap_interstitial_url("https://a.com/b?x=1"), "https://a.com/b?x=1");
     }
 
     #[test]
