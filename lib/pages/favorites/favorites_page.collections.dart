@@ -196,29 +196,44 @@ class _FavoriteTile extends ConsumerWidget {
         ),
         onTap: g.onTap,
         onLongPress: openActions,
-        title: Text(entry.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style:
-                TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600)),
-        subtitle: Text(
-          entry.artist,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style:
-              TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+        title: ScrollingText(
+          text: entry.title,
+          style: TextStyle(
+              fontSize: m.titleSize, fontWeight: FontWeight.w600),
+        ),
+        subtitle: ScrollingText(
+          text: entry.artist,
+          style: TextStyle(
+              fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
         ),
         verticalPadding: m.vPad,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            SourceTag(
-              path: entry.path,
-              isOnline: entry.isOnline,
-              source: entry.source,
-              onlineSongJson: entry.onlineSongJson,
+            // 来源标与时长上下叠放（上行对齐歌名、下行对齐歌手），
+            // 不再横挤歌名区；无时长条目（本地未扫描出）只显示来源标。
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                SourceTag(
+                  path: entry.path,
+                  isOnline: entry.isOnline,
+                  source: entry.source,
+                  onlineSongJson: entry.onlineSongJson,
+                ),
+                if (entry.durationMs > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    _fmtDuration(entry.durationMs),
+                    style: TextStyle(
+                      fontSize: m.subtitleSize,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
-            const SizedBox(width: 4),
             IconButton(
               icon: Icon(Icons.favorite,
                   size: 20, color: scheme.primary),
@@ -226,7 +241,7 @@ class _FavoriteTile extends ConsumerWidget {
               onPressed: onRemove,
             ),
             IconButton(
-              icon: const Icon(Icons.more_horiz, size: 22),
+              icon: const Icon(Icons.more_vert, size: 22),
               color: scheme.onSurfaceVariant,
               tooltip: tr('更多'),
               onPressed: openActions,
@@ -236,4 +251,10 @@ class _FavoriteTile extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 收藏行时长显示（mm:ss；durationMs 存的是毫秒）。
+String _fmtDuration(int durationMs) {
+  final total = durationMs <= 0 ? 0 : (durationMs / 1000).round();
+  return '${total ~/ 60}:${(total % 60).toString().padLeft(2, '0')}';
 }

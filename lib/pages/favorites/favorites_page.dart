@@ -34,6 +34,7 @@ import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/source_tag.dart';
+import '../../src/widgets/scrolling_text.dart';
 import '../home/online_detail_page.dart';
 import '../../src/i18n/i18n.dart';
 part 'favorites_page.toolbar.dart';
