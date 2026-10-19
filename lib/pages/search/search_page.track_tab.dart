@@ -275,6 +275,9 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                                 fromRect: from,
                                 songPath: cloudItem.path,
                                 networkUrl: cloudItem.coverUrl,
+                                // 网盘条目无 URL 封面：预探命中的内嵌封面
+                                // 本地路径作为飞行源，否则动画只能用占位块
+                                thumbPath: cloudMeta?.coverPath,
                                 radius: m.songRadius,
                               );
                             } catch (e) {
