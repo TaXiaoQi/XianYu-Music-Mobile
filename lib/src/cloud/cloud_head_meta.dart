@@ -243,7 +243,18 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
       final prov = (ctx.path.startsWith('cloud://') && parts.length > 2)
           ? parts[2]
           : '';
-      AppLog.debug('cloud', '头部元数据预探失败[$prov]: ${ctx.file.name} $e');
+      final msg = '头部元数据预探失败[$prov]: ${ctx.file.name} $e';
+      // 诊断用长消息（验证页全文）按 ~1400 字符分段打，避开 logcat 单条截断
+      if (msg.length <= 1500) {
+        AppLog.debug('cloud', msg);
+      } else {
+        AppLog.debug('cloud', '${msg.substring(0, 120)} <分段 ${msg.length} 字符>');
+        for (var i = 120; i < msg.length; i += 1400) {
+          final end = (i + 1400).clamp(0, msg.length);
+          AppLog.debug('cloud',
+              '预探诊断[$prov][${(i - 120) ~/ 1400 + 1}/${(msg.length - 121) ~/ 1400 + 1}]: ${msg.substring(i, end)}');
+        }
+      }
     }
   }
 

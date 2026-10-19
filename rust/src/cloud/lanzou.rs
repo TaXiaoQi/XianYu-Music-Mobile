@@ -184,31 +184,12 @@ fn extract_verify_file_sign(body: &str) -> Option<(String, String)> {
     (!file.is_empty() && !sign.is_empty()).then_some((file, sign))
 }
 
-/// 验证页 el 取值线索（诊断用）：down_r 调用实参 / el 赋值 / onclick。
-fn extract_verify_el_hints(body: &str) -> String {
-    let mut hints: Vec<String> = Vec::new();
-    if let Ok(re) = regex::Regex::new(r"down_r\s*\(\s*([^)\s]{1,16})\s*\)") {
-        for c in re.captures_iter(body) {
-            hints.push(format!("down_r({})", &c[1]));
-        }
-    }
-    if let Ok(re) = regex::Regex::new(r"\bel\s*=\s*([^;<\s]{1,24})") {
-        for c in re.captures_iter(body) {
-            hints.push(format!("el={}", &c[1]));
-        }
-    }
-    if let Ok(re) = regex::Regex::new(r#"onclick\s*=\s*["']([^"']{1,40})["']"#) {
-        for c in re.captures_iter(body) {
-            hints.push(format!("onclick={}", &c[1]));
-        }
-    }
-    hints.join(" ")
-}
-
-/// 直链域二次验证页（「验证并下载」，4766 字节）：页面 JS down_r() 就是
+/// 直链域二次验证页（「验证并下载」，4766 字节）：页面 JS down_r(el) 就是
 /// POST 同目录 ajax.php（file/el/sign 表单，X-Requested-With），响应
-/// {zt:'1', url} 即真地址——纯协议复刻，el 三档从 1 试到 3。非验证页
-/// 返回 None；解包失败 Err 带 ajax 响应摘要（供上层诊断）。
+/// {zt:'1', url} 即真地址——纯协议复刻。浏览器真实路径：用户点
+/// down_r(1)，失败时页面 setTimeout(window.location.reload()) 刷新重拿
+/// 新 sign 再点——sign 按页面轮次签发，旧 sign 即报「验证码错误」。这里
+/// 复刻同流程：失败后无 Range 重取验证页（新 sign）再 POST，最多 3 轮。
 async fn unpack_lanrar_verify(
     direct: &str,
     cookie: Option<&str>,
@@ -217,59 +198,143 @@ async fn unpack_lanrar_verify(
     if !body.contains("ajax.php") {
         return Ok(None);
     }
-    let (file, sign) = extract_verify_file_sign(body)
-        .ok_or_else(|| "验证页缺 file/sign 常量".to_string())?;
-    let el_hints = extract_verify_el_hints(body);
     let ajax_url = resolve_url(direct, "ajax.php");
     let origin = direct.split_once("://").map(|(scheme, rest)| {
         let host = rest.split('/').next().unwrap_or("");
         format!("{scheme}://{host}")
     });
-    let mut last = String::new();
-    for el in ["1", "2", "3"] {
-        let mut h = vec![
-            ("User-Agent".to_string(), PC_UA.to_string()),
-            ("Referer".to_string(), direct.to_string()),
-            ("X-Requested-With".to_string(), "XMLHttpRequest".to_string()),
-        ];
-        if let Some(o) = &origin {
-            h.push(("Origin".to_string(), o.clone()));
-        }
-        if let Some(c) = cookie {
-            h.push(("Cookie".to_string(), c.to_string()));
-        }
-        let resp = http::post_form(
-            &ajax_url,
-            &h,
-            vec![
-                ("file".to_string(), file.clone()),
-                ("el".to_string(), el.to_string()),
-                ("sign".to_string(), sign.clone()),
-            ],
-        )
-        .await
-        .map_err(|e| format!("ajax 网络失败: {e}"))?;
-        last = format!(
-            "el={el} status={} body={}",
-            resp.status,
-            &resp.body[..resp.body.len().min(200)]
-        );
-        if let Ok(j) = resp.json() {
-            if j.get("zt").and_then(Value::as_str) == Some("1") {
-                let url = j.get("url").and_then(Value::as_str).unwrap_or("");
-                if !url.is_empty() {
-                    return Ok(Some(resolve_url(&ajax_url, url)));
-                }
-                last = format!("{last} (zt=1 但 url 空)");
+    let mut cur_body = body.to_string();
+    // 会话 cookie 可在 reload 中持续累积（浏览器行为），从只读参数复制
+    let mut cookie_pairs: Vec<(String, String)> = Vec::new();
+    if let Some(c) = cookie {
+        for kv in c.split("; ") {
+            if let Some((k, v)) = kv.split_once('=') {
+                cookie_pairs.push((k.to_string(), v.to_string()));
             }
         }
     }
-    // el 取值线索随错误透出（logcat 可见），用于对照页面真实调用方式。
-    if el_hints.is_empty() {
-        Err(last)
-    } else {
-        Err(format!("{last} | el线索: {el_hints}"))
+    let cookie_str = |pairs: &[(String, String)]| {
+        pairs
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    let mut last = String::new();
+    for _round in 0..3 {
+        let (file, sign) = match extract_verify_file_sign(&cur_body) {
+            Some(fs) => fs,
+            None => return Err("验证页缺 file/sign 常量".to_string()),
+        };
+        for el in ["2"] {
+            // 只走 el=2（box2「网络异常验证」档，2026-10 实测唯一放行档；
+            // el=1/3 一律「验证码错误」，且 el=1 先发会污染 sign——同 sign
+            // 再发 el=2 只回 '?SignError'，必须 reload 换新 sign）。
+            let mut h = vec![
+                ("User-Agent".to_string(), PC_UA.to_string()),
+                ("Referer".to_string(), direct.to_string()),
+                ("X-Requested-With".to_string(), "XMLHttpRequest".to_string()),
+            ];
+            if let Some(o) = &origin {
+                h.push(("Origin".to_string(), o.clone()));
+            }
+            if !cookie_pairs.is_empty() {
+                h.push(("Cookie".to_string(), cookie_str(&cookie_pairs)));
+            }
+            let resp = http::post_form(
+                &ajax_url,
+                &h,
+                vec![
+                    ("file".to_string(), file.clone()),
+                    ("el".to_string(), el.to_string()),
+                    ("sign".to_string(), sign.clone()),
+                ],
+            )
+            .await
+            .map_err(|e| format!("ajax 网络失败: {e}"))?;
+            for (k, val) in resp.set_cookie_pairs() {
+                cookie_pairs.retain(|(k2, _)| k2 != &k);
+                cookie_pairs.push((k, val));
+            }
+            if let Ok(j) = resp.json() {
+                let zt_ok = match j.get("zt") {
+                    // ajax.php 实测回数字 1（页面 JS 用宽松相等 `== '1'` 兼容
+                    // 两类型）；as_str 对数字永不匹配，会把已拿到的真地址
+                    // 当失败处理
+                    Some(Value::String(s)) => s == "1",
+                    Some(Value::Number(n)) => n.as_i64() == Some(1),
+                    _ => false,
+                };
+                if zt_ok {
+                    let url = j.get("url").and_then(Value::as_str).unwrap_or("");
+                    // 异常态（如 sign 被污染后回 '?SignError'）非真地址，
+                    // 仅接受 http 绝对链接
+                    if url.starts_with("http") {
+                        return Ok(Some(url.replace("\\/", "/")));
+                    }
+                }
+            }
+            // 实测（2026-10）：服务端签发 sign 后 ~1-3s 才生效，立即 POST
+            // 必回 '?SignError'（zt=1 但 url 非真地址）；同 sign 等待后重发
+            // 即成功。此处等 2.5s 重发一次，仍失败才走 reload 换新 sign。
+            tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+            let resp = http::post_form(
+                &ajax_url,
+                &h,
+                vec![
+                    ("file".to_string(), file.clone()),
+                    ("el".to_string(), "2".to_string()),
+                    ("sign".to_string(), sign.clone()),
+                ],
+            )
+            .await
+            .map_err(|e| format!("ajax 网络失败: {e}"))?;
+            for (k, val) in resp.set_cookie_pairs() {
+                cookie_pairs.retain(|(k2, _)| k2 != &k);
+                cookie_pairs.push((k, val));
+            }
+            last = format!(
+                "el=2(retry) status={} body={}",
+                resp.status,
+                &resp.body[..resp.body.len().min(200)]
+            );
+            if let Ok(j) = resp.json() {
+                let zt_ok = match j.get("zt") {
+                    // ajax.php 实测回数字 1（页面 JS 用宽松相等 `== '1'` 兼容
+                    // 两类型）；as_str 对数字永不匹配，会把已拿到的真地址
+                    // 当失败处理
+                    Some(Value::String(s)) => s == "1",
+                    Some(Value::Number(n)) => n.as_i64() == Some(1),
+                    _ => false,
+                };
+                if zt_ok {
+                    let url = j.get("url").and_then(Value::as_str).unwrap_or("");
+                    if url.starts_with("http") {
+                        return Ok(Some(url.replace("\\/", "/")));
+                    }
+                    last = format!("{last} (zt=1 但 url 非真地址: {url})");
+                }
+            }
+        }
+        // 页面失败分支：setTimeout(window.location.reload())——无 Range
+        // 重取验证页（服务端按轮次签发新 sign），会话 cookie 持续累积。
+        let mut h = vec![("User-Agent".to_string(), PC_UA.to_string())];
+        if !cookie_pairs.is_empty() {
+            h.push(("Cookie".to_string(), cookie_str(&cookie_pairs)));
+        }
+        let Ok(resp) = http::request("GET", direct, &h, None).await else {
+            break;
+        };
+        for (k, val) in resp.set_cookie_pairs() {
+            cookie_pairs.retain(|(k2, _)| k2 != &k);
+            cookie_pairs.push((k, val));
+        }
+        cur_body = resp.body;
+        if !cur_body.contains("ajax.php") {
+            break; // 刷新后不再是验证页（可能已放行/变挑战页），停止
+        }
     }
+    Err(last)
 }
 
 /// 直链 json 统一组装：UA 头 + acw WAF cookie（预过挑战）+ 二次验证页
