@@ -202,6 +202,24 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
         if (lines.isNotEmpty) _cacheLyrics(path, lines);
         if (!mounted) return;
         setState(() => _lines = lines);
+        // 云盘曲目：内嵌歌词可能晚到（慢 CDN 首探 2 分钟级），插件搜索
+        // 结果先显示；预探完成命中内嵌时再覆盖刷新（桌面同款行为）。
+        if (item.path.startsWith('cloud://')) {
+          unawaited(() async {
+            final meta = await ref
+                .read(cloudHeadMetaProvider.notifier)
+                .waitFor(item.path, timeout: const Duration(minutes: 3));
+            final raw = meta?.lyricsRaw;
+            if (!mounted || raw == null || raw.trim().isEmpty) return;
+            final emb = await compute(
+              _parseLyricsJson,
+              await parseLyrics(rawLyrics: raw),
+            );
+            if (!mounted || emb.isEmpty || path != widget.current?.path) return;
+            _cacheLyrics(path, emb);
+            setState(() => _lines = emb);
+          }());
+        }
       } else {
         final dbPath = await ref.read(dbPathProvider.future);
         final jsonStr = await getSongLyricsPayload(
@@ -587,7 +605,7 @@ class _AnimatedPlayerCoverState extends ConsumerState<_AnimatedPlayerCover>
   }
 }
 
-class _TraditionalCover extends StatelessWidget {
+class _TraditionalCover extends ConsumerWidget {
   const _TraditionalCover({
     required this.size,
     required this.current,
@@ -604,14 +622,15 @@ class _TraditionalCover extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return _AnimatedPlayerCover(
       current: current,
-      builder: (context, cur) => _buildCover(context, cur),
+      // ref 经闭包传入（封面动画 builder 逐帧调 _buildCover）
+      builder: (context, cur) => _buildCover(context, cur, ref),
     );
   }
 
-  Widget _buildCover(BuildContext context, QueueItem? cur) {
+  Widget _buildCover(BuildContext context, QueueItem? cur, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final cover = Container(
       width: size,
@@ -659,7 +678,11 @@ class _TraditionalCover extends StatelessWidget {
               CoverImage(
                 songPath: cur.path,
                 networkUrl: cur.coverUrl,
-                thumbPath: cur.coverPath,
+                // 云盘曲目：预探命中的内嵌封面优先（响应式，探测完成即刷新）
+                thumbPath: cur.path.startsWith('cloud://')
+                    ? (ref.watch(cloudHeadMetaProvider)[cur.path]?.coverPath ??
+                        cur.coverPath)
+                    : cur.coverPath,
                 width: size,
                 height: size,
                 radius: 23,
@@ -1071,19 +1094,26 @@ class _BigCover extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: cur == null
                 ? _placeholder(scheme, coverSize)
-                : CoverImage(
-                    songPath: cur.path,
-                    networkUrl: cur.coverUrl,
-                    thumbPath: cur.coverPath,
-                    width: coverSize,
-                    height: coverSize,
-                    radius: 31,
-                    highQuality: true,
-                    cacheWidth: CoverImage.fullCoverDecodePx(),
-                    gradient: [
-                      scheme.primary,
-                      scheme.primary.withValues(alpha: 0.72),
-                    ],
+                : Consumer(
+                    builder: (context, ref, _) => CoverImage(
+                      songPath: cur.path,
+                      networkUrl: cur.coverUrl,
+                      // 云盘曲目：预探命中的内嵌封面优先（响应式，探测完成即刷新）
+                      thumbPath: cur.path.startsWith('cloud://')
+                          ? (ref.watch(
+                                  cloudHeadMetaProvider)[cur.path]?.coverPath ??
+                              cur.coverPath)
+                          : cur.coverPath,
+                      width: coverSize,
+                      height: coverSize,
+                      radius: 31,
+                      highQuality: true,
+                      cacheWidth: CoverImage.fullCoverDecodePx(),
+                      gradient: [
+                        scheme.primary,
+                        scheme.primary.withValues(alpha: 0.72),
+                      ],
+                    ),
                   ),
           ),
         );
