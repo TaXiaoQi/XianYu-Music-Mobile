@@ -130,6 +130,8 @@ class SettingsStore {
       prefs.setString('listSize', next.listSize.name),
       prefs.setString('fontSize', next.fontSize.name),
       prefs.setInt('uiScaleIndex', next.uiScaleIndex),
+      prefs.setBool('uiScaleUnified', next.uiScaleUnified),
+      prefs.setInt('uiScaleIndexLandscape', next.uiScaleIndexLandscape),
       prefs.setInt('shareLinkValidityMinutes', next.shareLinkValidityMinutes),
       prefs.setString(
         'sharePlaybackFailureBehavior',
@@ -255,6 +257,7 @@ extension SettingsNotifierMethods on SettingsNotifier {
   ListSize _listSizeFromString(String v) => switch (v) {
     'compact' => ListSize.compact,
     'large' => ListSize.large,
+    'followSystem' => ListSize.followSystem,
     _ => ListSize.medium,
   };
 
@@ -503,6 +506,18 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(fontSize: v));
   Future<void> setUiScaleIndex(int v) =>
       _settingsStore.update((s) => s.copyWith(uiScaleIndex: v));
+
+  /// 横竖屏统一开关：关闭拆分时横屏档从当前统一档起步（inheritFrom），
+  /// 避免横屏突然跳到陌生的默认值；重新开启统一后横屏份保留备用
+  Future<void> setUiScaleUnified(bool v, {int? inheritFrom}) =>
+      _settingsStore.update((s) => s.copyWith(
+            uiScaleUnified: v,
+            uiScaleIndexLandscape:
+                !v && inheritFrom != null ? inheritFrom : null,
+          ));
+
+  Future<void> setUiScaleIndexLandscape(int v) =>
+      _settingsStore.update((s) => s.copyWith(uiScaleIndexLandscape: v));
   Future<void> setShareLinkValidityMinutes(int v) =>
       _settingsStore.update((s) => s.copyWith(shareLinkValidityMinutes: v));
   Future<void> setSharePlaybackFailureBehavior(String v) =>

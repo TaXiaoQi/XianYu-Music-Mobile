@@ -29,6 +29,7 @@ import 'src/widgets/app_toast.dart'
     show appToastOverlayKey;
 import 'src/widgets/flying_cover.dart';
 import 'src/widgets/glass_settings.dart';
+import 'src/widgets/list_metrics.dart';
 import 'src/widgets/privacy_policy.dart';
 import 'src/widgets/custom_background.dart';
 import 'src/widgets/chrome_glass_frame.dart';
@@ -467,13 +468,24 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
               final textScaler = fontSize.followsSystem
                   ? MediaQuery.textScalerOf(context)
                   : TextScaler.linear(fontSize.scale);
+              // 系统字体缩放因子：列表大小/样式大小「跟随系统」档的等比基准
+              //（builder 的 context 在 routeChild 改写之上，拿到的是系统原始值）
+              final systemScale =
+                  MediaQuery.textScalerOf(context).scale(100) / 100;
+              ListMetrics.systemTextScale = systemScale;
               final baseMq = MediaQuery.of(context);
               // 整套 UI 缩放（外观-样式大小）：标准档直通；其余档把路由
               // 子树按「逻辑画布 = 视口 / 缩放」布局，再用 FittedBox 等比
               // 铺回视口——矢量绘制不糊、命中测试随变换自动映射；页内
               // MediaQuery 同步改写口径，避免 mq.size 仍按整屏算导致溢出；
               // 壁纸与迷你条/水滴等系统 chrome 不参与缩放
-              final uiScale = uiScaleOf(settings?.uiScaleIndex ?? 1);
+              // 样式大小档位：统一开关关闭时横屏走独立档；-1 跟随系统
+              //（整套 UI 直接乘系统缩放因子，固定档按索引查表）
+              final uiIndex = uiScaleIndexFor(
+                settings,
+                baseMq.orientation == Orientation.landscape,
+              );
+              final uiScale = uiIndex < 0 ? systemScale : uiScaleOf(uiIndex);
               Widget routeChild = MediaQuery(
                 data: baseMq.copyWith(textScaler: textScaler),
                 child: child!,

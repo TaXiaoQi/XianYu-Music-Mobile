@@ -32,7 +32,9 @@ bool performancePriority(AppSettings s) => switch (s.performanceMode) {
 
 enum AppLanguage { system, zhCN, zhTW, en }
 
-enum ListSize { compact, medium, large }
+/// 列表档位：compact/medium/large 为应用固定尺寸（不随系统缩放），
+/// followSystem 以「标准」档为基准乘系统字体缩放
+enum ListSize { compact, medium, large, followSystem }
 
 enum AppFontSize {
   system(1.0, followsSystem: true),
@@ -54,6 +56,15 @@ const kUiScaleValues = [0.85, 1.0, 1.15, 1.3];
 /// 整套 UI 缩放系数：越界档位回退标准
 double uiScaleOf(int index) =>
     (index >= 0 && index < kUiScaleValues.length) ? kUiScaleValues[index] : 1.0;
+
+/// 样式大小档位取值：拆分模式下横屏走独立档；-1 表示跟随系统
+///（由调用方用系统缩放因子换算，这里原样返回 -1）
+int uiScaleIndexFor(AppSettings? s, bool landscape) {
+  if (s == null) return 1;
+  return (landscape && !s.uiScaleUnified)
+      ? s.uiScaleIndexLandscape
+      : s.uiScaleIndex;
+}
 
 const kSupportedScanFormats = [
   'flac',
@@ -239,6 +250,8 @@ class AppSettings {
     this.listSize = ListSize.medium,
     this.fontSize = AppFontSize.system,
     this.uiScaleIndex = 1,
+    this.uiScaleUnified = true,
+    this.uiScaleIndexLandscape = 1,
     this.shareLinkValidityMinutes = 120,
     this.sharePlaybackFailureBehavior = 'pause',
     this.playerStyle = PlayerStyle.traditional,
@@ -420,8 +433,14 @@ class AppSettings {
 
   final AppFontSize fontSize;
 
-  /// 整套 UI 缩放档位索引（0 小 / 1 标准 / 2 大 / 3 特大）
+  /// 整套 UI 缩放档位索引（-1 跟随系统 / 0 小 / 1 标准 / 2 大 / 3 特大）
   final int uiScaleIndex;
+
+  /// 横竖屏统一调整：开启时横竖屏共用 uiScaleIndex，关闭后横屏走 uiScaleIndexLandscape
+  final bool uiScaleUnified;
+
+  /// 拆分模式下的横屏样式大小档位（语义同 uiScaleIndex）
+  final int uiScaleIndexLandscape;
 
   final int shareLinkValidityMinutes;
 
@@ -574,6 +593,8 @@ class AppSettings {
     ListSize? listSize,
     AppFontSize? fontSize,
     int? uiScaleIndex,
+    bool? uiScaleUnified,
+    int? uiScaleIndexLandscape,
     int? shareLinkValidityMinutes,
     String? sharePlaybackFailureBehavior,
     PlayerStyle? playerStyle,
@@ -710,6 +731,9 @@ class AppSettings {
       listSize: listSize ?? this.listSize,
       fontSize: fontSize ?? this.fontSize,
       uiScaleIndex: uiScaleIndex ?? this.uiScaleIndex,
+      uiScaleUnified: uiScaleUnified ?? this.uiScaleUnified,
+      uiScaleIndexLandscape:
+          uiScaleIndexLandscape ?? this.uiScaleIndexLandscape,
       shareLinkValidityMinutes:
           shareLinkValidityMinutes ?? this.shareLinkValidityMinutes,
       sharePlaybackFailureBehavior:
@@ -905,6 +929,8 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       listSize: _listSizeFromString(prefs.getString('listSize') ?? 'medium'),
       fontSize: _fontSizeFromString(prefs.getString('fontSize') ?? 'standard'),
       uiScaleIndex: prefs.getInt('uiScaleIndex') ?? 1,
+      uiScaleUnified: prefs.getBool('uiScaleUnified') ?? true,
+      uiScaleIndexLandscape: prefs.getInt('uiScaleIndexLandscape') ?? 1,
       shareLinkValidityMinutes: prefs.getInt('shareLinkValidityMinutes') ?? 120,
       sharePlaybackFailureBehavior:
           prefs.getString('sharePlaybackFailureBehavior') ?? 'pause',

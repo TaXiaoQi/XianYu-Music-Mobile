@@ -252,13 +252,41 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             trailing: Text(_fontSizeLabel(s?.fontSize ?? AppFontSize.system)),
             onTap: () => _pickFontSize(context, ref, s),
           ),
-          _tile(
+          if (s?.uiScaleUnified ?? true)
+            _tile(
+              context,
+              icon: Icons.photo_size_select_large_outlined,
+              title: tr('样式大小'),
+              subtitle: tr('整套界面统一缩放，适配不同屏幕'),
+              trailing: Text(_uiScaleLabel(s?.uiScaleIndex ?? 1)),
+              onTap: () => _pickUiScale(context, ref, s),
+            )
+          else ...[
+            _tile(
+              context,
+              icon: Icons.photo_size_select_large_outlined,
+              title: tr('竖屏样式大小'),
+              subtitle: tr('整套界面统一缩放，适配不同屏幕'),
+              trailing: Text(_uiScaleLabel(s?.uiScaleIndex ?? 1)),
+              onTap: () => _pickUiScale(context, ref, s),
+            ),
+            _tile(
+              context,
+              icon: Icons.photo_size_select_large_outlined,
+              title: tr('横屏样式大小'),
+              subtitle: tr('横屏单独使用的界面缩放'),
+              trailing: Text(_uiScaleLabel(s?.uiScaleIndexLandscape ?? 1)),
+              onTap: () => _pickUiScale(context, ref, s, landscape: true),
+            ),
+          ],
+          _switchTile(
             context,
-            icon: Icons.photo_size_select_large_outlined,
-            title: tr('样式大小'),
-            subtitle: tr('整套界面统一缩放，适配不同屏幕'),
-            trailing: Text(_uiScaleLabel(s?.uiScaleIndex ?? 1)),
-            onTap: () => _pickUiScale(context, ref, s),
+            icon: Icons.screen_rotation_alt_outlined,
+            title: tr('横竖屏统一调整'),
+            subtitle: tr('横竖屏共用同一档样式大小，关闭后分别设置'),
+            value: s?.uiScaleUnified ?? true,
+            onChanged: (v) =>
+                n.setUiScaleUnified(v, inheritFrom: s?.uiScaleIndex ?? 1),
           ),
         ],
       ),

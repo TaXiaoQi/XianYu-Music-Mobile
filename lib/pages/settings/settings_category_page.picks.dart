@@ -151,8 +151,9 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       context: context,
       title: tr('列表项尺寸'),
       options:   [
+        ModernChoiceOption(label: tr('跟随系统'), value: ListSize.followSystem, subtitle: tr('随系统字体缩放实时变化')),
         ModernChoiceOption(label: tr('最小'), value: ListSize.compact, subtitle: tr('紧凑布局，一行多看')),
-        ModernChoiceOption(label: tr('中等'), value: ListSize.medium, subtitle: tr('默认标准高度')),
+        ModernChoiceOption(label: tr('标准'), value: ListSize.medium, subtitle: tr('应用默认高度，不随系统变化')),
         ModernChoiceOption(label: tr('最大'), value: ListSize.large, subtitle: tr('大图标大字号')),
       ],
       currentValue: cur,
@@ -234,13 +235,22 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
   Future<void> _pickUiScale(
     BuildContext context,
     WidgetRef ref,
-    AppSettings? s,
-  ) async {
-    final cur = s?.uiScaleIndex ?? 1;
+    AppSettings? s, {
+    bool landscape = false,
+  }) async {
+    // 统一开关关闭时传 landscape: true 编辑横屏独立档，否则编辑统一档
+    final cur = landscape
+        ? (s?.uiScaleIndexLandscape ?? 1)
+        : (s?.uiScaleIndex ?? 1);
     final choice = await showModernChoiceSheet<int>(
       context: context,
-      title: tr('样式大小'),
+      title: landscape ? tr('横屏样式大小') : tr('样式大小'),
       options: [
+        ModernChoiceOption(
+          label: tr('跟随系统'),
+          subtitle: tr('随系统字体缩放实时变化'),
+          value: -1,
+        ),
         ModernChoiceOption(
           label: tr('小'),
           subtitle: tr('整体缩小 15%，同屏内容更多'),
@@ -265,7 +275,12 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       currentValue: cur,
     );
     if (choice != null) {
-      await ref.read(settingsProvider.notifier).setUiScaleIndex(choice);
+      final n = ref.read(settingsProvider.notifier);
+      if (landscape) {
+        await n.setUiScaleIndexLandscape(choice);
+      } else {
+        await n.setUiScaleIndex(choice);
+      }
     }
   }
 

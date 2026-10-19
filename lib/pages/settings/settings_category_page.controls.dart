@@ -604,6 +604,7 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
   };
 
   String _uiScaleLabel(int index) => switch (index) {
+        -1 => tr('跟随系统'),
         0 => tr('小'),
         2 => tr('大'),
         3 => tr('特大'),

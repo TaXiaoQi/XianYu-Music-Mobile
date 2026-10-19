@@ -102,17 +102,21 @@ class CoverRow extends StatelessWidget {
       ),
     );
 
-    // 行主体统一按压缩放；可排序列表的拖拽把手在行外层 Stack，不受影响
+    // 行主体统一按压缩放；可排序列表的拖拽把手在行外层 Stack，不受影响。
+    // 行内文字锁定 noScaling：固定档保持应用自己的尺寸不被系统字体缩放
+    // 撑大缩小；「跟随系统」档的缩放已由 metrics 携带，避免二次叠加
     return PressableScale(
-      child: background == null
-          ? row
-          : DecoratedBox(
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(12),
+      child: MediaQuery.withNoTextScaling(
+        child: background == null
+            ? row
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  color: background,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: row,
               ),
-              child: row,
-            ),
+      ),
     );
   }
 }

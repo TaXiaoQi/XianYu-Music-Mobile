@@ -218,6 +218,7 @@ const Map<String, String> enDictManual = {
   '沉浸式封面': 'Immersive cover',
   '竖屏播放页用大幅封面铺满顶部，向下渐变融入播放信息':
       'A large cover fills the top of the portrait player page and fades into the playback info',
+  '竖屏样式大小': 'Portrait UI scale',
   '沉浸流光背景': 'Immersive flowing background',
   '使用随封面颜色缓慢流动的多边形背景':
       'A slowly flowing polygon background based on the cover colors',
@@ -468,6 +469,11 @@ const Map<String, String> enDictManual = {
   '横屏播放页无操作 3.5 秒后收起，触摸屏幕唤回':
       'Landscape player hides bars after 3.5s idle, touch to bring back',
   '横屏时隐藏': 'Hide in landscape',
+  '横屏单独使用的界面缩放': 'UI scale applied in landscape only',
+  '横屏样式大小': 'Landscape UI scale',
+  '横竖屏共用同一档样式大小，关闭后分别设置':
+      'Use the same UI scale for both orientations; turn off to set separately',
+  '横竖屏统一调整': 'Unified portrait & landscape',
   '后端连接配置保存失败，请重试': 'Failed to save backend connection settings; please retry',
   '后端连接配置已更新': 'Backend connection settings updated',
   '后台定时增量同步': 'Background scheduled incremental sync',
@@ -579,7 +585,6 @@ const Map<String, String> enDictManual = {
   '密码已修改，请重新登录': 'Password changed; please sign in again',
   '密码已重置，请使用新密码登录': 'Password reset; sign in with the new password',
   '描述（可选）': 'Description (optional)',
-  '默认标准高度': 'Default standard height',
   '默认后端连接配置保存失败，请重试': 'Failed to save default backend settings; please retry',
   '默认排序': 'Default sort',
   '默认设备': 'Default device',
@@ -742,6 +747,7 @@ const Map<String, String> enDictManual = {
   '算法数据无效': 'Invalid algorithm data',
   '随插件同步到云端，点击可重新导入最新版本':
       'Synced to the cloud with plugins; tap to re-import the latest version',
+  '随系统字体缩放实时变化': 'Scales live with the system font size',
   '隧道': 'Tunnel',
   '所选文件夹中没有支持的音乐文件': 'No supported music files in the selected folder',
   '锁定后不可拖动，通知栏解锁': 'Locked and immovable; unlock from the notification bar',
@@ -1028,6 +1034,7 @@ const Map<String, String> enDictManual = {
   '隐藏 ekey 输入': 'Hide the ekey input',
   '隐藏重复歌曲': 'Hide duplicate songs',
   '应用播放页设置的自定义歌词字体': 'Apply the custom lyrics font set on the player page',
+  '应用默认高度，不随系统变化': 'App default height; unaffected by system scaling',
   '应用启动后静默检查并安装所有已启用插件的最新版本；被标记"跳过版本检查"的插件除外':
       'After launch, silently checks and installs the latest version of all enabled plugins, except those marked "skip version check"',
   '用户名（可选）': 'Username (optional)',
