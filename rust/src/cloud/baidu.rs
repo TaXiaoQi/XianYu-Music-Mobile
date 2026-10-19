@@ -17,12 +17,15 @@
 // - 分享文件 token 存 `<shareid>:<from>`，转存时拆出 from（split(':').last）；
 // - 转存前 ensureDir 建 /apps/弦予音乐（errno 12/-8 = 目录已存在可继续），
 //   转存 sekey 是 verify 换来的 randsk，不是提取码本身；
-// - 直链 dlink 手动跟随重定向归一终态 URL，host 命中 d2-ant/speed-limited
-//   判限速；播放下载 UA 用 netdisk;P2SP;2.2.91.136;android-android；
+// - 直链走 /api/download（gettemplatevariable 下发 sign1/sign3 →
+//   RC4+base64 铸 sign），host 命中 d2-ant/speed-limited 判限速；播放
+//   下载 UA 用 netdisk;P2SP;2.2.91.136;android-android；
 // - 日志不打 cred/cookie 内容。
 
 use std::collections::HashMap;
 
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine as _;
 use serde_json::{json, Value};
 
 use super::http;
@@ -688,28 +691,24 @@ fn absolute_url(base: &str, loc: &str) -> Option<String> {
     None
 }
 
-/// 直链重定向归一：手动跟随 3xx（最多 5 跳），失败原样返回（对齐 Dart
-/// resolveFinalUrl 的 catch(_) return url）。
-async fn resolve_final_url(url: &str, headers: &[(String, String)]) -> String {
-    let mut current = url.to_string();
-    for _ in 0..=5 {
-        let resp = match http::get(&current, headers).await {
-            Ok(r) => r,
-            Err(_) => return url.to_string(),
-        };
-        if !(300..400).contains(&resp.status) {
-            return current;
-        }
-        let loc = match resp.location() {
-            Some(l) if !l.is_empty() => l,
-            _ => return url.to_string(),
-        };
-        match absolute_url(&current, &loc) {
-            Some(next) => current = next,
-            None => return url.to_string(),
-        }
+/// RC4（百度 /api/download 签名：网页 sign2 下发的即固定 RC4 JS 实现，
+/// key=sign3、data=sign1，输出 base64 即 sign，2026-10 逆向实测）。
+fn rc4(key: &[u8], data: &[u8]) -> Vec<u8> {
+    let mut s: [u8; 256] = core::array::from_fn(|i| i as u8);
+    let mut j: usize = 0;
+    for i in 0..256 {
+        j = (j + s[i] as usize + key[i % key.len()] as usize) & 0xff;
+        s.swap(i, j);
     }
-    url.to_string()
+    let mut out = Vec::with_capacity(data.len());
+    let (mut i, mut j) = (0usize, 0usize);
+    for &byte in data {
+        i = (i + 1) & 0xff;
+        j = (j + s[i] as usize) & 0xff;
+        s.swap(i, j);
+        out.push(byte ^ s[(s[i] as usize + s[j] as usize) & 0xff]);
+    }
+    out
 }
 
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
@@ -760,9 +759,7 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         if dlink.is_empty() {
             return Err(biz_err("直链获取失败"));
         }
-        // dlink 下载校验 UA 为 netdisk 系；302 跟随同 UA。
-        let nd_headers = vec![("User-Agent".to_string(), NETDISK_UA.to_string())];
-        let dlink = resolve_final_url(&dlink, &nd_headers).await;
+        // dlink 下载校验 UA 为 netdisk 系（302 跟随由播放器/探针自动完成）。
         if is_rate_limited(&host_of(&dlink)) {
             return Err(biz_err("该文件被限速，暂无法播放"));
         }
@@ -778,17 +775,16 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         });
     }
 
-    // Cookie 轨：网页 filemetas dlink 接口（GET fsids 数组参数）——旧
-    // POST api/download 已废（errno=2 params error，2026-10 实测）。
-    // 不能带 origin=dlna：dlna 源直链被 PCS 风控（31329 hit illeage
-    // dlna）。dlink 302 跟随需 netdisk UA + 全量 cookie（缺 cookie 报
-    // 31045 user not exists）；终态 baidupcs URL 自带签名授权，免
-    // cookie 直连（Range 206 实测），播放头仅 netdisk UA。
+    // Cookie 轨：/api/download 直链（网页版现行通道，2026-10 逆向实测）。
+    // filemetas 铸出的 dlink 已被 PCS 下载风控弃用（任何 UA/头/TLS 栈均
+    // 403 31362 sign error）。签名：gettemplatevariable 下发
+    // sign1/sign2/sign3/timestamp，sign2 为服务端下发的固定 RC4 JS——
+    // sign = base64(rc4(key=sign3, data=sign1))。dlink 302 放行条件：
+    // netdisk 系 UA + 全量 cookie（缺 cookie 报 31045 user not exists）；
+    // 终态 baidupcs URL 自带签名授权，播放头透传即可。
+    // 1) 签名三元组（timestamp 也用下发值，避免本地时钟偏差）。
     let resp = http::get(
-        &format!(
-            "https://pan.baidu.com/api/filemetas?dlink=1&fsids={}&clienttype=0&app_id={APP_ID}&web=1",
-            http::url_encode(&format!("[{id}]"))
-        ),
+        "https://pan.baidu.com/api/gettemplatevariable?clienttype=0&app_id=250528&web=1&fields=%5B%22sign1%22%2C%22sign2%22%2C%22sign3%22%2C%22timestamp%22%5D",
         &auth_headers(&req.cred),
     )
     .await
@@ -804,36 +800,69 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
         return Err(biz_err(format!("直链获取失败(errno={errno})")));
     }
-    // 响应 info[0].dlink。
+    let r = j.get("result").cloned().unwrap_or(Value::Null);
+    let sign1 = jstr(r.get("sign1"));
+    let sign3 = jstr(r.get("sign3"));
+    let timestamp = num_i64(r.get("timestamp")).unwrap_or_else(|| now_ms() / 1000);
+    if sign1.is_empty() || sign3.is_empty() {
+        return Err(biz_err("直链获取失败"));
+    }
+    // 2) RC4 + base64 铸 sign，请求直链。
+    let sign = B64.encode(rc4(sign3.as_bytes(), sign1.as_bytes()));
+    let resp = http::get(
+        &format!(
+            "https://pan.baidu.com/api/download?channel=chunlei&clienttype=0&web=1&app_id=250528&fidlist={}&type=dlink&vip=0&sign={}&timestamp={timestamp}",
+            http::url_encode(&format!("[{id}]")),
+            http::url_encode(&sign),
+        ),
+        &auth_headers(&req.cred),
+    )
+    .await
+    .map_err(biz_err)?;
+    if !resp.is_ok() {
+        return Err(biz_err(format!("直链获取失败(http={})", resp.status)));
+    }
+    let j = resp.json().map_err(biz_err)?;
+    let errno = num_i64(j.get("errno")).unwrap_or(-1);
+    if errno != 0 {
+        if cred_expired(errno) {
+            return Err(biz_err("登录已过期，请重新绑定"));
+        }
+        let msg = if errno == 113 { "签名已过期，请重试" } else { "直链获取失败" };
+        return Err(biz_err(format!("{msg}(errno={errno})")));
+    }
+    // 响应形态（2026-10 实测三种）：顶层 dlink 字符串；顶层 dlink 数组
+    // （元素 {dlink: "..."}，fidlist 单文件也返回数组）；或 list[0].dlink。
     let dlink = j
-        .get("info")
-        .and_then(Value::as_array)
-        .and_then(|a| a.first())
-        .and_then(|d| d.get("dlink"))
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
+        .get("dlink")
+        .and_then(|v| match v {
+            Value::String(s) => Some(s.clone()),
+            Value::Array(a) => a
+                .first()
+                .and_then(|d| d.get("dlink"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        })
+        .or_else(|| {
+            j.get("list")
+                .and_then(Value::as_array)
+                .and_then(|a| a.first())
+                .and_then(|d| d.get("dlink"))
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
     if dlink.is_empty() {
         return Err(biz_err("直链获取失败"));
     }
-    // 302 跟随：netdisk UA + 全量 cookie（PCS 会话校验点）。
-    let nd_headers = vec![
-        ("User-Agent".to_string(), NETDISK_UA.to_string()),
-        (
-            "Cookie".to_string(),
-            http::cookie_header(&cred_pairs(&req.cred)),
-        ),
-    ];
-    let dlink = resolve_final_url(&dlink, &nd_headers).await;
     if is_rate_limited(&host_of(&dlink)) {
         return Err(biz_err("该文件被限速，暂无法播放"));
     }
     Ok(CloudOut::plain(direct_link_json(
         &dlink,
-        // 播放头带全量 cookie：d.pcs dlink 302 → baidupcs 终态期间
-        // PCS 校验会话（缺 cookie 报 31045 user not exists）；resolve
-        // 失败回退原 URL 时，播放器的手动重定向跟随（同头 5 跳）可完成
-        // 302——cookie 随头透传。
+        // 播放头带全量 cookie：d.pcs dlink 302 → baidupcs 终态期间 PCS
+        // 校验会话（缺 cookie 报 31045）；播放器/探针自动跟随 302。
         json!({
             "User-Agent": NETDISK_UA,
             "Cookie": http::cookie_header(&cred_pairs(&req.cred)),
@@ -1015,5 +1044,15 @@ mod tests {
             Some("https://a.com/y?z=1")
         );
         assert_eq!(absolute_url("https://a.com/x", "y"), None);
+    }
+
+    #[test]
+    fn rc4_classic_vector() {
+        // RC4 标准测试向量（key="Key", data="Plaintext"）。
+        let out = rc4(b"Key", b"Plaintext");
+        assert_eq!(
+            out,
+            vec![0xBB, 0xF3, 0x16, 0xE8, 0xD9, 0x40, 0xAF, 0x0A, 0xD3]
+        );
     }
 }
