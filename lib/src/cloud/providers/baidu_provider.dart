@@ -214,31 +214,26 @@ code{background:#f2f2f2;border-radius:4px;padding:1px 5px;font-size:13px}
     if (cookiePairs != null) {
       var nickname = displayName;
       var accountId = md5Hex(cookiePairs['BDUSS']!).substring(0, 12);
+      // 昵称/uid 尽力取：getinfo 接口现已要求风控参数（errno=2 params
+      // error），改抓 disk/main 页面内嵌用户信息 JSON 段的
+      // "username":"..."（同一登录会话，2026-10 实测稳定返回）。
       try {
         final resp = await cloudGet(
-          'https://pan.baidu.com/api/user/getinfo?ref=client&clienttype=0&web=1',
+          'https://pan.baidu.com/disk/main',
           headers: {
             ..._webHeaders,
-            'Referer': 'https://pan.baidu.com/disk/main',
+            'Referer': 'https://pan.baidu.com/',
             'Cookie': cookieHeader(cookiePairs),
           },
         );
         if (resp.isOk) {
-          final j = jsonDecode(resp.body);
-          final info = j is Map<String, dynamic>
-              ? (j['user_info'] ?? j['data'])
-              : null;
-          if (info is Map<String, dynamic>) {
-            final name = (info['username'] ?? info['user_name'] ?? '')
-                .toString();
-            if (name.isNotEmpty) nickname = name;
-            final uid = (info['id'] ?? info['user_id'] ?? info['baidu_id'])
-                ?.toString();
-            if (uid != null && uid.isNotEmpty && uid != '0') accountId = uid;
-          }
+          final m =
+              RegExp(r'"username":"([^"]{1,64})"').firstMatch(resp.body);
+          final name = m?.group(1) ?? '';
+          if (name.isNotEmpty) nickname = name;
         }
       } catch (_) {
-        // 昵称/uid 拿不到不影响绑定。
+        // 昵称拿不到不影响绑定。
       }
       return CloudAccount(
         provider: id,
