@@ -121,7 +121,11 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
     String cloudPath, {
     int durationHintSecs = 0,
   }) async {
-    if (_scheduled.contains(cloudPath)) return waitFor(cloudPath);
+    if (_scheduled.contains(cloudPath)) {
+      // 列表期同曲探测在途：慢 CDN 首探可达 2 分钟级，等到完成直接用
+      // 结果（完成会更新 state），不重复发起第二份头部下载
+      return waitFor(cloudPath, timeout: const Duration(minutes: 3));
+    }
     _scheduled.add(cloudPath);
     final existing = state[cloudPath];
     if (existing != null) return existing;
@@ -235,7 +239,11 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
       }
     } catch (e) {
       // 失败静默：列表期探测不打扰用户（播放期探针仍会兜底）
-      AppLog.debug('cloud', '头部元数据预探失败: ${ctx.file.name} $e');
+      final parts = ctx.path.split('/');
+      final prov = (ctx.path.startsWith('cloud://') && parts.length > 2)
+          ? parts[2]
+          : '';
+      AppLog.debug('cloud', '头部元数据预探失败[$prov]: ${ctx.file.name} $e');
     }
   }
 

@@ -285,10 +285,18 @@ pub async fn probe_head(
             Ok(payload)
         }
         None => {
+            // 落盘响应头片段：200 OK 却拿到 HTML（WAF 挑战页/防盗链页）时
+            // 直接可见内容，免二次猜。
+            let head: String = String::from_utf8_lossy(
+                &acc[..acc.len().min(6000)],
+            )
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .collect();
             probe_log(
                 data_dir,
                 &format!(
-                    "[cloud-head] 解析无收获（status={status}, bytes={}）: {cloud_path}",
+                    "[cloud-head] 解析无收获（status={status}, bytes={}, head={head}）: {cloud_path}",
                     acc.len()
                 ),
             );
