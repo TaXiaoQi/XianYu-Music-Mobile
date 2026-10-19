@@ -279,6 +279,8 @@ extension PlayerNotifierCloud on PlayerNotifier {
           .read(cloudHeadMetaProvider.notifier)
           .probeWithDirectLink(link.url, link.headers, item.path);
       final cover = entry?.coverPath;
+      AppLog.debug('cloud',
+          '[head-meta] 兜底结果 cover=${cover != null ? '有' : '无'} len=${cover?.length ?? 0}');
       if (cover != null && cover.isNotEmpty) {
         _patchCloudCoverPath(item.path, cover);
       }

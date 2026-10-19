@@ -184,15 +184,17 @@ class _CoverImageState extends ConsumerState<CoverImage> {
 
   Future<void> _ensureThumbPath() async {
     if (_thumbPath != null) return;
+    // 缓存命中但无效（如 hq=false 实例在本地 DB 无封面时写入的空串）
+    // 不能短路：必须继续尝试 widget.thumbPath（网盘内嵌封面路径），
+    // 否则后续实例永远占位
     final cached = _cache[widget.songPath];
-    if (cached != null) {
-      if (cached.isNotEmpty && File(cached).existsSync()) {
-        if (mounted) setState(() => _thumbPath = cached);
-      }
+    if (cached != null && cached.isNotEmpty && File(cached).existsSync()) {
+      if (mounted) setState(() => _thumbPath = cached);
       return;
     }
     final direct = widget.thumbPath;
     if (direct != null && direct.isNotEmpty && File(direct).existsSync()) {
+      _cache[widget.songPath] = direct;
       if (mounted) setState(() => _thumbPath = direct);
       return;
     }

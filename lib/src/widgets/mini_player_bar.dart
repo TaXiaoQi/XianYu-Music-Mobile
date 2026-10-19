@@ -632,6 +632,9 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
               fromRect: from,
               songPath: current.path,
               networkUrl: current.coverUrl,
+              // 网盘条目无 URL 封面：预探/兜底命中的内嵌封面
+              // 本地路径作为飞行源，否则飞行副本只能用占位块
+              thumbPath: current.coverPath,
               radius: coverSize / 2,
               // 飞入播放页期间隐藏目的地真封面，落地才露出
               hideTarget: true,

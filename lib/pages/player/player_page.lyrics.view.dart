@@ -608,7 +608,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     try {
       String jsonStr = '';
 
-      if (item.isOnline) {
+      // cloud:// 曲目 isOnline 恒为 false（仅插件/直链源为 true），
+      // 必须显式加入，否则网盘曲目永远走本地 DB 分支拿不到内嵌歌词
+      if (item.isOnline || item.path.startsWith('cloud://')) {
         final repoLines = await ref
             .read(lyricsRepositoryProvider)
             .fetchLyrics(item);

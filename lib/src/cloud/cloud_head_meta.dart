@@ -121,6 +121,12 @@ class CloudHeadMetaNotifier extends Notifier<Map<String, CloudHeadMetaEntry>> {
     String cloudPath, {
     int durationHintSecs = 0,
   }) async {
+    final host = Uri.tryParse(url)?.host ?? '';
+    final tail = cloudPath.length > 36
+        ? cloudPath.substring(cloudPath.length - 36)
+        : cloudPath;
+    AppLog.debug('cloud',
+        '[head-meta] 播放期兜底 host=$host path尾=$tail state命中=${state.containsKey(cloudPath)} 在途=${_scheduled.contains(cloudPath)}');
     if (_scheduled.contains(cloudPath)) {
       // 列表期同曲探测在途：慢 CDN 首探可达 2 分钟级，等到完成直接用
       // 结果（完成会更新 state），不重复发起第二份头部下载
