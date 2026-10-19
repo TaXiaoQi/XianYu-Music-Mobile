@@ -58,7 +58,9 @@ class AutoSyncService {
     final now = DateTime.now().millisecondsSinceEpoch;
     if (_nextSyncAt > 0 && now < _nextSyncAt) return;
     if (_nextSyncAt == 0) {
-      _nextSyncAt = now + _intervalMs(config);
+      // 启动/登录后的首个 tick 立即执行一轮先拉后推：其他设备在登录期间
+      // 推上云的变更（尤其网盘绑定）启动即拉取应用，不等一个完整周期
+      await _attemptSync(config);
       return;
     }
     await _attemptSync(config);
@@ -165,14 +167,25 @@ class AutoSyncService {
   Future<void> _syncAll() async {
     final upload = _ref.read(syncProvider).uploadConfig;
     final notifier = _ref.read(syncProvider.notifier);
+    // 统一「先拉后推」：其他设备推上云的变更（含网盘绑定/凭据轮换）在本设备
+    // 的自动同步周期内即可到达，不再依赖仅登录时执行一次的登录同步；
+    // 各域 download 内部有内容对比，无变化不落盘，成本可控。
     if (upload.playlists) {
+      await notifier.syncPlaylistsDownload();
       await notifier.syncPlaylistsUpload();
     }
     if (upload.plugins) {
+      await notifier.syncPluginsDownload();
       await notifier.syncPluginsUpload();
     }
     if (upload.favorites) {
+      await notifier.syncFavoritesDownload();
       await notifier.syncFavoritesUpload();
+    }
+    if (upload.cloudCreds) {
+      // 网盘绑定必须及时下发覆盖：A 端绑定/轮换 → B 端下个周期即拉取应用
+      await notifier.syncCloudCredsDownload();
+      await notifier.syncCloudCredsUpload();
     }
     await notifier.syncListenStats();
     if (upload.settings) {
