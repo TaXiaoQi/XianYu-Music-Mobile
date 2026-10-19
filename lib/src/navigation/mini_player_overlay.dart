@@ -219,9 +219,14 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     final screen = MediaQuery.maybeOf(context);
     final landscape =
         screen == null || screen.size.width >= screen.size.height * 1.05;
+    // null 默认必须与 shell 同口径（bottom）：设置未就绪窗口 valueOrNull
+    // 为 null，按「非 bottom」处理会让条贴底 12px 停靠，被 shell 正常
+    // 渲染的悬浮底栏压在下面（穿透观感）；?? bottom 后与底栏渲染一致，
+    // 条稳定停在底栏上方高位档，设置载入后无档位跳变
     final side = landscape ||
-        (ref.read(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) !=
+        ((ref.read(settingsProvider
+                    .select((s) => s.valueOrNull?.navBarPosition)) ??
+                NavBarPosition.bottom) !=
             NavBarPosition.bottom);
     if ((_lastFloating != null && _lastFloating != floating) ||
         (_lastSide != null && _lastSide != side)) {
@@ -329,8 +334,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     // 侧栏与顶部导航模式都没有底栏：mini 条停靠/拖拽下限按无底栏处理
     // （贴底缘 12px），不吃固定底栏的 64px 让位
     final isSide = landscape ||
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.navBarPosition)) !=
+        ((ref.watch(settingsProvider
+                    .select((s) => s.valueOrNull?.navBarPosition)) ??
+                NavBarPosition.bottom) !=
             NavBarPosition.bottom);
 
     final accountOpen = landscape && ref.watch(landscapeAccountOpenProvider);
