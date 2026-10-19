@@ -778,17 +778,18 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         });
     }
 
-    // Cookie 轨：网页下载接口（POST fidlist + bdstoken）：BDUSS 全盘
-    // 有效。开放平台 xpan filemetas 有应用沙箱——只能拿本应用 /apps
-    // 目录内文件的 dlink，文件在「来自：其他app」目录时必失败，弃用。
-    // bdstoken 缺失时接口返回 errno=-6。
-    let token = bdstoken(&req.cred).await;
-    let resp = http::post_form(
+    // Cookie 轨：网页 filemetas dlink 接口（GET fsids 数组参数）——旧
+    // POST api/download 已废（errno=2 params error，2026-10 实测）。
+    // 不能带 origin=dlna：dlna 源直链被 PCS 风控（31329 hit illeage
+    // dlna）。dlink 302 跟随需 netdisk UA + 全量 cookie（缺 cookie 报
+    // 31045 user not exists）；终态 baidupcs URL 自带签名授权，免
+    // cookie 直连（Range 206 实测），播放头仅 netdisk UA。
+    let resp = http::get(
         &format!(
-            "https://pan.baidu.com/api/download?clienttype=0&app_id={APP_ID}&web=1&dt=1&bdstoken={token}"
+            "https://pan.baidu.com/api/filemetas?dlink=1&fsids={}&clienttype=0&app_id={APP_ID}&web=1",
+            http::url_encode(&format!("[{id}]"))
         ),
         &auth_headers(&req.cred),
-        vec![("fidlist".into(), format!("[{id}]"))],
     )
     .await
     .map_err(biz_err)?;
@@ -803,30 +804,38 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
         return Err(biz_err(format!("直链获取失败(errno={errno})")));
     }
-    // 响应 dlink 为字符串数组；兼容对象形态取 .dlink 字段。
+    // 响应 info[0].dlink。
     let dlink = j
-        .get("dlink")
+        .get("info")
         .and_then(Value::as_array)
         .and_then(|a| a.first())
-        .map(|d| match d {
-            Value::String(s) => s.clone(),
-            Value::Object(o) => jstr(o.get("dlink")),
-            _ => String::new(),
-        })
-        .unwrap_or_default();
+        .and_then(|d| d.get("dlink"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     if dlink.is_empty() {
         return Err(biz_err("直链获取失败"));
     }
-    // 302 跟随与获取使用同一套请求头（UA 一致性是网页 dlink 的校验点）。
-    let dlink = resolve_final_url(&dlink, &auth_headers(&req.cred)).await;
+    // 302 跟随：netdisk UA + 全量 cookie（PCS 会话校验点）。
+    let nd_headers = vec![
+        ("User-Agent".to_string(), NETDISK_UA.to_string()),
+        (
+            "Cookie".to_string(),
+            http::cookie_header(&cred_pairs(&req.cred)),
+        ),
+    ];
+    let dlink = resolve_final_url(&dlink, &nd_headers).await;
     if is_rate_limited(&host_of(&dlink)) {
         return Err(biz_err("该文件被限速，暂无法播放"));
     }
     Ok(CloudOut::plain(direct_link_json(
         &dlink,
+        // 播放头带全量 cookie：d.pcs dlink 302 → baidupcs 终态期间
+        // PCS 校验会话（缺 cookie 报 31045 user not exists）；resolve
+        // 失败回退原 URL 时，播放器的手动重定向跟随（同头 5 跳）可完成
+        // 302——cookie 随头透传。
         json!({
-            "User-Agent": UA,
-            "Referer": "https://pan.baidu.com/",
+            "User-Agent": NETDISK_UA,
             "Cookie": http::cookie_header(&cred_pairs(&req.cred)),
         }),
         Some(&name),
