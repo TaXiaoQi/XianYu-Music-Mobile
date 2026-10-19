@@ -35,6 +35,13 @@ const String _kTsSyncKey = '__ts__';
 /// 旧版客户端导入时只认 List 值会自动忽略该键，新旧双向兼容。
 const String _kFolderSelSyncKey = '__fsel__';
 
+/// 同步串保留键：随密封串携带的已选目录名称缓存
+/// （`providerId|accountId → {存储键: 目录名}`）。id 型盘的存储键是纯
+/// id 串，不同步名称的话其他设备选择器 chip 只能显示原始 id。纯展示
+/// 数据不参与变更时钟：仅随勾选变更的载荷顺带上传，浏览回填不触发
+/// 上传（防同步风暴）。旧版客户端导入时只认 List 值会自动忽略，双向兼容。
+const String _kFolderNamesSyncKey = '__fnames__';
+
 /// 遗留兜底账号 ID 形态：早期版本 accountId 取 md5(cookie/refreshToken)
 /// 前 12 位 hex（每次登录都变，重复登录即产生重复账号）。现役账号 ID 均
 /// 为服务端 uid 或昵称哈希（u_ 前缀）。
@@ -323,6 +330,10 @@ class CloudCredentialsStore extends ChangeNotifier {
     if (folderSel.isNotEmpty) {
       payload[_kFolderSelSyncKey] = folderSel;
     }
+    final folderNames = await CloudFolderNameCache.instance.allNames();
+    if (folderNames.isNotEmpty) {
+      payload[_kFolderNamesSyncKey] = folderNames;
+    }
     return _sealWithKey(jsonEncode(payload), _syncKey(ciyuanxiId));
   }
 
@@ -359,6 +370,17 @@ class CloudCredentialsStore extends ChangeNotifier {
       });
       sel = parsed;
     }
+    // 解析已选目录名称保留键（纯展示缓存，随选择同生命周期）
+    final folderNamesRaw = raw.remove(_kFolderNamesSyncKey);
+    var names = const <String, Map<String, String>>{};
+    if (folderNamesRaw is Map) {
+      final parsed = <String, Map<String, String>>{};
+      folderNamesRaw.forEach((k, v) {
+        if (k is! String || k.isEmpty || v is! Map) return;
+        parsed[k] = v.map((kk, vv) => MapEntry('$kk', '$vv'));
+      });
+      names = parsed;
+    }
     // 解析账号表
     final incomingAccounts = <String, List<CloudAccount>>{};
     raw.forEach((k, v) {
@@ -374,7 +396,9 @@ class CloudCredentialsStore extends ChangeNotifier {
           _accountsJson(incomingAccounts);
       final foldersChanged =
           await CloudFolderSelectionStore.instance.replaceAllPaths(sel);
-      if (accountsChanged || foldersChanged) {
+      final namesChanged =
+          await CloudFolderNameCache.instance.replaceAllNames(names);
+      if (accountsChanged || foldersChanged || namesChanged) {
         _cache = incomingAccounts;
         _hasAnyBound = incomingAccounts.isNotEmpty;
         await _persist(); // 会把 changeAt 推到 now，下面立刻对齐回云端时钟
@@ -382,14 +406,23 @@ class CloudCredentialsStore extends ChangeNotifier {
       } else {
         await alignSynced(cloudTs);
       }
-      AppLog.debug('cloud',
-          '网盘同步：已应用云端(v2) 变更=${accountsChanged || foldersChanged}');
-      return (applied: true, changed: accountsChanged || foldersChanged);
+      AppLog.debug(
+          'cloud',
+          '网盘同步：已应用云端(v2) 变更='
+          '${accountsChanged || foldersChanged || namesChanged}');
+      return (
+        applied: true,
+        changed: accountsChanged || foldersChanged || namesChanged
+      );
     }
     // 旧格式：并集合并（旧行为）；有变化留给上传推 v2，无变化视为已对齐
     var changed = false;
     if (sel.isNotEmpty) {
       changed = await CloudFolderSelectionStore.instance.mergePaths(sel);
+    }
+    if (names.isNotEmpty) {
+      final namesMerged = await CloudFolderNameCache.instance.mergeNames(names);
+      changed = namesMerged || changed;
     }
     final merged = _cache!;
     final before = _accountsJson(merged);

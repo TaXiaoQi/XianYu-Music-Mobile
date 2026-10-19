@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -53,6 +55,10 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
 
   final Set<String> _selected = {};
 
+  /// 已选目录名称缓存（纯展示）：id 型盘的存储键是 id 串，键不在面包屑
+  /// 栈/当前列表时 chip 显示可读名全靠它；勾选与浏览命中时回写落盘
+  Map<String, String> _names = const {};
+
   @override
   void initState() {
     super.initState();
@@ -74,9 +80,12 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     _accountId = valid;
     final saved =
         await CloudFolderSelectionStore.instance.pathsFor(_provider.id, valid);
+    final names =
+        await CloudFolderNameCache.instance.namesFor(_provider.id, valid);
     if (!mounted) return;
     setState(() {
       _selected.addAll(saved);
+      _names = names;
       _stack
         ..clear()
         ..add(_Crumb(_provider.rootPath, tr('全部文件')));
@@ -128,13 +137,26 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
       final cred = await _cred();
       final r = await _provider.listDir(cred, path, cursor: more ? _cursor : null);
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
+      // 名称 heal：当前列表命中的已选键回填缓存——跨设备同步来的选择
+      //（本地无名称记录）首次浏览到其父目录即可显示可读名；setState
+      // 内合并，chip 当帧从原始 id 换成可读名
+      final heal = <String, String>{};
+      for (final d in _dirs) {
+        final k = _entryKey(d);
+        if (_selected.contains(k)) heal[k] = d.name;
+      }
       setState(() {
         _dirs = r.files.where((f) => f.isDir).toList();
         _files = r.files.where((f) => !f.isDir).toList();
         _cursor = r.nextCursor;
         _loading = false;
         _appending = false;
+        if (heal.isNotEmpty) _names = {..._names, ...heal};
       });
+      if (heal.isNotEmpty) {
+        unawaited(CloudFolderNameCache.instance
+            .remember(_provider.id, _accountId, heal));
+      }
     } catch (e) {
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
       AppLog.warn('cloud', '选择器列目录失败 path=$path: $e');
@@ -154,8 +176,27 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     if (_stack.isEmpty) return;
     final path = _stack.last.path;
     setState(() {
-      if (!_selected.remove(path)) _selected.add(path);
+      if (!_selected.remove(path)) {
+        _selected.add(path);
+        _rememberName({path: _stack.last.name});
+      }
     });
+  }
+
+  /// 名称缓存回写（只增改不删，落盘去抖在缓存内部）
+  void _rememberName(Map<String, String> entries) {
+    if (entries.isEmpty) return;
+    _names = {..._names, ...entries};
+    unawaited(CloudFolderNameCache.instance
+        .remember(_provider.id, _accountId, entries));
+  }
+
+  /// 列表条目的存储键（path 优先，回退 id），与勾选写入同口径
+  String _entryKey(CloudFile d) {
+    final cur = _stack.isNotEmpty ? _stack.last.path : null;
+    return (d.path != null && d.path!.isNotEmpty && d.path != cur)
+        ? d.path!
+        : d.id;
   }
 
   void _toggleEntry(String name, String? entryPath, String entryId) {
@@ -165,7 +206,10 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
             ? entryPath
             : entryId;
     setState(() {
-      if (!_selected.remove(key)) _selected.add(key);
+      if (!_selected.remove(key)) {
+        _selected.add(key);
+        _rememberName({key: name});
+      }
     });
   }
 
@@ -186,6 +230,11 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     for (final c in _stack) {
       if (c.path == path) return c.name;
     }
+    for (final d in _dirs) {
+      if (_entryKey(d) == path) return d.name;
+    }
+    final cached = _names[path];
+    if (cached != null && cached.isNotEmpty) return cached;
     final idx = path.lastIndexOf('/');
     return idx >= 0 && idx < path.length - 1
         ? path.substring(idx + 1)
