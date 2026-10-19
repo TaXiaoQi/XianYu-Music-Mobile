@@ -199,7 +199,13 @@ code{background:#f2f2f2;border-radius:4px;padding:1px 5px;font-size:13px}
   Future<CloudAccount> completeLogin(CloudCaptureResult captured) async {
     var raw = captured.token ?? '';
     if (raw.isEmpty) {
-      throw const CloudException('未捕获到授权凭据，请重试');
+      // 手填 Cookie 走 cookies 字段传入（壳页 _manualCookie 的解析产物），
+      // 序列化回 k=v; 文本供统一解析；两者皆空才是真没凭据
+      final c = captured.cookies;
+      if (c.isEmpty) {
+        throw const CloudException('未捕获到授权凭据，请重试');
+      }
+      raw = c.entries.map((e) => '${e.key}=${e.value}').join('; ');
     }
 
     // 手填 Cookie：含 BDUSS 的网页 Cookie 直接落库为 Cookie 轨凭据。
