@@ -11,7 +11,7 @@ import 'auth_provider.dart';
 import 'server_models.dart';
 import '../i18n/i18n.dart';
 
-const appVersion = '1.0.6-beta2';
+const appVersion = '2.0.6-beta2';
 
 /// 已验签内测资格响应的本地缓存键（fail-closed：断网凭缓存放行，无缓存/过期则锁）。
 const _betaAccessCacheKey = 'beta_access_signed_payload_v1';
@@ -418,6 +418,8 @@ class AccountApi {
   Future<int> uploadFavorites(
     List<Map<String, dynamic>> favorites, {
     List<String> deletePaths = const [],
+    // merge=false 为手动覆盖上传：服务端用本次上传全量替换（默认合并，自动同步不受影响）
+    bool merge = true,
   }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
@@ -427,12 +429,15 @@ class AccountApi {
       'user_id': ciyuanxiId,
       'favorites': favorites,
       if (deletePaths.isNotEmpty) 'delete_paths': deletePaths,
-      'merge': true,
+      'merge': merge,
     }, fetchTimeoutMs: 15000);
     return (data['song_count'] as num?)?.toInt() ?? 0;
   }
 
-  Future<List<Map<String, dynamic>>> downloadFavorites() async {
+  /// 下载云端收藏 + 删除广播账本：deletedPaths 为其他端「删除全部/删除云端」
+  /// 的 path 列表，拉取端据此裁剪本地副本（向后兼容：旧服务端缺省为空）。
+  Future<({List<Map<String, dynamic>> favorites, List<String> deletedPaths})>
+      downloadFavorites() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步收藏'));
@@ -440,9 +445,14 @@ class AccountApi {
     final data = await _action('favorites_sync_download', {
       'user_id': ciyuanxiId,
     }, fetchTimeoutMs: 15000);
-    return ((data['favorites'] as List?) ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList();
+    return (
+      favorites: ((data['favorites'] as List?) ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .toList(),
+      deletedPaths: ((data['deleted_paths'] as List?) ?? const [])
+          .whereType<String>()
+          .toList(),
+    );
   }
 
   /// 上传本地密封的网盘凭据串（`xy1:<iv>:<密文>`，服务端只见密文）。
@@ -508,7 +518,8 @@ class AccountApi {
   }
 
   Future<({int playlistCount, int songTotal, List<Map<String, dynamic>> idMap})>
-      fileSyncUpload(List<Map<String, dynamic>> playlists) async {
+      fileSyncUpload(List<Map<String, dynamic>> playlists,
+          {/* merge=false 为手动覆盖上传：服务端用本次上传全量替换快照 */ bool merge = true}) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步歌单'));
@@ -540,7 +551,7 @@ class AccountApi {
     }
     final finish = await _action('file_sync_upload_finish', {
       'user_id': ciyuanxiId,
-      'merge': true,
+      'merge': merge,
     }, fetchTimeoutMs: 50000);
     final idMap = (finish['id_map'] as List? ?? const [])
         .whereType<Map>()
@@ -611,6 +622,20 @@ class AccountApi {
     await _action('plugin_sync_delete', {
       'user_id': ciyuanxiId,
       'plugin_ids': pluginIds,
+    }, fetchTimeoutMs: 15000);
+  }
+
+  /// 云端订阅链接显式删除（url 维度）。云端订阅为各端并集，
+  /// 本地移除时须调用否则会被其他端重新合并回来。
+  Future<void> deleteCloudSubscriptions(List<String> urls) async {
+    if (urls.isEmpty) return;
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录后再同步插件'));
+    }
+    await _action('plugin_sync_delete', {
+      'user_id': ciyuanxiId,
+      'subscription_urls': urls,
     }, fetchTimeoutMs: 15000);
   }
 

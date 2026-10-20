@@ -610,6 +610,34 @@ class _UploadConfigCard extends ConsumerWidget {
   }
 }
 
+/// 手动覆盖同步确认弹窗：手动按钮=强制覆盖（上传覆盖云端/下载覆盖本地），
+/// 自动同步仍走对比合并。文案与桌面端 SettingsAccount 完全一致。
+Future<void> _confirmOverwriteSync(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required Future<void> Function() action,
+}) async {
+  final ok = await showPredictiveDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(tr(title)),
+      content: Text(tr(message)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(tr('取消')),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(tr('确认覆盖')),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) await action();
+}
+
 class _ManualSyncCard extends ConsumerWidget {
   const _ManualSyncCard();
 
@@ -620,7 +648,6 @@ class _ManualSyncCard extends ConsumerWidget {
           s.favoritesSync,
           s.pluginSync,
           s.settingsSync,
-          s.cloudCredsSync,
         )));
     final notifier = ref.read(syncProvider.notifier);
 
@@ -629,33 +656,68 @@ class _ManualSyncCard extends ConsumerWidget {
         _SyncActionTile(
           title: tr('歌单'),
           state: sync.$1,
-          onUpload: notifier.syncPlaylistsUpload,
-          onDownload: notifier.syncPlaylistsDownload,
+          onUpload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖上传歌单',
+            message: '将用本地歌单全量覆盖云端，云端多出的歌单会被移除；本地歌单为空时云端歌单将被全部清空。确定继续吗？',
+            action: () => notifier.syncPlaylistsUpload(overwrite: true),
+          ),
+          onDownload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖下载歌单',
+            message: '将用云端歌单全量覆盖本地，本地多出的歌单会被移除。确定继续吗？',
+            action: () => notifier.syncPlaylistsDownload(overwrite: true),
+          ),
         ),
         _SyncActionTile(
           title: tr('收藏'),
           state: sync.$2,
-          onUpload: notifier.syncFavoritesUpload,
-          onDownload: notifier.syncFavoritesDownload,
+          onUpload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖上传收藏',
+            message: '将用本地收藏全量覆盖云端，云端多出的收藏会被移除。确定继续吗？',
+            action: () => notifier.syncFavoritesUpload(overwrite: true),
+          ),
+          onDownload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖下载收藏',
+            message: '将用云端收藏全量覆盖本地，本地多出的收藏会被移除。确定继续吗？',
+            action: () => notifier.syncFavoritesDownload(overwrite: true),
+          ),
         ),
         _SyncActionTile(
           title: tr('插件'),
           state: sync.$3,
-          onUpload: notifier.syncPluginsUpload,
-          onDownload: notifier.syncPluginsDownload,
+          onUpload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖上传插件',
+            message: '将用本地插件全量覆盖云端，云端多出的插件与订阅会被移除。确定继续吗？',
+            action: () => notifier.syncPluginsUpload(overwrite: true),
+          ),
+          onDownload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖下载插件',
+            message: '将清空本地插件与订阅，并按云端内容重新安装。确定继续吗？',
+            action: () => notifier.syncPluginsDownload(overwrite: true),
+          ),
         ),
         _SyncActionTile(
           title: tr('设置'),
           state: sync.$4,
-          onUpload: notifier.syncSettingsUpload,
-          onDownload: notifier.syncSettingsDownload,
+          onUpload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖上传设置',
+            message: '将用本地设置覆盖云端设置。确定继续吗？',
+            action: () => notifier.syncSettingsUpload(),
+          ),
+          onDownload: () => _confirmOverwriteSync(
+            context,
+            title: '覆盖下载设置',
+            message: '将用云端设置覆盖本地设置。确定继续吗？',
+            action: () => notifier.syncSettingsDownload(),
+          ),
         ),
-        _SyncActionTile(
-          title: tr('网盘账号'),
-          state: sync.$5,
-          onUpload: notifier.syncCloudCredsUpload,
-          onDownload: notifier.syncCloudCredsDownload,
-        ),
+        // 网盘账号无手动同步按钮（对齐桌面端）：登录后变更实时触发上传
       ],
     );
   }

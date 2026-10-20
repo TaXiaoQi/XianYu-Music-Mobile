@@ -31,8 +31,16 @@ class SecureStore {
     // 安全存储无值或不可用：读回退键。此前 write 失败可能已把值落到
     // prefs（如 Keystore 偶发故障），读取侧必须同样回退，否则该值
     // 永远读不出来——表现为密钥每次启动重新生成、加密凭据解不开。
-    final prefs = await SharedPreferences.getInstance();
-    final fallback = prefs.getString(key);
+    // prefs 插件自身异常（如依赖版本错位致 NoSuchMethodError）时按
+    // 无值处理返回 null，不让回退路径把整条读取链路炸穿。
+    final SharedPreferences prefs;
+    final String? fallback;
+    try {
+      prefs = await SharedPreferences.getInstance();
+      fallback = prefs.getString(key);
+    } catch (_) {
+      return null;
+    }
     if (fallback != null && fallback.isNotEmpty) {
       if (!secureBroken) {
         // 安全存储可用：迁回安全存储后清掉明文回退键
@@ -78,8 +86,12 @@ class SecureStore {
       await _storage.delete(key: key);
     } catch (_) {}
     if (legacyPrefsKey != null) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(legacyPrefsKey);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(legacyPrefsKey);
+      } catch (_) {
+        // prefs 不可用时清理尽力而为
+      }
     }
   }
 }

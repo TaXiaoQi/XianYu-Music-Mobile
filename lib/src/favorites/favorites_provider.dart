@@ -319,6 +319,13 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     SyncTrigger.markDirty(const {SyncTrigger.favorites});
   }
 
+  /// 整表替换（手动覆盖下载专用）：不经 add/addAll 的去重与信号上报，
+  /// 不触发每日红心信号，直接以给定列表落盘。
+  Future<void> replaceAll(List<FavoriteEntry> entries) async {
+    state = FavoritesState(entries: entries, loading: false);
+    await _persist(entries);
+  }
+
   Future<void> reorderEntries(List<String> orderedPaths) async {
     final current = state.entries;
     final pathSet = orderedPaths.toSet();

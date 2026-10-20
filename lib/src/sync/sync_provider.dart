@@ -286,18 +286,26 @@ class SyncNotifier extends StateNotifier<SyncState> {
       _lens((s) => s.cloudCredsSync, (s, v) => s.copyWith(cloudCredsSync: v)));
 
   // ---- 对外同步入口（薄委托，公共 API 不变）----
+  // overwrite=true 为手动覆盖语义：上传覆盖服务端、下载覆盖本地；
+  // 自动同步/登录同步不带该参数，仍走原有对比合并逻辑
 
-  Future<void> syncPlaylistsUpload() => _playlistSyncSvc.upload();
+  Future<void> syncPlaylistsUpload({bool overwrite = false}) =>
+      _playlistSyncSvc.upload(overwrite: overwrite);
 
-  Future<void> syncPlaylistsDownload() => _playlistSyncSvc.download();
+  Future<void> syncPlaylistsDownload({bool overwrite = false}) =>
+      _playlistSyncSvc.download(overwrite: overwrite);
 
-  Future<void> syncFavoritesUpload() => _favoritesSyncSvc.upload();
+  Future<void> syncFavoritesUpload({bool overwrite = false}) =>
+      _favoritesSyncSvc.upload(overwrite: overwrite);
 
-  Future<void> syncFavoritesDownload() => _favoritesSyncSvc.download();
+  Future<void> syncFavoritesDownload({bool overwrite = false}) =>
+      _favoritesSyncSvc.download(overwrite: overwrite);
 
-  Future<void> syncPluginsUpload() => _pluginsSyncSvc.upload();
+  Future<void> syncPluginsUpload({bool overwrite = false}) =>
+      _pluginsSyncSvc.upload(overwrite: overwrite);
 
-  Future<void> syncPluginsDownload() => _pluginsSyncSvc.download();
+  Future<void> syncPluginsDownload({bool overwrite = false}) =>
+      _pluginsSyncSvc.download(overwrite: overwrite);
 
   Future<void> syncSettingsUpload() => _settingsSyncSvc.upload();
 

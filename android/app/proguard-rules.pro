@@ -28,3 +28,14 @@
 -dontwarn com.huawei.wearengine.**
 -keep class com.huawei.hmf.tasks.** { *; }
 -dontwarn com.huawei.hmf.tasks.**
+
+# Kotlin 标准库整体保名：本 app 有多处按「原始名」加载 Kotlin 桥接类的路径
+# （shared_preferences_android ≥2.5 的 jnigen 经 JNI 反射调 suspend 方法——上游
+# 未带 consumer proguard 规则、华为 wearengine SDK 内部协程、自定义 channel 的
+# Kotlin 侧实现），R8 的优化会逐个删掉它们——真机 release 先后炸过三茬：
+# Continuation 被重命名（JNI 查不到签名，prefs 全盘 NoSuchMethodError）→
+# CoroutineSingletons 被删类 → kotlin.Result 被消除（R8 的 Result 消除优化），
+# ClassNotFound 遍布同步/推送/通知全部 channel（debug 不混淆故 run 正常、仅
+# release 复现）。逐个追 keep 成本过高，整体保留一步到位（dex 增量约数百 KB）。
+-keep class kotlin.** { *; }
+-dontwarn kotlin.**

@@ -88,11 +88,12 @@ class PlaylistSyncService {
   }
 
 
-  Future<void> upload() async {
+  Future<void> upload({bool overwrite = false}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
       final local = await PlaylistStore().loadAll();
-      if (local.isEmpty) {
+      // 覆盖上传不早退：本地为空也上传空快照（merge=false），即快捷清空云端歌单
+      if (local.isEmpty && !overwrite) {
         _lens.item = _lens.item.copyWith(
           syncing: false,
           lastSummary: tr('本地暂无可上传的歌单'),
@@ -105,7 +106,8 @@ class PlaylistSyncService {
         var payloadSongs = p.songs.map(_songToSyncPayload).toList();
         List<String>? deletedSongPaths;
         final cloudId = p.cloudId ?? '';
-        if (cloudId.isNotEmpty) {
+        // 覆盖上传跳过墓碑/云端保留等合并裁剪，本地歌单全集即云端目标状态
+        if (cloudId.isNotEmpty && !overwrite) {
           final localPaths = p.songs.map((s) => s.path).toSet();
           final keepMap = await PlaylistSongSyncState.cloudKeepSongs(cloudId);
           for (final entry in keepMap.entries) {
@@ -150,7 +152,7 @@ class PlaylistSyncService {
           'deletedSongPaths': ?deletedSongPaths,
         });
       }
-      final res = await _api.fileSyncUpload(payload);
+      final res = await _api.fileSyncUpload(payload, merge: !overwrite);
       final store = PlaylistStore();
       if (res.idMap.isNotEmpty) {
         for (final entry in res.idMap) {
@@ -181,10 +183,12 @@ class PlaylistSyncService {
   /// ops），置 false 回退 v1 全量快照下载（与桌面端 USE_SYNC_V2 一致）。
   static const _useSyncV2 = true;
 
-  Future<void> download() async {
+  Future<void> download({bool overwrite = false}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
-      if (_useSyncV2) {
+      if (overwrite) {
+        await _downloadOverwriteSnapshot();
+      } else if (_useSyncV2) {
         await _downloadViaOps();
       } else {
         await _downloadViaSnapshot();
@@ -193,6 +197,85 @@ class PlaylistSyncService {
       AppLog.warn('sync', '歌单下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
     }
+  }
+
+  /// 覆盖下载（手动「更新至本地」）：v1 全量快照直接替换本地歌单。
+  /// 不走 v2 diff、不应用墓碑/删除账本，本地独有歌单将被移除；
+  /// 被替换歌单的墓碑随之清除，避免下次上传把覆盖前的删除重放到云端。
+  Future<void> _downloadOverwriteSnapshot() async {
+    final data = await _api.fileSyncDownload();
+    final cloudPlaylists = ((data?['playlists'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    if (cloudPlaylists.isEmpty) {
+      _lens.item = _lens.item.copyWith(
+        syncing: false,
+        lastSummary: tr('云端暂无歌单数据'),
+        lastTime: DateTime.now(),
+      );
+      return;
+    }
+    final library = _ref.read(libraryProvider);
+    if (library.loading) {
+      await _ref.read(libraryProvider.notifier).load();
+    }
+    final index = SyncNotifier._buildLibraryIndex(_ref);
+
+    // 本地歌单整体被替换：旧歌单的墓碑与下载跳过记录全部失效，一并清空
+    final store = PlaylistStore();
+    final working = await store.loadAll();
+    final staleCloudIds = working
+        .map((p) => p.cloudId ?? '')
+        .where((c) => c.isNotEmpty)
+        .toSet();
+    for (final cid in staleCloudIds) {
+      await PlaylistSongSyncState.clearTombstones(cid);
+    }
+    await PlaylistSongSyncState.removeDownloadSkipPlaylistIds(staleCloudIds);
+
+    final rebuilt = <ImportedPlaylist>[];
+    var songCount = 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final pl in cloudPlaylists) {
+      final deletedPaths = ((pl['deletedSongPaths'] as List?) ?? const [])
+          .whereType<String>()
+          .toSet();
+      final rawSongs =
+          ((pl['songs'] as List?) ?? const []).whereType<Map>().toList();
+      // 仅过滤云端自带的 deletedSongPaths，不应用本地墓碑
+      final visibleRaw = rawSongs.where((e) {
+        final p = e['path'] as String?;
+        return p == null || !deletedPaths.contains(p);
+      }).toList();
+      final songs = visibleRaw
+          .map((e) =>
+              _songFromSyncPayload(e.cast<String, dynamic>(), index.byPath, index.byMeta))
+          .map((s) => s.copyWith(addedAt: s.addedAt ?? DateTime.now()))
+          .toList();
+      songCount += songs.length;
+      rebuilt.add(ImportedPlaylist(
+        id: PlaylistStore.newId(const {}),
+        name: (pl['name'] as String?) ?? tr('未命名歌单'),
+        songs: songs,
+        importedAt: now,
+        cloudId: pl['cloudId'] as String?,
+        isCloud: true,
+        sourcePluginId: pl['sourcePluginId'] as String?,
+        sourceUrl: pl['sourceUrl'] as String?,
+        sourceRaw: pl['sourceRaw'] is Map
+            ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
+            : null,
+      ));
+    }
+    await store.saveAll(rebuilt);
+    await _ref.read(playlistManagerProvider.notifier).refresh();
+    _lens.item = _lens.item.copyWith(
+      syncing: false,
+      lastSummary: tr('已导入 {n} 个歌单 / {scount} 首', {'n': rebuilt.length, 'scount': songCount}),
+      lastTime: DateTime.now(),
+      errors: [],
+    );
   }
 
   /// v2 路径：上报本地歌单概要（song_hash），服务端 diff 后下发 ops 幂等应用。
@@ -219,6 +302,9 @@ class PlaylistSyncService {
     }
 
     final data = await _api.fileSyncV2DownloadOps(reports);
+    await _trimCloudDeletedPlaylists(((data['deleted_playlist_cloud_ids'] as List?) ?? const [])
+        .whereType<String>()
+        .toSet());
     final downloadSkip = await PlaylistSongSyncState.downloadSkipPlaylistIds();
     final ops = ((data['ops'] as List?) ?? const [])
         .whereType<Map>()
@@ -280,6 +366,9 @@ class PlaylistSyncService {
   /// v1 路径：全量快照下载 + 本地合并（回退开关用）。
   Future<void> _downloadViaSnapshot() async {
     final data = await _api.fileSyncDownload();
+      await _trimCloudDeletedPlaylists(((data?['deleted_playlist_cloud_ids'] as List?) ?? const [])
+          .whereType<String>()
+          .toSet());
       final downloadSkip = await PlaylistSongSyncState.downloadSkipPlaylistIds();
       final cloudPlaylists = ((data?['playlists'] as List?) ?? const [])
           .whereType<Map>()
@@ -366,6 +455,29 @@ class PlaylistSyncService {
         lastTime: DateTime.now(),
         errors: [],
       );
+  }
+
+  /// 云端删除广播裁剪：其他端「删除全部/删除云端」的歌单按 cloudId 真删本地。
+  /// 仅按 cloudId 匹配，无绑定的独立歌单不动（名字跨端不可靠，不作匹配依据）；
+  /// 裁剪后清该歌单的遗留墓碑，并解除「删除本地（云端保留）」的下载跳过。
+  Future<void> _trimCloudDeletedPlaylists(Set<String> cloudIds) async {
+    final victims = cloudIds.where((c) => c.isNotEmpty).toSet();
+    if (victims.isEmpty) return;
+    // 云端已删：本机对应墓碑与「删除本地（云端保留）」跳过记录随之失效，
+    // 无论本地是否存在该歌单都清掉
+    for (final cid in victims) {
+      await PlaylistSongSyncState.clearTombstones(cid);
+    }
+    await PlaylistSongSyncState.removeDownloadSkipPlaylistIds(victims);
+    final store = PlaylistStore();
+    final all = await store.loadAll();
+    final next = all.where((p) {
+      final cid = p.cloudId ?? '';
+      return cid.isEmpty || !victims.contains(cid);
+    }).toList();
+    if (next.length == all.length) return;
+    await store.saveAll(next);
+    await _ref.read(playlistManagerProvider.notifier).refresh();
   }
 
   Future<void> _propagateDeletedSongsToLocal(

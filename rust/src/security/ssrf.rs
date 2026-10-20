@@ -130,7 +130,22 @@ pub async fn resolve_real_ips_via_doh(host: &str) -> Result<Vec<IpAddr>, String>
 /// 解析到 198.18.0.0/15）、企业/校园 VPN（10/8）与运营商内网 DNS 下，解析结果落在
 /// 私有段属正常链路形态，拒绝会直接杀死 VPN 用户的全部网络。域名的 SSRF/rebinding
 /// 风险由「校验期解析 + 钉住」（OutboundDnsResolver）与 IP 字面量黑名单防御。
+///
+/// 系统 DNS（getaddrinfo）失败时走 DoH 兜底：实测部分厂商 ROM 会把特定 uid 的
+/// DNS 查询路由到失效/被管控的解析上下文（表现为瞬时 EAI_NODATA，换网/杀进程
+/// 均不复原）。DoH 端点为 IP 直连，完全不经过系统 DNS；结果同样过滤内网/保留段
+/// （SSRF 防线不放松）。
 pub async fn resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
+    match system_resolve_allowed_ips(host, port).await {
+        Ok(ips) => Ok(ips),
+        Err(sys_err) => resolve_real_ips_via_doh(host)
+            .await
+            .map_err(|doh_err| format!("{sys_err}; DoH 兜底也失败: {doh_err}")),
+    }
+}
+
+/// 系统 DNS 解析（getaddrinfo）。
+async fn system_resolve_allowed_ips(host: &str, port: u16) -> Result<Vec<IpAddr>, String> {
     let mut addrs = tokio::net::lookup_host((host, port))
         .await
         .map_err(|e| format!("域名解析失败: {host} ({e})"))?;
@@ -508,9 +523,11 @@ mod tests {
         let name: reqwest::dns::Name = "ssrf-rebinding-fail.invalid".parse().unwrap();
         let fut = resolver.resolve(name);
         // 未钉住 + 解析失败/命中禁区 → 都必须返回 Err（不返回内网 IP）
-        let res = tokio::time::timeout(std::time::Duration::from_secs(2), fut)
+        let res = tokio::time::timeout(std::time::Duration::from_secs(15), fut)
             .await
             .expect("resolver 不应超时");
+        // 注：系统解析失败后会走 DoH 兜底再试一轮（见 resolve_allowed_ips），
+        // 不可达 TLD 的总耗时 ≈ 系统失败 + 两个 DoH 端点查询，超时上限需放宽。
         // .invalid 应解析失败，或即便解析也不应是内网 → 结果为 Err 或非内网
         match res {
             Err(_) => {}
@@ -519,6 +536,34 @@ mod tests {
                     assert!(!forbidden_ip(sa.ip()), "兜底不允许返回内网 IP");
                 }
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn resolve_allowed_ips_chains_system_and_doh_errors() {
+        // 系统 DNS 失败 → DoH 兜底也失败时，错误链必须同时带上两级原因，
+        // 便于现场日志区分「系统解析被管控」与「DoH 也不通」
+        let err = resolve_allowed_ips("doh-fallback-error-chain-test.invalid", 443)
+            .await
+            .unwrap_err();
+        assert!(
+            err.contains("域名解析失败") && err.contains("DoH 兜底也失败"),
+            "错误应包含系统与 DoH 两级原因: {err}"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "需要外网访问 DoH 端点，手动 cargo test -- --ignored 验证"]
+    async fn doh_rescues_domain_when_system_dns_fails() {
+        // 修复验证：厂商 ROM 把特定 uid 的系统 DNS 路由到失效上下文（瞬时 EAI_NODATA）时，
+        // DoH 兜底必须能独立解析出公网 IP（IP 直连端点，不经过系统 DNS）
+        let ips = resolve_real_ips_via_doh("api.xianyumusic.cn")
+            .await
+            .expect("DoH 应解析出公网 IP");
+        assert!(!ips.is_empty(), "应至少解析到一个 IP");
+        for ip in &ips {
+            assert!(!forbidden_ip(*ip), "DoH 结果不允许内网/保留段: {ip}");
+            assert!(!is_fake_ipv4(ip), "DoH 结果不允许 fake-ip: {ip}");
         }
     }
 }

@@ -11,7 +11,7 @@ class PluginsSyncService {
 
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
-  Future<void> upload() async {
+  Future<void> upload({bool overwrite = false}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
       var sources = _ref.read(pluginManagerProvider).sources;
@@ -19,13 +19,30 @@ class PluginsSyncService {
         await _ref.read(pluginManagerProvider.notifier).refresh();
         sources = _ref.read(pluginManagerProvider).sources;
       }
+      // 覆盖上传：忽略「仅保留本地」墓碑，全部用户插件参与上传
       final uploadSkip = await PluginSyncState.uploadSkipIds();
-      final targets =
-          sources.where((p) => !uploadSkip.contains(p.id)).toList();
+      final targets = overwrite
+          ? sources.where((p) => !p.isBuiltin).toList()
+          : sources.where((p) => !uploadSkip.contains(p.id)).toList();
       final subs = _ref
           .read(pluginSubscriptionsProvider)
           .map((s) => s.toJson())
           .toList();
+      if (overwrite) {
+        // 覆盖上传：以本地为准清理云端多余插件/订阅；清理失败则中止，
+        // 否则继续上传会得到既非本地也非云端的混合状态
+        final errors = <String>[];
+        if (!await _cleanCloudExtraForOverwrite(
+            targets.map((p) => p.id).toSet(), subs, errors)) {
+          _lens.item = _lens.item.copyWith(
+            syncing: false,
+            lastSummary: tr('覆盖上传已中止'),
+            lastTime: DateTime.now(),
+            errors: errors,
+          );
+          return;
+        }
+      }
       if (targets.isEmpty) {
         if (subs.isNotEmpty) {
           try {
@@ -107,10 +124,46 @@ class PluginsSyncService {
     }
   }
 
-  Future<void> download() async {
+  Future<void> download({bool overwrite = false}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
       final snapshot = await _api.downloadPluginSnapshot();
+
+      // 云端删除广播裁剪：其他端「删除全部/删除云端」的插件与订阅真删本地
+      // （覆盖下载不裁剪：云端快照即本地目标状态，账本无意义）
+      if (!overwrite) {
+        await _trimCloudDeleted(
+          ((snapshot['deleted_plugin_ids'] as List?) ?? const [])
+              .whereType<String>()
+              .toSet(),
+          ((snapshot['deleted_subscription_urls'] as List?) ?? const [])
+              .whereType<String>()
+              .toSet(),
+        );
+      }
+
+      // 覆盖下载：先清空本地用户插件与订阅（不记墓碑），随后按云端重装
+      if (overwrite) {
+        final pluginManager = _ref.read(pluginManagerProvider.notifier);
+        for (final p in _ref.read(pluginManagerProvider).sources) {
+          if (p.isBuiltin) continue;
+          try {
+            await pluginManager.remove(p.id);
+          } catch (e) {
+            AppLog.warn('sync', '覆盖下载移除本地插件 ${p.name} 失败: $e');
+          }
+        }
+        final localSubUrls = _ref
+            .read(pluginSubscriptionsProvider)
+            .map((s) => s.url)
+            .toList();
+        if (localSubUrls.isNotEmpty) {
+          await _ref
+              .read(pluginSubscriptionsProvider.notifier)
+              .removeByUrls(localSubUrls);
+        }
+        AppLog.info('sync', '覆盖下载已清空本地插件与订阅');
+      }
 
       final cloudSubs = ((snapshot['subscriptions'] as List?) ?? const [])
           .whereType<Map>()
@@ -127,11 +180,15 @@ class PluginsSyncService {
           .whereType<Map<String, dynamic>>()
           .toList();
       if (items.isEmpty) {
+        if (overwrite) {
+          // 云端无插件：本地已清空，同步账本随之重置为空
+          await PluginSyncState.setSyncedIds(const <String>[]);
+        }
         _lens.item = _lens.item.copyWith(
           syncing: false,
           lastSummary: mergedSubs > 0
               ? tr('已同步 {n} 个订阅链接', {'n': mergedSubs})
-              : tr('云端暂无插件数据'),
+              : (overwrite ? tr('云端暂无插件数据，本地已清空') : tr('云端暂无插件数据')),
           lastTime: DateTime.now(),
         );
         return;
@@ -139,7 +196,10 @@ class PluginsSyncService {
       final errors = <String>[];
       var installed = 0;
       final restoredIds = <String>[];
-      final downloadSkip = await PluginSyncState.downloadSkipIds();
+      // 覆盖下载忽略「仅删本地」墓碑：云端快照即本地目标状态
+      final downloadSkip = overwrite
+          ? const <String>{}
+          : await PluginSyncState.downloadSkipIds();
       final pluginManager = _ref.read(pluginManagerProvider.notifier);
       for (final item in items) {
         final cloudId = (item['id'] as String?)?.trim() ?? '';
@@ -196,7 +256,14 @@ class PluginsSyncService {
           errors.add(tr('插件 "{name}" 恢复失败：{e}', {'name': name, 'e': e}));
         }
       }
-      await PluginSyncState.addSyncedIds(restoredIds);
+      if (overwrite) {
+        // 覆盖下载后本机与云端一致：同步账本重置为云端快照，并清掉这些插件
+        // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步
+        await PluginSyncState.setSyncedIds(restoredIds);
+        await PluginSyncState.clearTombstones(restoredIds);
+      } else {
+        await PluginSyncState.addSyncedIds(restoredIds);
+      }
       _lens.item = _lens.item.copyWith(
         syncing: false,
         lastSummary: installed > 0
@@ -208,6 +275,86 @@ class PluginsSyncService {
     } catch (e) {
       AppLog.warn('sync', '插件下载失败: $e');
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
+    }
+  }
+
+  /// 覆盖上传前置清理：以本地全集为准删除云端多余的插件与订阅。
+  /// 任一清理失败即返回 false（中止上传，避免混合状态）。
+  Future<bool> _cleanCloudExtraForOverwrite(Set<String> localIds,
+      List<Map<String, dynamic>> localSubs, List<String> errors) async {
+    try {
+      final cloud = await _api.downloadPluginSnapshot();
+      final cloudIds = ((cloud['plugins'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => (e['id'] as String?) ?? '')
+          .where((id) => id.isNotEmpty && !localIds.contains(id))
+          .toList();
+      final localSubUrls = localSubs
+          .map((s) => (s['url'] as String?) ?? '')
+          .where((u) => u.isNotEmpty)
+          .toSet();
+      final cloudSubUrls = ((cloud['subscriptions'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => (e['url'] as String?) ?? '')
+          .where((u) => u.isNotEmpty && !localSubUrls.contains(u))
+          .toList();
+      var ok = true;
+      if (cloudIds.isNotEmpty) {
+        try {
+          await _api.deleteCloudPlugins(cloudIds);
+          AppLog.info('sync', '覆盖上传清理云端多余插件 ${cloudIds.length} 个');
+        } catch (e) {
+          AppLog.warn('sync', '覆盖上传清理云端多余插件失败: $e');
+          errors.add(tr('云端多余插件清理失败（{n} 个）', {'n': cloudIds.length}));
+          ok = false;
+        }
+      }
+      if (cloudSubUrls.isNotEmpty) {
+        try {
+          await _api.deleteCloudSubscriptions(cloudSubUrls);
+          AppLog.info('sync', '覆盖上传清理云端多余订阅 ${cloudSubUrls.length} 个');
+        } catch (e) {
+          AppLog.warn('sync', '覆盖上传清理云端多余订阅失败: $e');
+          errors.add(tr('云端多余订阅清理失败（{n} 个）', {'n': cloudSubUrls.length}));
+          ok = false;
+        }
+      }
+      return ok;
+    } catch (e) {
+      AppLog.warn('sync', '覆盖上传云端清理失败: $e');
+      errors.add(tr('覆盖上传云端清理失败: {e}', {'e': e}));
+      return false;
+    }
+  }
+
+  /// 云端删除广播裁剪：按 id 卸载插件、按 url 移除订阅。
+  /// 本机「仅保留本地」(uploadSkip) 或已删 (downloadSkip) 墓碑中的插件跳过；
+  /// 裁剪后从 syncedIds 清除，避免下次删除弹窗误判「已同步到云端」。
+  Future<void> _trimCloudDeleted(
+      Set<String> pluginIds, Set<String> subUrls) async {
+    if (pluginIds.isNotEmpty) {
+      final uploadSkip = await PluginSyncState.uploadSkipIds();
+      final downloadSkip = await PluginSyncState.downloadSkipIds();
+      final victims = pluginIds
+          .where((id) => id.isNotEmpty && !uploadSkip.contains(id))
+          .where((id) => !downloadSkip.contains(id))
+          .toList();
+      if (victims.isNotEmpty) {
+        final manager = _ref.read(pluginManagerProvider.notifier);
+        for (final id in victims) {
+          try {
+            await manager.remove(id);
+          } catch (e) {
+            AppLog.warn('sync', '插件 $id 云端删除裁剪失败: $e');
+          }
+        }
+        await PluginSyncState.removeSyncedIds(victims);
+      }
+    }
+    if (subUrls.isNotEmpty) {
+      await _ref
+          .read(pluginSubscriptionsProvider.notifier)
+          .removeByUrls(subUrls);
     }
   }
 

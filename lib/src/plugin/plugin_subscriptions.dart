@@ -98,6 +98,16 @@ class PluginSubscriptionsNotifier
     await _persist();
   }
 
+  /// 按 url 批量移除（删除广播裁剪用：账本以 url 为标识）。
+  Future<void> removeByUrls(Iterable<String> urls) async {
+    final rm = urls.toSet();
+    if (rm.isEmpty) return;
+    final next = state.where((s) => !rm.contains(s.url)).toList();
+    if (next.length == state.length) return;
+    state = next;
+    await _persist();
+  }
+
   Future<int> mergeFromCloud(
       List<Map<String, dynamic>> cloud) async {
     final knownUrls = state.map((s) => s.url).toSet();

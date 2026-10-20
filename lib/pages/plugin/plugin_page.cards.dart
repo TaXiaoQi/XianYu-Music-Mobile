@@ -83,9 +83,18 @@ class _SubscriptionSection extends ConsumerWidget {
                           icon: Icon(Icons.delete_outline,
                               size: 20, color: scheme.outline),
                           tooltip: tr('移除订阅'),
-                          onPressed: () => ref
-                              .read(pluginSubscriptionsProvider.notifier)
-                              .remove(sub.id),
+                          onPressed: () async {
+                            // 云端订阅为各端并集，本地移除前先显式删云端；
+                            // 未登录/离线时仅删本地（云端留存的会被下次下载合并回来）
+                            try {
+                              await ref
+                                  .read(accountApiProvider)
+                                  .deleteCloudSubscriptions([sub.url]);
+                            } catch (_) {}
+                            await ref
+                                .read(pluginSubscriptionsProvider.notifier)
+                                .remove(sub.id);
+                          },
                         ),
                       ],
                     ),

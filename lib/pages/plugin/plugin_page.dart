@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
+import '../../src/auth/account_api.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_engine.dart';

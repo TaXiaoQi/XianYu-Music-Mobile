@@ -340,7 +340,15 @@ async fn do_signed_post(
                     continue; // 网络错误/超时：换 nonce 重试一次
                 }
                 let elapsed = start.elapsed().as_millis();
-                let msg = e.to_string();
+                // 拉全错误 source 链：reqwest 顶层「error sending request」会吞掉
+                // hyper 内层的 DNS/连接错误（如 failed to lookup address / EHOSTUNREACH），
+                // 只留顶层字符串无法区分解析失败与连接失败
+                let mut msg = e.to_string();
+                let mut src = std::error::Error::source(&e);
+                while let Some(s) = src {
+                    msg.push_str(&format!(" <= {s}"));
+                    src = std::error::Error::source(s);
+                }
                 let is_timeout = msg.contains("timeout") || msg.contains("elapsed");
                 return Err(if is_timeout {
                     format!("请求超时（{}s），action={}", timeout_ms / 1000, action)
