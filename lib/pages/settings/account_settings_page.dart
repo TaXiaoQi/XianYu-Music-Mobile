@@ -799,7 +799,7 @@ class _GlassCard extends ConsumerWidget {
   }
 }
 
-class _SyncActionTile extends StatelessWidget {
+class _SyncActionTile extends ConsumerWidget {
   const _SyncActionTile({
     required this.title,
     required this.state,
@@ -813,7 +813,7 @@ class _SyncActionTile extends StatelessWidget {
   final VoidCallback onDownload;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final lastTimeStr = state.lastTime != null
         ? '${state.lastTime!.month.toString().padLeft(2, '0')}-${state.lastTime!.day.toString().padLeft(2, '0')} ${state.lastTime!.hour.toString().padLeft(2, '0')}:${state.lastTime!.minute.toString().padLeft(2, '0')}'
@@ -857,7 +857,15 @@ class _SyncActionTile extends StatelessWidget {
           if (state.syncing)
               Padding(
               padding: EdgeInsets.only(top: 4),
-              child: Text(tr('正在同步...'), style: TextStyle(fontSize: 12, color: Colors.blue)),
+              // 后台同步（登录同步/自动同步）与手动同步共用 syncing 标志，
+              // 有来源标注时区分显示，避免误以为手动同步被自动调用
+              child: Text(
+                () {
+                  final bg = ref.watch(bgSyncSourceProvider);
+                  return bg != null ? '$bg中...' : tr('正在同步...');
+                }(),
+                style: TextStyle(fontSize: 12, color: Colors.blue),
+              ),
             )
           else if (state.lastSummary != null)
             Padding(

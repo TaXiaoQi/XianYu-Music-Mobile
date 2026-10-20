@@ -100,6 +100,7 @@ class AutoSyncService {
     final domains = Set<String>.from(_dirty);
     _dirty.clear();
     _syncing = true;
+    _ref.read(bgSyncSourceProvider.notifier).state = '自动同步';
     try {
       final load = await _api.getServerLoad();
       if (load != null && load.busy) {
@@ -116,6 +117,7 @@ class AutoSyncService {
       _dirty.addAll(domains);
     } finally {
       _syncing = false;
+      _ref.read(bgSyncSourceProvider.notifier).state = null;
     }
   }
 
@@ -153,6 +155,7 @@ class AutoSyncService {
       return;
     }
     _syncing = true;
+    _ref.read(bgSyncSourceProvider.notifier).state = '自动同步';
     try {
       await _syncAll();
       _delayedCount = 0;
@@ -161,6 +164,7 @@ class AutoSyncService {
       _nextSyncAt = now + _intervalMs(config);
     } finally {
       _syncing = false;
+      _ref.read(bgSyncSourceProvider.notifier).state = null;
     }
   }
 

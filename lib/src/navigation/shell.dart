@@ -179,12 +179,19 @@ class _AppShellState extends ConsumerState<AppShell> {
     // 不再先闪一屏空骨架（预热失败/未完成时页面行为与以前一致）
     unawaited(prefetchLeaderboard(ref));
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // 等凭据恢复落定再判登录态：恢复完成前 user 尚未就绪，提前触发会漏同步
+      // 对齐桌面端：登录同步只在登录态发生 false→true 变化时触发。
+      // 先等凭据恢复落定再挂监听——启动时恢复的旧会话不再全量对账，
+      // 避免每次打开 app 都对服务端做一轮推拉（防污染 + 省流量）
       await ref.read(authProvider.notifier).whenRestored;
       if (!mounted) return;
-      if (ref.read(authProvider).user != null) {
-        ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
-      }
+      ref.listenManual<bool>(
+        authProvider.select((s) => s.user != null),
+        (prev, next) {
+          if (prev == false && next == true && mounted) {
+            ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
+          }
+        },
+      );
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_notificationsChecked) return;

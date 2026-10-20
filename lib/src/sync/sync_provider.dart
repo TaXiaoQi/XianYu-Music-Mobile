@@ -213,6 +213,9 @@ class SyncDomainLens {
   set item(SyncItemState next) => _write(next);
 }
 
+/// 当前后台同步来源标签（'登录同步'/'自动同步'），null=空闲；账号页据此区分进度文案
+final bgSyncSourceProvider = StateProvider<String?>((_) => null);
+
 class SyncNotifier extends StateNotifier<SyncState> {
   SyncNotifier(this._ref) : super(const SyncState()) {
     _init();
@@ -370,6 +373,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> syncOnLoginSuccess(BuildContext context) async {
     if (_loginSyncCompleted || _loginSyncInProgress) return;
     _loginSyncInProgress = true;
+    _ref.read(bgSyncSourceProvider.notifier).state = '登录同步';
     final upload = state.uploadConfig;
     try {
       if (upload.playlists) {
@@ -407,6 +411,7 @@ class SyncNotifier extends StateNotifier<SyncState> {
         AppLog.warn('sync', '记录登录同步标记失败: $e');
       }
       _loginSyncInProgress = false;
+      _ref.read(bgSyncSourceProvider.notifier).state = null;
     }
   }
 

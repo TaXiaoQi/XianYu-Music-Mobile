@@ -1142,6 +1142,8 @@ const Map<String, String> enDictManual = {
   '正在解析播放链接…': 'Resolving the playback URL…',
   '正在扫描…': 'Scanning…',
   '正在同步...': 'Syncing...',
+  '登录同步中...': 'Login sync in progress...',
+  '自动同步中...': 'Auto sync in progress...',
   '正在下载中…': 'Downloading…',
   '支持 .ttf / .otf 字体文件，导入后立即应用到歌词':
       'Supports .ttf / .otf fonts; applied to lyrics immediately after import',
