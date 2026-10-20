@@ -348,25 +348,35 @@ class _PluginCard extends ConsumerWidget {
             ),
             if (subTag != null) ...[
               const SizedBox(width: 6),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE6A23C).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(
-                    color: const Color(0xFFE6A23C).withValues(alpha: 0.4),
-                    width: 0.5,
+              Builder(builder: (_) {
+                // 付费来源金色高亮；免费聚合音源（全豆要/次合代）用 baka 配色
+                final dark = scheme.brightness == Brightness.dark;
+                final tagColor = subTag.paid
+                    ? const Color(0xFFE6A23C)
+                    : (dark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8));
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: tagColor.withValues(
+                        alpha: dark ? 0.15 : 0.1),
+                    borderRadius: BorderRadius.circular(5),
+                    border: subTag.paid
+                        ? Border.all(
+                            color: tagColor.withValues(alpha: 0.4),
+                            width: 0.5,
+                          )
+                        : null,
                   ),
-                ),
-                child: Text(
-                  subTag.label,
-                  style: const TextStyle(
-                      fontSize: 10,
-                      color: Color(0xFFE6A23C),
-                      fontWeight: FontWeight.w600),
-                ),
-              ),
+                  child: Text(
+                    subTag.label,
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: tagColor,
+                        fontWeight: FontWeight.w600),
+                  ),
+                );
+              }),
             ],
             if (source.updateAvailable) ...[
               const SizedBox(width: 6),

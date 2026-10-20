@@ -44,13 +44,21 @@ const Map<String, String> kSubSourceBrandAlias = {
   'linglan': '聆澜',
 };
 
-String? _brandFromUrl(String? url) {
+/// baka 免费聚合音源品牌（全豆要/次合代等）：同样按 source=/名称识别，
+/// 标签用 baka 配色渲染，与付费金色区分
+const Map<String, String> kFreeSubSourceBrandAlias = {
+  'quandouyao': '全豆要',
+  'cihedai': '次合代',
+  'ciheidai': '次合代',
+};
+
+String? _brandFromUrl(String? url, Map<String, String> alias) {
   if (url == null || url.isEmpty) return null;
   final v = Uri.tryParse(url)?.queryParameters['source']?.trim();
   if (v == null || v.isEmpty) return null;
-  // 仅识别已知付费品牌别名：公开订阅也会用 source= 传自定义标识（如 quandouyao），
-  // 未知值不再视为付费，避免免费插件被误标
-  return kSubSourceBrandAlias[v.toLowerCase()];
+  // 仅识别已知品牌别名：公开订阅也会用 source= 传自定义标识，
+  // 未知值不视为任何来源品牌，避免免费插件被误标为付费
+  return alias[v.toLowerCase()];
 }
 
 bool _urlHasKey(String? url) {
@@ -76,58 +84,77 @@ const List<(String, String)> kSubSourceBrandKeywords = [
   ('ikun', 'ikun'),
 ];
 
-String? _brandFromIdentity(String name, String author) {
+/// baka 免费聚合音源名称关键词兜底
+const List<(String, String)> kFreeSubSourceBrandKeywords = [
+  ('全豆要', '全豆要'),
+  ('次合代', '次合代'),
+];
+
+String? _brandFromIdentity(String name, String author,
+    List<(String, String)> keywords) {
   final hay = '${name.trim()} ${author.trim()}'.toLowerCase();
   if (hay.trim().isEmpty) return null;
-  for (final (kw, brand) in kSubSourceBrandKeywords) {
+  for (final (kw, brand) in keywords) {
     if (hay.contains(kw)) return brand;
   }
   return null;
 }
 
-/// 插件付费订阅标签：优先看插件自身安装 URL/来源订阅 URL 与内置品牌词；插件 URL 带
-/// source 标识时按 source 值精确归属订阅——同一台主机可挂多个订阅（公共+付费并存），
-/// 禁止按 host/名称猜归属；都未命中返回 null，按普通音源显示。
-({String label, bool highlight})? _pluginSubTag(
+/// 插件付费订阅/免费聚合音源标签：优先看插件自身安装 URL/来源订阅 URL 与内置品牌词；
+/// 插件 URL 带 source 标识时按 source 值精确归属订阅——同一台主机可挂多个订阅
+/// （公共+付费并存），禁止按 host/名称猜归属；都未命中返回 null，按普通音源显示。
+/// paid=true 付费来源（金色高亮），paid=false 免费聚合音源品牌（baka 配色）。
+({String label, bool paid})? _pluginSubTag(
   PluginSource p,
   List<PluginSubscription> subs,
 ) {
-  final own = _brandFromUrl(p.sourceUrl) ?? _brandFromUrl(p.filePath);
-  if (own != null) return (label: own, highlight: true);
-  final named = _brandFromIdentity(p.name, p.author);
-  if (named != null) return (label: named, highlight: true);
+  final own = _brandFromUrl(p.sourceUrl, kSubSourceBrandAlias) ??
+      _brandFromUrl(p.filePath, kSubSourceBrandAlias);
+  if (own != null) return (label: own, paid: true);
+  final named = _brandFromIdentity(p.name, p.author, kSubSourceBrandKeywords);
+  if (named != null) return (label: named, paid: true);
   if (_urlHasKey(p.sourceUrl) || _urlHasKey(p.filePath)) {
-    return (label: tr('付费'), highlight: true);
+    return (label: tr('付费'), paid: true);
   }
+  // baka 免费聚合音源（全豆要/次合代）：同样按 source=/名称识别，普通配色渲染
+  final freeOwn = _brandFromUrl(p.sourceUrl, kFreeSubSourceBrandAlias) ??
+      _brandFromUrl(p.filePath, kFreeSubSourceBrandAlias);
+  if (freeOwn != null) return (label: freeOwn, paid: false);
+  final freeNamed =
+      _brandFromIdentity(p.name, p.author, kFreeSubSourceBrandKeywords);
+  if (freeNamed != null) return (label: freeNamed, paid: false);
   final ownSrc = _sourceValue(p.filePath) ?? _sourceValue(p.sourceUrl);
   if (ownSrc == null) return null;
   final ownKey = _normSourceValue(ownSrc);
   for (final sub in subs) {
     final subSrc = _sourceValue(sub.url);
     if (subSrc == null || _normSourceValue(subSrc) != ownKey) continue;
-    final brand = _brandFromUrl(sub.url);
-    if (brand != null) return (label: brand, highlight: true);
-    if (_urlHasKey(sub.url)) return (label: tr('付费'), highlight: true);
+    final brand = _brandFromUrl(sub.url, kSubSourceBrandAlias);
+    if (brand != null) return (label: brand, paid: true);
+    if (_urlHasKey(sub.url)) return (label: tr('付费'), paid: true);
+    final freeBrand = _brandFromUrl(sub.url, kFreeSubSourceBrandAlias);
+    if (freeBrand != null) return (label: freeBrand, paid: false);
     break;
   }
   return null;
 }
 
 /// 插件管理页等直接持有 PluginSource 的场景使用
-({String label, bool highlight})? pluginSubTagInfo(
+({String label, bool paid})? pluginSubTagInfo(
   PluginSource p,
   List<PluginSubscription> subs,
 ) {
   final tag = _pluginSubTag(p, subs);
   if (tag == null) return null;
+  if (!tag.paid) return tag;
   // 付费品牌标签加「付费」前缀（付费聆澜/付费ikun）；回落「付费」不重复前缀
   final paid = tr('付费');
   if (tag.label == paid || tag.label == '付费') return tag;
-  return (label: '$paid${tag.label}', highlight: tag.highlight);
+  return (label: '$paid${tag.label}', paid: tag.paid);
 }
 
 /// SourceTag 专用：普通音源名之前先解析付费订阅品牌/付费标记（金色高亮）。
-({String label, bool highlight}) songSourceTagInfo(
+({String label, bool paid}) songSourceTagInfo(
   WidgetRef ref, {
   required String path,
   required bool isOnline,
@@ -145,7 +172,7 @@ String? _brandFromIdentity(String name, String author) {
       onlineSongJson: onlineSongJson,
       pluginId: pluginId,
     ),
-    highlight: false,
+    paid: false,
   );
 }
 
@@ -299,7 +326,7 @@ class SourceTag extends ConsumerWidget {
     );
     // 付费订阅来源（聆澜/ikun 等品牌或「付费」）用金色高亮，与普通音源区分
     const highlightColor = Color(0xFFE6A23C);
-    final highlight = info.highlight;
+    final highlight = info.paid;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
