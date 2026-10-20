@@ -97,6 +97,17 @@ const double kNavSurfaceBlurSigma = 16.0;
 /// 合并后每帧 N 次回读降为 1 次
 final BackdropKey navGlassKey = BackdropKey();
 
+/// 顶栏（GlassTopBar）回读组按路由实例分组：navGlassKey 全局单例组内
+/// 会同时装着 shell 的底栏/mini 条与 push 上来的二级页顶栏——跨路由
+/// 同组制备时机错乱导致顶栏读实底。每路由一个组（Expando 随路由回收）
+final Expando<BackdropKey> _navGroupByRoute = Expando<BackdropKey>();
+
+BackdropKey? navGroupFor(BuildContext context) {
+  final route = ModalRoute.of(context);
+  if (route == null) return null;
+  return _navGroupByRoute[route] ??= BackdropKey();
+}
+
 /// 卡片级毛玻璃共享组按路由实例分组（Expando：路由销毁条目随之回收，
 /// 无泄漏）。同路由内列表卡片互不重叠，共享一次回读——每帧 N 次制备
 /// 降为 1 次；跨路由绝不共享：cover 覆盖路由转场中下层页
@@ -358,15 +369,6 @@ bool glassShouldUseSolid(WidgetRef ref, {required bool lowPerf}) {
 /// 就绪时玻璃 shader 采样 backdrop 是安全的（内容=快照图），
 /// 未就绪窗口（抓取中/失败）采样≈0.01 透明 live 层≈无内容（黑）
 final ValueNotifier<bool> globalSnapshotReady = ValueNotifier<bool>(false);
-
-final Map<double, ImageFilter> _blurFilterCache = <double, ImageFilter>{};
-ImageFilter cachedBlur(double sigma) {
-  final hit = _blurFilterCache[sigma];
-  if (hit != null) return hit;
-  if (_blurFilterCache.length > 32) _blurFilterCache.clear();
-  return _blurFilterCache[sigma] =
-      ImageFilter.blur(sigmaX: sigma, sigmaY: sigma);
-}
 
 final Map<String, ImageFilter> _cheapBlurCache = <String, ImageFilter>{};
 

@@ -61,8 +61,6 @@ part 'shell_bottom_bar.dart';
 part 'shell_sliding_nav.dart';
 part 'shell_side_rail.dart';
 
-const double kFloatingNavBarInset = 90;
-
 const double kLandscapeRailWidth = 176;
 const double kLandscapeRailIconWidth = 60;
 const double kLandscapeRailCollapseAt = 120;

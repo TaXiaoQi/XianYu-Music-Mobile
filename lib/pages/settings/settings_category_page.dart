@@ -87,8 +87,6 @@ enum SettingsCategory {
   };
 }
 
-Color settingsSurfaceBg(BuildContext context) => appSurfaceBg(context);
-
 class SettingsCategoryPage extends ConsumerStatefulWidget {
   const SettingsCategoryPage({
     super.key,

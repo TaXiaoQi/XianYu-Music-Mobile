@@ -17,13 +17,6 @@ const String kLinkPairSecretKey = 'link.pairSecret.v1';
 /// 鉴权超时：链路建立后 10s 内未完成挑战-应答即判死。
 const Duration kLinkAuthTimeout = Duration(seconds: 10);
 
-/// 生成 32B 配对密钥（base64）。
-String generatePairSecret() {
-  final rnd = Random.secure();
-  final bytes = List<int>.generate(32, (_) => rnd.nextInt(256));
-  return base64Encode(bytes);
-}
-
 /// 生成 16B 随机 nonce（hex）。
 String randomNonceHex() {
   final rnd = Random.secure();

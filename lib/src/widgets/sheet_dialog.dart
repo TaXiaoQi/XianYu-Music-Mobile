@@ -32,34 +32,4 @@ Future<T?> showSheetDialog<T>(
     },
   );
 }
-
-Future<T?> showBottomSheetDialog<T>(
-  BuildContext context,
-  WidgetBuilder builder, {
-  bool barrierDismissible = false,
-}) {
-  return showPredictiveBottomSheet<T>(
-    context: context,
-    barrierDismissible: barrierDismissible,
-    builder: (dialogContext) {
-      final theme = Theme.of(dialogContext);
-      final themed = Theme(data: theme, child: builder(dialogContext));
-      return Material(
-        color: theme.colorScheme.surface,
-        clipBehavior: Clip.antiAlias,
-        elevation: 20,
-        shadowColor: Colors.black45,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(dialogContext).bottom,
-          ),
-          child: SafeArea(top: false, child: themed),
-        ),
-      );
-    },
-  );
-}
 

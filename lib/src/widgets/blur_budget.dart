@@ -189,19 +189,6 @@ BlurBudget resolveBlurBudget({
   );
 }
 
-double nonRealtimeBlurInputScale(BlurSurfaceType type) => switch (type) {
-  BlurSurfaceType.header => 0.60,
-  BlurSurfaceType.drawerOrSheet => 0.84,
-  BlurSurfaceType.bottomBar => 0.70,
-  BlurSurfaceType.overlay => 0.84,
-  BlurSurfaceType.generic => 0.84,
-};
-
-double resolveBlurInputScale(BlurBudget budget, BlurSurfaceType type) {
-  if (budget.allowRealtime) return 1.0;
-  return nonRealtimeBlurInputScale(type);
-}
-
 double surfaceBlurSigma({
   required double base,
   required BlurBudget budget,

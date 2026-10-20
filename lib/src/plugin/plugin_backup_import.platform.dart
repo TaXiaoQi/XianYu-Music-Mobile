@@ -163,19 +163,6 @@ PluginSource? findPluginForPlatform({
   );
 }
 
-PluginSource? findPluginForPlatformCrossFormat({
-  required String platformLabel,
-  required List<PluginSource> installedPlugins,
-  required PluginFormat originalFormat,
-}) {
-  return findPluginForPlatform(
-    platformLabel: platformLabel,
-    installedPlugins: installedPlugins,
-    format: originalFormat,
-    allowCrossFormat: true,
-  );
-}
-
 List<PluginSource> listEnabledPluginsForPlatform({
   required String platformLabel,
   required List<PluginSource> installedPlugins,

@@ -249,6 +249,3 @@ Future<void> showPlaylistActionsSheet(
   );
 }
 
-Future<String?> promptPlaylistName(BuildContext context, String title,
-        {String initial = ''}) =>
-    _promptName(context, title, initial: initial);

@@ -4,47 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'cover_image.dart';
 
-class CoverHeroShuttle extends StatelessWidget {
-  const CoverHeroShuttle({
-    super.key,
-    required this.animation,
-    required this.songPath,
-    this.networkUrl,
-    this.fromRadius = 23,
-    this.toRadius = 28,
-    this.highQuality = true,
-  });
-
-  final Animation<double> animation;
-  final String songPath;
-  final String? networkUrl;
-  final double fromRadius;
-  final double toRadius;
-
-  final bool highQuality;
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: AnimatedBuilder(
-        animation: animation,
-        builder: (context, _) {
-          final radius =
-              lerpDouble(fromRadius, toRadius, animation.value) ?? toRadius;
-          return CoverImage(
-            songPath: songPath,
-            networkUrl: networkUrl,
-            width: double.infinity,
-            height: double.infinity,
-            radius: radius,
-            highQuality: highQuality,
-          );
-        },
-      ),
-    );
-  }
-}
-
 class PlayerCoverShuttle extends StatelessWidget {
   const PlayerCoverShuttle({
     super.key,

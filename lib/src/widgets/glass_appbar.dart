@@ -101,15 +101,30 @@ class GlassTopBar extends ConsumerWidget {
     // BackdropFilter 重 paint 即在 Opacity saveLayer 内重建采样层 → 黑帧；
     // RepaintBoundary 让动画帧复用旧玻璃 layer 不重采样（见
     // debug-liquid-glass-page-flash.md 第十轮），raster 期实时模糊不受影响
-    return RepaintBoundary(
+    final glass = RepaintBoundary(
       child: ClipRect(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          // 与底栏/播放条共享一次 backdrop 回读（同 sigma、区域不重叠）
-          backdropGroupKey: navGlassKey,
+          // 按路由实例分组（navGroupFor）：与被盖住的 shell 成员绝不混组
+          backdropGroupKey: navGroupFor(context),
           child: inner,
         ),
       ),
+    );
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim == null) return glass;
+    // push 进来的二级页：首帧玻璃制备发生在转场中途（backdrop 里叠着
+    // 下层路由的滑出画面），RepaintBoundary 旧 raster 恒复用 → 顶栏一直
+    // 读转场中间态（壁纸模式 Scaffold 透明，观感读实底；毛玻璃模式底
+    // 色恒定无观感差异）。转场 completed 后换 key 重建 boundary，
+    // 强制全新制备一次
+    return AnimatedBuilder(
+      animation: anim,
+      builder: (context, child) => RepaintBoundary(
+        key: ValueKey(anim.status == AnimationStatus.completed),
+        child: child,
+      ),
+      child: glass,
     );
   }
 

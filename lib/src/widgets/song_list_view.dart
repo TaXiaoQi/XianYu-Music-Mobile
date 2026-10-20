@@ -3,8 +3,10 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import '../favorites/favorites_provider.dart';
 import '../theme/theme_tint.dart';
 import '../library/library_provider.dart';
+import 'scrolling_text.dart';
 import 'batch_action_bar.dart';
 import 'cover_image.dart';
 import 'drag_handle.dart';
@@ -192,6 +194,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
         (ref.watch(settingsProvider).valueOrNull?.songClickAction ?? 'single') ==
             'single';
     final m = ListMetrics.ofRef(ref);
+    final favorites = ref.watch(favoritesProvider);
     final themeSlot = widget.themeSlot;
     final rowBackground =
         themeSlot == null ? null : themeTintOrNull(ref, themeSlot);
@@ -261,6 +264,10 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
                           onPlay: play,
                         )
                     : null;
+                final scheme = Theme.of(rowContext).colorScheme;
+                // 搜索高亮时用富文本省略号；其余走跑马灯（收藏页同款）
+                final hasKw = (highlight ?? '').trim().isNotEmpty;
+                final isFav = favorites.contains(s.path);
                 final row = CoverRow(
                   background: rowBackground,
                   cover: Builder(
@@ -269,45 +276,79 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
                       return SongCover(song: s, size: m.songCover);
                     },
                   ),
-                  title: highlightedText(
-                    s.title,
-                    highlight,
-                    hlColor,
-                    style: TextStyle(
-                        fontSize: m.titleSize, fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                  ),
-                  subtitle: highlightedText(
-                    '${s.artist} · ${s.album}',
-                    highlight,
-                    hlColor,
-                    style: TextStyle(
-                      fontSize: m.subtitleSize,
-                      color: Theme.of(rowContext).colorScheme.onSurfaceVariant,
-                    ),
-                    maxLines: 1,
-                  ),
+                  title: hasKw
+                      ? highlightedText(
+                          s.title,
+                          highlight,
+                          hlColor,
+                          style: TextStyle(
+                              fontSize: m.titleSize,
+                              fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                        )
+                      : ScrollingText(
+                          text: s.title,
+                          style: TextStyle(
+                              fontSize: m.titleSize,
+                              fontWeight: FontWeight.w600),
+                        ),
+                  subtitle: hasKw
+                      ? highlightedText(
+                          '${s.artist} · ${s.album}',
+                          highlight,
+                          hlColor,
+                          style: TextStyle(
+                            fontSize: m.subtitleSize,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                        )
+                      : ScrollingText(
+                          text: '${s.artist} · ${s.album}',
+                          style: TextStyle(
+                            fontSize: m.subtitleSize,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
                   verticalPadding: m.vPad,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        _fmt(s.duration),
-                        style: TextStyle(
-                            fontSize: m.subtitleSize,
-                            color: Theme.of(rowContext)
-                                .colorScheme
-                                .onSurfaceVariant),
+                      IconButton(
+                        icon: Icon(
+                          isFav ? Icons.favorite : Icons.favorite_border,
+                          size: 20,
+                          color: isFav
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                        tooltip: tr('收藏'),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                            minWidth: 28, minHeight: 28),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () => ref
+                            .read(favoritesProvider.notifier)
+                            .toggle(s.toQueueItem()),
                       ),
                       if (openActions != null)
                         IconButton(
-                          icon: const Icon(Icons.more_horiz, size: 22),
-                          color: Theme.of(rowContext)
-                              .colorScheme
-                              .onSurfaceVariant,
+                          icon: const Icon(Icons.more_vert, size: 22),
+                          color: scheme.onSurfaceVariant,
                           tooltip: tr('更多'),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                          visualDensity: VisualDensity.compact,
                           onPressed: openActions,
                         ),
+                      Text(
+                        _fmt(s.duration),
+                        style: TextStyle(
+                          fontSize: m.subtitleSize,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ],
                   ),
                   onTap: play == null ? null : (single ? play : () {}),

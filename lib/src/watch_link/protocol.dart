@@ -71,17 +71,6 @@ class LinkMsgType {
 
 enum LinkPlayMode { order, shuffle, one }
 
-LinkPlayMode linkPlayModeFromString(String? s) {
-  switch (s) {
-    case 'shuffle':
-      return LinkPlayMode.shuffle;
-    case 'one':
-      return LinkPlayMode.one;
-    default:
-      return LinkPlayMode.order;
-  }
-}
-
 String linkPlayModeToString(LinkPlayMode m) {
   switch (m) {
     case LinkPlayMode.shuffle:

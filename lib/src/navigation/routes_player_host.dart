@@ -16,12 +16,6 @@ void openPlayer() {
   playerOpenNotifier.value = true;
 }
 
-/// 关闭播放页（走 Navigator.pop：转场 + 返程封面飞行照常触发）。
-void closePlayer() {
-  if (!playerOpenNotifier.value) return;
-  playerNavigatorKey.currentState?.maybePop();
-}
-
 /// 播放页独立 Navigator 宿主：挂在 MaterialApp.builder 的 Stack 中，
 /// 层级在 MiniPlayerOverlay（播放条）之上、飞行封面 Overlay 之下。
 class PlayerNavigatorHost extends ConsumerStatefulWidget {

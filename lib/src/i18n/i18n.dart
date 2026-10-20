@@ -47,23 +47,6 @@ String tr(String source, [Map<String, Object>? args]) {
   return out;
 }
 
-String fmtCompact(num n) {
-  if (n >= 100000000) {
-    final v = (n / 100000000).toStringAsFixed(1);
-    return I18n.mode == I18nMode.en ? '${_trimZero(v)}B' : '${_trimZero(v)}亿';
-  }
-  if (n >= 10000) {
-    if (I18n.mode == I18nMode.en) {
-      final k = n / 1000;
-      return k >= 100 ? '${k.round()}K' : '${_trimZero(k.toStringAsFixed(1))}K';
-    }
-    return '${_trimZero((n / 10000).toStringAsFixed(1))}万';
-  }
-  return '$n';
-}
-
-String _trimZero(String s) => s.endsWith('.0') ? s.substring(0, s.length - 2) : s;
-
 String localizeLyricText(String text) =>
     I18n.mode == I18nMode.zhTw ? _convertS2t(text) : text;
 

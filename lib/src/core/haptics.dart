@@ -27,5 +27,3 @@ void triggerHaptic(HapticStrength strength) {
       HapticFeedback.heavyImpact();
   }
 }
-
-void triggerSelectionHaptic() => HapticFeedback.selectionClick();

@@ -23,22 +23,9 @@ String extractBackupJsonBytes(List<int> rawBytes, String fileName) {
   return utf8.decode(bytes);
 }
 
-Future<String> extractBackupJsonFromFile(String path) async {
-  final bytes = await File(path).readAsBytes();
-  return extractBackupJsonBytes(bytes, path);
-}
-
-String extractBackupJsonFromUrlBytes(List<int> bytes, String url) =>
-    extractBackupJsonBytes(bytes, _extNameFromUrl(url));
-
 String _extensionOf(String fileName) {
   final idx = fileName.lastIndexOf('.');
   return idx < 0 ? '' : fileName.substring(idx + 1).toLowerCase();
-}
-
-String _extNameFromUrl(String url) {
-  var path = url.split('?').first;
-  return _extensionOf(path);
 }
 
 List<int> _gunzip(List<int> bytes) {

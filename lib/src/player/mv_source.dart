@@ -116,6 +116,4 @@ class MvSource {
   bool get isExpired =>
       expiresAt != null && expiresAt!.isBefore(DateTime.now().subtract(const Duration(seconds: 30)));
 }
-
-const MvSource emptyMvSource = MvSource(url: '', videoQuality: '');
 
