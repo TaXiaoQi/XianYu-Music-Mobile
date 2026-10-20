@@ -102,6 +102,10 @@ class _TrackTabState extends ConsumerState<_TrackTab>
     final bottomInset = 92.0 + MediaQuery.of(context).padding.bottom;
     final topInset = _ContentTopInsetScope.of(context);
     final rowExtent = m.songCover + 2 * m.vPad;
+    // 装有启用的音源插件时不展示「本地」来源后缀（与桌面端对齐：在线歌随时
+    // 可播，本地匹配行的来源标记意义不大），插件装卸即时刷新
+    final hideLocalTag =
+        ref.watch(pluginManagerProvider).sources.any((p) => p.enabled);
     return Stack(
       children: [
         ListView.builder(
@@ -143,7 +147,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                             [
                               s.artist,
                               s.album,
-                              tr('本地'),
+                              if (!hideLocalTag) tr('本地'),
                             ].where((x) => x.isNotEmpty).join(' · '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
