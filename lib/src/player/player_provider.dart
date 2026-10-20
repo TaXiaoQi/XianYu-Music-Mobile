@@ -256,7 +256,107 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
 
   final List<String> _shuffleHistory = [];
   final List<String> _shuffleFuture = [];
+
+  // ---- 临时队列（对齐桌面端 tempQueue）----
+  // 「下一首播放」先进临时队列，不污染主队列；下一次正常切歌（手动下一首/
+  // 播完自动/独占管线曲终）时优先消费：播放瞬间才插入主队列 qi+1（索引制
+  // 播放器 current 必须在队列内）。失败跳过/换源不消费，保留用户意图。
+  final List<QueueItem> _tempQueue = [];
+
+  // ---- 随机播放三段式（对齐桌面端 playerQueue.ts）----
+  // _shuffleRemaining：本轮洗牌后的待播 path 序列；_shuffleCyclePlayed：
+  // 本轮已播集合；一轮播完自动清空重洗，保证随机模式一轮不重播。
+  final List<String> _shuffleRemaining = [];
+  final Set<String> _shuffleCyclePlayed = {};
+  Set<String> _shuffleKnownPaths = {};
+  bool _shuffleInitialized = false;
   String? _lastPrecachedRemotePath;
+
+  void _pushBounded(List<String> target, String path) {
+    target.add(path);
+    if (target.length > 256) {
+      target.removeRange(0, target.length - 256);
+    }
+  }
+
+  void _removeFromShuffleRemaining(String path) {
+    final i = _shuffleRemaining.indexOf(path);
+    if (i >= 0) _shuffleRemaining.removeAt(i);
+  }
+
+  List<String> _shufflePaths(List<String> paths) {
+    final shuffled = [...paths];
+    for (var i = shuffled.length - 1; i > 0; i -= 1) {
+      final j = _rand.nextInt(i + 1);
+      final tmp = shuffled[i];
+      shuffled[i] = shuffled[j];
+      shuffled[j] = tmp;
+    }
+    return shuffled;
+  }
+
+  /// 队列变化后增量同步随机待播序列：删歌剔除、加歌洗入、一轮播完重洗。
+  void _syncShuffleRemaining() {
+    final paths = state.queue.map((q) => q.path).toSet();
+    final currentPath = state.current?.path;
+
+    _shuffleCyclePlayed.removeWhere((p) => !paths.contains(p));
+
+    _shuffleRemaining.removeWhere(
+      (p) =>
+          !paths.contains(p) ||
+          p == currentPath ||
+          _shuffleCyclePlayed.contains(p),
+    );
+
+    if (!_shuffleInitialized) {
+      _shuffleInitialized = true;
+      if (currentPath != null && paths.contains(currentPath)) {
+        _shuffleCyclePlayed.add(currentPath);
+      }
+      _shuffleRemaining
+        ..clear()
+        ..addAll(_shufflePaths(
+          paths.where((p) => p != currentPath && !_shuffleCyclePlayed.contains(p)).toList(),
+        ));
+    } else {
+      final newlyAdded = paths
+          .where((p) =>
+              !_shuffleKnownPaths.contains(p) &&
+              p != currentPath &&
+              !_shuffleCyclePlayed.contains(p) &&
+              !_shuffleRemaining.contains(p))
+          .toList();
+      if (newlyAdded.isNotEmpty) {
+        _shuffleRemaining
+          ..clear()
+          ..addAll(_shufflePaths([..._shuffleRemaining, ...newlyAdded]));
+      }
+    }
+
+    _shuffleKnownPaths = paths;
+
+    // 一轮播完（或全失效）：清已播集合重新洗一轮
+    if (_shuffleRemaining.isEmpty &&
+        paths.any((p) => p != currentPath)) {
+      _shuffleCyclePlayed.clear();
+      if (currentPath != null) _shuffleCyclePlayed.add(currentPath);
+      _shuffleRemaining
+        ..clear()
+        ..addAll(_shufflePaths(
+          paths.where((p) => p != currentPath).toList(),
+        ));
+    }
+  }
+
+  void _resetShuffleState() {
+    _shuffleHistory.clear();
+    _shuffleFuture.clear();
+    _shuffleRemaining.clear();
+    _shuffleCyclePlayed.clear();
+    _shuffleKnownPaths = {};
+    _shuffleInitialized = false;
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -522,6 +622,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     double startAtSecs = 0,
     bool continueStatsSession = false,
     bool skipOnFailure = true,
+    bool shuffleAdvance = true,
   }) async {
     if (index < 0 || index >= state.queue.length) return;
     _playEpoch++;
@@ -595,6 +696,18 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       AppLog.info('play', '[playAt] 自动换源模式重试已失败音源歌曲 path=${item.path}');
     }
     final prev = state.current;
+    // 随机模式换歌记账（对齐桌面端 handleBeforePlay）：离开的歌入本轮已播
+    // 集合与 history，进入的歌记已播并从待播序列剔除。后退（随机上一首）
+    // 不压 history 不清 future，前进时才可原路返回。
+    if (state.playMode == 2 && prev != null && prev.path != item.path) {
+      _shuffleCyclePlayed.add(prev.path);
+      _shuffleCyclePlayed.add(item.path);
+      _removeFromShuffleRemaining(item.path);
+      if (shuffleAdvance) {
+        _pushBounded(_shuffleHistory, prev.path);
+        _shuffleFuture.clear();
+      }
+    }
     if (_activeProbeKey != null && (prev == null || prev.path != item.path)) {
       onlineQualityProbeRegistry.invalidate(_activeProbeKey!);
       _activeProbeKey = null;
@@ -1392,6 +1505,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   }
 
   Future<void> next() async {
+    if (await _playFromTempQueue()) return;
     final i = _pickNextIndex();
     if (i >= 0) await _playAt(i);
   }
@@ -1405,7 +1519,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (n == 0) return;
     if (state.playMode == 2) {
       final i = _randomPrevIndex();
-      if (i >= 0) await _playAt(i);
+      // 后退不压 history 不清 future（future 已在 _randomPrevIndex 中记下
+      // 返程），否则前进时无法原路返回
+      if (i >= 0) await _playAt(i, shuffleAdvance: false);
       return;
     }
     final i = state.queueIndex <= 0 ? n - 1 : state.queueIndex - 1;
@@ -1656,6 +1772,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       statsReporter.noteTrackStart();
       return;
     }
+    if (await _playFromTempQueue()) return;
     final next = _pickNextIndex();
     if (next < 0) {
       // 队列播完自动停：不经 toggle，自行标注来源

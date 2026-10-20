@@ -6,13 +6,14 @@ extension PlayerNotifierQueue on PlayerNotifier {
     if (items.isEmpty) return;
     AppLog.info('play', 'playQueue ${items.length} 首 startIndex=$startIndex');
     _shareLinkPlayback = shareLinkPlayback;
-    _shuffleHistory.clear();
-    _shuffleFuture.clear();
+    _tempQueue.clear();
+    _resetShuffleState();
     state = state.copyWith(
       queue: items,
       queueIndex: startIndex,
       current: items[startIndex],
     );
+    _syncShuffleRemaining();
     try {
       await _playAt(startIndex);
     } catch (e, st) {
@@ -26,8 +27,10 @@ extension PlayerNotifierQueue on PlayerNotifier {
     if (index < 0 || index >= queue.length) return;
     final wasCurrent = index == state.queueIndex;
     queue.removeAt(index);
+    _tempQueue.removeWhere((t) => t.path == state.queue[index].path);
     if (queue.isEmpty) {
       _playEpoch++;
+      _resetShuffleState();
       await _stopExclusive();
       await _player.stop();
       state = const PlaybackState();
@@ -40,10 +43,14 @@ extension PlayerNotifierQueue on PlayerNotifier {
       newIndex = index.clamp(0, queue.length - 1);
     }
     if (wasCurrent) {
+      // 先落新队列再续播：_playAt 按 state.queue 取歌，旧队列坐标系
+      // 下 newIndex 指向错位（删首元素时会播回刚删的歌）
+      state = state.copyWith(queue: queue, queueIndex: newIndex);
       await _playAt(newIndex);
     } else {
       state = state.copyWith(queue: queue, queueIndex: newIndex);
     }
+    _syncShuffleRemaining();
   }
 
   Future<void> clearQueue() async {
@@ -65,6 +72,8 @@ extension PlayerNotifierQueue on PlayerNotifier {
       AppLog.warn('player', '播放器停止失败: $e');
     }
     state = const PlaybackState();
+    _tempQueue.clear();
+    _resetShuffleState();
     await _persistSession();
   }
 
@@ -91,9 +100,7 @@ extension PlayerNotifierQueue on PlayerNotifier {
   }
 
   Future<void> playNextShare(QueueItem item) async {
-    final queue = [...state.queue];
-    final qi = state.queueIndex;
-    if (queue.isEmpty) {
+    if (state.queue.isEmpty) {
       state = state.copyWith(
         queue: [item],
         queueIndex: 0,
@@ -102,16 +109,31 @@ extension PlayerNotifierQueue on PlayerNotifier {
       );
       return;
     }
+    // 对齐桌面端 playNext：进临时队列（最新添加最先播），不插主队列，
+    // 下一次正常切歌时优先消费
+    _tempQueue.insert(0, item);
+  }
+
+  /// 消费临时队列首元素：播放瞬间才插入主队列 qi+1 并续播。
+  /// 返回是否消费（调用方据此决定是否跳过常规下一首选择）。
+  Future<bool> _playFromTempQueue() async {
+    if (_tempQueue.isEmpty) return false;
+    final qi = state.queueIndex;
+    if (qi < 0 || qi >= state.queue.length) return false;
+    final item = _tempQueue.removeAt(0);
+    final queue = [...state.queue];
     final insertAt = (qi + 1).clamp(0, queue.length);
     queue.insert(insertAt, item);
     state = state.copyWith(queue: queue, queueIndex: qi);
+    _syncShuffleRemaining();
+    await _playAt(insertAt);
+    return true;
   }
 
   Future<void> cyclePlayMode() async {
     final next = (state.playMode + 1) % 3;
     state = state.copyWith(playMode: next);
-    _shuffleHistory.clear();
-    _shuffleFuture.clear();
+    _resetShuffleState();
     await _ref.read(settingsProvider.notifier).setPlayMode(next);
     _syncToSystemMediaSession();
   }
@@ -127,14 +149,23 @@ extension PlayerNotifierQueue on PlayerNotifier {
   }
 
   int _randomNextIndex() {
-    if (_shuffleFuture.isNotEmpty) {
+    // 回退后前进：优先原路消费 future 栈（消费的歌由 _playAt 钩子记账，
+    // 当前歌压回 history，对齐桌面端 nextSong 的 future 分支）
+    while (_shuffleFuture.isNotEmpty) {
       final path = _shuffleFuture.removeLast();
       final i = state.queue.indexWhere((q) => q.path == path);
       if (i >= 0) return i;
     }
-    if (state.current != null) {
-      _shuffleHistory.add(state.current!.path);
-      if (_shuffleHistory.length > 256) _shuffleHistory.removeAt(0);
+    return _takeRemainingIndex();
+  }
+
+  /// 从本轮洗牌待播序列取下一首：一轮不重播，播完自动重洗。
+  int _takeRemainingIndex() {
+    _syncShuffleRemaining();
+    while (_shuffleRemaining.isNotEmpty) {
+      final path = _shuffleRemaining.removeAt(0);
+      final i = state.queue.indexWhere((q) => q.path == path);
+      if (i >= 0 && path != state.current?.path) return i;
     }
     return _randomDistinctIndex();
   }
@@ -146,7 +177,7 @@ extension PlayerNotifierQueue on PlayerNotifier {
       final i = state.queue.indexWhere((q) => q.path == path);
       if (i >= 0) return i;
     }
-    return _randomDistinctIndex();
+    return _takeRemainingIndex();
   }
 
   int _randomDistinctIndex() {

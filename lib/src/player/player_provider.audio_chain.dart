@@ -428,6 +428,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       await _playAt(state.queueIndex);
       return;
     }
+    if (await _playFromTempQueue()) return;
     final next = _pickNextIndex();
     if (next < 0) {
       state = state.copyWith(isPlaying: false, position: 0);
@@ -447,6 +448,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         _ref.read(settingsProvider).valueOrNull?.gaplessEnabled ?? true;
     if (!gapless) return;
     if (_gaplessNextIndex >= 0) return; // 已预排
+    // 临时队列待播时不预排：预排锁定的是主队列下一首，会绕过「下一首播放」
+    // 意图；曲终走 _playFromTempQueue 普通切歌（本地歌差距可忽略）
+    if (_tempQueue.isNotEmpty) return;
     final dur = state.duration;
     if (dur <= 0) return;
     if (dur - state.position > 15) return; // 还早，等下一轮轮询再看
