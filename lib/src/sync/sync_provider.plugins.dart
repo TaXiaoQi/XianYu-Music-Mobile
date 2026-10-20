@@ -126,6 +126,8 @@ class PluginsSyncService {
 
   Future<void> download({bool overwrite = false}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
+    // 覆盖下载的事务回滚：清空本地后任何异常整体写回覆盖前状态
+    Future<void> Function()? overwriteRollback;
     try {
       final snapshot = await _api.downloadPluginSnapshot();
 
@@ -142,8 +144,21 @@ class PluginsSyncService {
         );
       }
 
-      // 覆盖下载：先清空本地用户插件与订阅（不记墓碑），随后按云端重装
+      // 覆盖下载：先缓存本地用户插件（含脚本内容与用户变量）、订阅与同步账本，
+      // 再清空本地（不记墓碑），随后按云端重装；脚本读不出来即中止覆盖
+      //（清空后无法复原），清空后任何异常走回滚，本地完全回到覆盖前
       if (overwrite) {
+        final rollback = await _snapshotForOverwrite();
+        if (rollback == null) {
+          _lens.item = _lens.item.copyWith(
+            syncing: false,
+            lastSummary: tr('覆盖下载已中止：本地插件脚本读取失败'),
+            lastTime: DateTime.now(),
+            errors: [tr('覆盖下载已中止：本地插件脚本读取失败')],
+          );
+          return;
+        }
+        overwriteRollback = rollback;
         final pluginManager = _ref.read(pluginManagerProvider.notifier);
         for (final p in _ref.read(pluginManagerProvider).sources) {
           if (p.isBuiltin) continue;
@@ -258,9 +273,10 @@ class PluginsSyncService {
       }
       if (overwrite) {
         // 覆盖下载后本机与云端一致：同步账本重置为云端快照，并清掉这些插件
-        // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步
+        // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步（快照即弃）
         await PluginSyncState.setSyncedIds(restoredIds);
         await PluginSyncState.clearTombstones(restoredIds);
+        overwriteRollback = null;
       } else {
         await PluginSyncState.addSyncedIds(restoredIds);
       }
@@ -274,7 +290,99 @@ class PluginsSyncService {
       );
     } catch (e) {
       AppLog.warn('sync', '插件下载失败: $e');
+      if (overwriteRollback != null) {
+        // 清空后的异常整体回滚，避免本地残留在半覆盖状态
+        try {
+          await overwriteRollback();
+        } catch (re) {
+          AppLog.warn('sync', '覆盖下载回滚失败: $re');
+        }
+      }
       _fail(e is AuthException ? e.message : tr('下载失败: {e}', {'e': e}));
+    }
+  }
+
+  /// 覆盖下载前的事务快照：读出每个用户插件的脚本内容与用户变量、订阅全集、
+  /// 同步账本，返回清空后异常时的回滚闭包（移除已恢复项 → 写回快照）。
+  /// 任一脚本读不出来即返回 null（中止覆盖，避免清空后无法复原）。
+  Future<Future<void> Function()?> _snapshotForOverwrite() async {
+    try {
+      final dir = await _dataDir();
+      final sources = _ref
+          .read(pluginManagerProvider)
+          .sources
+          .where((p) => !p.isBuiltin)
+          .toList();
+      final scripts = <String, String>{};
+      final userVars = <String, Map<String, String>>{};
+      for (final p in sources) {
+        scripts[p.id] =
+            await rust.readPluginFile(path: '$dir/plugins/${p.id}.js');
+        try {
+          final values = await _ref
+              .read(pluginUserVarValuesProvider.notifier)
+              .valuesOf(p.id);
+          if (values.isNotEmpty) userVars[p.id] = values;
+        } catch (_) {
+          // 用户变量快照失败不阻断：回滚时插件本体与订阅仍完整
+        }
+      }
+      final subs = _ref
+          .read(pluginSubscriptionsProvider)
+          .map((s) => s.toJson())
+          .toList();
+      final synced = await PluginSyncState.syncedIds();
+      return () async {
+        AppLog.warn('sync', '覆盖下载中断，开始回滚到覆盖前状态');
+        final manager = _ref.read(pluginManagerProvider.notifier);
+        for (final p in _ref.read(pluginManagerProvider).sources) {
+          if (p.isBuiltin) continue;
+          try {
+            await manager.remove(p.id);
+          } catch (_) {
+            // 已不存在则忽略
+          }
+        }
+        final curUrls =
+            _ref.read(pluginSubscriptionsProvider).map((s) => s.url).toList();
+        if (curUrls.isNotEmpty) {
+          await _ref
+              .read(pluginSubscriptionsProvider.notifier)
+              .removeByUrls(curUrls);
+        }
+        for (final p in sources) {
+          try {
+            final source = await manager.installFromScript(
+              scripts[p.id]!,
+              nameOverride: p.name,
+              versionOverride: p.version,
+              sourceUrl: p.sourceUrl,
+            );
+            if (!p.enabled && source.enabled) {
+              await manager.toggleEnabled(source.id);
+            }
+            final values = userVars[p.id];
+            if (values != null && values.isNotEmpty) {
+              await _ref
+                  .read(pluginUserVarValuesProvider.notifier)
+                  .save(source.id, values);
+            }
+          } catch (e) {
+            AppLog.warn('sync', '覆盖下载回滚插件 ${p.name} 失败: $e');
+          }
+        }
+        if (subs.isNotEmpty) {
+          await _ref
+              .read(pluginSubscriptionsProvider.notifier)
+              .mergeFromCloud(subs);
+        }
+        await PluginSyncState.setSyncedIds(synced);
+        AppLog.info(
+            'sync', '覆盖下载已回滚（插件 ${sources.length} 个, 订阅 ${subs.length} 个）');
+      };
+    } catch (e) {
+      AppLog.warn('sync', '覆盖下载快照失败: $e');
+      return null;
     }
   }
 
