@@ -198,6 +198,202 @@ class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
   }
 }
 
+class _CloudCard extends ConsumerWidget {
+  const _CloudCard({
+    required this.providerId,
+    required this.index,
+    required this.dragEnabled,
+    required this.accountCount,
+    required this.enabled,
+    required this.onToggle,
+    required this.onRemove,
+  });
+
+  final String providerId;
+  final int index;
+  final bool dragEnabled;
+  final int accountCount;
+  final bool enabled;
+  final VoidCallback onToggle;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    const iconColor = Color(0xFFEC4141);
+    final iconBg = const Color(0x1AEC4141);
+
+    final providerName = cloudProviders
+        .where((p) => p.id == providerId)
+        .map((p) => p.displayName)
+        .firstOrNull;
+    final name = providerName ?? providerId;
+    final desc = enabled
+        ? tr('已绑定 {n} 个账号，搜索时可拉取该网盘音乐', {'n': accountCount})
+        : tr('已关闭，搜索不再拉取该网盘');
+
+    final icon = Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        color: iconBg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.cloud_outlined, color: iconColor, size: 22),
+    );
+
+    final info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                name,
+                style: const TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(5),
+              ),
+              child: Text(
+                tr('网盘'),
+                style: const TextStyle(
+                    fontSize: 10,
+                    color: iconColor,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'v1.0.0 · 小奇 · $desc',
+          style: TextStyle(fontSize: 12, color: scheme.outline),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+
+    final toggle = Switch(
+      value: enabled,
+      activeThumbColor: iconColor,
+      onChanged: (_) => onToggle(),
+    );
+
+    final delete = _action(
+      context,
+      Icons.delete_outline,
+      tr('删除'),
+      onRemove,
+      color: scheme.outline,
+    );
+
+    final isWide =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+
+    return Material(
+      color: appCardFill(context, ref),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide.none,
+      ),
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
+            child: isWide
+                ? Row(
+                    children: [
+                      icon,
+                      const SizedBox(width: 12),
+                      Expanded(child: info),
+                      const SizedBox(width: 8),
+                      delete,
+                      const SizedBox(width: 4),
+                      toggle,
+                    ],
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          icon,
+                          const SizedBox(width: 12),
+                          Expanded(child: info),
+                          const SizedBox(width: 6),
+                          toggle,
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      delete,
+                    ],
+                  ),
+          ),
+          Positioned(
+            left: 4,
+            top: 0,
+            bottom: 0,
+            width: 36,
+            child: Center(
+              child: dragEnabled
+                  ? _HoldDragStartListener(
+                      index: index,
+                      child: Icon(Icons.drag_indicator,
+                          size: 34, color: scheme.outline),
+                    )
+                  : Icon(Icons.drag_indicator,
+                      size: 34, color: scheme.outline),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _action(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final c = color ?? scheme.outline;
+    return PressableScale(
+      pressScale: 0.88,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: c),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(fontSize: 13, color: c),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PluginCard extends ConsumerWidget {
   const _PluginCard({
     required this.source,

@@ -24,6 +24,7 @@ import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_host_fallback.dart';
 import '../../src/plugin/plugin_models.dart';
+import '../../src/plugin/plugin_preferences.dart';
 import '../../src/plugin/plugin_provider.dart';
 import '../../src/plugin/plugin_search.dart';
 import '../../src/playlist/playlist_provider.dart';

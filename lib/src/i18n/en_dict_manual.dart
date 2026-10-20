@@ -1740,4 +1740,15 @@ const Map<String, String> enDictManual = {
   '记住密码': 'Remember password',
   '账号默认记住，勾选后密码也保存在本机':
       'Account is always remembered; checking this also saves the password on this device',
+  '网盘': 'Cloud drive',
+  '已绑定 {n} 个账号，搜索时可拉取该网盘音乐':
+      '{n} account(s) bound; cloud music is searchable',
+  '已关闭，搜索不再拉取该网盘':
+      'Disabled; this cloud drive is excluded from search',
+  '删除网盘音源「{name}」': 'Delete cloud source "{name}"',
+  '将同时解绑其下 {n} 个已绑定的网盘账号，绑定信息将无法恢复。':
+      'Its {n} bound cloud account(s) will also be unbound. This cannot be undone.',
+  '已删除「{name}」音源并解绑 {n} 个账号':
+      'Deleted source "{name}" and unbound {n} account(s)',
+  '删除失败，请重试': 'Delete failed, please retry',
 };

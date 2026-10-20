@@ -71,18 +71,60 @@ extension _SearchResultPageSources on _SearchResultPageState {
         }
       }
     }
-    // 网盘来源尾部追加：所有已绑定盘（没选目录默认全部目录，盘侧搜索
-    // 失败回退全盘遍历）；同盘多账号共用一个来源
+    // 网盘来源：每个已绑定且未被关闭的盘一个来源（没选目录默认全部目录，
+    // 盘侧搜索失败回退全盘遍历）；同盘多账号共用一个来源。
+    // 排序位 = 前方插件数（音源管理页拖拽落点），插入第一个序号 >= idx 的插件之前。
     try {
+      final cloudPrefs = await PluginPreferences.getCloudSources();
+      final cloudEntries = <_CloudSourceEntry>[];
       for (final p in cloudProviders) {
+        if (cloudPrefs[p.id]?.enabled == false) continue;
         final accounts =
             await CloudCredentialsStore.instance.accountsFor(p.id);
         if (accounts.isEmpty) continue;
-        items.add(_SourceItem(
-            id: 'cloud:${p.id}',
-            name: p.displayName,
-            type: _SourceType.cloud,
-            cloudProviderId: p.id));
+        cloudEntries.add(_CloudSourceEntry(
+          sortIndex: cloudPrefs[p.id]?.sortIndex,
+          item: _SourceItem(
+              id: 'cloud:${p.id}',
+              name: p.displayName,
+              type: _SourceType.cloud,
+              cloudProviderId: p.id),
+        ));
+      }
+      if (cloudEntries.isNotEmpty) {
+        cloudEntries.sort((a, b) =>
+            (a.sortIndex ?? 1 << 30) - (b.sortIndex ?? 1 << 30));
+        // 每个启用插件贡献的来源条数（LX 多源连续展开），得到插件序号 → 条数边界
+        final perPluginCounts = <int>[];
+        var ptr = 0;
+        for (final p in enabled) {
+          var c = 0;
+          while (ptr < items.length && items[ptr].plugin?.id == p.id) {
+            c++;
+            ptr++;
+          }
+          perPluginCounts.add(c);
+        }
+        final merged = <_SourceItem>[];
+        var itemPtr = 0;
+        var cloudPtr = 0;
+        for (var pi = 0; pi < perPluginCounts.length; pi++) {
+          while (cloudPtr < cloudEntries.length &&
+              cloudEntries[cloudPtr].sortIndex != null &&
+              cloudEntries[cloudPtr].sortIndex! <= pi) {
+            merged.add(cloudEntries[cloudPtr++].item);
+          }
+          for (var j = 0; j < perPluginCounts[pi]; j++) {
+            merged.add(items[itemPtr++]);
+          }
+        }
+        merged.addAll(items.sublist(itemPtr));
+        while (cloudPtr < cloudEntries.length) {
+          merged.add(cloudEntries[cloudPtr++].item);
+        }
+        items
+          ..clear()
+          ..addAll(merged);
       }
     } catch (e) {
       AppLog.warn('search', '网盘搜索来源加载失败: $e');

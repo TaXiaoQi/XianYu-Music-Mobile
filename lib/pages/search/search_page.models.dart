@@ -26,6 +26,14 @@ class _SourceItem {
   bool get isLocal => type == _SourceType.local;
 }
 
+/// 网盘来源待插入条目：sortIndex 为前方插件数（null=末尾）。
+class _CloudSourceEntry {
+  final int? sortIndex;
+  final _SourceItem item;
+
+  const _CloudSourceEntry({required this.sortIndex, required this.item});
+}
+
 const _validLxSources = {'kw', 'kg', 'tx', 'wy', 'mg'};
 // 平台显示名与榜单页共用（lxPlatformDisplayNames），tr() 每次求值保运行时切语言
 Map<String, String> get _lxSourceNames => lxPlatformDisplayNames();
