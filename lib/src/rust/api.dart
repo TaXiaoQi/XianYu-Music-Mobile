@@ -4,8 +4,10 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import 'frb_generated.dart';
-import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+
+/// 歌词存储来源（原属旧版 music/types.dart，随 music 模块清理迁并至此）
+enum LyricsStorageSource { embedded, sidecar, empty }
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LxToplistDetailResult`
 

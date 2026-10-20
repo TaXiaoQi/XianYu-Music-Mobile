@@ -9,7 +9,6 @@ import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';
-import '../rust/music/types.dart';
 
 import 'predictive_dialog_route.dart';
 import 'app_toast.dart';
