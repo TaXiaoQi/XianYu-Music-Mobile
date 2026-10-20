@@ -275,7 +275,7 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
   /// 行首槽位：序号/播放标识（与其他在线歌曲列表同款），不可拖拽
   Widget _rowShell(int i, String songPath, Widget row) => Stack(
         children: [
-          Padding(padding: const EdgeInsets.only(left: 44), child: row),
+          Padding(padding: const EdgeInsets.only(left: 34), child: row),
           Positioned(
             left: 8,
             top: 0,

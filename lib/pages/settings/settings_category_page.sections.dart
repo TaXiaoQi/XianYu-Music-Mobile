@@ -353,6 +353,40 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             }),
             onTap: () => _pickNavBarPosition(context, ref, s),
           ),
+          if ((s?.navBarPosition ?? NavBarPosition.bottom) ==
+              NavBarPosition.bottom)
+            _switchTile(
+              context,
+              icon: Icons.subtitles_outlined,
+              title: tr('悬浮式底栏'),
+              value: s?.floatingNavBar ?? true,
+              onChanged: (v) => n.setFloatingNavBar(v),
+            ),
+          _switchTile(
+            context,
+            icon: Icons.manage_search_outlined,
+            title: tr('悬浮顶部栏'),
+            subtitle: tr('首页、我的页与横屏顶栏改为悬浮显示（控件独立悬浮），应用液态玻璃时同步生效'),
+            value: s?.floatingSearchBar ?? false,
+            onChanged: (v) => n.setFloatingSearchBar(v),
+          ),
+          if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
+            _tile(
+              context,
+              icon: Icons.swap_vert_outlined,
+              title: tr('侧边栏展开方向'),
+              trailing: Text(switch (s?.sideBarExpandDirection ??
+                  SideBarExpandDirection.down) {
+                SideBarExpandDirection.down => tr('向下展开'),
+                SideBarExpandDirection.up => tr('向上展开'),
+              }),
+              onTap: () => _pickSideBarExpandDirection(context, ref, s),
+            ),
+        ],
+      ),
+      _sectionHeader(context, tr('横竖屏动画')),
+      _CardGroup(
+        children: [
           _tile(
             context,
             icon: Icons.screen_rotation_alt_outlined,
@@ -372,23 +406,6 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             subtitle: tr('横屏下首页/我的在右侧容器切换时淡进淡出'),
             value: s?.landscapeTransitionEnabled ?? true,
             onChanged: (v) => n.setLandscapeTransitionEnabled(v),
-          ),
-          if ((s?.navBarPosition ?? NavBarPosition.bottom) ==
-              NavBarPosition.bottom)
-            _switchTile(
-              context,
-              icon: Icons.subtitles_outlined,
-              title: tr('悬浮式底栏'),
-              value: s?.floatingNavBar ?? true,
-              onChanged: (v) => n.setFloatingNavBar(v),
-            ),
-          _switchTile(
-            context,
-            icon: Icons.manage_search_outlined,
-            title: tr('悬浮顶部栏'),
-            subtitle: tr('首页、我的页与横屏顶栏改为悬浮显示（控件独立悬浮），应用液态玻璃时同步生效'),
-            value: s?.floatingSearchBar ?? false,
-            onChanged: (v) => n.setFloatingSearchBar(v),
           ),
           _switchTile(
             context,
@@ -411,18 +428,6 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             }),
             onTap: () => _pickLandscapeBarSize(context, ref, s),
           ),
-          if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
-            _tile(
-              context,
-              icon: Icons.swap_vert_outlined,
-              title: tr('侧边栏展开方向'),
-              trailing: Text(switch (s?.sideBarExpandDirection ??
-                  SideBarExpandDirection.down) {
-                SideBarExpandDirection.down => tr('向下展开'),
-                SideBarExpandDirection.up => tr('向上展开'),
-              }),
-              onTap: () => _pickSideBarExpandDirection(context, ref, s),
-            ),
         ],
       ),
       _sectionHeader(context, tr('播放页')),

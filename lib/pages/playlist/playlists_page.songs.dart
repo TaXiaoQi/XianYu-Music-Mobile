@@ -601,7 +601,7 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                 return Stack(
                   children: [
                     Padding(
-                      padding: const EdgeInsets.only(left: 44),
+                      padding: const EdgeInsets.only(left: 34),
                       child: row,
                     ),
                     Positioned(

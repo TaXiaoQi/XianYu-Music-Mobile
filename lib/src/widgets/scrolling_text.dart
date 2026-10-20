@@ -4,6 +4,8 @@
 // 用于列表行歌名/歌手等「省略号会丢信息」的场景（播放页 _Marquee 同款
 // 逻辑提炼为公共组件）。无障碍朗读走 tooltip 保留完整文本。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 class ScrollingText extends StatefulWidget {
@@ -30,19 +32,39 @@ class _ScrollingTextState extends State<ScrollingText>
   double _textWidth = 0;
   static const _gap = 60.0;
   static const _speed = 42.0;
+  // 滚完一轮停留：停稳再开下一轮，避免无限连滚观感奇怪
+  static const _pause = Duration(milliseconds: 1200);
+  bool _pausing = false;
+  Timer? _pauseTimer;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this)
-      ..addListener(() => setState(() {}));
+      ..addListener(() {
+        setState(() {});
+        if (_controller.status == AnimationStatus.completed && !_pausing) {
+          _pausing = true;
+          _pauseTimer?.cancel();
+          _pauseTimer = Timer(_pause, () {
+            if (!mounted) return;
+            _pausing = false;
+            _controller.forward(from: 0);
+          });
+        }
+      });
     _measure();
   }
 
   @override
   void didUpdateWidget(covariant ScrollingText old) {
     super.didUpdateWidget(old);
-    if (old.text != widget.text || old.style != widget.style) _measure();
+    if (old.text != widget.text || old.style != widget.style) {
+      _pauseTimer?.cancel();
+      _pausing = false;
+      _controller.value = 0;
+      _measure();
+    }
   }
 
   void _measure() {
@@ -56,6 +78,7 @@ class _ScrollingTextState extends State<ScrollingText>
 
   @override
   void dispose() {
+    _pauseTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -86,7 +109,9 @@ class _ScrollingTextState extends State<ScrollingText>
             milliseconds: (seconds * 1000).round(),
           );
         }
-        if (!_controller.isAnimating) _controller.repeat();
+        if (!_pausing && !_controller.isAnimating) {
+          _controller.forward(from: _controller.value >= 1 ? 0 : null);
+        }
         final dx = -_controller.value * total;
         final lineHeight = widget.style.fontSize != null
             ? (widget.style.fontSize! * 1.2).ceilToDouble()
@@ -98,7 +123,9 @@ class _ScrollingTextState extends State<ScrollingText>
             child: GestureDetector(
               onTapDown: (_) => _controller.stop(),
               onTapUp: (_) {
-                if (!_controller.isAnimating) _controller.repeat();
+                if (!_pausing && !_controller.isAnimating) {
+                  _controller.forward(from: _controller.value >= 1 ? 0 : null);
+                }
               },
               child: ClipRect(
                 child: SizedBox(

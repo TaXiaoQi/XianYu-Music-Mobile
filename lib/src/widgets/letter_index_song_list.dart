@@ -457,7 +457,7 @@ class _SongRowItem extends ConsumerWidget {
     // 行首槽位：序号/播放标识（桌面端同款）
     return Stack(
       children: [
-        Padding(padding: const EdgeInsets.only(left: 44), child: core),
+        Padding(padding: const EdgeInsets.only(left: 34), child: core),
         Positioned(
           left: 8,
           top: 0,

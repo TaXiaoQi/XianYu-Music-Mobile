@@ -235,7 +235,7 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
       return Stack(
         children: [
           Padding(
-            padding: const EdgeInsets.only(left: 44),
+            padding: const EdgeInsets.only(left: 34),
             child: Builder(
               builder: (rowContext) {
                 BuildContext? coverCtx;

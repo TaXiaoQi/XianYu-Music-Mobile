@@ -14,9 +14,12 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       context: context,
       title: tr('导航栏位置'),
       options:   [
-        ModernChoiceOption(label: tr('底部导航'), value: NavBarPosition.bottom, icon: Icons.subtitles_outlined),
-        ModernChoiceOption(label: tr('侧边悬浮'), value: NavBarPosition.side, icon: Icons.navigation_outlined),
-        ModernChoiceOption(label: tr('顶部导航'), value: NavBarPosition.top, icon: Icons.vertical_align_top_outlined),
+        ModernChoiceOption(label: tr('顶部导航'), value: NavBarPosition.top,
+            iconWidget: _NavBarPosIcon(NavBarPosition.top, selected: cur == NavBarPosition.top)),
+        ModernChoiceOption(label: tr('侧边悬浮'), value: NavBarPosition.side,
+            iconWidget: _NavBarPosIcon(NavBarPosition.side, selected: cur == NavBarPosition.side)),
+        ModernChoiceOption(label: tr('底部导航'), value: NavBarPosition.bottom,
+            iconWidget: _NavBarPosIcon(NavBarPosition.bottom, selected: cur == NavBarPosition.bottom)),
       ],
       currentValue: cur,
     );
@@ -294,8 +297,8 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       context: context,
       title: tr('正在播放页样式'),
       options:   [
-        ModernChoiceOption(label: tr('高级模式'), value: PlayerStyle.advanced, subtitle: tr('含唱片光芒、沉浸流光背景与动感频谱')),
         ModernChoiceOption(label: tr('传统模式'), value: PlayerStyle.traditional, subtitle: tr('经典平铺高斯模糊样式')),
+        ModernChoiceOption(label: tr('高级模式'), value: PlayerStyle.advanced, subtitle: tr('含唱片光芒、沉浸流光背景与动感频谱')),
       ],
       currentValue: cur,
     );
@@ -317,20 +320,20 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       title: tr('毛玻璃效果'),
       options:   [
         ModernChoiceOption(
-            label: tr('最强'),
-            subtitle: tr('磨砂感最深，背景最模糊'),
-            value: FrostedGlassLevel.strongest,
-            icon: Icons.blur_on_outlined),
+            label: tr('轻度'),
+            subtitle: tr('轻微磨砂，最通透'),
+            value: FrostedGlassLevel.light,
+            icon: Icons.blur_off_outlined),
         ModernChoiceOption(
             label: tr('中等'),
             subtitle: tr('收敛模糊，兼顾辨识度'),
             value: FrostedGlassLevel.medium,
             icon: Icons.blur_circular_outlined),
         ModernChoiceOption(
-            label: tr('轻度'),
-            subtitle: tr('轻微磨砂，最通透'),
-            value: FrostedGlassLevel.light,
-            icon: Icons.blur_off_outlined),
+            label: tr('最强'),
+            subtitle: tr('磨砂感最深，背景最模糊'),
+            value: FrostedGlassLevel.strongest,
+            icon: Icons.blur_on_outlined),
       ],
       currentValue: cur,
     );
@@ -975,4 +978,77 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
       }
     }
   }
+}
+
+/// 导航栏位置示意图标：手机轮廓 + 导航形态（顶条 / 底条 / 左侧悬浮钮）。
+class _NavBarPosIcon extends StatelessWidget {
+  const _NavBarPosIcon(this.position, {required this.selected});
+
+  final NavBarPosition position;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    return SizedBox(
+      width: 22,
+      height: 22,
+      child: CustomPaint(painter: _NavBarPosPainter(position, color)),
+    );
+  }
+}
+
+class _NavBarPosPainter extends CustomPainter {
+  const _NavBarPosPainter(this.position, this.color);
+
+  final NavBarPosition position;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..color = color.withValues(alpha: 0.55);
+    final fill = Paint()..color = color;
+
+    // 手机轮廓（居中，圆角矩形）。
+    final phone = RRect.fromRectAndRadius(
+      Rect.fromLTWH(size.width * 0.18, 1, size.width * 0.64, size.height - 2),
+      const Radius.circular(3.2),
+    );
+    canvas.drawRRect(phone, stroke);
+
+    // 导航形态：顶部条 / 底部条 / 左侧悬浮圆钮（悬空留边）。
+    switch (position) {
+      case NavBarPosition.top:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.31, 3.6, size.width * 0.38, 2.4),
+            const Radius.circular(1.2),
+          ),
+          fill,
+        );
+      case NavBarPosition.bottom:
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(size.width * 0.31, size.height - 6, size.width * 0.38, 2.4),
+            const Radius.circular(1.2),
+          ),
+          fill,
+        );
+      case NavBarPosition.side:
+        canvas.drawCircle(
+          Offset(size.width * 0.335, size.height * 0.5),
+          1.9,
+          fill,
+        );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_NavBarPosPainter oldDelegate) =>
+      oldDelegate.position != position ||
+      oldDelegate.color != color;
 }

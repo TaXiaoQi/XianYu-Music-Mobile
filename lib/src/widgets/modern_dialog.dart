@@ -10,11 +10,15 @@ class ModernChoiceOption<T> {
   final T value;
   final IconData? icon;
 
+  /// 自定义图标（优先于 [icon]）：需要表达具体形态时用（如导航栏位置示意）。
+  final Widget? iconWidget;
+
   const ModernChoiceOption({
     required this.label,
     required this.value,
     this.subtitle,
     this.icon,
+    this.iconWidget,
   });
 }
 
@@ -385,7 +389,10 @@ class ModernOptionTile<T> extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(
             children: [
-              if (option.icon != null) ...[
+              if (option.iconWidget != null) ...[
+                option.iconWidget!,
+                const SizedBox(width: 12),
+              ] else if (option.icon != null) ...[
                 Icon(
                   option.icon,
                   size: 20,

@@ -360,6 +360,10 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         surfaceContainer: const Color(0xFF2c2c2c),
         surfaceContainerHigh: const Color(0xFF333333),
         surfaceContainerHighest: const Color(0xFF3a3a3a),
+        // outline 一并翻转：歌曲行序号/拖拽把手等弱化文字跟字体颜色设置
+        outline: const Color(0x99FFFFFF),
+        // 分隔线/边框同步翻转，避免浅壁纸上残留深色线框
+        outlineVariant: const Color(0x33FFFFFF),
       );
     } else {
       containers = base.colorScheme.copyWith(
@@ -368,6 +372,8 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
         surfaceContainer: const Color(0xFFEFEFF1),
         surfaceContainerHigh: const Color(0xFFE7E7EA),
         surfaceContainerHighest: const Color(0xFFDFDFE4),
+        outline: const Color(0x73000000),
+        outlineVariant: const Color(0x24000000),
       );
     }
     return base.copyWith(

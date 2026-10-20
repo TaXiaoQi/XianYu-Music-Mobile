@@ -210,11 +210,29 @@ class _FavoriteTile extends ConsumerWidget {
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 来源标与时长上下叠放（上行对齐歌名、下行对齐歌手），
-            // 不再横挤歌名区；无时长条目（本地未扫描出）只显示来源标。
+            IconButton(
+              icon: Icon(Icons.favorite,
+                  size: 20, color: scheme.primary),
+              tooltip: tr('取消收藏'),
+              // 紧凑触摸区：两按钮贴邻，行尾真正省宽
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              visualDensity: VisualDensity.compact,
+              onPressed: onRemove,
+            ),
+            IconButton(
+              icon: const Icon(Icons.more_vert, size: 22),
+              color: scheme.onSurfaceVariant,
+              tooltip: tr('更多'),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              visualDensity: VisualDensity.compact,
+              onPressed: openActions,
+            ),
+            // 来源标与时长上下叠放（行内居中对齐），置于行尾
             Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SourceTag(
                   path: entry.path,
@@ -233,18 +251,6 @@ class _FavoriteTile extends ConsumerWidget {
                   ),
                 ],
               ],
-            ),
-            IconButton(
-              icon: Icon(Icons.favorite,
-                  size: 20, color: scheme.primary),
-              tooltip: tr('取消收藏'),
-              onPressed: onRemove,
-            ),
-            IconButton(
-              icon: const Icon(Icons.more_vert, size: 22),
-              color: scheme.onSurfaceVariant,
-              tooltip: tr('更多'),
-              onPressed: openActions,
             ),
           ],
         ),

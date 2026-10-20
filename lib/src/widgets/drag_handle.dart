@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../player/player_provider.dart';
 import '../theme/theme_icon.dart';
+import 'list_metrics.dart';
 
 class _HoldDragStartListener extends StatefulWidget {
   const _HoldDragStartListener({required this.index, required this.child});
@@ -163,12 +164,17 @@ class _SongRowLeadingState extends ConsumerState<SongRowLeading> {
         color: scheme.outline,
       );
     } else {
-      child = Text(
-        padRowIndex(widget.index),
-        style: TextStyle(
-          fontSize: 12,
-          fontFeatures: const [FontFeature.tabularFigures()],
-          color: scheme.outline,
+      // 序号左贴槽位（频谱/把手仍居中），字号随列表大小档缩放
+      final m = ListMetrics.ofRef(ref);
+      child = Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          padRowIndex(widget.index),
+          style: TextStyle(
+            fontSize: m.subtitleSize + 0.5,
+            fontFeatures: const [FontFeature.tabularFigures()],
+            color: scheme.outline,
+          ),
         ),
       );
     }

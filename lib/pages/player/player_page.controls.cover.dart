@@ -354,19 +354,39 @@ class _MarqueeState extends State<_Marquee>
   double _textWidth = 0;
   static const _gap = 60.0;
   static const _speed = 42.0;
+  // 滚完一轮停留：停稳再开下一轮，避免无限连滚观感奇怪
+  static const _pause = Duration(milliseconds: 1200);
+  bool _pausing = false;
+  Timer? _pauseTimer;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this)
-      ..addListener(() => setState(() {}));
+      ..addListener(() {
+        setState(() {});
+        if (_controller.status == AnimationStatus.completed && !_pausing) {
+          _pausing = true;
+          _pauseTimer?.cancel();
+          _pauseTimer = Timer(_pause, () {
+            if (!mounted) return;
+            _pausing = false;
+            _controller.forward(from: 0);
+          });
+        }
+      });
     _measure();
   }
 
   @override
   void didUpdateWidget(covariant _Marquee old) {
     super.didUpdateWidget(old);
-    if (old.text != widget.text || old.style != widget.style) _measure();
+    if (old.text != widget.text || old.style != widget.style) {
+      _pauseTimer?.cancel();
+      _pausing = false;
+      _controller.value = 0;
+      _measure();
+    }
   }
 
   void _measure() {
@@ -380,6 +400,7 @@ class _MarqueeState extends State<_Marquee>
 
   @override
   void dispose() {
+    _pauseTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -409,7 +430,9 @@ class _MarqueeState extends State<_Marquee>
             milliseconds: (seconds * 1000).round(),
           );
         }
-        if (!_controller.isAnimating) _controller.repeat();
+        if (!_pausing && !_controller.isAnimating) {
+          _controller.forward(from: _controller.value >= 1 ? 0 : null);
+        }
         final dx = -_controller.value * total;
         final lineHeight = widget.style.fontSize != null
             ? (widget.style.fontSize! * 1.2).ceilToDouble()

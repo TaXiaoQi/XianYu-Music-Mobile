@@ -421,7 +421,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                     Stack(
                       children: [
                         Padding(
-                          padding: const EdgeInsets.only(left: 44),
+                          padding: const EdgeInsets.only(left: 34),
                           child: _FavoriteTile(
                             entry: entry,
                             onPlay: () => widget.notifier.play(orig),
@@ -539,7 +539,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                       Stack(
                         children: [
                           Padding(
-                            padding: const EdgeInsets.only(left: 44),
+                            padding: const EdgeInsets.only(left: 34),
                             child: _FavoriteTile(
                               entry: entry,
                               onPlay: () => widget.notifier.play(orig),
@@ -619,7 +619,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                       Stack(
                         children: [
                           Padding(
-                            padding: const EdgeInsets.only(left: 44),
+                            padding: const EdgeInsets.only(left: 34),
                             child: _FavoriteTile(
                               entry: entry,
                               onPlay: () => widget.notifier.play(i),

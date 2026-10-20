@@ -723,7 +723,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   /// 行首槽位：序号/播放标识（桌面端同款），在线详情不可拖拽
   Widget _rowShell(int i, String songPath, Widget row) => Stack(
         children: [
-          Padding(padding: const EdgeInsets.only(left: 44), child: row),
+          Padding(padding: const EdgeInsets.only(left: 34), child: row),
           Positioned(
             left: 8,
             top: 0,

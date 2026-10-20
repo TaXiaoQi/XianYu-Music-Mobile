@@ -58,7 +58,7 @@ Widget wrapBatchRow(
               ? scheme.primary.withValues(alpha: 0.07)
               : Colors.transparent,
           child: Padding(
-            padding: const EdgeInsets.only(left: 44),
+            padding: const EdgeInsets.only(left: 34),
             child: row,
           ),
         ),
@@ -181,7 +181,7 @@ class SongBatchRow extends StatelessWidget {
     return Stack(
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 44),
+          padding: const EdgeInsets.only(left: 34),
           child: row,
         ),
         Positioned(

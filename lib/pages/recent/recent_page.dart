@@ -456,7 +456,7 @@ class _RecentListState extends ConsumerState<_RecentList> {
               Stack(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.only(left: 44),
+                    padding: const EdgeInsets.only(left: 34),
                     child: _RecentTile(
                       entry: entry,
                       onPlay: () => widget.notifier.play(orig),

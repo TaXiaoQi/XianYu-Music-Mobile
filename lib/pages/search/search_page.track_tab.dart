@@ -356,13 +356,6 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                                 onPressed: () => _toggleFavorite(i),
                               ),
                             ),
-                            Text(
-                              r.interval,
-                              style: TextStyle(
-                                fontSize: m.subtitleSize,
-                                color: scheme.outline,
-                              ),
-                            ),
                             PressableScale(
                               pressScale: 0.88,
                               child: IconButton(
@@ -370,6 +363,14 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                                 color: scheme.onSurfaceVariant,
                                 tooltip: tr('更多'),
                                 onPressed: () => _openActions(i),
+                              ),
+                            ),
+                            // 时长块置行尾（与收藏页行尾布局一致）
+                            Text(
+                              r.interval,
+                              style: TextStyle(
+                                fontSize: m.subtitleSize,
+                                color: scheme.outline,
                               ),
                             ),
                           ],
@@ -414,7 +415,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   /// 行首槽位：序号/播放标识（桌面端同款），搜索结果不可拖拽
   Widget _rowShell(int i, String songPath, Widget row) => Stack(
     children: [
-      Padding(padding: const EdgeInsets.only(left: 44), child: row),
+      Padding(padding: const EdgeInsets.only(left: 34), child: row),
       Positioned(
         left: 8,
         top: 0,
