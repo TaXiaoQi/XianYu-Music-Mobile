@@ -25,6 +25,7 @@ import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/page_search_bar.dart';
 import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/sheet_dialog.dart';
@@ -40,11 +41,21 @@ part 'plugin_page.detail_sheet.dart';
 part 'plugin_page.install_sheets.dart';
 
 class PluginPage extends ConsumerStatefulWidget {
-  const PluginPage({super.key, this.embedded = false, this.showBack = true});
+  const PluginPage({
+    super.key,
+    this.embedded = false,
+    this.asShellBranch = false,
+    this.showBack = true,
+  });
 
   final bool embedded;
 
-  /// 自带顶栏是否显示返回键；导航栏分支嵌入时为 false（页签切换，无返回）
+  /// 作为导航栏分支页嵌入（embedded: true 时生效）：标题与右上角动作
+  /// 上交壳层顶栏（shellTopBarOverrideProvider），页面自身纯内容；
+  /// 竖屏由壳顶栏避让，横屏壳顶栏隐藏时页面自带无返回 FlatTopBar
+  final bool asShellBranch;
+
+  /// 自带顶栏是否显示返回键；cover 页（/plugin-manage）用，分支页不经过
   final bool showBack;
 
   @override
@@ -65,6 +76,14 @@ class _PageRow {
 
 class _PluginPageState extends ConsumerState<PluginPage>
     with HidesShellChrome {
+  // 分支模式复用壳顶栏/底栏（公共容器），不隐藏壳 chrome
+  @override
+  bool get hidesChrome => !(widget.embedded && widget.asShellBranch);
+
+  // dispose 时清除顶栏注册：缓存 StateController（原因同 HidesShellChrome，
+  // 嵌套壁纸 ProviderScope 销毁后 container.read 不安全）
+  StateController<ShellTopBarOverride?>? _topBarOverrideController;
+
   bool _installing = false;
   bool _checkingUpdates = false;
   bool _togglingAll = false;
@@ -92,6 +111,31 @@ class _PluginPageState extends ConsumerState<PluginPage>
   @override
   void initState() {
     super.initState();
+    if (widget.embedded && widget.asShellBranch) {
+      // 标题与右上角动作上交壳层顶栏：与首页/我的同一套公共容器
+      final override = ShellTopBarOverride(
+        title: '插件管理',
+        actions: [
+          ShellTopBarAction(
+            icon: Icons.settings_outlined,
+            tooltip: '插件设置',
+            onPressed: _showPluginSettingsSheet,
+          ),
+          ShellTopBarAction(
+            icon: Icons.add,
+            tooltip: '安装插件',
+            onPressed: _showInstallSheet,
+          ),
+        ],
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final controller = ProviderScope.containerOf(context, listen: false)
+            .read(shellTopBarOverrideProvider.notifier);
+        _topBarOverrideController = controller;
+        controller.state = override;
+      });
+    }
     _loadAutoUpdatePref();
     CloudCredentialsStore.instance.addListener(_cloudListenerReg);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -104,6 +148,11 @@ class _PluginPageState extends ConsumerState<PluginPage>
 
   @override
   void dispose() {
+    final overrideController = _topBarOverrideController;
+    _topBarOverrideController = null;
+    if (overrideController != null && overrideController.state != null) {
+      overrideController.state = null;
+    }
     _searchCtrl.dispose();
     CloudCredentialsStore.instance.removeListener(_cloudListenerReg);
     super.dispose();
@@ -240,6 +289,19 @@ class _PluginPageState extends ConsumerState<PluginPage>
                 .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
             true);
     final contentTop = portraitFloating ? GlassTopBar.height(context) + 6 : null;
+    final branchMode = widget.embedded && widget.asShellBranch;
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    // 分支模式竖屏：壳顶栏（GlassTopBar+搜索条）避让，与首页/我的同款；
+    // 横屏：壳顶栏隐藏（守卫仅 0/1），页面自带无返回 FlatTopBar 避让
+    final topInset = branchMode
+        ? (landscape
+            ? FlatTopBar.height(context)
+            : GlassTopBar.height(
+                context,
+                bottom: PageSearchBarBottom(onTap: () {}),
+              ))
+        : (contentTop ?? 8);
 
     final sources = state.sources;
     final q = _query.trim().toLowerCase();
@@ -274,7 +336,7 @@ class _PluginPageState extends ConsumerState<PluginPage>
             : sources.isEmpty && subscriptions.isEmpty && rows.isEmpty
                 ? _EmptyState(onInstall: _showInstallSheet)
                 : ReorderableListView.builder(
-                  padding: EdgeInsets.fromLTRB(16, contentTop ?? 8, 16, 150),
+                  padding: EdgeInsets.fromLTRB(16, topInset, 16, 150),
                   buildDefaultDragHandles: false,
                   itemCount: searchingNoMatch ? 0 : rows.length,
                   onReorderItem: _onReorder,
@@ -410,8 +472,24 @@ class _PluginPageState extends ConsumerState<PluginPage>
                         ),
                     ],
                   ),
+                  // 对齐导航栏管理的拖起浮层：elevation 随拖拽进度升起
                   proxyDecorator: (child, index, animation) =>
-                      Material(type: MaterialType.transparency, child: child),
+                      AnimatedBuilder(
+                    animation: animation,
+                    builder: (context, child) {
+                      final t = Curves.easeInOut.transform(animation.value);
+                      return Material(
+                        color: Colors.transparent,
+                        elevation: t * 6,
+                        shadowColor: Theme.of(context)
+                            .colorScheme
+                            .shadow
+                            .withValues(alpha: t * 0.25),
+                        child: child,
+                      );
+                    },
+                    child: child,
+                  ),
                   itemBuilder: (context, i) {
                     final row = _rows[i];
                     final plugin = row.plugin;
@@ -450,52 +528,79 @@ class _PluginPageState extends ConsumerState<PluginPage>
               top: 0,
               left: 0,
               right: 0,
-              child: widget.embedded
-                  ? Container(
-                      height: GlassTopBar.height(context),
-                      alignment: Alignment.centerLeft,
-                      padding: const EdgeInsets.only(left: 18, right: 6),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              tr('插件'),
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+              // 分支模式竖屏：标题/动作已上交壳顶栏，这里不画（占位交给
+              // 列表 topInset 避让）；横屏壳顶栏隐藏，自带无返回 FlatTopBar
+              child: branchMode
+                  ? (landscape
+                      ? FlatTopBar(
+                          title: tr('插件'),
+                          backgroundColor:
+                              appScaffoldBackground(context, ref),
+                          actions: [
+                            IconButton(
+                              icon: const Icon(Icons.settings_outlined),
+                              tooltip: tr('插件设置'),
+                              onPressed: _showPluginSettingsSheet,
                             ),
+                            IconButton(
+                              icon: const Icon(Icons.add),
+                              tooltip: tr('安装插件'),
+                              onPressed:
+                                  _installing ? null : _showInstallSheet,
+                            ),
+                          ],
+                        )
+                      : const SizedBox.shrink())
+                  : widget.embedded
+                      ? Container(
+                          height: GlassTopBar.height(context),
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 18, right: 6),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  tr('插件'),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.settings_outlined),
+                                tooltip: tr('插件设置'),
+                                onPressed: _showPluginSettingsSheet,
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add),
+                                tooltip: tr('安装插件'),
+                                onPressed:
+                                    _installing ? null : _showInstallSheet,
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.settings_outlined),
-                            tooltip: tr('插件设置'),
-                            onPressed: _showPluginSettingsSheet,
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.add),
-                            tooltip: tr('安装插件'),
-                            onPressed: _installing ? null : _showInstallSheet,
-                          ),
-                        ],
-                      ),
-                    )
-                  : FlatTopBar(
-                      leading: widget.showBack ? const BackButton() : null,
-                      title: tr('插件'),
-                      backgroundColor: appScaffoldBackground(context, ref),
-                      actions: [
-                        IconButton(
-                          icon: const Icon(Icons.settings_outlined),
-                          tooltip: tr('插件设置'),
-                          onPressed: _showPluginSettingsSheet,
+                        )
+                      : FlatTopBar(
+                          leading:
+                              widget.showBack ? const BackButton() : null,
+                          title: tr('插件'),
+                          backgroundColor:
+                              appScaffoldBackground(context, ref),
+                          actions: [
+                            IconButton(
+                              icon: const Icon(Icons.settings_outlined),
+                              tooltip: tr('插件设置'),
+                              onPressed: _showPluginSettingsSheet,
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add),
+                              tooltip: tr('安装插件'),
+                              onPressed:
+                                  _installing ? null : _showInstallSheet,
+                            ),
+                          ],
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.add),
-                          tooltip: tr('安装插件'),
-                          onPressed: _installing ? null : _showInstallSheet,
-                        ),
-                      ],
-                    ),
             ),
           ],
         ),

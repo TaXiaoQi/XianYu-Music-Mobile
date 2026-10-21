@@ -11,10 +11,10 @@ extension _PluginPageList on _PluginPageState {
   }
 
   /// 混合行重排：插件行写回 sortOrder，网盘行写回排序位（前方插件数）。
+  /// onReorderItem 已校正移除项对 newIndex 的偏移，无需再手动 -=1。
   void _onReorder(int oldIndex, int newIndex) {
     if (_query.trim().isNotEmpty) return;
     final rows = List<_PageRow>.from(_rows);
-    if (newIndex > oldIndex) newIndex -= 1; // ReorderableListView 语义修正
     if (oldIndex < 0 ||
         oldIndex >= rows.length ||
         newIndex < 0 ||
