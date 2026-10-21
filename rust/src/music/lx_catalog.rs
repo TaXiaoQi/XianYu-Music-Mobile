@@ -446,8 +446,11 @@ pub async fn lx_search_playlists(
                 .or_else(|| data.get("songlistResultData"))
                 .cloned()
                 .unwrap_or(Value::Null);
+            // 咪咕 V3 歌单数组在 songListResultData.result（resultList/list 不存在，
+            // 读错字段会静默返回空——对齐桌面端 lxMusicSdkCatalog 的修复）
             let list = result_data
-                .get("resultList")
+                .get("result")
+                .or_else(|| result_data.get("resultList"))
                 .or_else(|| result_data.get("list"))
                 .cloned()
                 .unwrap_or(Value::Array(Vec::new()));
