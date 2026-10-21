@@ -23,7 +23,11 @@ import '../../src/widgets/press_scale.dart';
 /// 主题中心：本地导入 + 应用，并接入广场与我的上传。
 /// 「我的下载」已按产品决定删除——主题层无来源信息，做出来只会是「本地」的重复页。
 class ThemeCenterPage extends ConsumerStatefulWidget {
-  const ThemeCenterPage({super.key});
+  const ThemeCenterPage({super.key, this.embedded = false});
+
+  /// 横屏设置面板嵌入：裸内容（TabBar 行 + 页签视图），
+  /// 标题/返回由面板宿主绘制
+  final bool embedded;
 
   @override
   ConsumerState<ThemeCenterPage> createState() => _ThemeCenterPageState();
@@ -141,11 +145,13 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
                   (s) => s.valueOrNull?.floatingSearchBar ?? false,
                 )) ==
                 true);
-    final topInset = portraitFloating
-        ? MediaQuery.paddingOf(context).top +
-            GlassTopBar.height(context, bottom: _tabBar) +
-            6
-        : 0.0;
+    final topInset = widget.embedded
+        ? 0.0
+        : (portraitFloating
+              ? MediaQuery.paddingOf(context).top +
+                    GlassTopBar.height(context, bottom: _tabBar) +
+                    6
+              : 0.0);
     final content = RepaintBoundary(
       child: TabBarView(
         controller: _tab,
@@ -188,6 +194,18 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
         ],
       ),
     );
+    // 横屏面板嵌入：面板宿主画标题，页面只画 TabBar 行 + 页签视图
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: _tabBar,
+          ),
+          Expanded(child: content),
+        ],
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,

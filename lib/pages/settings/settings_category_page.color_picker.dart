@@ -102,152 +102,166 @@ class _AccentColorSheetState extends State<_AccentColorSheet> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(tr(widget.title), style: const TextStyle(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 14),
-            GridView.count(
-              crossAxisCount: 4,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.5,
-              children: [
-                for (final entry in [
-                  if (widget.autoLabel != null) MapEntry(0, widget.autoLabel!),
-                  ...(widget.presets ?? _AccentColorSheet._defaultPresets).entries,
-                ])
-                  PressableScale(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () => Navigator.pop(context, entry.key),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: widget.current == entry.key
-                                ? scheme.primary
-                                : scheme.outlineVariant.withValues(alpha: 0.6),
-                            width: widget.current == entry.key ? 2 : 1,
-                          ),
-                          color: widget.current == entry.key
-                              ? scheme.primary.withValues(alpha: 0.08)
-                              : null,
-                        ),
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                width: 26,
-                                height: 26,
-                                decoration: BoxDecoration(
-                                  color: entry.key == 0
-                                      ? (widget.autoColor ?? Colors.transparent)
-                                      : Color(entry.key),
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.15),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 1),
+        // 整列可滚：横屏矮视口（含取色器全量内容）不再溢出
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                tr(widget.title),
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 14),
+              GridView.count(
+                crossAxisCount: 4,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.5,
+                children: [
+                  for (final entry in [
+                    if (widget.autoLabel != null)
+                      MapEntry(0, widget.autoLabel!),
+                    ...(widget.presets ?? _AccentColorSheet._defaultPresets)
+                        .entries,
+                  ])
+                    PressableScale(
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => Navigator.pop(context, entry.key),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: widget.current == entry.key
+                                  ? scheme.primary
+                                  : scheme.outlineVariant.withValues(
+                                      alpha: 0.6,
                                     ),
-                                  ],
+                              width: widget.current == entry.key ? 2 : 1,
+                            ),
+                            color: widget.current == entry.key
+                                ? scheme.primary.withValues(alpha: 0.08)
+                                : null,
+                          ),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 26,
+                                  height: 26,
+                                  decoration: BoxDecoration(
+                                    color: entry.key == 0
+                                        ? (widget.autoColor ??
+                                              Colors.transparent)
+                                        : Color(entry.key),
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.15,
+                                        ),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: widget.current == entry.key
+                                      ? const Icon(
+                                          Icons.check,
+                                          color: Colors.white,
+                                          size: 16,
+                                        )
+                                      : null,
                                 ),
-                                child: widget.current == entry.key
-                                    ? const Icon(
-                                        Icons.check,
-                                        color: Colors.white,
-                                        size: 16,
-                                      )
-                                    : null,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                entry.value,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: scheme.onSurfaceVariant,
+                                const SizedBox(height: 4),
+                                Text(
+                                  entry.value,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: Divider(color: scheme.outlineVariant)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      tr('自定义颜色'),
+                      style: TextStyle(fontSize: 12, color: scheme.outline),
+                    ),
+                  ),
+                  Expanded(child: Divider(color: scheme.outlineVariant)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _HsvPicker(hsv: _hsv, onChanged: _update),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _color,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _hexCtrl,
+                      enabled: true,
+                      maxLength: 7,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        letterSpacing: 1,
+                      ),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        counterText: '',
+                        labelText: 'Hex',
+                        hintText: '#EC4141',
+                        errorText: _hexError ? tr('格式应为 #RRGGBB') : null,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onEditingComplete: _commitHex,
+                      onSubmitted: (_) => _commitHex(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  PressableScale(
+                    pressScale: 0.92,
+                    child: FilledButton(
+                      onPressed: () =>
+                          Navigator.pop(context, _color.toARGB32()),
+                      child: Text(tr('应用')),
+                    ),
                   ),
                 ],
               ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(child: Divider(color: scheme.outlineVariant)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    tr('自定义颜色'),
-                    style: TextStyle(fontSize: 12, color: scheme.outline),
-                  ),
-                ),
-                Expanded(child: Divider(color: scheme.outlineVariant)),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _HsvPicker(hsv: _hsv, onChanged: _update),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: _color,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: scheme.outlineVariant),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    controller: _hexCtrl,
-                    enabled: true,
-                    maxLength: 7,
-                    style: const TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      letterSpacing: 1,
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      counterText: '',
-                      labelText: 'Hex',
-                      hintText: '#EC4141',
-                      errorText: _hexError ? tr('格式应为 #RRGGBB') : null,
-                      border: const OutlineInputBorder(),
-                    ),
-                    onEditingComplete: _commitHex,
-                    onSubmitted: (_) => _commitHex(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                PressableScale(
-                  pressScale: 0.92,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(context, _color.toARGB32()),
-                    child:   Text(tr('应用')),
-                  ),
-                ),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

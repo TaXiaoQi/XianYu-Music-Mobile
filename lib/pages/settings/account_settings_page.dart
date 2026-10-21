@@ -67,9 +67,6 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
       _sectionTitle(context, tr('网盘')),
       const _CloudEntryCard(),
       const SizedBox(height: 24),
-      _sectionTitle(context, tr('服务端设置')),
-      const _ServerConfigCard(),
-      const SizedBox(height: 24),
       if (user != null) ...[
         _sectionTitle(context, tr('手动同步')),
         _ManualSyncCard(),
@@ -78,8 +75,10 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
       if (user != null) ...[
         _sectionTitle(context, tr('自动同步')),
         _AutoSyncCard(),
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
       ],
+      _sectionTitle(context, tr('服务端设置')),
+      const _ServerConfigCard(),
     ];
 
     if (widget.embedded) {

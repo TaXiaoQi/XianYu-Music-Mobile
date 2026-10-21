@@ -226,7 +226,12 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('主题中心'),
             subtitle: tr('导入主题包并应用图标、贴纸与组件色块'),
             trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/theme'),
+            // 横屏嵌在设置面板里：切面板内容；竖屏路由页：正常 push
+            onTap: widget.embedded
+                ? () =>
+                      ref.read(landscapeSettingsCategoryProvider.notifier).state =
+                      '/theme'
+                : () => context.push('/theme'),
           ),
           _tile(
             context,
@@ -234,7 +239,11 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('壁纸中心'),
             subtitle: tr('自定义背景与动态壁纸'),
             trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/wallpaper'),
+            onTap: widget.embedded
+                ? () =>
+                      ref.read(landscapeSettingsCategoryProvider.notifier).state =
+                      '/wallpaper'
+                : () => context.push('/wallpaper'),
           ),
           _tile(
             context,

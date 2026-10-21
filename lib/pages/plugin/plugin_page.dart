@@ -25,6 +25,7 @@ import '../../src/plugin/plugin_updates.dart';
 import '../../src/plugin/plugin_user_vars.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/page_search_bar.dart';
 import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
@@ -63,10 +64,8 @@ class PluginPage extends ConsumerStatefulWidget {
 }
 
 class _PageRow {
-  const _PageRow.plugin(this.plugin)
-      : cloudProviderId = null;
-  const _PageRow.cloud(this.cloudProviderId)
-      : plugin = null;
+  const _PageRow.plugin(this.plugin) : cloudProviderId = null;
+  const _PageRow.cloud(this.cloudProviderId) : plugin = null;
 
   final PluginSource? plugin;
   final String? cloudProviderId;
@@ -74,8 +73,7 @@ class _PageRow {
   String get key => plugin?.id ?? 'cloud:$cloudProviderId';
 }
 
-class _PluginPageState extends ConsumerState<PluginPage>
-    with HidesShellChrome {
+class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
   // 分支模式复用壳顶栏/底栏（公共容器），不隐藏壳 chrome
   @override
   bool get hidesChrome => !(widget.embedded && widget.asShellBranch);
@@ -130,8 +128,10 @@ class _PluginPageState extends ConsumerState<PluginPage>
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final controller = ProviderScope.containerOf(context, listen: false)
-            .read(shellTopBarOverrideProvider.notifier);
+        final controller = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(shellTopBarOverrideProvider.notifier);
         _topBarOverrideController = controller;
         controller.state = override;
       });
@@ -166,8 +166,9 @@ class _PluginPageState extends ConsumerState<PluginPage>
     final counts = <String, int>{};
     for (final p in cloudProviders) {
       try {
-        counts[p.id] =
-            (await CloudCredentialsStore.instance.accountsFor(p.id)).length;
+        counts[p.id] = (await CloudCredentialsStore.instance.accountsFor(
+          p.id,
+        )).length;
       } catch (_) {
         counts[p.id] = 0; // 单盘查询失败不影响其余
       }
@@ -235,10 +236,7 @@ class _PluginPageState extends ConsumerState<PluginPage>
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(tr('删除网盘音源「{name}」', {'name': name ?? providerId})),
-        content: Text(tr(
-          '将同时解绑其下 {n} 个已绑定的网盘账号，绑定信息将无法恢复。',
-          {'n': count},
-        )),
+        content: Text(tr('将同时解绑其下 {n} 个已绑定的网盘账号，绑定信息将无法恢复。', {'n': count})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -257,17 +255,23 @@ class _PluginPageState extends ConsumerState<PluginPage>
     );
     if (ok != true || !mounted) return;
     try {
-      final accounts =
-          await CloudCredentialsStore.instance.accountsFor(providerId);
+      final accounts = await CloudCredentialsStore.instance.accountsFor(
+        providerId,
+      );
       for (final account in accounts) {
-        await CloudCredentialsStore.instance
-            .removeAccount(providerId, account.accountId);
+        await CloudCredentialsStore.instance.removeAccount(
+          providerId,
+          account.accountId,
+        );
       }
       if (!mounted) return;
-      showXianYuToast(context, tr(
-        '已删除「{name}」音源并解绑 {n} 个账号',
-        {'name': name ?? providerId, 'n': accounts.length},
-      ));
+      showXianYuToast(
+        context,
+        tr('已删除「{name}」音源并解绑 {n} 个账号', {
+          'name': name ?? providerId,
+          'n': accounts.length,
+        }),
+      );
       await _loadCloudState();
     } catch (e) {
       AppLog.warn('plugin', '解绑网盘账号失败: $e');
@@ -283,12 +287,18 @@ class _PluginPageState extends ConsumerState<PluginPage>
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    final portraitFloating = !widget.embedded &&
+    final portraitFloating =
+        !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
             true);
-    final contentTop = portraitFloating ? GlassTopBar.height(context) + 6 : null;
+    final contentTop = portraitFloating
+        ? GlassTopBar.height(context) + 6
+        : null;
     final branchMode = widget.embedded && widget.asShellBranch;
     final landscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -296,11 +306,11 @@ class _PluginPageState extends ConsumerState<PluginPage>
     // 横屏：壳顶栏隐藏（守卫仅 0/1），页面自带无返回 FlatTopBar 避让
     final topInset = branchMode
         ? (landscape
-            ? FlatTopBar.height(context)
-            : GlassTopBar.height(
-                context,
-                bottom: PageSearchBarBottom(onTap: () {}),
-              ))
+              ? FlatTopBar.height(context)
+              : GlassTopBar.height(
+                  context,
+                  bottom: PageSearchBarBottom(onTap: () {}),
+                ))
         : (contentTop ?? 8);
 
     final sources = state.sources;
@@ -308,11 +318,13 @@ class _PluginPageState extends ConsumerState<PluginPage>
     final filtered = q.isEmpty
         ? sources
         : sources
-            .where((s) =>
-                s.name.toLowerCase().contains(q) ||
-                s.author.toLowerCase().contains(q) ||
-                s.sources.join(',').toLowerCase().contains(q))
-            .toList();
+              .where(
+                (s) =>
+                    s.name.toLowerCase().contains(q) ||
+                    s.author.toLowerCase().contains(q) ||
+                    s.sources.join(',').toLowerCase().contains(q),
+              )
+              .toList();
     final rows = _buildRows(filtered);
     _rows = rows;
     final searchingNoMatch = q.isNotEmpty && filtered.isEmpty;
@@ -328,218 +340,250 @@ class _PluginPageState extends ConsumerState<PluginPage>
             // 否则与 _listHost 内层的 GlassTopBar.height 双倍叠加出空白
             portraitFloating || branchMode,
             NotificationListener<ScrollNotification>(
-        onNotification: (notification) {
-          if (notification is ScrollEndNotification) {
-            _ensureVarsLoaded();
-          }
-          return false;
-        },
-        child: state.loading
-            ? const Center(child: CircularProgressIndicator())
-            : sources.isEmpty && subscriptions.isEmpty && rows.isEmpty
-                ? _EmptyState(onInstall: _showInstallSheet)
-                : ReorderableListView.builder(
-                  padding: EdgeInsets.fromLTRB(16, topInset, 16, 150),
-                  buildDefaultDragHandles: false,
-                  itemCount: searchingNoMatch ? 0 : rows.length,
-                  onReorderItem: _onReorder,
-                  header: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (subscriptions.isNotEmpty) ...[
-                        _SubscriptionSection(
-                          subscriptions: subscriptions,
-                          onReinstall: _installUrl,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      Row(
+              onNotification: (notification) {
+                if (notification is ScrollEndNotification) {
+                  _ensureVarsLoaded();
+                }
+                return false;
+              },
+              child: state.loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : sources.isEmpty && subscriptions.isEmpty && rows.isEmpty
+                  ? _EmptyState(onInstall: _showInstallSheet)
+                  : ReorderableListView.builder(
+                      padding: EdgeInsets.fromLTRB(16, topInset, 16, 150),
+                      buildDefaultDragHandles: false,
+                      itemCount: searchingNoMatch ? 0 : rows.length,
+                      onReorderItem: _onReorder,
+                      header: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Container(
-                            width: 3,
-                            height: 16,
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary,
-                              borderRadius: BorderRadius.circular(2),
+                          if (subscriptions.isNotEmpty) ...[
+                            _SubscriptionSection(
+                              subscriptions: subscriptions,
+                              onReinstall: _installUrl,
                             ),
-                          ),
-                          const SizedBox(width: 7),
-                            Text(
-                            tr('已安装插件'),
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w700),
-                          ),
-                          const SizedBox(width: 8),
-                          // Expanded 吃满剩余：按钮组恒贴行尾（横屏宽屏
-                          // 不会因 Flexible+Spacer 平分余量而悬在中间）
-                          Expanded(
-                            child: Text(
-                              tr('已启用 {enabled} / 共 {total}', {'enabled': sources.where((s) => s.enabled).length, 'total': sources.length}),
-                              style: TextStyle(
-                                  fontSize: 12, color: scheme.outline),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          FilledButton.tonalIcon(
-                            style: FilledButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10),
-                              textStyle: const TextStyle(fontSize: 12.5),
-                            ),
-                            onPressed: (_togglingAll || sources.isEmpty)
-                                ? null
-                                : () => _toggleAllPlugins(!sources
-                                    .every((s) => s.enabled)),
-                            icon: _togglingAll
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : Icon(
-                                    sources.every((s) => s.enabled)
-                                        ? Icons.toggle_off_outlined
-                                        : Icons.toggle_on_outlined,
-                                    size: 16,
+                            const SizedBox(height: 16),
+                          ],
+                          Row(
+                            children: [
+                              Container(
+                                width: 3,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              const SizedBox(width: 7),
+                              Text(
+                                tr('已安装插件'),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // Expanded 吃满剩余：按钮组恒贴行尾（横屏宽屏
+                              // 不会因 Flexible+Spacer 平分余量而悬在中间）
+                              Expanded(
+                                child: Text(
+                                  tr('已启用 {enabled} / 共 {total}', {
+                                    'enabled': sources
+                                        .where((s) => s.enabled)
+                                        .length,
+                                    'total': sources.length,
+                                  }),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: scheme.outline,
                                   ),
-                            label: Text(_togglingAll
-                                ? tr('处理中...')
-                                : tr(sources.every((s) => s.enabled)
-                                    ? '全部禁用'
-                                    : '全部启用')),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              FilledButton.tonalIcon(
+                                style: FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  textStyle: const TextStyle(fontSize: 12.5),
+                                ),
+                                onPressed: (_togglingAll || sources.isEmpty)
+                                    ? null
+                                    : () => _toggleAllPlugins(
+                                        !sources.every((s) => s.enabled),
+                                      ),
+                                icon: _togglingAll
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Icon(
+                                        sources.every((s) => s.enabled)
+                                            ? Icons.toggle_off_outlined
+                                            : Icons.toggle_on_outlined,
+                                        size: 16,
+                                      ),
+                                label: Text(
+                                  _togglingAll
+                                      ? tr('处理中...')
+                                      : tr(
+                                          sources.every((s) => s.enabled)
+                                              ? '全部禁用'
+                                              : '全部启用',
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              FilledButton.tonalIcon(
+                                style: FilledButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  textStyle: const TextStyle(fontSize: 12.5),
+                                ),
+                                onPressed: (_checkingUpdates || sources.isEmpty)
+                                    ? null
+                                    : _checkAllUpdates,
+                                icon: _checkingUpdates
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.system_update_alt_outlined,
+                                        size: 16,
+                                      ),
+                                label: Text(
+                                  _checkingUpdates
+                                      ? tr('检查中...')
+                                      : tr('检查全部更新'),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 6),
-                          FilledButton.tonalIcon(
-                            style: FilledButton.styleFrom(
-                              visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10),
-                              textStyle: const TextStyle(fontSize: 12.5),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _searchCtrl,
+                            onChanged: (v) => setState(() => _query = v),
+                            decoration: InputDecoration(
+                              hintText: tr('搜索插件名称、平台或作者'),
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon: _query.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () {
+                                        _searchCtrl.clear();
+                                        setState(() => _query = '');
+                                      },
+                                    ),
+                              isDense: true,
+                              filled: true,
+                              fillColor: appCardFill(context, ref),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide.none,
+                              ),
                             ),
-                            onPressed: (_checkingUpdates || sources.isEmpty)
-                                ? null
-                                : _checkAllUpdates,
-                            icon: _checkingUpdates
-                                ? const SizedBox(
-                                    width: 14,
-                                    height: 14,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.system_update_alt_outlined,
-                                    size: 16),
-                            label: Text(_checkingUpdates
-                                ? tr('检查中...')
-                                : tr('检查全部更新')),
                           ),
+                          const SizedBox(height: 10),
+                          if (sources.isNotEmpty && filtered.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 32),
+                              child: Center(
+                                child: Text(
+                                  tr('未找到匹配的插件'),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _searchCtrl,
-                        onChanged: (v) => setState(() => _query = v),
-                        decoration: InputDecoration(
-                          hintText: tr('搜索插件名称、平台或作者'),
-                          prefixIcon: const Icon(Icons.search, size: 20),
-                          suffixIcon: _query.isEmpty
-                              ? null
-                              : IconButton(
-                                  icon: const Icon(Icons.close, size: 18),
-                                  onPressed: () {
-                                    _searchCtrl.clear();
-                                    setState(() => _query = '');
-                                  },
-                                ),
-                          isDense: true,
-                          filled: true,
-                          fillColor: appCardFill(context, ref),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
+                      // 对齐导航栏管理的拖起浮层：elevation 随拖拽进度升起
+                      proxyDecorator: (child, index, animation) =>
+                          AnimatedBuilder(
+                            animation: animation,
+                            builder: (context, child) {
+                              final t = Curves.easeInOut.transform(
+                                animation.value,
+                              );
+                              return Material(
+                                color: Colors.transparent,
+                                elevation: t * 6,
+                                shadowColor: Theme.of(context)
+                                    .colorScheme
+                                    .shadow
+                                    .withValues(alpha: t * 0.25),
+                                child: child,
+                              );
+                            },
+                            child: child,
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      if (sources.isNotEmpty && filtered.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 32),
-                          child: Center(
-                            child: Text(
-                              tr('未找到匹配的插件'),
-                              style: TextStyle(
-                                  fontSize: 13, color: scheme.onSurfaceVariant),
-                            ),
+                      itemBuilder: (context, i) {
+                        final row = _rows[i];
+                        final plugin = row.plugin;
+                        return RepaintBoundary(
+                          key: ValueKey(row.key),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: plugin != null
+                                ? _PluginCard(
+                                    source: plugin,
+                                    index: i,
+                                    dragEnabled: _query.isEmpty,
+                                    hasVars: _hasVars[plugin.id] == true,
+                                    onUpdate: (ctx) =>
+                                        _updatePlugin(ctx, plugin),
+                                  )
+                                : _CloudCard(
+                                    providerId: row.cloudProviderId!,
+                                    index: i,
+                                    dragEnabled: _query.isEmpty,
+                                    accountCount:
+                                        _cloudAccountCounts[row
+                                            .cloudProviderId!] ??
+                                        0,
+                                    enabled:
+                                        _cloudPrefs[row.cloudProviderId!]
+                                            ?.enabled ??
+                                        true,
+                                    onToggle: () => _toggleCloudSource(
+                                      row.cloudProviderId!,
+                                    ),
+                                    onRemove: () => _confirmRemoveCloudSource(
+                                      row.cloudProviderId!,
+                                    ),
+                                  ),
                           ),
-                        ),
-                    ],
-                  ),
-                  // 对齐导航栏管理的拖起浮层：elevation 随拖拽进度升起
-                  proxyDecorator: (child, index, animation) =>
-                      AnimatedBuilder(
-                    animation: animation,
-                    builder: (context, child) {
-                      final t = Curves.easeInOut.transform(animation.value);
-                      return Material(
-                        color: Colors.transparent,
-                        elevation: t * 6,
-                        shadowColor: Theme.of(context)
-                            .colorScheme
-                            .shadow
-                            .withValues(alpha: t * 0.25),
-                        child: child,
-                      );
-                    },
-                    child: child,
-                  ),
-                  itemBuilder: (context, i) {
-                    final row = _rows[i];
-                    final plugin = row.plugin;
-                    return RepaintBoundary(
-                      key: ValueKey(row.key),
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: plugin != null
-                            ? _PluginCard(
-                                source: plugin,
-                                index: i,
-                                dragEnabled: _query.isEmpty,
-                                hasVars: _hasVars[plugin.id] == true,
-                                onUpdate: (ctx) => _updatePlugin(ctx, plugin),
-                              )
-                            : _CloudCard(
-                                providerId: row.cloudProviderId!,
-                                index: i,
-                                dragEnabled: _query.isEmpty,
-                                accountCount:
-                                    _cloudAccountCounts[row.cloudProviderId!] ?? 0,
-                                enabled:
-                                    _cloudPrefs[row.cloudProviderId!]?.enabled ?? true,
-                                onToggle: () =>
-                                    _toggleCloudSource(row.cloudProviderId!),
-                                onRemove: () =>
-                                    _confirmRemoveCloudSource(row.cloudProviderId!),
-                              ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+                        );
+                      },
+                    ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              // 分支模式竖屏：标题/动作已上交壳顶栏，这里不画（占位交给
-              // 列表 topInset 避让）；横屏壳顶栏隐藏，自带无返回 FlatTopBar
-              child: branchMode
-                  ? (landscape
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            // 分支模式竖屏：标题/动作已上交壳顶栏，这里不画（占位交给
+            // 列表 topInset 避让）；横屏壳顶栏隐藏，自带无返回 FlatTopBar
+            child: branchMode
+                ? (landscape
                       ? FlatTopBar(
                           title: tr('插件'),
-                          backgroundColor:
-                              appScaffoldBackground(context, ref),
+                          backgroundColor: appScaffoldBackground(context, ref),
                           actions: [
                             IconButton(
                               icon: const Icon(Icons.settings_outlined),
@@ -549,66 +593,60 @@ class _PluginPageState extends ConsumerState<PluginPage>
                             IconButton(
                               icon: const Icon(Icons.add),
                               tooltip: tr('安装插件'),
-                              onPressed:
-                                  _installing ? null : _showInstallSheet,
+                              onPressed: _installing ? null : _showInstallSheet,
                             ),
                           ],
                         )
                       : const SizedBox.shrink())
-                  : widget.embedded
-                      ? Container(
-                          height: GlassTopBar.height(context),
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.only(left: 18, right: 6),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  tr('插件'),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.settings_outlined),
-                                tooltip: tr('插件设置'),
-                                onPressed: _showPluginSettingsSheet,
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add),
-                                tooltip: tr('安装插件'),
-                                onPressed:
-                                    _installing ? null : _showInstallSheet,
-                              ),
-                            ],
+                : widget.embedded
+                ? Container(
+                    height: GlassTopBar.height(context),
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.only(left: 18, right: 6),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            tr('插件'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        )
-                      : FlatTopBar(
-                          leading:
-                              widget.showBack ? const BackButton() : null,
-                          title: tr('插件'),
-                          backgroundColor:
-                              appScaffoldBackground(context, ref),
-                          actions: [
-                            IconButton(
-                              icon: const Icon(Icons.settings_outlined),
-                              tooltip: tr('插件设置'),
-                              onPressed: _showPluginSettingsSheet,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add),
-                              tooltip: tr('安装插件'),
-                              onPressed:
-                                  _installing ? null : _showInstallSheet,
-                            ),
-                          ],
                         ),
-            ),
-          ],
-        ),
-      );
+                        IconButton(
+                          icon: const Icon(Icons.settings_outlined),
+                          tooltip: tr('插件设置'),
+                          onPressed: _showPluginSettingsSheet,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          tooltip: tr('安装插件'),
+                          onPressed: _installing ? null : _showInstallSheet,
+                        ),
+                      ],
+                    ),
+                  )
+                : FlatTopBar(
+                    leading: widget.showBack ? const BackButton() : null,
+                    title: tr('插件'),
+                    backgroundColor: appScaffoldBackground(context, ref),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: tr('插件设置'),
+                        onPressed: _showPluginSettingsSheet,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        tooltip: tr('安装插件'),
+                        onPressed: _installing ? null : _showInstallSheet,
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
   }
-
 }

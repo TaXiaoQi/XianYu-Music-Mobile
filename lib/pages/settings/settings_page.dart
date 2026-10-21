@@ -20,6 +20,8 @@ import '../../src/responsive/landscape.dart';
 import '../about/about_page.dart';
 import '../feedback/feedback_page.dart';
 import '../plugin/plugin_page.dart';
+import '../theme/theme_center_page.dart';
+import '../wallpaper/wallpaper_center_page.dart';
 import 'account_settings_page.dart';
 import 'nav_manage_page.dart';
 import 'settings_category_page.dart';
@@ -43,6 +45,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
   /// 横屏子页面板 → 父分类：面板标题可点返回上一级（左列高亮随 sel 恢复）
   static const Map<String, String> _panelParent = {
     '/nav-manage': '/settings/appearance',
+    '/theme': '/settings/appearance',
+    '/wallpaper': '/settings/appearance',
   };
 
   @override
@@ -420,9 +424,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     final sel =
         ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
     final detail = _detailFor(sel);
+    // 悬浮顶栏口径：左列头部与右面板标题走竖屏同款玻璃胶囊形态
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     // 分组表只含分类路径，子页面板（如 /nav-manage）标题在此兜底
     final selTitle = switch (sel) {
       '/nav-manage' => tr('导航栏管理'),
+      '/theme' => tr('主题中心'),
+      '/wallpaper' => tr('壁纸中心'),
       _ => _titleOf(groups, sel) ?? tr('设置'),
     };
     _scheduleCenterSelected(sel);
@@ -445,26 +455,86 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
                 right: false,
                 child: Column(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                      child: Row(
-                        children: [
-                          const BackButton(),
-                          Text(
-                            tr('设置'),
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
+                    // 悬浮态：竖屏同款一行式（返回玻璃圆钮+标题胶囊+搜索
+                    // 玻璃胶囊），搜索框不再单独占一行；非悬浮保持两行
+                    floating
+                        ? Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            child: Row(
+                              children: [
+                                PressableScale(
+                                  pressScale: 0.88,
+                                  child: BiliPaiIconButton(
+                                    icon: Icons.arrow_back,
+                                    onTap: () =>
+                                        Navigator.of(context).maybePop(),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                BiliPaiPill(
+                                  radius: 20,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                    ),
+                                    child: SizedBox(
+                                      height: 40,
+                                      child: Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          tr('设置'),
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.3,
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.onSurface,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: FloatingGlassSearchField(
+                                    controller: _searchCtrl,
+                                    hint: tr('搜索设置'),
+                                    onChanged: (v) =>
+                                        setState(() => _query = v),
+                                    showClear: _query.isNotEmpty,
+                                    onClear: () {
+                                      _searchCtrl.clear();
+                                      setState(() => _query = '');
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                            child: Row(
+                              children: [
+                                const BackButton(),
+                                Text(
+                                  tr('设置'),
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
+                    if (!floating) ...[
+                      const SizedBox(height: 6),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: _buildSearchBox(context),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _buildSearchBox(context),
-                    ),
+                    ],
                     const SizedBox(height: 6),
                     Expanded(
                       child: ListView(
@@ -550,52 +620,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
                   Container(
                     height: GlassTopBar.height(context),
                     alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.only(left: 12),
-                    child: _panelParent.containsKey(sel)
-                        ? InkWell(
-                            onTap: () => ref
-                                .read(landscapeSettingsCategoryProvider
-                                    .notifier)
-                                .state = _panelParent[sel],
-                            borderRadius: BorderRadius.circular(8),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 4,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.arrow_back_ios_new,
-                                    size: 14,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.72),
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Text(
-                                    selTitle,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                    padding: EdgeInsets.only(
+                      left: floating ? 12 : 12,
+                      // 悬浮态标题胶囊收在栏位上部，与左列头部行对齐
+                      top: floating ? MediaQuery.paddingOf(context).top + 8 : 0,
+                    ),
+                    child: floating
+                        ? Align(
+                            alignment: Alignment.topLeft,
+                            child: _panelTitle(
+                              context,
+                              sel,
+                              selTitle,
+                              pill: true,
                             ),
                           )
-                        : Padding(
-                            padding: const EdgeInsets.only(left: 6),
-                            child: Text(
-                              selTitle,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
+                        : _panelTitle(context, sel, selTitle),
                   ),
                 Expanded(
                   child: LandscapePageFade(
@@ -609,6 +649,56 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
           ),
         ],
       ),
+    );
+  }
+
+  /// 右面板标题：pill=true 悬浮态玻璃胶囊（与竖屏子页同形态），
+  /// 子页面板（_panelParent）标题保留「‹」点击返回上级
+  Widget _panelTitle(
+    BuildContext context,
+    String sel,
+    String title, {
+    bool pill = false,
+  }) {
+    final isSub = _panelParent.containsKey(sel);
+    final inner = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isSub) ...[
+          Icon(
+            Icons.arrow_back_ios_new,
+            size: 14,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.72),
+          ),
+          const SizedBox(width: 7),
+        ],
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: pill ? 16 : 16,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ],
+    );
+    final tappable = InkWell(
+      onTap: isSub
+          ? () => ref.read(landscapeSettingsCategoryProvider.notifier).state =
+                _panelParent[sel]
+          : null,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: pill ? 14 : 6, vertical: 4),
+        child: inner,
+      ),
+    );
+    if (!pill) return tappable;
+    return BiliPaiPill(
+      radius: 20,
+      child: SizedBox(height: 40, child: Center(child: tappable)),
     );
   }
 
@@ -657,6 +747,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
       ),
       '/plugin-manage' => const PluginPage(embedded: true),
       '/nav-manage' => const NavManagePage(embedded: true),
+      '/theme' => const ThemeCenterPage(embedded: true),
+      '/wallpaper' => const WallpaperCenterPage(embedded: true),
       '/feedback' => const FeedbackPage(embedded: true),
       '/about' => const AboutPage(embedded: true),
       _ => null,
@@ -902,7 +994,10 @@ class _CategoryTile extends StatelessWidget {
         title: Text(entry.title, style: const TextStyle(fontSize: 15)),
         subtitle: compact
             ? null
-            : Text(entry.subtitle, style: Theme.of(context).textTheme.bodySmall),
+            : Text(
+                entry.subtitle,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
         onTap: onTapOverride ?? () => context.push(entry.path),
       ),
     );

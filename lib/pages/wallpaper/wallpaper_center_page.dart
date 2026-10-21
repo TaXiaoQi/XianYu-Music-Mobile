@@ -40,7 +40,11 @@ part 'wallpaper_center_page.editor.dart';
 final ValueNotifier<int> _downloadsRevision = ValueNotifier<int>(0);
 
 class WallpaperCenterPage extends ConsumerStatefulWidget {
-  const WallpaperCenterPage({super.key});
+  const WallpaperCenterPage({super.key, this.embedded = false});
+
+  /// 横屏设置面板嵌入：裸内容（TabBar 行 + 页签视图），
+  /// 标题/返回由面板宿主绘制
+  final bool embedded;
 
   @override
   ConsumerState<WallpaperCenterPage> createState() =>
@@ -93,12 +97,37 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
               ),
             ) ==
             true);
-    final topInset = portraitFloating
-        ? MediaQuery.paddingOf(context).top +
-              66 +
-              _tabBar.preferredSize.height +
-              6
-        : 0.0;
+    final topInset = widget.embedded
+        ? 0.0
+        : (portraitFloating
+              ? MediaQuery.paddingOf(context).top +
+                    66 +
+                    _tabBar.preferredSize.height +
+                    6
+              : 0.0);
+    // 横屏面板嵌入：面板宿主画标题，页面只画 TabBar 行 + 页签视图
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Material(color: Colors.transparent, child: _tabBar),
+          Expanded(
+            child: RepaintBoundary(
+              child: TabBarView(
+                controller: _tab,
+                children: [
+                  if (_lastLoggedIn == true) ...[
+                    _WallpaperBrowseTab(topInset: 0),
+                    _MyUploadsTab(topInset: 0),
+                    _MyDownloadsTab(topInset: 0),
+                  ],
+                  CustomWallpaperEditor(topInset: 0),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,

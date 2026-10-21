@@ -109,9 +109,11 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
     }
 
     if (floating) {
-      // 对齐竖屏悬浮 chrome：玻璃圆钮 + 胶囊元素各自成型，悬浮于内容上
+      // 对齐竖屏悬浮 chrome：玻璃圆钮 + 胶囊元素各自成型，悬浮于内容上；
+      // 顶距固定 8——横屏延伸进摄像头区时 statusBar 是挖孔高度，不贴顶
       return floatingChromeBar(
         context,
+        topInset: 8,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: tr('返回'),

@@ -35,68 +35,86 @@ class _SubscriptionSection extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: PressableScale(
-              child: Material(
-                color: appCardFill(context, ref),
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: BorderSide.none,
-                ),
-                child: InkWell(
-                  onTap: () => onReinstall(sub.url),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: scheme.primary.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(9),
+              // 订阅条与插件/云盘卡同款磨砂面（settings.group 槽位，
+              // 跟随主题与毛玻璃档位），替代半透明纯色
+              child: frostedCardSurface(
+                context: context,
+                ref: ref,
+                radius: 14,
+                themeSlot: 'settings.group',
+                child: Material(
+                  color: Colors.transparent,
+                  clipBehavior: Clip.antiAlias,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide.none,
+                  ),
+                  child: InkWell(
+                    onTap: () => onReinstall(sub.url),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: scheme.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: Icon(
+                              Icons.link,
+                              size: 18,
+                              color: scheme.primary,
+                            ),
                           ),
-                          child: Icon(Icons.link,
-                              size: 18, color: scheme.primary),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                sub.name,
-                                style: const TextStyle(
-                                    fontSize: 14, fontWeight: FontWeight.w600),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                sub.url,
-                                style: TextStyle(
-                                    fontSize: 11, color: scheme.outline),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  sub.name,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  sub.url,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: scheme.outline,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          icon: Icon(Icons.delete_outline,
-                              size: 20, color: scheme.outline),
-                          tooltip: tr('移除订阅'),
-                          onPressed: () async {
-                            // 云端订阅为各端并集，本地移除前先显式删云端；
-                            // 未登录/离线时仅删本地（云端留存的会被下次下载合并回来）
-                            try {
+                          IconButton(
+                            icon: Icon(
+                              Icons.delete_outline,
+                              size: 20,
+                              color: scheme.outline,
+                            ),
+                            tooltip: tr('移除订阅'),
+                            onPressed: () async {
+                              // 云端订阅为各端并集，本地移除前先显式删云端；
+                              // 未登录/离线时仅删本地（云端留存的会被下次下载合并回来）
+                              try {
+                                await ref
+                                    .read(accountApiProvider)
+                                    .deleteCloudSubscriptions([sub.url]);
+                              } catch (_) {}
                               await ref
-                                  .read(accountApiProvider)
-                                  .deleteCloudSubscriptions([sub.url]);
-                            } catch (_) {}
-                            await ref
-                                .read(pluginSubscriptionsProvider.notifier)
-                                .remove(sub.id);
-                          },
-                        ),
-                      ],
+                                  .read(pluginSubscriptionsProvider.notifier)
+                                  .remove(sub.id);
+                            },
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -121,8 +139,7 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.extension_outlined, size: 56, color: scheme.outline),
           const SizedBox(height: 12),
-          Text(tr('还没有安装插件'),
-              style: TextStyle(color: scheme.onSurfaceVariant)),
+          Text(tr('还没有安装插件'), style: TextStyle(color: scheme.onSurfaceVariant)),
           const SizedBox(height: 4),
           Text(
             tr('支持 LX / MusicFree 格式插件'),
@@ -132,7 +149,7 @@ class _EmptyState extends StatelessWidget {
           FilledButton.icon(
             onPressed: onInstall,
             icon: const Icon(Icons.add),
-            label:   Text(tr('安装插件')),
+            label: Text(tr('安装插件')),
           ),
         ],
       ),
@@ -150,7 +167,8 @@ class _HoldDragStartListener extends StatefulWidget {
   State<_HoldDragStartListener> createState() => _HoldDragStartListenerState();
 }
 
-class _DelayedDragRecognizerListener extends ReorderableDelayedDragStartListener {
+class _DelayedDragRecognizerListener
+    extends ReorderableDelayedDragStartListener {
   const _DelayedDragRecognizerListener({
     required super.child,
     required super.index,
@@ -251,14 +269,15 @@ class _CloudCard extends ConsumerWidget {
               child: Text(
                 name,
                 style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 6),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
                 color: iconBg,
                 borderRadius: BorderRadius.circular(5),
@@ -266,9 +285,10 @@ class _CloudCard extends ConsumerWidget {
               child: Text(
                 tr('网盘'),
                 style: const TextStyle(
-                    fontSize: 10,
-                    color: iconColor,
-                    fontWeight: FontWeight.w600),
+                  fontSize: 10,
+                  color: iconColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -296,67 +316,78 @@ class _CloudCard extends ConsumerWidget {
       color: scheme.outline,
     );
 
-    final isWide =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isWide = MediaQuery.orientationOf(context) == Orientation.landscape;
 
-    return Material(
-      color: appCardFill(context, ref),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide.none,
-      ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
-            child: isWide
-                ? Row(
-                    children: [
-                      icon,
-                      const SizedBox(width: 12),
-                      Expanded(child: info),
-                      const SizedBox(width: 8),
-                      delete,
-                      const SizedBox(width: 4),
-                      toggle,
-                    ],
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          icon,
-                          const SizedBox(width: 12),
-                          Expanded(child: info),
-                          const SizedBox(width: 6),
-                          toggle,
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      delete,
-                    ],
-                  ),
-          ),
-          Positioned(
-            left: 4,
-            top: 0,
-            bottom: 0,
-            width: 36,
-            child: Center(
-              child: dragEnabled
-                  ? _HoldDragStartListener(
-                      index: index,
-                      child: Icon(Icons.drag_indicator,
-                          size: 34, color: scheme.outline),
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 14,
+      themeSlot: 'settings.group',
+      child: Material(
+        color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide.none,
+        ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
+              child: isWide
+                  ? Row(
+                      children: [
+                        icon,
+                        const SizedBox(width: 12),
+                        Expanded(child: info),
+                        const SizedBox(width: 8),
+                        delete,
+                        const SizedBox(width: 4),
+                        toggle,
+                      ],
                     )
-                  : Icon(Icons.drag_indicator,
-                      size: 34, color: scheme.outline),
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            icon,
+                            const SizedBox(width: 12),
+                            Expanded(child: info),
+                            const SizedBox(width: 6),
+                            toggle,
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        delete,
+                      ],
+                    ),
             ),
-          ),
-        ],
+            Positioned(
+              left: 4,
+              top: 0,
+              bottom: 0,
+              width: 36,
+              child: Center(
+                child: dragEnabled
+                    ? _HoldDragStartListener(
+                        index: index,
+                        child: Icon(
+                          Icons.drag_indicator,
+                          size: 34,
+                          color: scheme.outline,
+                        ),
+                      )
+                    : Icon(
+                        Icons.drag_indicator,
+                        size: 34,
+                        color: scheme.outline,
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -382,10 +413,7 @@ class _CloudCard extends ConsumerWidget {
             children: [
               Icon(icon, size: 17, color: c),
               const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(fontSize: 13, color: c),
-              ),
+              Text(label, style: TextStyle(fontSize: 13, color: c)),
             ],
           ),
         ),
@@ -442,44 +470,63 @@ class _PluginCard extends ConsumerWidget {
     final tagLabel = source.format == PluginFormat.lx
         ? tr('落雪')
         : source.format == PluginFormat.anime
-            ? 'anime'
-            : source.format == PluginFormat.musicfree
-                ? (source.author.toLowerCase().contains('toskysun')
-                    ? 'BakaMusic'
-                    : 'MusicFree')
-                : tr('未知');
+        ? 'anime'
+        : source.format == PluginFormat.musicfree
+        ? (source.author.toLowerCase().contains('toskysun')
+              ? 'BakaMusic'
+              : 'MusicFree')
+        : tr('未知');
 
-    return Material(
-      color: appCardFill(context, ref),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide.none,
-      ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
-            child: _buildBody(context, ref, scheme, iconBg, iconColor,
-                subText, tagLabel),
-          ),
-        Positioned(
-          left: 4,
-          top: 0,
-          bottom: 0,
-          width: 36,
-          child: Center(
-            child: dragEnabled
-                ? _HoldDragStartListener(
-                    index: index,
-                    child: Icon(Icons.drag_indicator,
-                        size: 34, color: scheme.outline),
-                  )
-                : Icon(Icons.drag_indicator,
-                    size: 34, color: scheme.outline),
-          ),
+    return frostedCardSurface(
+      context: context,
+      ref: ref,
+      radius: 14,
+      themeSlot: 'settings.group',
+      child: Material(
+        color: Colors.transparent,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide.none,
         ),
-      ],
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(50, 8, 8, 6),
+              child: _buildBody(
+                context,
+                ref,
+                scheme,
+                iconBg,
+                iconColor,
+                subText,
+                tagLabel,
+              ),
+            ),
+            Positioned(
+              left: 4,
+              top: 0,
+              bottom: 0,
+              width: 36,
+              child: Center(
+                child: dragEnabled
+                    ? _HoldDragStartListener(
+                        index: index,
+                        child: Icon(
+                          Icons.drag_indicator,
+                          size: 34,
+                          color: scheme.outline,
+                        ),
+                      )
+                    : Icon(
+                        Icons.drag_indicator,
+                        size: 34,
+                        color: scheme.outline,
+                      ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -494,8 +541,10 @@ class _PluginCard extends ConsumerWidget {
     String tagLabel,
   ) {
     final manager = ref.read(pluginManagerProvider.notifier);
-    final subTag =
-        pluginSubTagInfo(source, ref.watch(pluginSubscriptionsProvider));
+    final subTag = pluginSubTagInfo(
+      source,
+      ref.watch(pluginSubscriptionsProvider),
+    );
 
     final icon = Container(
       width: 40,
@@ -505,9 +554,7 @@ class _PluginCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Icon(
-        source.format == PluginFormat.lx
-            ? Icons.music_note
-            : Icons.extension,
+        source.format == PluginFormat.lx ? Icons.music_note : Icons.extension,
         color: iconColor,
         size: 22,
       ),
@@ -522,14 +569,15 @@ class _PluginCard extends ConsumerWidget {
               child: Text(
                 pluginDisplayName(source),
                 style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 6),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
                 color: iconBg,
                 borderRadius: BorderRadius.circular(5),
@@ -537,48 +585,54 @@ class _PluginCard extends ConsumerWidget {
               child: Text(
                 tagLabel,
                 style: TextStyle(
-                    fontSize: 10,
-                    color: iconColor,
-                    fontWeight: FontWeight.w600),
+                  fontSize: 10,
+                  color: iconColor,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             if (subTag != null) ...[
               const SizedBox(width: 6),
-              Builder(builder: (_) {
-                // 付费来源金色高亮；免费聚合音源（全豆要/次合代）用 baka 配色
-                final dark = scheme.brightness == Brightness.dark;
-                final tagColor = subTag.paid
-                    ? const Color(0xFFE6A23C)
-                    : (dark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8));
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: tagColor.withValues(
-                        alpha: dark ? 0.15 : 0.1),
-                    borderRadius: BorderRadius.circular(5),
-                    border: subTag.paid
-                        ? Border.all(
-                            color: tagColor.withValues(alpha: 0.4),
-                            width: 0.5,
-                          )
-                        : null,
-                  ),
-                  child: Text(
-                    subTag.label,
-                    style: TextStyle(
+              Builder(
+                builder: (_) {
+                  // 付费来源金色高亮；免费聚合音源（全豆要/次合代）用 baka 配色
+                  final dark = scheme.brightness == Brightness.dark;
+                  final tagColor = subTag.paid
+                      ? const Color(0xFFE6A23C)
+                      : (dark
+                            ? const Color(0xFF93C5FD)
+                            : const Color(0xFF1D4ED8));
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: tagColor.withValues(alpha: dark ? 0.15 : 0.1),
+                      borderRadius: BorderRadius.circular(5),
+                      border: subTag.paid
+                          ? Border.all(
+                              color: tagColor.withValues(alpha: 0.4),
+                              width: 0.5,
+                            )
+                          : null,
+                    ),
+                    child: Text(
+                      subTag.label,
+                      style: TextStyle(
                         fontSize: 10,
                         color: tagColor,
-                        fontWeight: FontWeight.w600),
-                  ),
-                );
-              }),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  );
+                },
+              ),
             ],
             if (source.updateAvailable) ...[
               const SizedBox(width: 6),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
                   color: scheme.error.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(5),
@@ -586,16 +640,16 @@ class _PluginCard extends ConsumerWidget {
                 child: Text(
                   tr('可更新'),
                   style: TextStyle(
-                      fontSize: 10,
-                      color: scheme.error,
-                      fontWeight: FontWeight.w600),
+                    fontSize: 10,
+                    color: scheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
             if (hasVars) ...[
               const SizedBox(width: 6),
-              Icon(Icons.tune_outlined,
-                  size: 15, color: scheme.primary),
+              Icon(Icons.tune_outlined, size: 15, color: scheme.primary),
             ],
           ],
         ),
@@ -643,8 +697,7 @@ class _PluginCard extends ConsumerWidget {
       ],
     );
 
-    final isWide =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isWide = MediaQuery.orientationOf(context) == Orientation.landscape;
 
     if (isWide) {
       return Row(
@@ -700,10 +753,7 @@ class _PluginCard extends ConsumerWidget {
             children: [
               Icon(icon, size: 17, color: c),
               const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(fontSize: 13, color: c),
-              ),
+              Text(label, style: TextStyle(fontSize: 13, color: c)),
             ],
           ),
         ),
@@ -718,7 +768,11 @@ class _PluginCard extends ConsumerWidget {
     );
   }
 
-  void _confirmRemove(BuildContext context, WidgetRef ref, PluginManager manager) {
+  void _confirmRemove(
+    BuildContext context,
+    WidgetRef ref,
+    PluginManager manager,
+  ) {
     unawaited(confirmRemovePlugin(context, ref, source));
   }
 }

@@ -121,8 +121,11 @@ const Set<String> kLandscapeSettingPaths = <String>{
   '/settings/tools',
   '/settings/advanced',
   '/about',
+  '/plugin',
   '/plugin-manage',
   '/nav-manage',
+  '/theme',
+  '/wallpaper',
 };
 
 final navBarInsetProvider = Provider<double>((ref) {
@@ -989,6 +992,14 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               padding: EdgeInsets.only(
                 left: landscape ? _railWidth : 0,
                 right: (landscape && !useCameraArea) ? padding.right : 0,
+                // 固定顶栏改覆盖式后内容要下垫栏高：页面自身只在悬浮态
+                // 垫 inset，固定态由壳层统一垫（条件与顶栏可见条件一致）
+                top: (landscape &&
+                        !floatingSearchBar &&
+                        !(anyPaneOpen || libPaneActive) &&
+                        contentPath == null)
+                    ? GlassTopBar.height(context)
+                    : 0,
               ),
               child: Stack(
                 children: [

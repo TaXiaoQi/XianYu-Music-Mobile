@@ -108,7 +108,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget _buildLandscape(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
-    final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
+    // 悬浮 chrome 高 60 + 顶距 8；横屏 statusBar=0，尾距取 24 保证
+    // 首个区块标题与搜索胶囊拉开可见间距（竖屏靠 statusBar 自然撑开）
+    final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 24 : 12.0;
     return Scaffold(
       body: Stack(
         children: [

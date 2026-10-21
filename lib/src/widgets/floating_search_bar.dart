@@ -897,8 +897,11 @@ Widget floatingChromeBar(
   /// true：title 自带胶囊形态（横屏悬浮搜索条），直接 Expanded 撑满，
   /// 不再包 BiliPaiPill（防双层胶囊）；默认 false 走竖屏页签标题胶囊
   bool expandedTitle = false,
+  /// 顶距覆盖：横屏延伸进摄像头区时 statusBar 是挖孔高度（60+），
+  /// 悬浮 chrome 要贴顶，由调用方传 8 绕开
+  double? topInset,
 }) {
-  final statusBar = MediaQuery.paddingOf(context).top;
+  final statusBar = topInset ?? MediaQuery.paddingOf(context).top;
   final bottomH = bottom?.preferredSize.height ?? 0;
   final lead = leading == null
       ? const <Widget>[]
