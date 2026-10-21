@@ -51,17 +51,17 @@ const PLAYLIST_TITLE_KEYS: &[&str] = &[
     "songListName", "songlistName", "NAME",
 ];
 const PLAYLIST_ARTIST_KEYS: &[&str] = &[
-    "artist", "author", "nickname", "uname", "UNAME",
+    "artist", "author", "nickname", "uname", "UNAME", "userName",
 ];
 const PLAYLIST_COVER_KEYS: &[&str] = &[
     "coverUrl", "coverImgUrl", "img", "imgurl", "pic", "picUrl", "pic_url",
-    "PIC", "album_pic_url", "hts_pic",
+    "PIC", "album_pic_url", "hts_pic", "musicListPicUrl",
 ];
 const PLAYLIST_TRACK_COUNT_KEYS: &[&str] = &[
-    "trackCount", "trackcount", "songCount", "song_count", "songnum", "SONGNUM",
+    "trackCount", "trackcount", "songCount", "song_count", "songnum", "SONGNUM", "musicNum",
 ];
 const PLAYLIST_PLAY_COUNT_KEYS: &[&str] = &[
-    "playCount", "playcount", "play_count", "playcnt", "listennum", "LISTENNUM",
+    "playCount", "playcount", "play_count", "playcnt", "listennum", "LISTENNUM", "playNum",
 ];
 
 /// 顺序取多个候选键里的首个非 null/非空串值（对齐桌面 firstValue）。
@@ -1049,46 +1049,60 @@ pub async fn lx_playlist_tracks(
             }
         }
         "mg" => {
+            // playlist_callback 旧接口已下线（返回 HTML → Invalid JSON）。改用咪咕 App
+            // 同款 queryMusicListSongs.do（对齐插件 getMusicSheetInfo / playlist_fetcher
+            // mg.rs）：30/页，code='000000' + list，短页翻页取全；条目字段
+            // songName/artists/album/length/albumImgs 为该接口实测命名
+            let mg_page_size = limit.min(30);
             let url = format!(
-                "https://m.music.migu.cn/migu/remoting/playlist_callback?playlistId={}&pageNo={}&pageSize={}",
+                "https://app.c.nf.migu.cn/MIGUM2.0/v1.0/user/queryMusicListSongs.do?musicListId={}&pageNo={}&pageSize={}",
                 urlencode(playlist_id),
                 page,
-                limit
+                mg_page_size
             );
-            let data = http_get_json(&url, &[]).await?;
+            let data = http_get_json(
+                &url,
+                &[
+                    ("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"),
+                    ("Referer", "https://m.music.migu.cn/"),
+                ],
+            )
+            .await?;
+            if let Some(code) = data.get("code").and_then(|v| v.as_str()) {
+                if code != "000000" {
+                    return Err(format!("MG playlist {}: code={}", playlist_id, code));
+                }
+            }
             let raw_list = data
                 .get("list")
-                .or_else(|| data.get("resultList"))
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
             let list: Vec<LxSearchItem> = raw_list
                 .iter()
                 .map(|item| {
-                    let singers = item
-                        .get("singerList")
-                        .or_else(|| item.get("singers"))
-                        .cloned()
-                        .unwrap_or(Value::Null);
+                    // artists 为 [{name}] 数组；缺失时回退 singer 竖线串（"A|B" → "A、B"）
+                    let singers = match item.get("artists") {
+                        Some(v) if v.as_array().map(|a| !a.is_empty()).unwrap_or(false) => {
+                            v.clone()
+                        }
+                        _ => item
+                            .get("singer")
+                            .and_then(|v| v.as_str())
+                            .map(|s| Value::String(s.replace('|', "、")))
+                            .unwrap_or(Value::Null),
+                    };
                     let singer = format_singer_name(&singers, "name");
-                    let img = item
-                        .get("img3")
-                        .or_else(|| item.get("img2"))
-                        .or_else(|| item.get("img1"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    let duration = item
-                        .get("duration")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
+                    let song_id = match item.get("songId").or_else(|| item.get("id")) {
+                        Some(Value::String(s)) => s.clone(),
+                        Some(Value::Number(n)) => n.to_string(),
+                        _ => String::new(),
+                    };
                     simple_item(
                         source,
-                        item.get("songId")
-                            .or_else(|| item.get("id"))
-                            .map(|v| v.to_string())
-                            .unwrap_or_default(),
-                        item.get("name")
-                            .or_else(|| item.get("songName"))
+                        song_id,
+                        item.get("songName")
+                            .or_else(|| item.get("name"))
                             .and_then(|v| v.as_str())
                             .unwrap_or(""),
                         &singer,
@@ -1099,8 +1113,8 @@ pub async fn lx_playlist_tracks(
                         item.get("albumId")
                             .cloned()
                             .unwrap_or(Value::String(String::new())),
-                        format_play_time(duration),
-                        img,
+                        format_play_time(mg_duration_seconds(item)),
+                        mg_cover_url(item),
                         item.get("copyrightId")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
@@ -1108,13 +1122,81 @@ pub async fn lx_playlist_tracks(
                 })
                 .collect();
             LxPlaylistTracksResult {
-                is_end: (list.len() as u32) < limit,
+                is_end: (list.len() as u32) < mg_page_size,
                 list,
             }
         }
         _ => return Err(format!("Unknown lx source: {}", source)),
     };
     Ok(result)
+}
+
+/// 咪咕 queryMusicListSongs 条目封面：albumImgs[0].img → albumPic/img3/img2/img1，
+/// http(s) 原样、// 补 http:、裸路径补 d.musicapp.migu.cn 前缀（对齐 playlist_fetcher mg.rs）
+fn mg_cover_url(item: &Value) -> Option<String> {
+    let mut raw = String::new();
+    if let Some(imgs) = item.get("albumImgs").and_then(|v| v.as_array()) {
+        if let Some(first) = imgs.first() {
+            raw = first
+                .get("img")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+        }
+    }
+    if raw.is_empty() {
+        for key in ["albumPic", "img3", "img2", "img1"] {
+            if let Some(s) = item.get(key).and_then(|v| v.as_str()) {
+                if !s.is_empty() {
+                    raw = s.to_string();
+                    break;
+                }
+            }
+        }
+    }
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.starts_with("http://") || raw.starts_with("https://") {
+        return Some(raw);
+    }
+    if let Some(rest) = raw.strip_prefix("//") {
+        return Some(format!("http://{rest}"));
+    }
+    Some(format!("http://d.musicapp.migu.cn{raw}"))
+}
+
+/// 咪咕时长：候选字段顺序取第一个有效值；"mm:ss"/"hh:mm:ss" 逐段 ×60 累加，
+/// 数字 ≥1000 按毫秒折算、否则按秒，返回秒（对齐 playlist_fetcher mg.rs）
+fn mg_duration_seconds(item: &Value) -> f64 {
+    for key in ["duration", "length", "songTime", "playTime", "timeLength", "songLength", "lengthOfTrack"] {
+        match item.get(key) {
+            Some(Value::String(s)) if s.contains(':') => {
+                let mut total = 0.0f64;
+                let mut ok = true;
+                for part in s.split(':') {
+                    match part.trim().parse::<f64>() {
+                        Ok(n) => total = total * 60.0 + n,
+                        Err(_) => {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if ok && total > 0.0 {
+                    return total;
+                }
+            }
+            Some(Value::Number(n)) => {
+                let v = n.as_f64().unwrap_or(0.0);
+                if v > 0.0 {
+                    return if v >= 1000.0 { (v / 1000.0).round() } else { v.round() };
+                }
+            }
+            _ => {}
+        }
+    }
+    0.0
 }
 
 fn urlencode(s: &str) -> String {

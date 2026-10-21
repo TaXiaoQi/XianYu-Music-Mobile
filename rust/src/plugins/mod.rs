@@ -80,6 +80,8 @@ pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String,
         .redirect(crate::security::ssrf::ssrf_redirect_policy())
         .dns_resolver(crate::security::ssrf::pinned_dns_resolver())
         .user_agent(USER_AGENT)
+        // 封面非敏感内容：宽容证书（kwcdn.kuwo.cn 等 CDN 证书 CN 不匹配直连失败），SSRF 防护保留
+        .danger_accept_invalid_certs(true)
         .build()
         .map_err(|e| e.to_string())?;
 
