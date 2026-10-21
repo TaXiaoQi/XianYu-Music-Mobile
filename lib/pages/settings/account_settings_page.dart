@@ -70,9 +70,6 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
       _sectionTitle(context, tr('服务端设置')),
       const _ServerConfigCard(),
       const SizedBox(height: 24),
-      _sectionTitle(context, tr('上传')),
-      _UploadConfigCard(),
-      const SizedBox(height: 24),
       if (user != null) ...[
         _sectionTitle(context, tr('手动同步')),
         _ManualSyncCard(),
@@ -560,56 +557,6 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
   }
 }
 
-class _UploadConfigCard extends ConsumerWidget {
-  const _UploadConfigCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(syncProvider.select((s) => s.uploadConfig));
-    final notifier = ref.read(syncProvider.notifier);
-
-    return _GlassCard(
-      children: [
-        _SwitchTile(
-          title: tr('歌单'),
-          subtitle: tr('同步本地创建与编辑的歌单'),
-          value: config.playlists,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(config.copyWith(playlists: v)),
-        ),
-        _SwitchTile(
-          title: tr('收藏'),
-          subtitle: tr('同步我的收藏歌曲'),
-          value: config.favorites,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(config.copyWith(favorites: v)),
-        ),
-        _SwitchTile(
-          title: tr('插件'),
-          subtitle: tr('同步已安装的插件配置'),
-          value: config.plugins,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(config.copyWith(plugins: v)),
-        ),
-        _SwitchTile(
-          title: tr('本地设置'),
-          subtitle: tr('同步播放设置、歌词设置等偏好配置'),
-          value: config.settings,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(config.copyWith(settings: v)),
-        ),
-        _SwitchTile(
-          title: tr('网盘账号'),
-          subtitle: tr('加密同步已绑定的网盘登录状态'),
-          value: config.cloudCreds,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(config.copyWith(cloudCreds: v)),
-        ),
-      ],
-    );
-  }
-}
-
 /// 手动覆盖同步确认弹窗：手动按钮=强制覆盖（上传覆盖云端/下载覆盖本地），
 /// 自动同步仍走对比合并。文案与桌面端 SettingsAccount 完全一致。
 Future<void> _confirmOverwriteSync(
@@ -729,6 +676,7 @@ class _AutoSyncCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final config = ref.watch(syncProvider.select((s) => s.autoSyncConfig));
+    final upload = ref.watch(syncProvider.select((s) => s.uploadConfig));
     final notifier = ref.read(syncProvider.notifier);
 
     return _GlassCard(
@@ -739,6 +687,42 @@ class _AutoSyncCard extends ConsumerWidget {
           value: config.enabled,
           onChanged: (v) =>
               notifier.updateAutoSyncConfig(config.copyWith(enabled: v)),
+        ),
+        // 自动同步内容开关（对齐桌面端）：仅约束自动同步范围，手动同步不受限制
+        _SwitchTile(
+          title: tr('歌单'),
+          subtitle: tr('自动同步本地创建与编辑的歌单'),
+          value: upload.playlists,
+          onChanged: (v) =>
+              notifier.updateUploadConfig(upload.copyWith(playlists: v)),
+        ),
+        _SwitchTile(
+          title: tr('收藏'),
+          subtitle: tr('自动同步我的收藏歌曲'),
+          value: upload.favorites,
+          onChanged: (v) =>
+              notifier.updateUploadConfig(upload.copyWith(favorites: v)),
+        ),
+        _SwitchTile(
+          title: tr('插件'),
+          subtitle: tr('自动同步已安装的插件配置'),
+          value: upload.plugins,
+          onChanged: (v) =>
+              notifier.updateUploadConfig(upload.copyWith(plugins: v)),
+        ),
+        _SwitchTile(
+          title: tr('本地设置'),
+          subtitle: tr('自动同步播放设置、歌词设置等偏好配置'),
+          value: upload.settings,
+          onChanged: (v) =>
+              notifier.updateUploadConfig(upload.copyWith(settings: v)),
+        ),
+        _SwitchTile(
+          title: tr('网盘账号'),
+          subtitle: tr('自动加密同步已绑定的网盘登录状态'),
+          value: upload.cloudCreds,
+          onChanged: (v) =>
+              notifier.updateUploadConfig(upload.copyWith(cloudCreds: v)),
         ),
         if (config.enabled) ...[
           _DropdownTile(
