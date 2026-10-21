@@ -237,6 +237,29 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       if (raw != null) {
         final list = extractMfResultList(raw);
         if (list.isNotEmpty) {
+          // MusicFree 宿主协议：插件把 trackIds 放在 result.sheetItem 里回传
+          // （如网易云插件用模块级缓存 + sheetItem._trackIds 续页）。原样合并回
+          // item（与调用方共享同一引用），下一页调用时插件可直接拿到全量 ID，
+          // 不依赖其模块缓存在沙箱里存活。
+          final resultSheet = raw['sheetItem'];
+          if (resultSheet is Map) {
+            try {
+              item.addAll(Map<String, dynamic>.from(resultSheet));
+            } catch (_) {
+              // 只读 map 忽略
+            }
+          }
+          if (page == 1) {
+            // 插件歌单详情单页截断时用宿主全量补齐（酷狗 31 / QQ 50 场景）
+            final fullSheet =
+                await _hostFullSheetIfTruncated(source, item, list, extractMfIsEnd(raw));
+            if (fullSheet != null && fullSheet.isNotEmpty) {
+              return (
+                songs: await _maybeFillQqDurations(source, fullSheet),
+                isEnd: true,
+              );
+            }
+          }
           final songs = list
               .map((e) => mfItemToSearchResult(e, source))
               .where((r) => r.name.isNotEmpty)
@@ -256,6 +279,129 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       }
     }
     return (songs: const <PluginSearchResult>[], isEnd: true);
+  }
+
+  // ==================== 宿主歌单全量兜底（插件单页截断） ====================
+
+  // 部分聚合插件歌单详情不分页，且上游接口单页有上限（酷狗 31 / QQ 50），
+  // 而宿主 playlist_fetcher（导入链路）能拿全量。此处仅在插件首页之后做
+  // 截断检测，命中时用宿主实现补全（kg/wy/tx/kw/mg 有宿主实现的平台）。
+  int? _sheetDeclaredCount(Map<String, dynamic> sheetItem) {
+    const keys = [
+      'trackCount', 'trackcount', 'track_count', 'worksNum', 'worksnum',
+      'totalworks', 'songcount', 'songCount', 'song_count', 'totalSongNum',
+      'total_song_num',
+    ];
+    final raw = sheetItem['rawData'];
+    for (final entry in [
+      sheetItem,
+      if (raw is Map) Map<String, dynamic>.from(raw),
+    ]) {
+      for (final k in keys) {
+        final v = entry[k];
+        final n = v is num
+            ? v.toInt()
+            : (v is String && RegExp(r'^\d+$').hasMatch(v) ? int.tryParse(v) : null);
+        if (n != null && n > 0) return n;
+      }
+    }
+    return null;
+  }
+
+  // ID 比对键并集（小写）：插件条目与宿主条目的标识字段形态不同，取双方常见字段
+  List<String> _sheetSongIdKeys(dynamic item) {
+    if (item is! Map) return const [];
+    final raw = item['rawData'];
+    return [
+      item['id'], item['songmid'], item['songId'], item['song_id'], item['hash'],
+      item['audioId'], item['audio_id'], item['musicId'],
+      if (raw is Map) ...[
+        raw['songmid'], raw['songId'], raw['hash'], raw['id'],
+      ],
+    ]
+        .where((v) => v != null && v.toString().isNotEmpty)
+        .map((v) => v.toString().toLowerCase())
+        .toList();
+  }
+
+  // 截断检测与宿主补全（仅 page===1 调用）：
+  // 1) 声明曲目数已知且 ≤ 插件首页 → 首页已完整；
+  // 2) 插件未声称结尾（isEnd !== true）→ 交回常规分页循环；
+  // 3) 插件声称结尾 → 探测第二页确认单页型后，依次试宿主全量；结果必须
+  //    严格多于插件首页，且至少 1 首能与首页对上 ID（防纯数字 ID 跨平台撞车串单）。
+  Future<List<PluginSearchResult>?> _hostFullSheetIfTruncated(
+    PluginSource source,
+    Map<String, dynamic> sheetItem,
+    List<Map<String, dynamic>> page1List,
+    bool? page1IsEnd,
+  ) async {
+    final declared = _sheetDeclaredCount(sheetItem);
+    if (declared != null && declared <= page1List.length) return null;
+    if (page1IsEnd != true) return null;
+
+    var probeCount = 0;
+    var probeFirstKeys = const <String>[];
+    try {
+      final probeRaw =
+          await _tryCallRaw(source, 'getMusicSheetInfo', [sheetItem, 2]);
+      if (probeRaw != null) {
+        final probeList = extractMfResultList(probeRaw);
+        probeCount = probeList.length;
+        probeFirstKeys =
+            probeList.isNotEmpty ? _sheetSongIdKeys(probeList.first) : const [];
+      }
+    } catch (_) {
+      // 第二页异常按「不翻页」处理
+    }
+    if (probeCount > 0) {
+      // 单页型插件可能忽略 page 参数，第二页返回与首页相同的内容。
+      // 首条 ID 对得上 → 视为未翻页，继续走宿主全量兜底；否则交回常规分页循环。
+      final page1FirstKeys = _sheetSongIdKeys(page1List.first);
+      final duplicated = probeFirstKeys.any(page1FirstKeys.contains);
+      if (!duplicated) return null;
+    }
+
+    final rawId =
+        sheetItem['rawData'] is Map ? (sheetItem['rawData'] as Map)['id'] : null;
+    final sheetId = (sheetItem['id'] ?? rawId ?? '').toString().trim();
+    if (sheetId.isEmpty) return null;
+    final page1Keys = <String>{
+      for (final s in page1List) ..._sheetSongIdKeys(s),
+    };
+
+    final runners = <String, Future<HostSheetImportResult?> Function(String)>{
+      'kg': KgSheetImport.import,
+      'wy': WySheetImport.import,
+      'tx': TxSheetImport.import,
+      'kw': KwSheetImport.import,
+      'mg': MgSheetImport.import,
+    };
+    for (final entry in runners.entries) {
+      try {
+        final result = await entry.value(sheetId);
+        if (result == null ||
+            result.tracks.isEmpty ||
+            result.tracks.length <= page1List.length) {
+          continue;
+        }
+        final overlapped = result.tracks
+            .any((s) => _sheetSongIdKeys(s).any(page1Keys.contains));
+        if (!overlapped) continue;
+        AppLog.debug(
+            'plugin',
+            '[${source.name}] 歌单详情单页截断(${page1List.length}/${result.tracks.length})，'
+            '宿主 ${entry.key} 全量兜底: $sheetId');
+        // 复用 _importedTracks 条目形状：播放链路与导入歌单一致
+        return result.tracks
+            .map((e) => mfItemToSearchResult(e, source))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+      } catch (e) {
+        AppLog.warn(
+            'plugin', '[${source.name}] 宿主 ${entry.key} 歌单详情兜底失败: $e');
+      }
+    }
+    return null;
   }
 
   List<Map<String, dynamic>>? _importedTracksOf(Map<String, dynamic> item) {
@@ -336,6 +482,8 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     if (txSheet != null) return txSheet;
     final kwSheet = await _kwFallbackSheet(source, keyword);
     if (kwSheet != null) return kwSheet;
+    final mgSheet = await _mgFallbackSheet(source, keyword);
+    if (mgSheet != null) return mgSheet;
     return null;
   }
 
@@ -387,7 +535,7 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   /// 宿主侧歌单兜底导入（歌单源更新链路用）：
-  /// 酷狗→汽水→网易云→QQ→酷我依次尝试（新三平台按来源门槛收敛数字 ID 歧义）。
+  /// 酷狗→汽水→网易云→QQ→酷我→咪咕依次尝试（新四平台按来源门槛收敛数字 ID 歧义）。
   /// 返回原始曲目 map。
   Future<List<Map<String, dynamic>>> importHostSheetRaw(
       PluginSource source, String urlLike) async {
@@ -438,6 +586,17 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
             .where((r) => r.name.isNotEmpty)
             .toList();
         if (songs.isNotEmpty) return kw.tracks;
+      }
+    }
+    if (MgSheetImport.isMgKeyword(urlLike) ||
+        MgSheetImport.isMgSource(source.name, source.sources)) {
+      final mg = await MgSheetImport.import(urlLike);
+      if (mg != null && mg.tracks.isNotEmpty) {
+        final songs = mg.tracks
+            .map((e) => mfItemToSearchResult(e, source))
+            .where((r) => r.name.isNotEmpty)
+            .toList();
+        if (songs.isNotEmpty) return mg.tracks;
       }
     }
     return const [];

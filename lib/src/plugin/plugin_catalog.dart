@@ -120,6 +120,18 @@ class PluginCatalogService {
     return _hostImportSheetItem(source, keyword, kw);
   }
 
+  /// 咪咕歌单宿主兜底：插件 importMusicSheet 返回空后调用。
+  Future<MfSheetItem?> _mgFallbackSheet(
+      PluginSource source, String keyword) async {
+    final applicable = MgSheetImport.isMgKeyword(keyword) ||
+        (looksLikeSheetLinkOrId(keyword) &&
+            MgSheetImport.isMgSource(source.name, source.sources));
+    if (!applicable) return null;
+    final mg = await MgSheetImport.import(keyword);
+    if (mg == null || mg.tracks.isEmpty) return null;
+    return _hostImportSheetItem(source, keyword, mg);
+  }
+
   // ==================== 队列项转换 ====================
 
   static QueueItem toQueueItem(PluginSource source, PluginSearchResult r) {

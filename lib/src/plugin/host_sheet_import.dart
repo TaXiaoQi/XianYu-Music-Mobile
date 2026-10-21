@@ -79,6 +79,11 @@ Map<String, dynamic> _rustSongToItem(Map<String, dynamic> song, String platform)
   final durationMs = (song['duration'] as num?)?.toInt() ?? 0;
   final src = song['platform']?.toString() ?? platform;
   return {
+    // 透传 Rust 侧保留的平台原始字段（mg copyrightId/lrcUrl、kg hash 等）：
+    // 播放链 getMusicFreeUrl 拿 rawData 调插件 getMediaSource，缺了取不到链接
+    ...?song['rawData'] is Map
+        ? Map<String, dynamic>.from(song['rawData'] as Map)
+        : null,
     'id': id,
     'title': title,
     'artist': artist,
@@ -230,4 +235,29 @@ class KwSheetImport {
   /// 导入入口。返回 null 表示不适用或失败，调用方继续原有流程。
   static Future<HostSheetImportResult?> import(String keyword) =>
       _importViaRust('kw', keyword);
+}
+
+class MgSheetImport {
+  MgSheetImport._();
+
+  /// 关键词是否咪咕特征（链接域）
+  static bool isMgKeyword(String keyword) {
+    final t = keyword.trim().toLowerCase();
+    return t.contains('migu.cn');
+  }
+
+  /// 插件是否咪咕系（纯数字歌单 ID 导入需要来源限定）
+  static bool isMgSource(String name, List<String> sources) {
+    final n = name.toLowerCase();
+    if (n.contains('咪咕') || n.contains('migu')) return true;
+    for (final s in sources) {
+      final t = s.trim().toLowerCase();
+      if (t == 'mg' || t == 'migu' || t.contains('咪咕')) return true;
+    }
+    return false;
+  }
+
+  /// 导入入口。返回 null 表示不适用或失败，调用方继续原有流程。
+  static Future<HostSheetImportResult?> import(String keyword) =>
+      _importViaRust('mg', keyword);
 }

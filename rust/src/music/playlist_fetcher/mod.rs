@@ -4,6 +4,7 @@
 mod common;
 mod kg;
 mod kw;
+mod mg;
 mod orchestrator;
 mod qishui;
 mod tx;

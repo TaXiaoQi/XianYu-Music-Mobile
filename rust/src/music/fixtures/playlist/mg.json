@@ -1,0 +1,50 @@
+{
+  "code": "000000",
+  "list": [
+    {
+      "songId": "6005987HG0001",
+      "copyrightId": "6005987HG0001",
+      "songName": "测试歌曲一",
+      "artists": [
+        { "name": "测试歌手甲", "id": 101 },
+        { "name": "测试歌手乙", "id": 102 }
+      ],
+      "album": "测试专辑一",
+      "albumId": "20001",
+      "albumImgs": [
+        { "img": "/p/album001.jpg", "imgSizeType": "0" }
+      ],
+      "duration": 245,
+      "newRateFormats": [
+        { "formatType": "PQ", "size": 3920211 },
+        { "formatType": "HQ", "size": 9800528 }
+      ],
+      "lrcUrl": "http://musicdata.baidu.com/data2/lrc/001.mp3"
+    },
+    {
+      "songId": 8887776,
+      "copyrightId": "8887776",
+      "songName": "测试歌曲二",
+      "singer": "测试歌手丙",
+      "album": "测试专辑二",
+      "albumImgs": [{ "img": "https://d.musicapp.migu.cn/p/album002.jpg" }],
+      "length": "04:05"
+    },
+    {
+      "id": "7776665",
+      "copyrightId": "7776665",
+      "songName": "测试歌曲三",
+      "singerName": ["测试歌手丁"],
+      "albumName": "测试专辑三",
+      "duration": 183000
+    },
+    {
+      "songId": "5554443",
+      "copyrightId": "5554443",
+      "songName": "测试歌曲四",
+      "singerName": ["测试歌手丙"],
+      "albumName": "测试专辑四",
+      "img3": "//d.musicapp.migu.cn/p/cover004.jpg"
+    }
+  ]
+}
