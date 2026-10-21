@@ -23,7 +23,7 @@ mod tx;
 mod wy;
 
 pub use tx::{tx_album_songs, tx_batch_track_interval, tx_search_albums};
-pub(crate) use kg::kg_filter_data;
+pub(crate) use kg::kg_filter_data_v3;
 pub(crate) use tx::{random_5_digits, random_tx_guid};
 pub(crate) use tx::tx_handle_result;
 use kg::*;

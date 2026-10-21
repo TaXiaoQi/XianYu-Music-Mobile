@@ -152,6 +152,109 @@ pub(crate) fn kg_filter_data(raw: &serde_json::Value) -> LxSearchItem {
     }
 }
 
+/// KG v3/歌单页小写字段条目映射（v3 special/album 接口与 v9 歌单页共用）。
+/// search_v2 返回大写字段（SongName/FileHash/...），歌单/专辑 v3 接口返回
+/// 小写字段（songname/filename/hash/singername/album_name/album_id/audio_id），
+/// 旧映射 kg_filter_data 对不上会导致歌单/专辑条目全空。
+/// duration 单位为秒（v9 歌单页为毫秒，由调用方先换算）；
+/// 无 hash 且无 songmid 的条目返回 None（对齐桌面端 kgItemToLx 的 null 过滤）。
+pub(crate) fn kg_filter_data_v3(raw: &serde_json::Value) -> Option<LxSearchItem> {
+    let hash = raw
+        .get("hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    // songmid：audio_id 优先，回退 album_audio_id / mixsongid，最后用 hash
+    let id_str = |key: &str| -> Option<String> {
+        match raw.get(key) {
+            Some(serde_json::Value::String(s)) if !s.is_empty() => Some(s.clone()),
+            Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+            _ => None,
+        }
+    };
+    let songmid = id_str("audio_id")
+        .or_else(|| id_str("album_audio_id"))
+        .or_else(|| id_str("mixsongid"))
+        .unwrap_or_else(|| hash.clone());
+    if hash.is_empty() && songmid.is_empty() {
+        return None;
+    }
+    let mut name = decode_name(raw.get("songname").and_then(|v| v.as_str()).unwrap_or(""));
+    let mut singer = decode_name(raw.get("singername").and_then(|v| v.as_str()).unwrap_or(""));
+    if name.is_empty() {
+        // 无歌名时用 filename（"歌手 - 歌名"）拆分
+        let filename = raw.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+        match filename.split_once(" - ") {
+            Some((s, n)) if !s.is_empty() => {
+                if singer.is_empty() {
+                    singer = decode_name(s);
+                }
+                name = decode_name(n);
+            }
+            _ => name = decode_name(filename),
+        }
+    }
+    let duration = raw
+        .get("duration")
+        .and_then(|v| {
+            v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        })
+        .unwrap_or(0.0);
+    // 封面：ori_img_url 优先，回退 trans_param.union_cover / imgurl（{size} 占位符替换为 480）
+    let cover = raw
+        .get("ori_img_url")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            raw.pointer("/trans_param/union_cover")
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| raw.get("imgurl").and_then(|v| v.as_str()))
+        .unwrap_or("");
+    let img = build_kugou_cover_url(cover, 480);
+    let album_id = match raw.get("album_id") {
+        Some(serde_json::Value::Number(n)) => n.to_string(),
+        Some(serde_json::Value::String(s)) => s.clone(),
+        _ => String::new(),
+    };
+
+    // 播放链路依赖 hash（url_resolver 按 _types["128k"].hash / hash 解析）：
+    // v3 条目无文件大小，size 留空仅携带 hash
+    let mut types = Vec::new();
+    let mut lx_types = HashMap::new();
+    if !hash.is_empty() {
+        types.push(LxTypeTuple {
+            quality_type: "128k".into(),
+            size: Some(String::new()),
+            hash: Some(hash.clone()),
+        });
+        lx_types.insert(
+            "128k".into(),
+            LxTypeEntry {
+                size: Some(String::new()),
+                hash: Some(hash.clone()),
+            },
+        );
+    }
+
+    Some(LxSearchItem {
+        singer,
+        name,
+        album_name: decode_name(raw.get("album_name").and_then(|v| v.as_str()).unwrap_or("")),
+        album_id: serde_json::Value::String(album_id),
+        songmid,
+        source: "kg".into(),
+        interval: format_play_time(duration),
+        img,
+        hash: if hash.is_empty() { None } else { Some(hash) },
+        str_media_mid: None,
+        song_id: None,
+        album_mid: None,
+        copyright_id: None,
+        types,
+        lx_types: Some(lx_types),
+    })
+}
+
 fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
     let mut ids = std::collections::HashSet::new();
     let mut list = Vec::new();

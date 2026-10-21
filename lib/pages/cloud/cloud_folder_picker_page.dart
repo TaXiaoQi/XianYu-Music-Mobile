@@ -14,6 +14,7 @@ import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/glass_settings.dart';
 
 /// 网盘文件夹选择页：浏览当前账号网盘目录，勾选一个或多个文件夹路径。
 ///
@@ -254,17 +255,8 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
               SizedBox(height: GlassTopBar.height(context)),
               if (_selected.isNotEmpty) _selectedChips(context, scheme),
               if (_stack.isNotEmpty) _breadcrumb(context, scheme),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: _selectCurrentTile(context, scheme, currentSelected),
-              ),
-              Divider(
-                height: 1,
-                thickness: 0.5,
-                color: scheme.onSurface.withValues(alpha: 0.08),
-              ),
               Expanded(child: _list(context, scheme)),
-              _bottomBar(context, scheme),
+              _bottomBar(context, scheme, currentSelected),
             ],
           ),
           Positioned(
@@ -314,36 +306,26 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     );
   }
 
-  Widget _selectCurrentTile(
+  /// 行首图标容器：软色调圆角方块，与个人中心/网盘页的图标语言一致
+  Widget _iconBox(
     BuildContext context,
     ColorScheme scheme,
-    bool checked,
-  ) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: _toggleCurrent,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        child: Row(
-          children: [
-            Icon(
-              Icons.folder_special_rounded,
-              size: 20,
-              color: checked ? scheme.primary : scheme.onSurfaceVariant,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                tr('选择当前文件夹'),
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-            Checkbox(
-              value: checked,
-              onChanged: (_) => _toggleCurrent(),
-            ),
-          ],
-        ),
+    IconData icon, {
+    bool active = true,
+  }) {
+    return Container(
+      width: 38,
+      height: 38,
+      decoration: BoxDecoration(
+        color: active
+            ? scheme.primary.withValues(alpha: 0.10)
+            : scheme.onSurfaceVariant.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Icon(
+        icon,
+        size: 20,
+        color: active ? scheme.primary : scheme.onSurfaceVariant,
       ),
     );
   }
@@ -358,7 +340,18 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
           reverse: true,
           child: Row(
             children: [
-              for (var i = 0; i < _stack.length; i++)
+              for (var i = 0; i < _stack.length; i++) ...[
+                if (i > 0)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: Text(
+                      '›',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
                 InkWell(
                   onTap: () => _jumpTo(i),
                   child: Padding(
@@ -377,6 +370,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
                     ),
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -399,74 +393,91 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
         ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 12),
-      itemCount:
-          _dirs.length + _files.length + (_cursor != null ? 1 : 0),
-      itemBuilder: (context, i) {
-        if (i >= _dirs.length + _files.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Center(
-              child: _appending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : TextButton(
-                      onPressed: () => _load(more: true),
-                      child: Text(tr('加载更多')),
-                    ),
-            ),
-          );
-        }
-        if (i >= _dirs.length) {
-          return _fileRow(_files[i - _dirs.length], scheme);
-        }
-        final d = _dirs[i];
-        final cur = _stack.last.path;
-        final key = (d.path != null &&
-                d.path!.isNotEmpty &&
-                d.path != cur)
-            ? d.path!
-            : d.id;
-        final checked = _selected.contains(key);
-        return InkWell(
-          onTap: () => _enter(d.name, d.path, d.id),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.folder_rounded,
-                        size: 20,
-                        color: scheme.primary,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          d.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14),
+    // 单卡包裹全部条目：卡高随内容收缩（内容少时不撑满整屏），
+    // 内容多时整体滚动
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: frostedCardSurface(
+        context: context,
+        ref: ref,
+        radius: 16,
+        child: Column(
+          children: [
+            for (var i = 0; i < _dirs.length; i++) ...[
+              if (i > 0) _rowDivider(scheme),
+              _dirRow(_dirs[i], _entryKey(_dirs[i]), scheme),
+            ],
+            if (_dirs.isNotEmpty && _files.isNotEmpty) _rowDivider(scheme),
+            for (var j = 0; j < _files.length; j++) ...[
+              if (j > 0) _rowDivider(scheme),
+              _fileRow(_files[j], scheme),
+            ],
+            if (_cursor != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Center(
+                  child: _appending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : TextButton(
+                          onPressed: () => _load(more: true),
+                          child: Text(tr('加载更多')),
                         ),
-                      ),
-                    ],
-                  ),
                 ),
-                Checkbox(
-                  value: checked,
-                  onChanged: (_) => _toggleEntry(d.name, d.path, d.id),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 卡片内行间细分隔线（缩进避让行首图标）
+  Widget _rowDivider(ColorScheme scheme) {
+    return Divider(
+      height: 1,
+      indent: 54,
+      endIndent: 14,
+      thickness: 0.5,
+      color: scheme.onSurface.withValues(alpha: 0.08),
+    );
+  }
+
+  /// 文件夹行：点行进入目录，点行尾圆勾仅切换勾选
+  Widget _dirRow(CloudFile d, String key, ColorScheme scheme) {
+    final checked = _selected.contains(key);
+    return Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: () => _enter(d.name, d.path, d.id),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 7, 6, 7),
+          child: Row(
+            children: [
+              _iconBox(context, scheme, Icons.folder_rounded),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  d.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14),
                 ),
-              ],
-            ),
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _toggleEntry(d.name, d.path, d.id),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: _RoundCheck(checked: checked),
+                ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -480,39 +491,43 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     final isAudio =
         audioExts.any((e) => name.endsWith(e));
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
       child: Row(
         children: [
+          _iconBox(
+            context,
+            scheme,
+            isAudio
+                ? Icons.music_note_rounded
+                : Icons.insert_drive_file_rounded,
+            active: isAudio,
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  isAudio
-                      ? Icons.music_note_rounded
-                      : Icons.insert_drive_file_rounded,
-                  size: 20,
-                  color: scheme.primary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    f.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-              ],
+            child: Text(
+              f.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 14,
+                color: isAudio
+                    ? scheme.onSurface
+                    : scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
             ),
           ),
-          // 与文件夹行行尾 Checkbox 同尺寸的隐形占位，保证两种行高一致
-          const SizedBox(width: 40, height: 48),
+          // 与文件夹行行尾勾选区同宽的占位，保证两种行高一致
+          const SizedBox(width: 38),
         ],
       ),
     );
   }
 
-  Widget _bottomBar(BuildContext context, ColorScheme scheme) {
+  Widget _bottomBar(
+    BuildContext context,
+    ColorScheme scheme,
+    bool currentSelected,
+  ) {
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -533,18 +548,87 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
           Expanded(
             child: Text(
               tr('已选 {n} 个文件夹', {'n': '${_selected.length}'}),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
               ),
             ),
           ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            // 根目录（面包屑只剩"全部文件"）时不可再返回
+            onPressed:
+                _stack.length > 1 ? () => _jumpTo(_stack.length - 2) : null,
+            child: Text(tr('返回上一级')),
+          ),
+          const SizedBox(width: 8),
+          // 选择当前目录：选中态用 tonal 填充 + 对勾，与保存的主按钮区分层级
+          if (currentSelected)
+            FilledButton.tonal(
+              onPressed: _toggleCurrent,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.check_rounded, size: 18, color: scheme.primary),
+                  const SizedBox(width: 4),
+                  Text(tr('选择当前')),
+                ],
+              ),
+            )
+          else
+            OutlinedButton(
+              onPressed: _toggleCurrent,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.folder_special_rounded,
+                      size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 4),
+                  Text(tr('选择当前')),
+                ],
+              ),
+            ),
+          const SizedBox(width: 8),
           FilledButton(
             onPressed: _saving ? null : _save,
             child: Text(tr('保存')),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 圆形勾选标记：替代默认方形 Checkbox，与应用内圆润卡片语言一致
+class _RoundCheck extends StatelessWidget {
+  const _RoundCheck({required this.checked});
+
+  final bool checked;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      width: 22,
+      height: 22,
+      decoration: ShapeDecoration(
+        color: checked ? scheme.primary : Colors.transparent,
+        shape: CircleBorder(
+          side: BorderSide(
+            width: checked ? 0 : 1.5,
+            color: checked
+                ? scheme.primary
+                : scheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
+        ),
+      ),
+      child: checked
+          ? Icon(Icons.check_rounded, size: 15, color: scheme.onPrimary)
+          : null,
     );
   }
 }

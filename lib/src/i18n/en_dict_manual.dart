@@ -1502,6 +1502,8 @@ const Map<String, String> enDictManual = {
   '扫描完成，共 {n} 首': 'Scan complete, {n} songs',
   '上次：{summary}{time}': 'Last: {summary}{time}',
   '上级目录': 'Parent directory',
+  '返回上一级': 'Up one level',
+  '选择当前': 'Select current',
   '失败：{error}': 'Failed: {error}',
   '识别到 {n} 首匹配': '{n} matches found',
   '识别失败：{e}': 'Recognition failed: {e}',
