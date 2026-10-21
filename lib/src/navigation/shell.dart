@@ -121,7 +121,8 @@ const Set<String> kLandscapeSettingPaths = <String>{
   '/settings/tools',
   '/settings/advanced',
   '/about',
-  '/plugin',
+  '/plugin-manage',
+  '/nav-manage',
 };
 
 final navBarInsetProvider = Provider<double>((ref) {
@@ -140,6 +141,31 @@ final navBarHiddenProvider = StateProvider<int>((ref) => 0);
 /// 非 root 路径，设置等未混 HidesShellChrome 的二级页面靠后者隐藏；
 /// 顶层 NavDropletOverlay 据此对齐底栏显隐
 final navOnRootPathProvider = StateProvider<bool>((ref) => true);
+
+/// 壳层顶栏分支覆盖：分支页（如插件管理）把标题与右上角动作上交壳层，
+/// 页面自身只渲染内容——底栏/顶栏/搜索条全部复用公共容器。
+/// 页面 initState 注册、dispose 清除；未注册时顶栏走各分支默认形态
+class ShellTopBarAction {
+  const ShellTopBarAction({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+}
+
+class ShellTopBarOverride {
+  const ShellTopBarOverride({required this.title, required this.actions});
+
+  final String title;
+  final List<ShellTopBarAction> actions;
+}
+
+final shellTopBarOverrideProvider =
+    StateProvider<ShellTopBarOverride?>((ref) => null);
 
 /// mini 播放条页面黑名单计数：混入 HideMiniBar 的页面（设置、搜索等）
 /// 持有期间 >0，全局播放条在该页面落定后隐藏、离开后恢复
@@ -722,13 +748,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
     );
 
-    final useCameraArea =
-        landscape &&
-        ref.watch(
-          settingsProvider.select(
-            (s) => s.valueOrNull?.landscapeCameraArea ?? true,
-          ),
-        );
+    // 横屏恒铺满到摄像头(挖孔)区域：原「横屏使用摄像头区域」开关已移除
+    final useCameraArea = landscape;
 
     final landscapeFadeEnabled =
         landscape &&
@@ -844,13 +865,18 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     // 转场中沿用上次构建的顶栏实例（identical → Element 跳过子树 rebuild）：
     // 标题/按钮变化会连带毛玻璃 BackdropFilter 重新采样 backdrop 层，
     // 转场中该层不稳定即闪黑；锁定后落定才更新标题
+    // 分支页注册的顶栏覆盖（如插件管理）：标题/动作上交壳层，页面纯内容
+    final topOverride = ref.watch(shellTopBarOverrideProvider);
+    final useOverride = widget.index == 2 && topOverride != null;
     final Widget topBar;
     if (globalIsTransitioning.value && _topBarCache != null) {
       topBar = _topBarCache!;
     } else {
       topBar = _topBarCache = GlassTopBar(
         titleSpacing: widget.index == 0 ? 18 : null,
-        title: widget.index == 1
+        title: useOverride
+            ? Text(tr(topOverride.title))
+            : widget.index == 1
             ? Text(tr('个人中心'))
             : Text.rich(
                 TextSpan(
@@ -872,9 +898,16 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 ),
               ),
         actions: [
-          // 皮肤/设置在左，顶部导航球固定最右；固定顶栏下不画玻璃底，
-          // 与旁边皮肤/设置一致只出图标，点击直接切换首页/我的
-          if (widget.index == 0)
+          if (useOverride)
+            for (final action in topOverride.actions)
+              IconButton(
+                icon: Icon(action.icon),
+                tooltip: tr(action.tooltip),
+                onPressed: action.onPressed,
+              )
+          else if (widget.index == 0)
+            // 皮肤/设置在左，顶部导航球固定最右；固定顶栏下不画玻璃底，
+            // 与旁边皮肤/设置一致只出图标，点击直接切换首页/我的
             IconButton(
               icon: themeSlotWidget(
                 ref,
@@ -991,21 +1024,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                     ),
                                   ],
                                 )
-                              : Column(
+                              : Stack(
+                                  // 固定顶栏本体挂外层全屏 Stack（玻璃贯通
+                                  // 到屏幕左缘，衬在 rail 标题区背后），此处
+                                  // 只放页面内容
                                   children: [
-                                    IgnorePointer(
-                                      ignoring: anyPaneOpen || libPaneActive,
-                                      child: Opacity(
-                                        opacity: anyPaneOpen || libPaneActive
-                                            ? 0
-                                            : 1,
-                                        child: LandscapeGlobalTopBar(
-                                          currentIndex: widget.index,
-                                          floating: false,
-                                        ),
-                                      ),
-                                    ),
-                                    Expanded(
+                                    Positioned.fill(
                                       child: _landscapeFadePanel(
                                         useCameraArea: useCameraArea,
                                         padding: padding,
@@ -1054,6 +1078,22 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                       child: LandscapeGlobalTopBar(
                         currentIndex: widget.index,
                         floating: floatingSearchBar,
+                      ),
+                    ),
+                  // 固定顶栏（无 pane）：挂外层全屏 Stack，玻璃贯通到屏幕
+                  // 左缘、衬在 rail 标题区背后（rail 在其上层，logo 文字
+                  // 不被盖）；悬浮顶栏是胶囊元素，仍留内容列
+                  if (landscape &&
+                      !floatingSearchBar &&
+                      !(anyPaneOpen || libPaneActive) &&
+                      contentPath == null)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LandscapeGlobalTopBar(
+                        currentIndex: widget.index,
+                        floating: false,
                       ),
                     ),
                 ],
@@ -1136,9 +1176,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 curve: Curves.easeOutCubic,
                 // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘，
                 // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
-                opacity:
-                    (floatingSearchBar &&
-                        (widget.index == 0 || widget.index == 1) &&
+                opacity: (floatingSearchBar &&
                         !hidden &&
                         !_chromeRecovering)
                     ? 1.0
@@ -1147,19 +1185,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                   duration: const Duration(milliseconds: 240),
                   curve: Curves.easeOutCubic,
                   // 与悬浮底栏同款缩小退让（0.92），退场不再只是淡出
-                  scale:
-                      (floatingSearchBar &&
-                          (widget.index == 0 || widget.index == 1) &&
-                          !hidden &&
-                          !_chromeRecovering)
+                  scale: (floatingSearchBar && !hidden && !_chromeRecovering)
                       ? 1.0
                       : 0.92,
                   child: IgnorePointer(
                     ignoring:
-                        !(floatingSearchBar &&
-                            (widget.index == 0 || widget.index == 1) &&
-                            !hidden &&
-                            !_chromeRecovering),
+                        !(floatingSearchBar && !hidden && !_chromeRecovering),
                     child: _chromeGone
                         ? const SizedBox.shrink()
                         : FloatingTopBar(
@@ -1167,6 +1198,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                             title: widget.index == 1
                                 ? Text(
                                     tr('个人中心'),
+                                    style: const TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  )
+                                : useOverride
+                                ? Text(
+                                    tr(topOverride.title),
                                     style: const TextStyle(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w800,
@@ -1205,6 +1245,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                                   tooltip: tr('皮肤'),
                                   onTap: () => context.push('/wallpaper'),
                                 )
+                              else if (useOverride)
+                                for (final action in topOverride.actions)
+                                  BiliPaiIconButton(
+                                    iconChild: Icon(action.icon),
+                                    tooltip: tr(action.tooltip),
+                                    onTap: action.onPressed,
+                                  )
                               else
                                 BiliPaiIconButton(
                                   iconChild: themeSlotWidget(
@@ -1250,9 +1297,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 curve: Curves.easeOutCubic,
                 // 顶栏恒为毛玻璃 BackdropFilter（无 shader 层）：归零停绘，
                 // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
-                opacity: (widget.index == 0 || widget.index == 1) && !hidden
-                    ? 1.0
-                    : 0.0,
+                // 竖屏分支通用容器：所有分支（首页/插件/我的）都显示壳顶栏，
+                // 分支标题/动作差异由页面经 shellTopBarOverrideProvider 注册
+                opacity: !hidden ? 1.0 : 0.0,
                 child: IgnorePointer(ignoring: hidden, child: topBar),
               ),
             ),

@@ -84,7 +84,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
   /// 与 _FixedChrome 的塌缩判据同源：根路径之外一律低位档。
   /// HidesShellChrome 计数保留作 OR 输入，但不再单独兜底——
   /// pushReplacement 等特殊入口下计数可能丢失，路由位置是可靠信号
-  static const _rootPaths = {'/', '/home', '/mine'};
+  // 与 shell.dart 的根路径白名单同口径：分支页都算根路径（mini 条坐
+  // 高位档配合展开的固定底栏），新增分支必须同步这里
+  static const _rootPaths = {'/', '/home', '/mine', '/plugin'};
 
   /// mini 播放条页面黑名单（HideMiniBar 混入页）的路由路径：
   /// 持有期间播放条抹除吸附位置——原位淡出、不滑向低位档；

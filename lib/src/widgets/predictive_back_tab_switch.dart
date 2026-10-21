@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../core/settings.dart';
 import '../navigation/landscape_tab_switcher.dart';
 import '../navigation/page_switch_tab_view.dart';
+import '../navigation/routes.dart' show navItemsById;
 import '../navigation/shell.dart'
     show
         isLandscapeProvider,
@@ -48,9 +49,10 @@ class _PredictiveBackTabContainerState
 
   bool get _inTransition => _phase != PredictiveBackPhase.idle;
 
-  /// 显示序的分支索引（导航栏管理排序过滤插件后的结果）。
+  /// 显示序的分支索引（导航栏管理排序过滤 optIn 未开启页签后的结果）。
   /// PageView/返回手势的页位置都是显示序，goBranch 前经此换算。
-  /// build 期传 watch 到的 settings，排序变化即时重排
+  /// build 期传 watch 到的 settings，排序变化即时重排。
+  /// id→分支映射取 navItemsById 单一数据源，新增分支自动跟随
   List<int> _computeDisplayedBranches(dynamic settings) {
     final showPlugins = settings?.navShowPlugins ?? false;
     final order = settings?.navOrderPortrait ?? kDefaultNavOrder;
@@ -60,15 +62,10 @@ class _PredictiveBackTabContainerState
     };
     final out = <int>[];
     for (final id in order) {
-      final bi = switch (id) {
-        'home' => 0,
-        'mine' => 1,
-        'plugin' => 2,
-        _ => null,
-      };
-      if (bi == null || !byBranch.containsKey(bi)) continue;
-      if (id == 'plugin' && !showPlugins) continue;
-      out.add(bi);
+      final item = navItemsById[id];
+      if (item == null || !byBranch.containsKey(item.branchIndex)) continue;
+      if (item.optIn && !showPlugins) continue;
+      out.add(item.branchIndex);
     }
     if (out.isEmpty) out.addAll(byBranch.keys);
     return out;

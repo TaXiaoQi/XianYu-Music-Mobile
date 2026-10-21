@@ -323,7 +323,10 @@ class _PluginPageState extends ConsumerState<PluginPage>
       body: Stack(
         children: [
           _listHost(
-            portraitFloating,
+            // 分支模式页面自管避让（topInset 已含壳顶栏+搜索条/横屏
+            // 自带顶栏），floating 路径 = Positioned.fill 不再垫 padding，
+            // 否则与 _listHost 内层的 GlassTopBar.height 双倍叠加出空白
+            portraitFloating || branchMode,
             NotificationListener<ScrollNotification>(
         onNotification: (notification) {
           if (notification is ScrollEndNotification) {
@@ -367,7 +370,9 @@ class _PluginPageState extends ConsumerState<PluginPage>
                                 fontSize: 14, fontWeight: FontWeight.w700),
                           ),
                           const SizedBox(width: 8),
-                          Flexible(
+                          // Expanded 吃满剩余：按钮组恒贴行尾（横屏宽屏
+                          // 不会因 Flexible+Spacer 平分余量而悬在中间）
+                          Expanded(
                             child: Text(
                               tr('已启用 {enabled} / 共 {total}', {'enabled': sources.where((s) => s.enabled).length, 'total': sources.length}),
                               style: TextStyle(
@@ -376,7 +381,6 @@ class _PluginPageState extends ConsumerState<PluginPage>
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const Spacer(),
                           FilledButton.tonalIcon(
                             style: FilledButton.styleFrom(
                               visualDensity: VisualDensity.compact,

@@ -183,7 +183,15 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   );
 
   AnimationController? _moveC;
-  AnimationController get _move => _moveC ??= AnimationController(vsync: this);
+  // 显示位可为 2（三页签，插件页签开启时）：AnimationController 默认
+  // upperBound=1.0 会把指示器位置钳在中间页签——弹簧动画 0→2 钳停在 1，
+  // 自愈赋值 2.0 也被钳回 1。必须解除上界
+  AnimationController get _move =>
+      _moveC ??= AnimationController(
+        vsync: this,
+        lowerBound: 0,
+        upperBound: double.infinity,
+      );
 
   Ticker? _springTickerC;
   Ticker get _springTicker => _springTickerC ??= createTicker(_onSpringTick);
@@ -337,6 +345,28 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           final tabW = (maxW - 20) / items.length;
           final dropH = (maxH * 0.8).clamp(54.0, 60.0);
           final pos = _dragging ? _dragPos : _move.value;
+
+          // 自愈兜底：水珠静息位必须等于选中页签的显示位。didUpdateWidget
+          // 的弹簧动画可能被转场锁帧/外部 stop 等打断而停在半途，这里检测
+          // 到非拖拽、非动画下的偏离时修正。
+          // 不能在本回调（LayoutBuilder 布局期嵌套 buildScope）里直接赋
+          // _move.value：赋值会 notifyListeners → AnimatedBuilder.setState，
+          // 给布局回调的祖先标脏被框架禁止（「setState() or markNeedsBuild()
+          // called during build」），异常还会中止当帧子树更新——指示器冻结
+          // 在旧帧、修正永不落地（debug logcat 反复复现）。改为帧末执行：
+          // 帧回调里标脏合法，下一帧按修正值落位收敛，不会循环
+          if (!_dragging && !_move.isAnimating) {
+            final target = _dispIndexOf(widget.index).toDouble();
+            if ((_move.value - target).abs() > 0.001) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted || _dragging || _move.isAnimating) return;
+                final now = _dispIndexOf(widget.index).toDouble();
+                if ((_move.value - now).abs() > 0.001) {
+                  _move.value = now;
+                }
+              });
+            }
+          }
 
           final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
           final dragMf = _dragging
@@ -612,7 +642,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     if (_dragging) return;
     _press.reverse();
     _move.stop();
-    _move.value = widget.index.toDouble();
+    // 回弹落点必须换算显示序：widget.index 是分支索引，导航栏管理
+    // 重排后两者不等，裸用会把水珠弹到错误页签
+    _move.value = _dispIndexOf(widget.index).toDouble();
   }
 
   void _onDragStart(DragStartDetails d, double tabW, int count) {

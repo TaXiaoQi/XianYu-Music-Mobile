@@ -125,8 +125,8 @@ final appRouter = GoRouter(
             ),
           ],
         ),
-        // 插件分支：真分支保证切换后底栏/侧栏保留；页面自带顶栏
-        // （showBack: false，页签切换无返回），shell 顶栏对该分支隐藏
+        // 插件分支：真分支保证切换后底栏/侧栏保留；标题与右上角动作
+        // 经 shellTopBarOverrideProvider 上交壳顶栏（公共容器），页面纯内容
         StatefulShellBranch(
           routes: [
             GoRoute(
@@ -134,7 +134,7 @@ final appRouter = GoRouter(
               builder: (context, state) => const _ShellTabEntry(
                 portraitPageId: 'plugin',
                 landscapePageId: 'ls-plugin',
-                child: PluginPage(showBack: false),
+                child: PluginPage(embedded: true, asShellBranch: true),
               ),
             ),
           ],
@@ -577,9 +577,18 @@ class BottomNavItem {
   final IconData icon;
   final String location;
 
+  /// 页签 id（settings.navOrderPortrait/Landscape 的存储单位，导航栏
+  /// 管理页按此排序展示）。与 branchIndex 解耦：id 稳定可持久化，
+  /// branchIndex 是分支注册序
+  final String navId;
+
   /// 对应 StatefulShellRoute 分支索引；显示顺序（导航栏管理排序）与
   /// 分支注册顺序解耦，页签点击/选中态一律走 branchIndex
   final int branchIndex;
+
+  /// 需用户在导航栏管理里显式开启才显示的页签（如插件页签）。
+  /// 所有按 id 过滤页签的地方一律判此标志，不再写死 id
+  final bool optIn;
 
   /// 主题图标槽位 id；为 null 表示该导航项不参与主题换图。
   ///
@@ -589,35 +598,38 @@ class BottomNavItem {
   final String? themeSlot;
 
   const BottomNavItem(this.title, this.icon, this.location,
-      {required this.branchIndex, this.themeSlot});
+      {required this.branchIndex, required this.navId, this.themeSlot,
+      this.optIn = false});
 }
 
 final List<BottomNavItem> bottomNavItems = [
   BottomNavItem(tr('首页'), Icons.home, '/home',
-      branchIndex: 0, themeSlot: 'nav.home'),
+      branchIndex: 0, navId: 'home', themeSlot: 'nav.home'),
   BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine',
-      branchIndex: 1, themeSlot: 'nav.settings'),
+      branchIndex: 1, navId: 'mine', themeSlot: 'nav.settings'),
 ];
 
 /// 插件页签（默认不出现，导航栏管理页里按需开启）：shell 第三分支，
 /// 切换后底栏/侧栏保留，与首页/我的同层级
 final BottomNavItem pluginsNavItem = BottomNavItem(
     tr('插件'), Icons.extension_outlined, '/plugin',
-    branchIndex: 2);
+    branchIndex: 2, navId: 'plugin', optIn: true);
+
+/// 页签 id → 页签项的单一数据源：navItemsFor / 预测返回 tab 排序 /
+/// 导航栏管理页都从这里取。新增分支只需登记一个 BottomNavItem 并把
+/// id 加入 kDefaultNavOrder（settings.dart），其余页面自动跟随
+final Map<String, BottomNavItem> navItemsById = {
+  for (final it in [...bottomNavItems, pluginsNavItem]) it.navId: it,
+};
 
 /// 竖屏导航（底栏/悬浮导航/竖屏侧栏）页签列表；横屏 rail 传横屏顺序。
 /// [order] 为页签 id 序（settings.navOrderPortrait/Landscape，已 normalize）
 List<BottomNavItem> navItemsFor(bool showPlugins, List<String> order) {
-  final map = {
-    'home': bottomNavItems[0],
-    'mine': bottomNavItems[1],
-    'plugin': pluginsNavItem,
-  };
   final items = <BottomNavItem>[];
   for (final id in order) {
-    final item = map[id];
+    final item = navItemsById[id];
     if (item == null) continue;
-    if (id == 'plugin' && !showPlugins) continue;
+    if (item.optIn && !showPlugins) continue;
     items.add(item);
   }
   // 保底：全部被过滤时退回默认两项，导航永远可用

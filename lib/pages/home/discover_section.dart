@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
@@ -153,7 +153,7 @@ class _DailyCard extends ConsumerWidget {
       return _CardContainer(
         onTap: hasError
             ? () => ref.invalidate(dailyRecommendProvider)
-            : () => context.push(notLoggedIn ? '/account' : '/plugin'),
+            : () => context.push(notLoggedIn ? '/account' : '/plugin-manage'),
         child: Row(
           children: [
             Icon(Icons.auto_awesome_outlined,

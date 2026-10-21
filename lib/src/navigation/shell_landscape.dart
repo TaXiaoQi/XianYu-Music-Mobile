@@ -173,7 +173,14 @@ class _LandscapeRail extends ConsumerWidget {
           ),
         Expanded(
           child: ListView(
-            padding: EdgeInsets.only(top: 6, bottom: floating ? 8 : 12),
+            // 左右各留 12 与右侧内容页边距对称：rail Positioned left:0，
+            // 卡片原先贴死屏幕左缘，圆角屏上会被裁切
+            padding: EdgeInsets.fromLTRB(
+              12,
+              6,
+              12,
+              floating ? 8 : 12,
+            ),
             children: [
               if (!collapsed) ...[
                 // 分组独立玻璃卡，样式对齐设置页左列（frostedCardSurface
@@ -296,7 +303,12 @@ class _LandscapeRail extends ConsumerWidget {
       right: false,
       // 组卡（frostedCardSurface）自带玻璃底，整列不再垫玻璃，
       // 否则卡间空隙和列底会露出第二层玻璃面
-      child: SizedBox(width: railWidth, child: content),
+      child: Padding(
+        // 悬浮顶栏的胶囊元素从 rail 右缘起排（返回钮 x≈railWidth），
+        // logo 区不重叠，无需下移让位
+        padding: EdgeInsets.zero,
+        child: SizedBox(width: railWidth, child: content),
+      ),
     );
   }
 

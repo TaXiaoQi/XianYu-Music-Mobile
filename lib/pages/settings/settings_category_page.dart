@@ -39,6 +39,8 @@ import '../../src/library/saf_channel.dart';
 import '../../src/watch_link/watch_link_channel.dart';
 import '../../src/watch_link/watch_link_provider.dart';
 import '../../src/widgets/dlna_device_dialog.dart';
+import '../../src/navigation/shell.dart'
+    show landscapeSettingsCategoryProvider;
 import 'desktop_link_page.dart';
 
 part 'settings_category_page.watch.dart';
@@ -113,7 +115,10 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     final exclusivePlaying = ref.watch(playerProvider.select((s) => s.usbExclusive));
 
     if (widget.embedded) {
+      // PageStorageKey 记忆滚动位置：横屏切到子页面板（如导航栏管理）
+      // 再返回时恢复原位，不弹回顶部
       return ListView(
+        key: PageStorageKey('settings-category-${category.name}'),
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: _buildItems(
           context,

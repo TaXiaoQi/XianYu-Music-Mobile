@@ -894,6 +894,9 @@ Widget floatingChromeBar(
   List<Widget> actions = const [],
   PreferredSizeWidget? bottom,
   TabController? bottomTabController,
+  /// true：title 自带胶囊形态（横屏悬浮搜索条），直接 Expanded 撑满，
+  /// 不再包 BiliPaiPill（防双层胶囊）；默认 false 走竖屏页签标题胶囊
+  bool expandedTitle = false,
 }) {
   final statusBar = MediaQuery.paddingOf(context).top;
   final bottomH = bottom?.preferredSize.height ?? 0;
@@ -934,28 +937,32 @@ Widget floatingChromeBar(
             child: Row(
               children: [
                 ...lead,
-                BiliPaiPill(
-                  radius: 20,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: SizedBox(
-                      height: 40,
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: DefaultTextStyle(
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.3,
-                            color: Theme.of(context).colorScheme.onSurface,
+                if (expandedTitle)
+                  Expanded(child: title)
+                else ...[
+                  BiliPaiPill(
+                    radius: 20,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: SizedBox(
+                        height: 40,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: DefaultTextStyle(
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.3,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                            child: title,
                           ),
-                          child: title,
                         ),
                       ),
                     ),
                   ),
-                ),
-                const Spacer(),
+                  const Spacer(),
+                ],
                 for (final a in actions) ...[
                   const SizedBox(width: 10),
                   _chromeGlassAction(context, a),

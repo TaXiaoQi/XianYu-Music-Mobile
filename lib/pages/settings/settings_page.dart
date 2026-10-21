@@ -21,6 +21,7 @@ import '../about/about_page.dart';
 import '../feedback/feedback_page.dart';
 import '../plugin/plugin_page.dart';
 import 'account_settings_page.dart';
+import 'nav_manage_page.dart';
 import 'settings_category_page.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -38,6 +39,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
   String? _lastCenteredSel;
 
   double _navWidth = 260;
+
+  /// 横屏子页面板 → 父分类：面板标题可点返回上一级（左列高亮随 sel 恢复）
+  static const Map<String, String> _panelParent = {
+    '/nav-manage': '/settings/appearance',
+  };
 
   @override
   void dispose() {
@@ -414,7 +420,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     final sel =
         ref.watch(landscapeSettingsCategoryProvider) ?? '/settings/account';
     final detail = _detailFor(sel);
-    final selTitle = _titleOf(groups, sel) ?? tr('设置');
+    // 分组表只含分类路径，子页面板（如 /nav-manage）标题在此兜底
+    final selTitle = switch (sel) {
+      '/nav-manage' => tr('导航栏管理'),
+      _ => _titleOf(groups, sel) ?? tr('设置'),
+    };
     _scheduleCenterSelected(sel);
 
     return Scaffold(
@@ -536,18 +546,56 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (sel != '/plugin')
+                if (sel != '/plugin-manage')
                   Container(
                     height: GlassTopBar.height(context),
                     alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.only(left: 18),
-                    child: Text(
-                      selTitle,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    padding: const EdgeInsets.only(left: 12),
+                    child: _panelParent.containsKey(sel)
+                        ? InkWell(
+                            onTap: () => ref
+                                .read(landscapeSettingsCategoryProvider
+                                    .notifier)
+                                .state = _panelParent[sel],
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.arrow_back_ios_new,
+                                    size: 14,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.72),
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Text(
+                                    selTitle,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Text(
+                              selTitle,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                   ),
                 Expanded(
                   child: LandscapePageFade(
@@ -607,7 +655,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
         category: SettingsCategory.advanced,
         embedded: true,
       ),
-      '/plugin' => const PluginPage(embedded: true),
+      '/plugin-manage' => const PluginPage(embedded: true),
+      '/nav-manage' => const NavManagePage(embedded: true),
       '/feedback' => const FeedbackPage(embedded: true),
       '/about' => const AboutPage(embedded: true),
       _ => null,
@@ -756,7 +805,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
           tr('插件'),
           Icons.library_music_outlined,
           tr('插件：导入、启用、更新、卸载'),
-          '/plugin',
+          // 插件管理 cover 页：/plugin 已是 shell 第三分支页签，
+          // push 分支路径会与分支页 pageKey 撞车（Navigator
+          // keyReservation 断言），管理页一律走 /plugin-manage
+          '/plugin-manage',
         ),
         _CategoryEntry(
           tr('下载'),
@@ -1029,7 +1081,7 @@ const _settingsSearchItems = <_SearchItem>[
   _SearchItem(
     label: '插件',
     section: '设置分类',
-    path: '/plugin',
+    path: '/plugin-manage',
     categoryName: '插件',
     isCategory: true,
     keywords: '插件 音乐源 音源 落雪',

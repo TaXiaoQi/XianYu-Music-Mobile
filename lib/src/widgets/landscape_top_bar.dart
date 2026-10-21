@@ -109,66 +109,57 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
     }
 
     if (floating) {
-      return Padding(
-        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-          child: Row(
-            children: [
-              BiliPaiIconButton(
-                icon: Icons.arrow_back,
-                tooltip: tr('返回'),
-                color: canBack ? null : Theme.of(context).disabledColor,
-                onTap: canBack ? handleBack : null,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: (isLibPane && localSearchActive)
-                    ? const _LandscapeLibrarySearchField(floating: true)
-                    : searchOpen
-                        ? const _LandscapeSearchField(floating: true)
-                        : FloatingSearchBar(
-                            onTap: () {
-                              final inLibPane = ref
-                                      .read(landscapeLibraryProvider) !=
-                                  null;
-                              if (inLibPane) {
-                                ref
-                                        .read(landscapeLibraryQueryProvider
-                                            .notifier)
-                                        .state =
-                                    '';
-                                ref
-                                        .read(landscapeLibrarySearchActiveProvider
-                                            .notifier)
-                                        .state =
-                                    true;
-                              } else {
-                                ref
-                                    .read(landscapeSearchOpenProvider.notifier)
-                                    .state = true;
-                              }
-                            },
-                            onRecognize: () => context.push('/recognize'),
-                          ),
-              ),
-              const SizedBox(width: 10),
-              BiliPaiIconButton(
-                iconChild: themeSlotWidget(ref, 'landscape.wallpaper',
-                    fallback: const SkinIcon()),
-                tooltip: tr('皮肤'),
-                onTap: () => context.push('/wallpaper'),
-              ),
-              const SizedBox(width: 8),
-              BiliPaiIconButton(
-                iconChild: themeSlotWidget(ref, 'landscape.settings',
-                    fallback: const Icon(Icons.settings_outlined)),
-                tooltip: tr('设置'),
-                onTap: () => context.push('/settings'),
-              ),
-            ],
-          ),
+      // 对齐竖屏悬浮 chrome：玻璃圆钮 + 胶囊元素各自成型，悬浮于内容上
+      return floatingChromeBar(
+        context,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: tr('返回'),
+          color: canBack ? null : Theme.of(context).disabledColor,
+          onPressed: canBack ? handleBack : null,
         ),
+        expandedTitle: true,
+        title: (isLibPane && localSearchActive)
+            ? const _LandscapeLibrarySearchField(floating: true)
+            : searchOpen
+                  ? const _LandscapeSearchField(floating: true)
+                  : FloatingSearchBar(
+                      onTap: () {
+                        final inLibPane =
+                            ref.read(landscapeLibraryProvider) != null;
+                        if (inLibPane) {
+                          ref
+                                  .read(landscapeLibraryQueryProvider.notifier)
+                                  .state =
+                              '';
+                          ref
+                                  .read(
+                                    landscapeLibrarySearchActiveProvider
+                                        .notifier,
+                                  )
+                                  .state =
+                              true;
+                        } else {
+                          ref.read(landscapeSearchOpenProvider.notifier).state =
+                              true;
+                        }
+                      },
+                      onRecognize: () => context.push('/recognize'),
+                    ),
+        actions: [
+          IconButton(
+            icon: themeSlotWidget(ref, 'landscape.wallpaper',
+                fallback: const SkinIcon()),
+            tooltip: tr('皮肤'),
+            onPressed: () => context.push('/wallpaper'),
+          ),
+          IconButton(
+            icon: themeSlotIcon(ref, 'landscape.settings',
+                fallback: Icons.settings_outlined),
+            tooltip: tr('设置'),
+            onPressed: () => context.push('/settings'),
+          ),
+        ],
       );
     }
 

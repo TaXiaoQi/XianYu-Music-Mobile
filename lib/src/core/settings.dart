@@ -87,7 +87,10 @@ List<String> _mergeScanFormats(List<String>? saved) {
   return {...saved, ...kSupportedScanFormats}.toList(growable: false);
 }
 
-/// 导航页签 id：底栏/悬浮导航/侧栏/横屏 rail 共用
+/// 导航页签 id：底栏/悬浮导航/侧栏/横屏 rail 共用。
+/// 新增页签三步：routes.dart 登记 BottomNavItem（navId/branchIndex/optIn）、
+/// id 加入此表（normalizeNavOrder 会为老用户自动补尾）、注册 shell 分支；
+/// 指示器/排序/预测返回/管理页均自动跟随
 const kDefaultNavOrder = ['home', 'mine', 'plugin'];
 
 /// 恢复持久化的页签顺序：过滤未知 id，缺失 id 按默认序补尾
@@ -289,7 +292,6 @@ class AppSettings {
     this.floatingLyricsShowBackground = true,
     this.floatingLyricsHideWhenPaused = false,
     this.floatingLyricsHideInLandscape = false,
-    this.landscapeCameraArea = true,
     this.landscapeBarSize = 1,
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
@@ -505,8 +507,6 @@ class AppSettings {
 
   final bool floatingLyricsHideInLandscape;
 
-  final bool landscapeCameraArea;
-
   /// 横屏迷你播放条尺寸档位：0 小 / 1 标准 / 2 大 / 3 更大（竖屏恒为标准）
   final int landscapeBarSize;
 
@@ -643,7 +643,6 @@ class AppSettings {
     bool? floatingLyricsShowBackground,
     bool? floatingLyricsHideWhenPaused,
     bool? floatingLyricsHideInLandscape,
-    bool? landscapeCameraArea,
     int? landscapeBarSize,
     int? floatingLyricsWidthPercent,
     bool? floatingLyricsUseLyricFont,
@@ -801,7 +800,6 @@ class AppSettings {
           floatingLyricsHideWhenPaused ?? this.floatingLyricsHideWhenPaused,
       floatingLyricsHideInLandscape:
           floatingLyricsHideInLandscape ?? this.floatingLyricsHideInLandscape,
-      landscapeCameraArea: landscapeCameraArea ?? this.landscapeCameraArea,
       landscapeBarSize: landscapeBarSize ?? this.landscapeBarSize,
       floatingLyricsWidthPercent:
           floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
@@ -1000,7 +998,6 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           prefs.getBool('floatingLyricsHideWhenPaused') ?? false,
       floatingLyricsHideInLandscape:
           prefs.getBool('floatingLyricsHideInLandscape') ?? false,
-      landscapeCameraArea: prefs.getBool('landscapeCameraArea') ?? true,
       landscapeBarSize: prefs.getInt('landscapeBarSize') ?? 1,
       floatingLyricsWidthPercent:
           prefs.getInt('floatingLyricsWidthPercent') ?? 92,

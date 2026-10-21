@@ -85,6 +85,9 @@ class SettingsStore {
       prefs.setStringList('scanFormats', next.scanFormats),
       prefs.setBool('floatingNavBar', next.floatingNavBar),
       prefs.setBool('floatingSearchBar', next.floatingSearchBar),
+      prefs.setBool('navShowPlugins', next.navShowPlugins),
+      prefs.setStringList('navOrderPortrait', next.navOrderPortrait),
+      prefs.setStringList('navOrderLandscape', next.navOrderLandscape),
       prefs.setString('navBarPosition', next.navBarPosition.name),
       prefs.setString('pageTransitionStyle', next.pageTransitionStyle.name),
       prefs.setBool(
@@ -178,7 +181,6 @@ class SettingsStore {
         'floatingLyricsHideInLandscape',
         next.floatingLyricsHideInLandscape,
       ),
-      prefs.setBool('landscapeCameraArea', next.landscapeCameraArea),
       prefs.setInt('landscapeBarSize', next.landscapeBarSize),
       prefs.setInt(
         'floatingLyricsWidthPercent',
@@ -574,8 +576,6 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(floatingLyricsHideWhenPaused: v));
   Future<void> setFloatingLyricsHideInLandscape(bool v) => _settingsStore
       .update((s) => s.copyWith(floatingLyricsHideInLandscape: v));
-  Future<void> setLandscapeCameraArea(bool v) =>
-      _settingsStore.update((s) => s.copyWith(landscapeCameraArea: v));
 
   Future<void> setLandscapeBarSize(int v) =>
       _settingsStore.update((s) => s.copyWith(landscapeBarSize: v));

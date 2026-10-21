@@ -1505,6 +1505,7 @@ const Map<String, String> enDictManual = {
   '返回上一级': 'Up one level',
   '选择当前': 'Select current',
   '确认保存': 'Confirm save',
+  '插件管理': 'Plugin manager',
   '导航栏管理': 'Navigation bars',
   '调整竖屏与横屏导航的页签顺序，开启插件页签':
       'Reorder portrait and landscape navigation tabs, enable the plugins tab',

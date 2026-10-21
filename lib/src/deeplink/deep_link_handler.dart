@@ -1,4 +1,4 @@
-﻿// ignore_for_file: use_build_context_synchronously
+// ignore_for_file: use_build_context_synchronously
 
 import 'dart:io';
 import 'dart:convert';
@@ -509,9 +509,9 @@ class XianYuDeepLink {
                 ? tr('插件已导入')
                 : tr('插件已导入：{name}', {'name': shownName}));
       }
-      if (router.routerDelegate.currentConfiguration.uri.toString() != '/plugin') {
-        router.push('/plugin-manage');
-      }
+      // /plugin 已是 shell 第三分支页签，管理 cover 是独立路由，push 不会
+      // 与页签 pageKey 撞车；导入完成后恒进管理页展示结果
+      router.push('/plugin-manage');
     } catch (e, st) {
       AppLog.warn('deeplink', '导入系统打开的插件脚本失败: $e\n$st');
       final overlay = appNavigatorKey.currentState?.overlay;

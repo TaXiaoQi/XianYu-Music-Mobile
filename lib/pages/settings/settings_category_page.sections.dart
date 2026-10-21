@@ -375,8 +375,14 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.extension_outlined,
             title: tr('导航栏管理'),
             subtitle: tr('调整竖屏与横屏导航的页签顺序，开启插件页签'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => context.push('/nav-manage'),
+            trailing: const SizedBox.shrink(),
+            // 横屏嵌在设置面板里：不 push 全屏路由，切面板内容；
+            // 竖屏路由页：正常 push
+            onTap: widget.embedded
+                ? () => ref
+                      .read(landscapeSettingsCategoryProvider.notifier)
+                      .state = '/nav-manage'
+                : () => context.push('/nav-manage'),
           ),
           if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
             _tile(
@@ -414,14 +420,6 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             subtitle: tr('横屏下首页/我的在右侧容器切换时淡进淡出'),
             value: s?.landscapeTransitionEnabled ?? true,
             onChanged: (v) => n.setLandscapeTransitionEnabled(v),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.crop_landscape_outlined,
-            title: tr('横屏使用摄像头区域'),
-            subtitle: tr('横屏时各页面铺满到摄像头(挖孔)区域，不再留黑边'),
-            value: s?.landscapeCameraArea ?? true,
-            onChanged: (v) => n.setLandscapeCameraArea(v),
           ),
           _tile(
             context,
