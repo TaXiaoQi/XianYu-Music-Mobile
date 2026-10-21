@@ -24,6 +24,9 @@ analyzer:
     # PoC 验证用的临时壳工程，保留作参考（计划 P4 后可删），不参与主工程 analyze
     - poc_ohos/**
     - test/**
+    # frb 按 Rust 侧 music 模块重新生成的绑定（LyricsStorageSource 等），
+    # 生成物不参与 lint
+    - lib/src/rust/music/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

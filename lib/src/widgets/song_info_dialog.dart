@@ -9,6 +9,9 @@ import '../core/db_path.dart';
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
 import '../rust/api.dart';
+// ignore: unused_import — LyricsStorageSource 由 music/types.dart 提供，
+// 经 api.dart 无导出，需单独引入（见 frb 生成物结构）
+import '../rust/music/types.dart' show LyricsStorageSource;
 
 import 'predictive_dialog_route.dart';
 import 'app_toast.dart';

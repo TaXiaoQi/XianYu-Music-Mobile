@@ -230,27 +230,15 @@ class _FavoriteTile extends ConsumerWidget {
               onPressed: openActions,
             ),
             // 来源标与时长上下叠放（行内居中对齐），置于行尾
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                SourceTag(
-                  path: entry.path,
-                  isOnline: entry.isOnline,
-                  source: entry.source,
-                  onlineSongJson: entry.onlineSongJson,
-                ),
-                if (entry.durationMs > 0) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    _fmtDuration(entry.durationMs),
-                    style: TextStyle(
-                      fontSize: m.subtitleSize,
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ],
+            SongTrailingMeta(
+              path: entry.path,
+              isOnline: entry.isOnline,
+              source: entry.source,
+              onlineSongJson: entry.onlineSongJson,
+              durationText: entry.durationMs > 0
+                  ? _fmtDuration(entry.durationMs)
+                  : null,
+              fontSize: m.subtitleSize,
             ),
           ],
         ),

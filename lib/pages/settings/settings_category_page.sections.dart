@@ -370,6 +370,14 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             value: s?.floatingSearchBar ?? false,
             onChanged: (v) => n.setFloatingSearchBar(v),
           ),
+          _tile(
+            context,
+            icon: Icons.extension_outlined,
+            title: tr('导航栏管理'),
+            subtitle: tr('调整竖屏与横屏导航的页签顺序，开启插件页签'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/nav-manage'),
+          ),
           if ((s?.navBarPosition ?? NavBarPosition.side) == NavBarPosition.side)
             _tile(
               context,

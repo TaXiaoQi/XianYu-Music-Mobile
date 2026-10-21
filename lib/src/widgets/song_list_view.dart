@@ -15,6 +15,7 @@ import 'list_metrics.dart';
 import 'press_scale.dart';
 import 'song_actions_sheet.dart';
 import 'song_list_scroll_fabs.dart';
+import 'source_tag.dart';
 import 'stagger_in.dart';
 import '../i18n/i18n.dart';
 
@@ -342,12 +343,13 @@ class _SongsListViewState extends ConsumerState<SongsListView> {
                           visualDensity: VisualDensity.compact,
                           onPressed: openActions,
                         ),
-                      Text(
-                        _fmt(s.duration),
-                        style: TextStyle(
-                          fontSize: m.subtitleSize,
-                          color: scheme.onSurfaceVariant,
-                        ),
+                      SongTrailingMeta(
+                        path: s.path,
+                        // 媒体库 Song 无在线标记；cloud:///lx:// 路径
+                        // 前缀在 SourceTag 内部自动识别
+                        isOnline: false,
+                        durationText: _fmt(s.duration),
+                        fontSize: m.subtitleSize,
                       ),
                     ],
                   ),

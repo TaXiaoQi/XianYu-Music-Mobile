@@ -87,6 +87,20 @@ List<String> _mergeScanFormats(List<String>? saved) {
   return {...saved, ...kSupportedScanFormats}.toList(growable: false);
 }
 
+/// 导航页签 id：底栏/悬浮导航/侧栏/横屏 rail 共用
+const kDefaultNavOrder = ['home', 'mine', 'plugin'];
+
+/// 恢复持久化的页签顺序：过滤未知 id，缺失 id 按默认序补尾
+List<String> normalizeNavOrder(List<String>? saved) {
+  if (saved == null) return kDefaultNavOrder;
+  final known = kDefaultNavOrder.toSet();
+  final out = saved.where(known.contains).toSet().toList();
+  for (final id in kDefaultNavOrder) {
+    if (!out.contains(id)) out.add(id);
+  }
+  return out;
+}
+
 enum WallpaperTextColor { follow, light, dark }
 
 enum WallpaperMediaType { image, video }
@@ -223,6 +237,9 @@ class AppSettings {
     this.scanFormats = kSupportedScanFormats,
     this.floatingNavBar = false,
     this.floatingSearchBar = false,
+    this.navShowPlugins = false,
+    this.navOrderPortrait = kDefaultNavOrder,
+    this.navOrderLandscape = kDefaultNavOrder,
     this.navBarPosition = NavBarPosition.bottom,
     this.pageTransitionStyle = PageTransitionStyle.cover,
     this.landscapeTransitionEnabled = true,
@@ -372,6 +389,15 @@ class AppSettings {
   final bool floatingNavBar;
 
   final bool floatingSearchBar;
+
+  /// 插件页签是否出现在底栏/侧边导航（默认关，导航栏管理页里开启）
+  final bool navShowPlugins;
+
+  /// 竖屏导航（底栏/悬浮导航/竖屏侧栏）页签 id 顺序：home/mine/plugin
+  final List<String> navOrderPortrait;
+
+  /// 横屏导航（横屏 rail）页签 id 顺序
+  final List<String> navOrderLandscape;
 
   final NavBarPosition navBarPosition;
 
@@ -566,6 +592,9 @@ class AppSettings {
     List<String>? scanFormats,
     bool? floatingNavBar,
     bool? floatingSearchBar,
+    bool? navShowPlugins,
+    List<String>? navOrderPortrait,
+    List<String>? navOrderLandscape,
     NavBarPosition? navBarPosition,
     PageTransitionStyle? pageTransitionStyle,
     bool? landscapeTransitionEnabled,
@@ -696,6 +725,9 @@ class AppSettings {
       scanFormats: scanFormats ?? this.scanFormats,
       floatingNavBar: floatingNavBar ?? this.floatingNavBar,
       floatingSearchBar: floatingSearchBar ?? this.floatingSearchBar,
+      navShowPlugins: navShowPlugins ?? this.navShowPlugins,
+      navOrderPortrait: navOrderPortrait ?? this.navOrderPortrait,
+      navOrderLandscape: navOrderLandscape ?? this.navOrderLandscape,
       navBarPosition: navBarPosition ?? this.navBarPosition,
       pageTransitionStyle: pageTransitionStyle ?? this.pageTransitionStyle,
       landscapeTransitionEnabled:
@@ -881,6 +913,11 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       scanFormats: _mergeScanFormats(prefs.getStringList('scanFormats')),
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
+      navShowPlugins: prefs.getBool('navShowPlugins') ?? false,
+      navOrderPortrait:
+          normalizeNavOrder(prefs.getStringList('navOrderPortrait')),
+      navOrderLandscape:
+          normalizeNavOrder(prefs.getStringList('navOrderLandscape')),
       navBarPosition:
           NavBarPosition.values.asNameMap()[prefs.getString(
             'navBarPosition',

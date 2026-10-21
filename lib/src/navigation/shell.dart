@@ -330,7 +330,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   Timer? _chromeGoneTimer;
   Timer? _chromeFadeTimer;
 
-  static const _rootPaths = {'/', '/home', '/mine'};
+  static const _rootPaths = {'/', '/home', '/mine', '/plugin'};
 
   static bool _isRootPathOf(String path) => _rootPaths.contains(path);
 

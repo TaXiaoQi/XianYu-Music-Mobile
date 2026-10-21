@@ -30,7 +30,9 @@ String resolveRealSourceName(String name) {
   return name;
 }
 
-const int kSourceTagMaxChars = 5;
+// 与桌面端对齐：桌面标签容器 w-16(64px)+CSS truncate，视觉约 5 个字符位
+// （约 4 字+省略号）。此处按字符数硬截取到 4 字+'…'，合计 5 个字符位。
+const int kSourceTagMaxChars = 4;
 
 String truncateSource(String label) {
   if (label.length <= kSourceTagMaxChars) return label;
@@ -351,6 +353,58 @@ class SourceTag extends ConsumerWidget {
           fontWeight: FontWeight.w500,
         ),
       ),
+    );
+  }
+}
+
+/// 歌曲行行尾「来源标 + 时长」上下叠放（收藏页歌曲行同款），供各歌曲列表复用
+class SongTrailingMeta extends StatelessWidget {
+  const SongTrailingMeta({
+    super.key,
+    required this.path,
+    required this.isOnline,
+    this.source,
+    this.onlineSongJson,
+    this.pluginId,
+    this.durationText,
+    this.fontSize = 12,
+  });
+
+  final String path;
+  final bool isOnline;
+  final String? source;
+  final String? onlineSongJson;
+  final String? pluginId;
+
+  /// 已格式化的时长文本（m:ss），空/null 不显示时长行
+  final String? durationText;
+  final double fontSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SourceTag(
+          path: path,
+          isOnline: isOnline,
+          source: source,
+          onlineSongJson: onlineSongJson,
+          pluginId: pluginId,
+        ),
+        if (durationText != null && durationText!.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            durationText!,
+            style: TextStyle(
+              fontSize: fontSize,
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

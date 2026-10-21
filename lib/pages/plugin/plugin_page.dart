@@ -40,9 +40,12 @@ part 'plugin_page.detail_sheet.dart';
 part 'plugin_page.install_sheets.dart';
 
 class PluginPage extends ConsumerStatefulWidget {
-  const PluginPage({super.key, this.embedded = false});
+  const PluginPage({super.key, this.embedded = false, this.showBack = true});
 
   final bool embedded;
+
+  /// 自带顶栏是否显示返回键；导航栏分支嵌入时为 false（页签切换，无返回）
+  final bool showBack;
 
   @override
   ConsumerState<PluginPage> createState() => _PluginPageState();
@@ -477,7 +480,7 @@ class _PluginPageState extends ConsumerState<PluginPage>
                       ),
                     )
                   : FlatTopBar(
-                      leading: const BackButton(),
+                      leading: widget.showBack ? const BackButton() : null,
                       title: tr('插件'),
                       backgroundColor: appScaffoldBackground(context, ref),
                       actions: [

@@ -23,6 +23,7 @@ import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/song_actions_sheet.dart';
+import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/stagger_in.dart';
@@ -634,6 +635,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             Builder(
               builder: (rowContext) {
               BuildContext? coverCtx;
+              final q = _queueItemOf(r);
               final g = songRowPlay(ref, onPlay: () async {
                 final ok = await launchFlyCover(
                   rowContext,
@@ -684,18 +686,20 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                         tooltip: tr('收藏'),
                         onPressed: () => _toggleFavorite(i),
                       ),
-                      if (r.interval.isNotEmpty)
-                        Text(
-                          r.interval,
-                          style: TextStyle(
-                              fontSize: m.subtitleSize,
-                              color: scheme.onSurfaceVariant),
-                        ),
                       IconButton(
                         icon: const Icon(Icons.more_horiz, size: 22),
                         color: scheme.onSurfaceVariant,
                         tooltip: tr('更多'),
                         onPressed: () => _songActions(i),
+                      ),
+                      // 来源标与时长上下叠放（收藏页同款行尾）
+                      SongTrailingMeta(
+                        path: q.path,
+                        isOnline: true,
+                        source: r.source,
+                        pluginId: widget.args.pluginId,
+                        durationText: r.interval.isNotEmpty ? r.interval : null,
+                        fontSize: m.subtitleSize,
                       ),
                     ],
                   ),

@@ -453,6 +453,12 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(floatingNavBar: v));
   Future<void> setFloatingSearchBar(bool v) =>
       _settingsStore.update((s) => s.copyWith(floatingSearchBar: v));
+  Future<void> setNavShowPlugins(bool v) =>
+      _settingsStore.update((s) => s.copyWith(navShowPlugins: v));
+  Future<void> setNavOrderPortrait(List<String> v) =>
+      _settingsStore.update((s) => s.copyWith(navOrderPortrait: v));
+  Future<void> setNavOrderLandscape(List<String> v) =>
+      _settingsStore.update((s) => s.copyWith(navOrderLandscape: v));
   Future<void> setNavBarPosition(NavBarPosition pos) =>
       _settingsStore.update((s) => s.copyWith(navBarPosition: pos));
   Future<void> setPageTransitionStyle(PageTransitionStyle style) =>

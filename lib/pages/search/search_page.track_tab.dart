@@ -262,6 +262,16 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                                   onPressed: () => _openActions(i),
                                 ),
                               ),
+                              // 来源标与时长上下叠放（收藏页同款行尾）
+                              SongTrailingMeta(
+                                path: cloudItem.path,
+                                isOnline: true,
+                                durationText:
+                                    cloudMeta?.durationSecs != null
+                                        ? _fmtDuration(cloudMeta!.durationSecs!)
+                                        : null,
+                                fontSize: m.subtitleSize,
+                              ),
                             ],
                           ),
                           onLongPress: () => _openActions(i),
@@ -369,13 +379,13 @@ class _TrackTabState extends ConsumerState<_TrackTab>
                                 onPressed: () => _openActions(i),
                               ),
                             ),
-                            // 时长块置行尾（与收藏页行尾布局一致）
-                            Text(
-                              r.interval,
-                              style: TextStyle(
-                                fontSize: m.subtitleSize,
-                                color: scheme.outline,
-                              ),
+                            // 来源标与时长上下叠放（收藏页同款行尾）
+                            SongTrailingMeta(
+                              path: item?.path ?? '',
+                              isOnline: true,
+                              source: widget.source.name,
+                              durationText: r.interval,
+                              fontSize: m.subtitleSize,
                             ),
                           ],
                         ),

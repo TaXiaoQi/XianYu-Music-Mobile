@@ -33,6 +33,7 @@ import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/settings/settings_page.dart';
 import '../../pages/settings/settings_category_page.dart';
+import '../../pages/settings/nav_manage_page.dart';
 import '../../pages/settings/account_settings_page.dart';
 import '../../pages/cloud/cloud_bind_page.dart';
 import '../../pages/cloud/cloud_browser_page.dart';
@@ -73,7 +74,11 @@ part 'routes_player_cover.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 
-final _branchKeys = <GlobalKey>[GlobalKey(), GlobalKey()];
+final _branchKeys = <GlobalKey>[
+  GlobalKey(),
+  GlobalKey(),
+  GlobalKey(),
+];
 final appRouter = GoRouter(
   navigatorKey: appNavigatorKey,
   observers: [AppLogRouteObserver(), TransitionTracker()],
@@ -88,6 +93,7 @@ final appRouter = GoRouter(
         return PredictiveBackTabContainer(
           navigationShell: navigationShell,
           currentIndex: navigationShell.currentIndex,
+          branchIndices: [for (var i = 0; i < children.length; i++) i],
           children: [
             for (var i = 0; i < children.length && i < _branchKeys.length; i++)
               KeyedSubtree(key: _branchKeys[i], child: children[i]),
@@ -115,6 +121,20 @@ final appRouter = GoRouter(
                 portraitPageId: 'mine',
                 landscapePageId: 'ls-mine',
                 child: MinePage(),
+              ),
+            ),
+          ],
+        ),
+        // 插件分支：真分支保证切换后底栏/侧栏保留；页面自带顶栏
+        // （showBack: false，页签切换无返回），shell 顶栏对该分支隐藏
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/plugin',
+              builder: (context, state) => const _ShellTabEntry(
+                portraitPageId: 'plugin',
+                landscapePageId: 'ls-plugin',
+                child: PluginPage(showBack: false),
               ),
             ),
           ],
@@ -368,11 +388,21 @@ final appRouter = GoRouter(
         key: state.pageKey,
       ),
     ),
+    // 插件管理 cover 页（分享链接/首页入口等 push 场景，带返回键）；
+    // 页签路径 /plugin 已是 shell 第三分支，两者分离避免路由抢占
     GoRoute(
-      path: '/plugin',
+      path: '/plugin-manage',
       pageBuilder: (context, state) => _coverPage(
         context,
         (_) => const PluginPage(),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/nav-manage',
+      pageBuilder: (context, state) => _coverPage(
+        context,
+        (_) => const NavManagePage(),
         key: state.pageKey,
       ),
     ),
@@ -547,6 +577,10 @@ class BottomNavItem {
   final IconData icon;
   final String location;
 
+  /// 对应 StatefulShellRoute 分支索引；显示顺序（导航栏管理排序）与
+  /// 分支注册顺序解耦，页签点击/选中态一律走 branchIndex
+  final int branchIndex;
+
   /// 主题图标槽位 id；为 null 表示该导航项不参与主题换图。
   ///
   /// 保留 [icon] 不动、另加一个可选槽位，是为了让"未启用主题时渲染与之前完全
@@ -554,20 +588,48 @@ class BottomNavItem {
   /// 三个渲染点（底栏/侧栏/横屏 rail）也不需各自处理空值。
   final String? themeSlot;
 
-  const BottomNavItem(this.title, this.icon, this.location, {this.themeSlot});
+  const BottomNavItem(this.title, this.icon, this.location,
+      {required this.branchIndex, this.themeSlot});
 }
 
 final List<BottomNavItem> bottomNavItems = [
-  BottomNavItem(tr('首页'), Icons.home, '/home', themeSlot: 'nav.home'),
+  BottomNavItem(tr('首页'), Icons.home, '/home',
+      branchIndex: 0, themeSlot: 'nav.home'),
   BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine',
-      themeSlot: 'nav.settings'),
+      branchIndex: 1, themeSlot: 'nav.settings'),
 ];
+
+/// 插件页签（默认不出现，导航栏管理页里按需开启）：shell 第三分支，
+/// 切换后底栏/侧栏保留，与首页/我的同层级
+final BottomNavItem pluginsNavItem = BottomNavItem(
+    tr('插件'), Icons.extension_outlined, '/plugin',
+    branchIndex: 2);
+
+/// 竖屏导航（底栏/悬浮导航/竖屏侧栏）页签列表；横屏 rail 传横屏顺序。
+/// [order] 为页签 id 序（settings.navOrderPortrait/Landscape，已 normalize）
+List<BottomNavItem> navItemsFor(bool showPlugins, List<String> order) {
+  final map = {
+    'home': bottomNavItems[0],
+    'mine': bottomNavItems[1],
+    'plugin': pluginsNavItem,
+  };
+  final items = <BottomNavItem>[];
+  for (final id in order) {
+    final item = map[id];
+    if (item == null) continue;
+    if (id == 'plugin' && !showPlugins) continue;
+    items.add(item);
+  }
+  // 保底：全部被过滤时退回默认两项，导航永远可用
+  return items.isEmpty ? bottomNavItems : items;
+}
 
 String navTitle(BuildContext context, BottomNavItem item) {
   final l = Localizations.of<AppLocalizations>(context, AppLocalizations);
   return switch (item.location) {
     '/home' => l?.navHome ?? tr('首页'),
     '/mine' => l?.navMine ?? tr('我的'),
+    '/plugin' => tr('插件'),
     _ => l?.navEffects ?? tr('音效'),
   };
 }

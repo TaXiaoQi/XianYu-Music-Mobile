@@ -147,6 +147,7 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
 class _SlidingNavBottom extends StatefulWidget {
   const _SlidingNavBottom({
     required this.index,
+    required this.items,
     required this.onSelect,
     this.lens = false,
     this.glassBuilder,
@@ -157,6 +158,9 @@ class _SlidingNavBottom extends StatefulWidget {
 
   final int index;
   final ValueChanged<int> onSelect;
+
+  /// 页签列表（含按需出现的插件伪页签），由 shell 侧按设置传入
+  final List<BottomNavItem> items;
 
   final bool lens;
 
@@ -257,25 +261,47 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     }
   }
 
+  /// 分支索引 → 显示序下标（导航栏管理可重排，两者不必相等）
+  int _dispIndexOf(int branchIndex) {
+    final i = widget.items.indexWhere((it) => it.branchIndex == branchIndex);
+    return i < 0 ? 0 : i;
+  }
+
   @override
   void initState() {
     super.initState();
-    _move.value = widget.index.toDouble();
+    _move.value = _dispIndexOf(widget.index).toDouble();
   }
 
   @override
   void didUpdateWidget(covariant _SlidingNavBottom oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.index != oldWidget.index && !_dragging) {
-      _move.animateWith(
-        SpringSimulation(
-          const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
-          _move.value,
-          widget.index.toDouble(),
-          0,
-        ),
-      );
+    // 导航栏管理改排序后 items 顺序变了但 index（分支索引）可能不变，
+    // 水珠必须跟随新显示位，否则停在上一个顺序的旧位置
+    final orderChanged = !_sameDisplayOrder(widget.items, oldWidget.items);
+    if (!_dragging) {
+      if (orderChanged) {
+        _move.stop();
+        _move.value = _dispIndexOf(widget.index).toDouble();
+      } else if (widget.index != oldWidget.index) {
+        _move.animateWith(
+          SpringSimulation(
+            const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
+            _move.value,
+            _dispIndexOf(widget.index).toDouble(),
+            0,
+          ),
+        );
+      }
     }
+  }
+
+  bool _sameDisplayOrder(List<BottomNavItem> a, List<BottomNavItem> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].branchIndex != b[i].branchIndex) return false;
+    }
+    return true;
   }
 
   @override
@@ -296,7 +322,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   @override
   Widget build(BuildContext context) {
-    final items = bottomNavItems;
+    final items = widget.items;
     return AnimatedBuilder(
       // _coverAnim（被覆盖路由转场）参与驱动：转场期间每帧重建并实测
       // 栏几何，快照水滴跟随壳层视差全程移动，不再冻结在转场中间值
@@ -398,11 +424,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     Expanded(
                       child: _NavTab(
                         item: items[i],
-                        selected: i == widget.index,
+                        selected: items[i].branchIndex == widget.index,
                         iconScale: widget.lens
                             ? 1 + 0.2 * (1 - (i - pos).abs()).clamp(0.0, 1.0)
                             : 1.0,
-                        onTap: () => widget.onSelect(i),
+                        onTap: () => widget.onSelect(items[i].branchIndex),
                         suppressSplash: widget.lens,
                       ),
                     ),
@@ -625,7 +651,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   }
 
   void _onDragCancel(int maxIndex) {
-    _commitDragTarget(widget.index.toDouble());
+    _commitDragTarget(_dispIndexOf(widget.index).toDouble());
   }
 
   void _commitDragTarget(double target) {
@@ -640,8 +666,13 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       ),
     );
     final idx = target.round();
-    if (idx != widget.index) {
-      widget.onSelect(idx);
+    // 拖拽目标是显示序下标，回调换算成 shell 分支索引
+    if (idx != _dispIndexOf(widget.index)) {
+      if (idx >= 0 && idx < widget.items.length) {
+        widget.onSelect(widget.items[idx].branchIndex);
+      } else {
+        setState(() {});
+      }
     } else {
       setState(() {});
     }

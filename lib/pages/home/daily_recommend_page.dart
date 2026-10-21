@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -81,7 +81,7 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.music_off_outlined,
                     message: tr('今天还没有推荐\n添加本地音乐或安装音源插件后再试'),
                     action: tr('去安装插件'),
-                    onTap: () => context.push('/plugin'),
+                    onTap: () => context.push('/plugin-manage'),
                   );
                 }
                 return Column(
@@ -252,17 +252,6 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
     super.dispose();
   }
 
-  Widget _buildSourceTag(DailyRecommendItem item) {
-    final q = item.toQueueItem('320k');
-    return SourceTag(
-      path: q.path,
-      isOnline: true,
-      source: q.source,
-      onlineSongJson: q.onlineSongJson,
-      pluginId: item.pluginId,
-    );
-  }
-
   void _toggleFavorite(DailyRecommendItem item, QueueItem q, bool wasFav) {
     ref.read(favoritesProvider.notifier).toggle(q);
     showXianYuToast(
@@ -394,7 +383,6 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                _buildSourceTag(item),
                               ],
                             ),
                             if (item.reason.isNotEmpty)
@@ -424,18 +412,23 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                               tooltip: tr('收藏'),
                               onPressed: () => _toggleFavorite(item, q, isFav),
                             ),
-                            if (item.durationMs > 0)
-                              Text(
-                                '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}',
-                                style: TextStyle(
-                                    fontSize: m.subtitleSize,
-                                    color: scheme.onSurfaceVariant),
-                              ),
                             IconButton(
                               icon: const Icon(Icons.more_horiz, size: 22),
                               color: scheme.onSurfaceVariant,
                               tooltip: tr('更多'),
                               onPressed: openActions,
+                            ),
+                            // 来源标与时长上下叠放（收藏页同款行尾）
+                            SongTrailingMeta(
+                              path: q.path,
+                              isOnline: true,
+                              source: q.source,
+                              onlineSongJson: q.onlineSongJson,
+                              pluginId: item.pluginId,
+                              durationText: item.durationMs > 0
+                                  ? '${item.durationMs ~/ 60000}:${((item.durationMs ~/ 1000) % 60).toString().padLeft(2, '0')}'
+                                  : null,
+                              fontSize: m.subtitleSize,
                             ),
                           ],
                         ),

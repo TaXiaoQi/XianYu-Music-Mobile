@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously
+﻿// ignore_for_file: use_build_context_synchronously
 
 import 'dart:io';
 import 'dart:convert';
@@ -227,7 +227,7 @@ class XianYuDeepLink {
           mode: ShareLinkDialogMode.import,
         );
         if (action == ShareLinkPreviewAction.cancel) return;
-        if (action == ShareLinkPreviewAction.import) router.push('/plugin');
+        if (action == ShareLinkPreviewAction.import) router.push('/plugin-manage');
         return;
       }
 
@@ -277,7 +277,7 @@ class XianYuDeepLink {
         mode: ShareLinkDialogMode.import,
       );
       if (action == ShareLinkPreviewAction.cancel) return;
-      if (action == ShareLinkPreviewAction.import) router.push('/plugin');
+      if (action == ShareLinkPreviewAction.import) router.push('/plugin-manage');
     } catch (e, st) {
       AppLog.warn('deeplink', '分享深链解析异常: $e\n$st');
       AppLog.error('deeplink', '深链处理异常: $e');
@@ -510,7 +510,7 @@ class XianYuDeepLink {
                 : tr('插件已导入：{name}', {'name': shownName}));
       }
       if (router.routerDelegate.currentConfiguration.uri.toString() != '/plugin') {
-        router.push('/plugin');
+        router.push('/plugin-manage');
       }
     } catch (e, st) {
       AppLog.warn('deeplink', '导入系统打开的插件脚本失败: $e\n$st');

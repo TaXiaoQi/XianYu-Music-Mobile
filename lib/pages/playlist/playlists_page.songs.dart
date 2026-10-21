@@ -544,6 +544,8 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                   );
                   if (ok) widget.manager.play(widget.playlist, orig);
                 });
+                final favRow =
+                    ref.watch(favoritesProvider).contains(song.path);
                 final row = g.wrap(
                   CoverRow(
                     cover: Builder(
@@ -581,19 +583,51 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SourceTag(
+                        IconButton(
+                          icon: Icon(
+                            favRow ? Icons.favorite : Icons.favorite_border,
+                            size: 20,
+                            color: favRow
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          tooltip: tr('收藏'),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => ref
+                              .read(favoritesProvider.notifier)
+                              .toggle(_queueItemFromImported(song)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.more_vert, size: 22),
+                          color: scheme.onSurfaceVariant,
+                          tooltip: tr('更多'),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(
+                              minWidth: 28, minHeight: 28),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => showSongActionsSheet(
+                            context,
+                            ref: ref,
+                            item: _queueItemFromImported(song),
+                          ),
+                        ),
+                        // 来源标与时长上下叠放（收藏页同款行尾）
+                        SongTrailingMeta(
                           path: song.path,
                           isOnline: !song.isLocal,
                           source: song.source,
                           pluginId: song.pluginId,
+                          durationText: song.duration > 0
+                              ? _fmtPlaylistDuration(song.duration)
+                              : null,
+                          fontSize: m.subtitleSize,
                         ),
-                        const SizedBox(width: 4),
-                        IconButton(
-                          icon: Icon(Icons.close,
-                              size: 18, color: scheme.outline),
-                          tooltip: tr('从歌单移除'),
-                          onPressed: () => widget.onRemove(orig),
-                        ),
+                        // 本页 CoverRow horizontalPadding=0（配合左侧绝对
+                        // 定位序号），行尾需自补与收藏页一致的右边距
+                        const SizedBox(width: 12),
                       ],
                     ),
                   ),
@@ -700,6 +734,12 @@ class _PlaylistSongsState extends ConsumerState<_PlaylistSongs> {
       },
     );
   }
+}
+
+/// 歌单行时长显示（秒 → m:ss）
+String _fmtPlaylistDuration(int secs) {
+  final t = secs <= 0 ? 0 : secs;
+  return '${t ~/ 60}:${(t % 60).toString().padLeft(2, '0')}';
 }
 
 QueueItem _queueItemFromImported(ImportedSong song) {

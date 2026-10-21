@@ -104,7 +104,12 @@ class _LandscapeRail extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final collapsed = railWidth < kLandscapeRailCollapseAt;
 
-    final primary = bottomNavItems;
+    final primary = navItemsFor(
+      ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.navShowPlugins ?? false)),
+      ref.watch(settingsProvider.select(
+          (s) => s.valueOrNull?.navOrderLandscape ?? kDefaultNavOrder)),
+    );
     final library = [
       (tr('本地音乐'), Icons.library_music_outlined),
       (tr('我的收藏'), Icons.favorite_outline),
@@ -191,12 +196,13 @@ class _LandscapeRail extends ConsumerWidget {
                           themeSlot: primary[i].themeSlot,
                           title: navTitle(context, primary[i]),
                           collapsed: collapsed,
-                          selected: libSel == null && i == index,
+                          selected:
+                              libSel == null && primary[i].branchIndex == index,
                           onTap: () {
                             ref
                                 .read(landscapeLibraryProvider.notifier)
                                 .state = null;
-                            onSelect(i);
+                            onSelect(primary[i].branchIndex);
                           },
                         ),
                     ],

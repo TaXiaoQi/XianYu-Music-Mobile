@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'dart:async';
@@ -302,7 +302,7 @@ class _TopListsBody extends ConsumerWidget {
     }
     if (state.noSources) {
       return _CardContainer(
-        onTap: () => context.push('/plugin'),
+        onTap: () => context.push('/plugin-manage'),
         child: Row(
           children: [
             Icon(Icons.extension_outlined, size: 22, color: scheme.primary),

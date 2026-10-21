@@ -257,12 +257,18 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
           ),
         );
 
+        final items = navItemsFor(
+          ref.watch(settingsProvider.select(
+              (s) => s.valueOrNull?.navShowPlugins ?? false)),
+          ref.watch(settingsProvider.select(
+              (s) => s.valueOrNull?.navOrderPortrait ?? kDefaultNavOrder)),
+        );
         final navItems = [
-          for (var i = 0; i < bottomNavItems.length; i++)
+          for (var i = 0; i < items.length; i++)
             _SideNavTab(
-              item: bottomNavItems[i],
-              selected: i == widget.index,
-              onTap: () => widget.onSelect(i),
+              item: items[i],
+              selected: items[i].branchIndex == widget.index,
+              onTap: () => widget.onSelect(items[i].branchIndex),
             ),
         ];
 

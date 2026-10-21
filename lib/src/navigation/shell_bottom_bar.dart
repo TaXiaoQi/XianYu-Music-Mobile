@@ -75,6 +75,12 @@ class _FixedNavBar extends ConsumerWidget {
         height: 64,
         child: _SlidingNavBottom(
           index: index,
+          items: navItemsFor(
+            ref.watch(settingsProvider.select(
+                (s) => s.valueOrNull?.navShowPlugins ?? false)),
+            ref.watch(settingsProvider.select(
+                (s) => s.valueOrNull?.navOrderPortrait ?? kDefaultNavOrder)),
+          ),
           onSelect: (i) {
             triggerHaptic(haptic);
             onSelect(i);
@@ -259,6 +265,12 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final dropletQuality = liquidGlassQualitySetting(ref);
     final tabs = _SlidingNavBottom(
       index: index,
+      items: navItemsFor(
+        ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.navShowPlugins ?? false)),
+        ref.watch(settingsProvider.select(
+            (s) => s.valueOrNull?.navOrderPortrait ?? kDefaultNavOrder)),
+      ),
       lens: realLiquid,
       lensBoost: bilipaiIndicatorLensBoostOf(dropletQuality),
       edgeBoost: bilipaiIndicatorEdgeBoostOf(dropletQuality),

@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +14,7 @@ import '../../src/cloud/cloud_types.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/navigation/shell.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -255,8 +258,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
               SizedBox(height: GlassTopBar.height(context)),
               if (_selected.isNotEmpty) _selectedChips(context, scheme),
               if (_stack.isNotEmpty) _breadcrumb(context, scheme),
+              if (_stack.isNotEmpty) _toolbar(context, scheme, currentSelected),
               Expanded(child: _list(context, scheme)),
-              _bottomBar(context, scheme, currentSelected),
+              _bottomBar(context, scheme),
             ],
           ),
           Positioned(
@@ -523,40 +527,18 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     );
   }
 
-  Widget _bottomBar(
+  /// 列表上方操作行：返回上一级 + 选择当前目录（独立于底栏保存区）
+  Widget _toolbar(
     BuildContext context,
     ColorScheme scheme,
     bool currentSelected,
   ) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        8,
-        16,
-        12 + MediaQuery.of(context).padding.bottom,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.96),
-        border: Border(
-          top: BorderSide(
-            color: scheme.onSurface.withValues(alpha: 0.08),
-          ),
-        ),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Row(
+        // 三个操作按钮作为整组视觉居中
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Expanded(
-            child: Text(
-              tr('已选 {n} 个文件夹', {'n': '${_selected.length}'}),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           OutlinedButton(
             // 根目录（面包屑只剩"全部文件"）时不可再返回
             onPressed:
@@ -593,9 +575,46 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
           const SizedBox(width: 8),
           FilledButton(
             onPressed: _saving ? null : _save,
-            child: Text(tr('保存')),
+            child: Text(tr('确认保存')),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 底部状态条：仅展示已选计数，材质与顶栏/固定底栏同源
+  /// （fixedNavBarSurfaceFill 填充 + 导航面档位 sigma + 回读组）
+  Widget _bottomBar(BuildContext context, ColorScheme scheme) {
+    final (glassFill, solid) = fixedNavBarSurfaceFill(context, ref);
+    final content = Container(
+      color: glassFill,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        10,
+        16,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      child: Text(
+        tr('已选 {n} 个文件夹', {'n': '${_selected.length}'}),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 12,
+          color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+        ),
+      ),
+    );
+    if (solid) return content;
+    // 二级页玻璃按路由实例分组（与 GlassTopBar 同口径），不进 navGlassKey
+    // 全局组：避免与被盖住的 shell 底栏/mini 条跨路由混组
+    final sigma = navSurfaceBlurSigma(ref);
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          backdropGroupKey: navGroupFor(context),
+          child: content,
+        ),
       ),
     );
   }
