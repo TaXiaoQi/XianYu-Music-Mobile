@@ -983,72 +983,126 @@ pub async fn lx_playlist_tracks(
             }
         }
         "wy" => {
-            let offset = (page - 1) * limit;
-            let url = format!(
-                "https://music.163.com/api/v6/playlist/detail?id={}&n={}&offset={}",
-                urlencode(playlist_id),
-                limit,
-                offset
-            );
-            let data = http_get_json(
-                &url,
-                &[
-                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
-                    ("Referer", "https://music.163.com"),
-                    ("Cookie", "MUSIC_A=1"),
-                ],
+            // 主路径：宿主全量（v3 detail 全量 trackIds + weapi 批量详情，复用
+            // playlist_fetcher wy.rs；匿名 v6 明细只吐 10 条——「歌单只显示 10 首」
+            // 根因），失败/空结果回退 v6 分页（遗留安全路径）
+            match super::playlist_fetcher::fetch_playlist_from_source(
+                "wy".to_string(),
+                playlist_id.to_string(),
             )
-            .await?;
-            let tracks = data
-                .pointer("/playlist/tracks")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
-            let list: Vec<LxSearchItem> = tracks
-                .iter()
-                .map(|song| {
-                    let al = song.get("album").or_else(|| song.get("al"));
-                    let ar = song
-                        .get("artists")
-                        .or_else(|| song.get("ar"))
+            .await
+            {
+                Ok(result) if !result.songs.is_empty() => {
+                    let all: Vec<LxSearchItem> = result
+                        .songs
+                        .iter()
+                        .map(|s| {
+                            simple_item(
+                                source,
+                                s.id.clone(),
+                                &s.title,
+                                &s.artist,
+                                &s.album,
+                                Value::String(String::new()),
+                                format_play_time(s.duration as f64 / 1000.0),
+                                if s.cover_url.is_empty() {
+                                    None
+                                } else {
+                                    Some(s.cover_url.replace("http://", "https://"))
+                                },
+                                None,
+                            )
+                        })
+                        .collect();
+                    if page == 1 {
+                        LxPlaylistTracksResult {
+                            list: all,
+                            is_end: true,
+                        }
+                    } else {
+                        let (list, is_end) = slice_all_pages(all, page, limit);
+                        LxPlaylistTracksResult { list, is_end }
+                    }
+                }
+                other => {
+                    match other {
+                        Err(e) => eprintln!(
+                            "[lx_catalog] WY 歌单 {} 宿主全量失败({})，回退 v6 分页",
+                            playlist_id, e
+                        ),
+                        Ok(_) => eprintln!(
+                            "[lx_catalog] WY 歌单 {} 宿主全量为空，回退 v6 分页",
+                            playlist_id
+                        ),
+                    }
+                    let offset = (page - 1) * limit;
+                    let url = format!(
+                        "https://music.163.com/api/v6/playlist/detail?id={}&n={}&offset={}",
+                        urlencode(playlist_id),
+                        limit,
+                        offset
+                    );
+                    let data = http_get_json(
+                        &url,
+                        &[
+                            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                            ("Referer", "https://music.163.com"),
+                            ("Cookie", "MUSIC_A=1"),
+                        ],
+                    )
+                    .await?;
+                    let tracks = data
+                        .pointer("/playlist/tracks")
                         .and_then(|v| v.as_array())
                         .cloned()
                         .unwrap_or_default();
-                    let singer = ar
+                    let list: Vec<LxSearchItem> = tracks
                         .iter()
-                        .filter_map(|s| s.get("name").and_then(|n| n.as_str()))
-                        .collect::<Vec<&str>>()
-                        .join("、");
-                    let duration = song
-                        .get("duration")
-                        .or_else(|| song.get("dt"))
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0)
-                        / 1000.0;
-                    let img = al
-                        .and_then(|a| a.get("picUrl"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.replace("http://", "https://"));
-                    simple_item(
-                        source,
-                        song.get("id").map(|v| v.to_string()).unwrap_or_default(),
-                        song.get("name").and_then(|v| v.as_str()).unwrap_or(""),
-                        &singer,
-                        al.and_then(|a| a.get("name"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(""),
-                        al.and_then(|a| a.get("id"))
-                            .cloned()
-                            .unwrap_or(Value::String(String::new())),
-                        format_play_time(duration),
-                        img,
-                        None,
-                    )
-                })
-                .collect();
-            LxPlaylistTracksResult {
-                is_end: (list.len() as u32) < limit,
-                list,
+                        .map(|song| {
+                            let al = song.get("album").or_else(|| song.get("al"));
+                            let ar = song
+                                .get("artists")
+                                .or_else(|| song.get("ar"))
+                                .and_then(|v| v.as_array())
+                                .cloned()
+                                .unwrap_or_default();
+                            let singer = ar
+                                .iter()
+                                .filter_map(|s| s.get("name").and_then(|n| n.as_str()))
+                                .collect::<Vec<&str>>()
+                                .join("、");
+                            let duration = song
+                                .get("duration")
+                                .or_else(|| song.get("dt"))
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0)
+                                / 1000.0;
+                            let img = al
+                                .and_then(|a| a.get("picUrl"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.replace("http://", "https://"));
+                            simple_item(
+                                source,
+                                song.get("id").map(|v| v.to_string()).unwrap_or_default(),
+                                song.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                                &singer,
+                                al.and_then(|a| a.get("name"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or(""),
+                                al.and_then(|a| a.get("id"))
+                                    .cloned()
+                                    .unwrap_or(Value::String(String::new())),
+                                format_play_time(duration),
+                                img,
+                                None,
+                            )
+                        })
+                        .collect();
+                    LxPlaylistTracksResult {
+                        is_end: (list.len() as u32) < limit,
+                        list,
+                    }
+                }
             }
         }
         "mg" => {
