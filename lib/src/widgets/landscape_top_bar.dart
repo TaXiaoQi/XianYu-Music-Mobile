@@ -49,11 +49,16 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
     super.key,
     this.currentIndex = 0,
     this.floating = false,
+    this.leadingIndent = 0,
   });
 
   final int currentIndex;
 
   final bool floating;
+
+  /// 固定态内容行起始缩进（rail 宽）：玻璃贯通到屏幕左缘，返回/搜索从
+  /// rail 右缘起排不压 rail logo；悬浮态胶囊仍留内容列，忽略该值
+  final double leadingIndent;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -166,6 +171,10 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
     }
 
     return GlassTopBar(
+      // 顶距固定 8：横屏摄像头区延伸时 padding.top 是挖孔高度（挖孔在
+      // 左缘，顶部无需避让），固定带与悬浮 chrome 同口径贴顶
+      topInset: 8,
+      leadingIndent: leadingIndent,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back),
         tooltip: tr('返回'),

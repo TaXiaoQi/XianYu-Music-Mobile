@@ -304,6 +304,9 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
         MediaQuery.of(context).orientation == Orientation.landscape;
     // 分支模式竖屏：壳顶栏（GlassTopBar+搜索条）避让，与首页/我的同款；
     // 横屏：壳顶栏隐藏（守卫仅 0/1），页面自带无返回 FlatTopBar 避让
+    // 横屏面板：宿主顶栏改覆盖式（悬浮/固定同构），列表全屏铺、自带
+    // 标题带换 GlassTopBar，内容从带下穿过被实时模糊
+    final embeddedPanel = widget.embedded && !widget.asShellBranch;
     final topInset = branchMode
         ? (landscape
               ? FlatTopBar.height(context)
@@ -311,7 +314,8 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
                   context,
                   bottom: PageSearchBarBottom(onTap: () {}),
                 ))
-        : (contentTop ?? 8);
+        : (contentTop ??
+              (embeddedPanel ? landscapePanelBand(context, ref) + 8 : 8));
 
     final sources = state.sources;
     final q = _query.trim().toLowerCase();
@@ -333,12 +337,13 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
+        clipBehavior: Clip.none,
         children: [
           _listHost(
-            // 分支模式页面自管避让（topInset 已含壳顶栏+搜索条/横屏
-            // 自带顶栏），floating 路径 = Positioned.fill 不再垫 padding，
-            // 否则与 _listHost 内层的 GlassTopBar.height 双倍叠加出空白
-            portraitFloating || branchMode,
+            // 分支模式/横屏面板页面自管避让（topInset 已含顶栏），
+            // floating 路径 = Positioned.fill 不再垫 padding，否则与
+            // _listHost 内层的 GlassTopBar.height 双倍叠加出空白
+            portraitFloating || branchMode || embeddedPanel,
             NotificationListener<ScrollNotification>(
               onNotification: (notification) {
                 if (notification is ScrollEndNotification) {
@@ -575,7 +580,11 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
           ),
           Positioned(
             top: 0,
-            left: 0,
+            // 嵌入面板：带头左延分割条宽与左列顶栏相接（不留壁纸缝），
+            // 其余分支原位
+            left: !branchMode && widget.embedded
+                ? -kLandscapeSettingsDividerWidth
+                : 0,
             right: 0,
             // 分支模式竖屏：标题/动作已上交壳顶栏，这里不画（占位交给
             // 列表 topInset 避让）；横屏壳顶栏隐藏，自带无返回 FlatTopBar
@@ -599,33 +608,30 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
                         )
                       : const SizedBox.shrink())
                 : widget.embedded
-                ? Container(
-                    height: GlassTopBar.height(context),
-                    alignment: Alignment.centerLeft,
-                    padding: const EdgeInsets.only(left: 18, right: 6),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            tr('插件'),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.settings_outlined),
-                          tooltip: tr('插件设置'),
-                          onPressed: _showPluginSettingsSheet,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add),
-                          tooltip: tr('安装插件'),
-                          onPressed: _installing ? null : _showInstallSheet,
-                        ),
-                      ],
+                ? GlassTopBar(
+                    // 带左延分割条宽，标题 spacing 加回保持原位
+                    titleSpacing: 18 + kLandscapeSettingsDividerWidth,
+                    // 独立回读：宿主左列带先画，同组会复用其制备纹理
+                    sharedNavGroup: false,
+                    title: Text(
+                      tr('插件'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
+                    actions: [
+                      IconButton(
+                        icon: const Icon(Icons.settings_outlined),
+                        tooltip: tr('插件设置'),
+                        onPressed: _showPluginSettingsSheet,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add),
+                        tooltip: tr('安装插件'),
+                        onPressed: _installing ? null : _showInstallSheet,
+                      ),
+                    ],
                   )
                 : FlatTopBar(
                     leading: widget.showBack ? const BackButton() : null,

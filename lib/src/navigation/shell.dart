@@ -993,12 +993,13 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 left: landscape ? _railWidth : 0,
                 right: (landscape && !useCameraArea) ? padding.right : 0,
                 // 固定顶栏改覆盖式后内容要下垫栏高：页面自身只在悬浮态
-                // 垫 inset，固定态由壳层统一垫（条件与顶栏可见条件一致）
+                // 垫 inset，固定态由壳层统一垫（条件与顶栏可见条件一致）；
+                // 横屏挖孔在左缘，固定带顶距 8 贴顶不避让（与顶栏同参）
                 top: (landscape &&
                         !floatingSearchBar &&
                         !(anyPaneOpen || libPaneActive) &&
                         contentPath == null)
-                    ? GlassTopBar.height(context)
+                    ? GlassTopBar.height(context, topInset: 8)
                     : 0,
               ),
               child: Stack(
@@ -1091,26 +1092,35 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                         floating: floatingSearchBar,
                       ),
                     ),
-                  // 固定顶栏（无 pane）：挂外层全屏 Stack，玻璃贯通到屏幕
-                  // 左缘、衬在 rail 标题区背后（rail 在其上层，logo 文字
-                  // 不被盖）；悬浮顶栏是胶囊元素，仍留内容列
-                  if (landscape &&
-                      !floatingSearchBar &&
-                      !(anyPaneOpen || libPaneActive) &&
-                      contentPath == null)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: LandscapeGlobalTopBar(
-                        currentIndex: widget.index,
-                        floating: false,
-                      ),
-                    ),
                 ],
               ),
             ),
           ),
+
+          // 固定顶栏（无 pane）：挂外层全屏 Stack，玻璃贯通到屏幕左缘、
+          // 衬在 rail 标题区背后（rail 在其上层，logo 文字不被盖）。
+          // 不能挂内层 Stack：那层垫了整根栏高的 Padding.top，顶栏会被
+          // 再下移一个栏高（离顶 64+8）。悬浮顶栏是胶囊元素，仍留内容列
+          if (landscape &&
+              !floatingSearchBar &&
+              !(anyPaneOpen || libPaneActive) &&
+              contentPath == null)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<double>(
+                valueListenable: orientationContentFade,
+                builder: (context, fade, child) =>
+                    Opacity(opacity: fade, child: child),
+                child: LandscapeGlobalTopBar(
+                  currentIndex: widget.index,
+                  floating: false,
+                  // 玻璃贯通到屏幕左缘，工具行内容从 rail 右缘起排
+                  leadingIndent: _railWidth,
+                ),
+              ),
+            ),
 
           if (landscape)
             Positioned(

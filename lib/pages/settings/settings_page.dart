@@ -449,153 +449,116 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
             child: SizedBox(
               width: _navWidth,
               child: SafeArea(
-                top: true,
+                // 固定态顶栏自带挖孔区垫高（GlassTopBar 内部 statusBar
+                // spacer），SafeArea 只在悬浮态吃 top；左缘挖孔两态都吃
+                top: floating,
                 bottom: false,
                 left: true,
                 right: false,
                 child: Column(
                   children: [
-                    // 悬浮态：竖屏同款一行式（返回玻璃圆钮+标题胶囊+搜索
-                    // 玻璃胶囊），搜索框不再单独占一行；非悬浮保持两行
-                    floating
-                        ? Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                            child: Row(
-                              children: [
-                                PressableScale(
-                                  pressScale: 0.88,
-                                  child: BiliPaiIconButton(
-                                    icon: Icons.arrow_back,
-                                    onTap: () =>
-                                        Navigator.of(context).maybePop(),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                BiliPaiPill(
-                                  radius: 20,
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                    ),
-                                    child: SizedBox(
-                                      height: 40,
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          tr('设置'),
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w800,
-                                            letterSpacing: 0.3,
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.onSurface,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: FloatingGlassSearchField(
-                                    controller: _searchCtrl,
-                                    hint: tr('搜索设置'),
-                                    onChanged: (v) =>
-                                        setState(() => _query = v),
-                                    showClear: _query.isNotEmpty,
-                                    onClear: () {
-                                      _searchCtrl.clear();
-                                      setState(() => _query = '');
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                            child: Row(
-                              children: [
-                                const BackButton(),
-                                Text(
-                                  tr('设置'),
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
+                    Expanded(
+                      // 两态同构（主页悬浮 chrome 同款）：列表全屏铺、
+                      // 头部悬浮其上，内容从头部下穿过被实时模糊
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: _navListView(
+                              context,
+                              groups,
+                              sel,
+                              // 悬浮态垫头部两行(4+44+6+40)+间距；固定态
+                              // 垫玻璃顶栏(贴顶 8)+搜索槽高
+                              topInset: floating
+                                  ? 100
+                                  : GlassTopBar.height(
+                                        context,
+                                        topInset: 8,
+                                        bottom: _navSearchSlot(context),
+                                      ) +
+                                      6,
                             ),
                           ),
-                    if (!floating) ...[
-                      const SizedBox(height: 6),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: _buildSearchBox(context),
-                      ),
-                    ],
-                    const SizedBox(height: 6),
-                    Expanded(
-                      child: ListView(
-                        padding: EdgeInsets.fromLTRB(
-                          8,
-                          0,
-                          8,
-                          24 + MediaQuery.of(context).padding.bottom,
-                        ),
-                        children: [
-                          if (_query.trim().isEmpty)
-                            for (final (header, entries) in groups) ...[
-                              _sectionHeader(context, header, compact: true),
-                              _CardGroup(
-                                children: [
-                                  for (var i = 0; i < entries.length; i++)
-                                    KeyedSubtree(
-                                      key: _tileKeys.putIfAbsent(
-                                        entries[i].path,
-                                        GlobalKey.new,
-                                      ),
-                                      child: _CategoryTile(
-                                        entry: entries[i],
-                                        compact: true,
-                                        selected:
-                                            _isEmbeddable(entries[i].path) &&
-                                            sel == entries[i].path,
-                                        onTapOverride:
-                                            _isEmbeddable(entries[i].path)
-                                            ? () =>
-                                                  ref
-                                                      .read(
-                                                        landscapeSettingsCategoryProvider
-                                                            .notifier,
-                                                      )
-                                                      .state = entries[i]
-                                                      .path
-                                            : null,
-                                      ),
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            child: floating
+                                ? Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            PressableScale(
+                                              pressScale: 0.88,
+                                              child: BiliPaiIconButton(
+                                                icon: Icons.arrow_back,
+                                                onTap: () => Navigator.of(
+                                                        context)
+                                                    .maybePop(),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            BiliPaiPill(
+                                              radius: 20,
+                                              child: Padding(
+                                                padding: const EdgeInsets
+                                                    .symmetric(
+                                                  horizontal: 12,
+                                                ),
+                                                child: SizedBox(
+                                                  height: 40,
+                                                  child: Align(
+                                                    alignment:
+                                                        Alignment.centerLeft,
+                                                    child: Text(
+                                                      tr('设置'),
+                                                      style: TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        letterSpacing: 0.3,
+                                                        color: Theme.of(
+                                                          context,
+                                                        ).colorScheme.onSurface,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        // 搜索框独立成第二行：悬浮态用
+                                        // 玻璃胶囊（竖屏悬浮态同款）——
+                                        // _buildSearchBox 是纯色平底，
+                                        // 固定态有整条带材质兜底，悬浮态
+                                        // 直接贴壁纸会读不出材质
+                                        const SizedBox(height: 6),
+                                        FloatingGlassSearchField(
+                                          controller: _searchCtrl,
+                                          hint: tr('搜索设置'),
+                                          onChanged: (v) =>
+                                              setState(() => _query = v),
+                                          showClear: _query.isNotEmpty,
+                                        ),
+                                      ],
                                     ),
-                                ],
-                              ),
-                            ]
-                          else
-                            ..._buildSearchResults(
-                              context,
-                              compact: true,
-                              onTapOverride: (r) {
-                                if (_isEmbeddable(r.path)) {
-                                  ref
-                                          .read(
-                                            landscapeSettingsCategoryProvider
-                                                .notifier,
-                                          )
-                                          .state =
-                                      r.path;
-                                } else {
-                                  context.push(r.path);
-                                }
-                              },
-                            ),
+                                  )
+                                : GlassTopBar(
+                                    // 顶距固定 8：横屏挖孔在左缘，顶部不避让
+                                    themeSlot: 'ls-settings.nav',
+                                    topInset: 8,
+                                    leading: const BackButton(),
+                                    title: Text(tr('设置')),
+                                    bottom: _navSearchSlot(context),
+                                  ),
+                          ),
                         ],
                       ),
                     ),
@@ -613,42 +576,138 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
             },
           ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            // 两态同构（主页悬浮 chrome 同款）：面板内容全屏铺、标题悬浮
+            // 其上，内容从标题下穿过被实时模糊；Clip.none 让顶栏带向左
+            // 越过分割条与左列顶栏相接（不留壁纸缝）
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
-                if (sel != '/plugin-manage')
-                  Container(
-                    height: GlassTopBar.height(context),
-                    alignment: Alignment.centerLeft,
-                    padding: EdgeInsets.only(
-                      left: floating ? 12 : 12,
-                      // 悬浮态标题胶囊收在栏位上部，与左列头部行对齐
-                      top: floating ? MediaQuery.paddingOf(context).top + 8 : 0,
-                    ),
-                    child: floating
-                        ? Align(
-                            alignment: Alignment.topLeft,
-                            child: _panelTitle(
-                              context,
-                              sel,
-                              selTitle,
-                              pill: true,
-                            ),
-                          )
-                        : _panelTitle(context, sel, selTitle),
-                  ),
-                Expanded(
+                Positioned.fill(
                   child: LandscapePageFade(
                     open: detail != null,
                     trigger: sel,
                     child: detail,
                   ),
                 ),
+                if (sel != '/plugin-manage')
+                  Positioned(
+                    top: 0,
+                    left: -kLandscapeSettingsDividerWidth,
+                    right: 0,
+                    child: floating
+                        // 悬浮态标题胶囊收在挖孔区下缘，与左列头部行对齐
+                        ? Container(
+                            height: GlassTopBar.height(context),
+                            alignment: Alignment.centerLeft,
+                            padding: EdgeInsets.only(
+                              left: 12 + kLandscapeSettingsDividerWidth,
+                              top: MediaQuery.paddingOf(context).top + 8,
+                            ),
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: _panelTitle(
+                                context,
+                                sel,
+                                selTitle,
+                                pill: true,
+                              ),
+                            ),
+                          )
+                        : GlassTopBar(
+                            // 顶距固定 8：横屏挖孔在左缘，顶部不避让；
+                            // 独立回读：左列带先画，同组会复用左带制备
+                            // 时右面板还是空背景的纹理；带左延分割条宽，
+                            // 标题 spacing 加回保持与面板内容对齐
+                            themeSlot: 'settings.topbar',
+                            topInset: 8,
+                            sharedNavGroup: false,
+                            titleSpacing:
+                                16 + kLandscapeSettingsDividerWidth,
+                            title: _panelTitle(context, sel, selTitle),
+                          ),
+                  ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// 左列固定态顶栏的搜索槽：竖屏设置页同款 PreferredSize 包法
+  PreferredSize _navSearchSlot(BuildContext context) => PreferredSize(
+        preferredSize: const Size.fromHeight(54),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 2, 8, 12),
+          child: _buildSearchBox(context),
+        ),
+      );
+
+  /// 左列分类列表（悬浮/固定共用，仅顶距不同）；头部由宿主悬浮其上
+  /// （悬浮态胶囊行/固定态玻璃覆盖层），滚动内容从头部下穿过被实时模糊
+  Widget _navListView(
+    BuildContext context,
+    List<(String, List<_CategoryEntry>)> groups,
+    String sel, {
+    required double topInset,
+  }) {
+    return ListView(
+      padding: EdgeInsets.fromLTRB(
+        8,
+        topInset,
+        8,
+        24 + MediaQuery.of(context).padding.bottom,
+      ),
+      children: [
+        if (_query.trim().isEmpty)
+          for (final (header, entries) in groups) ...[
+            _sectionHeader(context, header, compact: true),
+            _CardGroup(
+              children: [
+                for (var i = 0; i < entries.length; i++)
+                  KeyedSubtree(
+                    key: _tileKeys.putIfAbsent(
+                      entries[i].path,
+                      GlobalKey.new,
+                    ),
+                    child: _CategoryTile(
+                      entry: entries[i],
+                      compact: true,
+                      selected:
+                          _isEmbeddable(entries[i].path) &&
+                          sel == entries[i].path,
+                      onTapOverride: _isEmbeddable(entries[i].path)
+                          ? () =>
+                                ref
+                                    .read(
+                                      landscapeSettingsCategoryProvider
+                                          .notifier,
+                                    )
+                                    .state = entries[i].path
+                          : null,
+                    ),
+                  ),
+              ],
+            ),
+          ]
+        else
+          ..._buildSearchResults(
+            context,
+            compact: true,
+            onTapOverride: (r) {
+              if (_isEmbeddable(r.path)) {
+                ref
+                        .read(
+                          landscapeSettingsCategoryProvider.notifier,
+                        )
+                        .state =
+                    r.path;
+              } else {
+                context.push(r.path);
+              }
+            },
+          ),
+      ],
     );
   }
 
@@ -696,9 +755,50 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
       ),
     );
     if (!pill) return tappable;
-    return BiliPaiPill(
+    // 返回键与标题拆成两个独立气泡（左列头部行同款）：‹ 独立圆钮 +
+    // 标题独立胶囊，不再挤在同一胶囊里；返回动作收进圆钮，标题
+    // 胶囊与左列「设置」胶囊一致不可点
+    final back = isSub
+        ? PressableScale(
+            pressScale: 0.88,
+            child: BiliPaiIconButton(
+              icon: Icons.arrow_back,
+              onTap: () => ref
+                  .read(landscapeSettingsCategoryProvider.notifier)
+                  .state = _panelParent[sel],
+            ),
+          )
+        : null;
+    final titlePill = BiliPaiPill(
       radius: 20,
-      child: SizedBox(height: 40, child: Center(child: tappable)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: SizedBox(
+          height: 40,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    // 统一套 Row(min)：Row 主轴无界，胶囊内部 Align 在无界宽度下收
+    // 内容宽；无上级面板的 titlePill 若直接落在 Align(topLeft) 的有界
+    // 约束下，Align 会撑满整幅又变长条
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (back != null) ...[back, const SizedBox(width: 8)],
+        titlePill,
+      ],
     );
   }
 
@@ -943,7 +1043,7 @@ class _SettingsDivider extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onHorizontalDragUpdate: (d) => onDragUpdate(d.delta.dx),
       child: SizedBox(
-        width: 28,
+        width: kLandscapeSettingsDividerWidth,
         child: Center(
           child: Container(
             width: 1,

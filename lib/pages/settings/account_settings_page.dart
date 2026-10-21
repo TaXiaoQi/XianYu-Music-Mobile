@@ -82,8 +82,11 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     ];
 
     if (widget.embedded) {
+      // 横屏面板宿主顶栏覆盖式（悬浮/固定同构）：顶距自垫栏高，滚动
+      // 内容从宿主顶栏下穿过被实时模糊
+      final panelBand = landscapePanelBand(context, ref);
       return ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+        padding: EdgeInsets.fromLTRB(16, panelBand + 8, 16, 40),
         children: items,
       );
     }

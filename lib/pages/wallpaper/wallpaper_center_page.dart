@@ -97,32 +97,46 @@ class _WallpaperCenterPageState extends ConsumerState<WallpaperCenterPage>
               ),
             ) ==
             true);
+    // 横屏面板宿主顶栏覆盖式（悬浮/固定同构）：顶距自垫栏高（宿主标题
+    // 带 + 自带 TabBar 行玻璃带），页签内容从带下穿过被实时模糊
+    final panelBand = landscapePanelBand(context, ref);
     final topInset = widget.embedded
-        ? 0.0
+        ? panelBand + _tabBar.preferredSize.height
         : (portraitFloating
               ? MediaQuery.paddingOf(context).top +
                     66 +
                     _tabBar.preferredSize.height +
                     6
               : 0.0);
-    // 横屏面板嵌入：面板宿主画标题，页面只画 TabBar 行 + 页签视图
+    // 横屏面板嵌入：面板宿主画标题，页面画 TabBar 行 + 页签视图。
+    // 覆盖式（悬浮/固定同构）：内容全屏铺，TabBar 行玻璃带贴在宿主
+    // 标题带下沿
     if (widget.embedded) {
-      return Column(
+      return Stack(
         children: [
-          Material(color: Colors.transparent, child: _tabBar),
-          Expanded(
+          Positioned.fill(
             child: RepaintBoundary(
               child: TabBarView(
                 controller: _tab,
                 children: [
                   if (_lastLoggedIn == true) ...[
-                    _WallpaperBrowseTab(topInset: 0),
-                    _MyUploadsTab(topInset: 0),
-                    _MyDownloadsTab(topInset: 0),
+                    _WallpaperBrowseTab(topInset: topInset),
+                    _MyUploadsTab(topInset: topInset),
+                    _MyDownloadsTab(topInset: topInset),
                   ],
-                  CustomWallpaperEditor(topInset: 0),
+                  CustomWallpaperEditor(topInset: topInset),
                 ],
               ),
+            ),
+          ),
+          Positioned(
+            top: panelBand,
+            left: 0,
+            right: 0,
+            child: GlassBand(
+              // 独立回读：宿主左列带先画，同组会复用其制备纹理
+              sharedNavGroup: false,
+              child: Material(color: Colors.transparent, child: _tabBar),
             ),
           ),
         ],

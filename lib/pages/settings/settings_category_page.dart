@@ -117,9 +117,13 @@ class _SettingsCategoryPageState extends ConsumerState<SettingsCategoryPage> {
     if (widget.embedded) {
       // PageStorageKey 记忆滚动位置：横屏切到子页面板（如导航栏管理）
       // 再返回时恢复原位，不弹回顶部
+      //
+      // 横屏面板宿主顶栏覆盖式（悬浮/固定同构）：顶距自垫栏高，滚动
+      // 内容从宿主顶栏下穿过被实时模糊
+      final panelBand = landscapePanelBand(context, ref);
       return ListView(
         key: PageStorageKey('settings-category-${category.name}'),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: EdgeInsets.fromLTRB(16, panelBand + 8, 16, 24),
         children: _buildItems(
           context,
           ref,

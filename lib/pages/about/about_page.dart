@@ -224,10 +224,18 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       body: Stack(
         children: [
           _floatHost(
-            portraitFloating,
+            portraitFloating || widget.embedded,
             ListView(
         padding: EdgeInsets.fromLTRB(
-            24, portraitFloating ? GlassTopBar.height(context) + 6 : 24, 24, 24),
+            24,
+            widget.embedded
+                // 横屏面板宿主顶栏覆盖式（悬浮/固定同构）：顶距自垫栏高，
+                // 内容从宿主顶栏下穿过被实时模糊
+                ? landscapePanelBand(context, ref) + 24
+                : portraitFloating
+                    ? GlassTopBar.height(context) + 6
+                    : 24,
+            24, 24),
         children: [
           Center(
             child: const AppLogo(size: 96, radius: 24),

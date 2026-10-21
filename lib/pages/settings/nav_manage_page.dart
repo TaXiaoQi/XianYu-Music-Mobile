@@ -11,7 +11,8 @@ import '../../src/core/haptics.dart';
 import '../../src/core/settings.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/navigation/routes.dart';
-import '../../src/widgets/glass_appbar.dart' show GlassTopBar;
+import '../../src/widgets/glass_appbar.dart'
+    show GlassTopBar, landscapePanelBand;
 import '../../src/widgets/glass_settings.dart' show frostedCardSurface;
 
 /// 导航栏管理：竖屏/横屏导航页签排序（长按拖拽）+ 插件页签显隐。
@@ -33,9 +34,13 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
     if (widget.embedded) {
       // 与 SettingsCategoryPage.embedded 同款：裸 ListView，面板宿主出
       // 标题；PageStorageKey 记忆滚动位置（返回再进不弹回顶部）
+      //
+      // 横屏面板宿主顶栏覆盖式（悬浮/固定同构）：顶距自垫栏高，滚动
+      // 内容从宿主顶栏下穿过被实时模糊
+      final panelBand = landscapePanelBand(context, ref);
       return ListView(
         key: const PageStorageKey('nav-manage'),
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: EdgeInsets.fromLTRB(16, panelBand + 8, 16, 24),
         children: [
           _sectionHeader(context, tr('竖屏导航')),
           _navGroup(

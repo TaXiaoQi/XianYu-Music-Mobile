@@ -300,22 +300,25 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
         Tab(text: tr('我的反馈')),
       ],
     );
-    final topInset = portraitFloating
-        ? MediaQuery.paddingOf(context).top +
-            66 +
-            tabBar.preferredSize.height +
-            6
-        : 0.0;
+    // 横屏面板宿主顶栏覆盖式（悬浮/固定同构）：顶距自垫栏高（宿主标题
+    // 带 + 自带 TabBar 行玻璃带），页签内容从带下穿过被实时模糊
+    final panelBand = landscapePanelBand(context, ref);
+    final topInset = widget.embedded
+        ? panelBand + tabBar.preferredSize.height
+        : portraitFloating
+            ? MediaQuery.paddingOf(context).top +
+                66 +
+                tabBar.preferredSize.height +
+                6
+            : 0.0;
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           _tabHost(
-            portraitFloating,
-            widget.embedded
-                ? tabBar.preferredSize.height
-                : GlassTopBar.height(context, bottom: tabBar),
+            portraitFloating || widget.embedded,
+            GlassTopBar.height(context, bottom: tabBar),
             RepaintBoundary(
               child: TabBarView(
                 controller: _tab,
@@ -329,10 +332,15 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           ),
           if (widget.embedded)
             Positioned(
-              top: 0,
+              // TabBar 行玻璃带贴在宿主标题带下沿
+              top: panelBand,
               left: 0,
               right: 0,
-              child: Material(color: Colors.transparent, child: tabBar),
+              child: GlassBand(
+                // 独立回读：宿主左列带先画，同组会复用其制备纹理
+                sharedNavGroup: false,
+                child: tabBar,
+              ),
             )
           else
             Positioned(
