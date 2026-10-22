@@ -18,7 +18,15 @@ import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/responsive/landscape.dart';
 import '../about/about_page.dart';
+import '../account/account_page.dart';
+import '../cloud/cloud_bind_page.dart';
+import '../cloud/cloud_folder_picker_page.dart';
+import '../cloud/cloud_password_login_page.dart';
 import '../feedback/feedback_page.dart';
+import '../tools/audio_convert_page.dart';
+import 'batch_rename_page.dart';
+import '../tools/audio_trim_page.dart';
+import '../tools/qmc_decrypt_page.dart';
 import '../plugin/plugin_page.dart';
 import '../theme/theme_center_page.dart';
 import '../wallpaper/wallpaper_center_page.dart';
@@ -47,6 +55,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     '/nav-manage': '/settings/appearance',
     '/theme': '/settings/appearance',
     '/wallpaper': '/settings/appearance',
+    '/cloud': '/settings/account',
+    '/account': '/settings/account',
+    '/audio-convert': '/settings/tools',
+    '/audio-trim': '/settings/tools',
+    '/qmc-decrypt': '/settings/tools',
+    '/batch-rename': '/settings/tools',
   };
 
   @override
@@ -55,7 +69,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     super.dispose();
   }
 
-  void _scheduleCenterSelected(String sel) {
+  void _scheduleCenterSelected(String sel, {required double topInset}) {
     if (_lastCenteredSel == sel) return;
     _lastCenteredSel = sel;
     final key = _tileKeys[sel];
@@ -64,8 +78,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
       if (!mounted) return;
       final ctx = key.currentContext;
       if (ctx == null) return;
-      // 最小滚动：目标已在视口内不动；在视口下方→顶缘对齐，上方→底缘对齐。
-      // 固定 alignment 0.5 会让每次点击都把选中项滚到列表正中，观感突兀
+      // 最小滚动 + 顶栏避让：ensureVisible 的 alignment 相对「视口顶」，
+      // 0.0 会把 tile 滚进玻璃带后面（顶栏后残影）。改为顶缘对齐「带下
+      // 内容区顶」(topInset)；在带上方→底缘对齐视口底；已在带下视口内不动
       var alignment = 0.5;
       final tileBox = ctx.findRenderObject() as RenderBox?;
       final scrollable = Scrollable.maybeOf(ctx);
@@ -75,8 +90,16 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
         final tileBottom = tileTop + tileBox.size.height;
         final vpTop = vpBox!.localToGlobal(Offset.zero).dy;
         final vpBottom = vpTop + vpBox.size.height;
-        if (tileTop >= vpTop && tileBottom <= vpBottom) return;
-        alignment = tileTop < vpTop ? 1.0 : 0.0;
+        final contentTop = vpTop + topInset;
+        if (tileTop >= contentTop && tileBottom <= vpBottom) return;
+        if (tileBottom <= contentTop) {
+          alignment = 1.0;
+        } else {
+          final denom = vpBox.size.height - tileBox.size.height;
+          alignment = denom <= 0
+              ? 0.0
+              : (topInset / denom).clamp(0.0, 1.0);
+        }
       }
       Scrollable.ensureVisible(
         ctx,
@@ -433,16 +456,43 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
       '/nav-manage' => tr('导航栏管理'),
       '/theme' => tr('主题中心'),
       '/wallpaper' => tr('壁纸中心'),
-      _ => _titleOf(groups, sel) ?? tr('设置'),
+      // 以下不在左列分组（由面板内入口打开），标题在此兜底
+      '/account' => tr('账号与安全'),
+      '/cloud' => tr('网盘'),
+      '/audio-convert' => tr('音频格式转换'),
+      '/audio-trim' => tr('音频剪辑'),
+      '/qmc-decrypt' => tr('QMC 文件解密'),
+      '/batch-rename' => tr('批量重命名'),
+      _ => _prefixTitle(sel) ??
+          _titleOf(groups, sel) ??
+          tr('设置'),
     };
-    _scheduleCenterSelected(sel);
+    _scheduleCenterSelected(
+      sel,
+      // 与下方 _navListView 的 topInset 同源：tile 对齐带下内容区顶
+      topInset: floating
+          ? 100
+          : GlassTopBar.height(context, topInset: 8) + 54,
+    );
 
+    // 固定态整幅统一顶栏（主页同构）：一条玻璃带贯通左列+分割条+右
+    // 面板，单一 BackdropFilter——原左右两条带各自采样、themeSlot 与
+    // 带高（118/64）都不同，拼接缝明显没有一体性；面板标题挂带 head
+    // 位对齐右面板，搜索框改带下独立玻璃胶囊（悬浮态同款字段）。
+    // 插件面板自带带 actions 的头，统一带只铺到分割条右缘与其相接
+    final bandRight = sel == '/plugin-manage'
+        ? MediaQuery.sizeOf(context).width -
+              _navWidth -
+              kLandscapeSettingsDividerWidth
+        : 0.0;
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
-      body: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: Stack(
         children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           Material(
             color:
                 themeTintOrNull(ref, 'ls-settings.nav') ?? Colors.transparent,
@@ -469,22 +519,22 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
                               sel,
                               // 悬浮态垫头部两行(4+44+6+40)+间距；固定态
                               // 垫玻璃顶栏(贴顶 8)+搜索槽高
+                              // 固定态垫统一带高 + 搜索胶囊行(6+40+8)，
+                              // 列表视口全高从两者下穿过被实时模糊
                               topInset: floating
                                   ? 100
-                                  : GlassTopBar.height(
-                                        context,
-                                        topInset: 8,
-                                        bottom: _navSearchSlot(context),
-                                      ) +
-                                      6,
+                                  : GlassTopBar.height(context, topInset: 8) +
+                                        54,
                             ),
                           ),
-                          Positioned(
-                            top: 0,
-                            left: 0,
-                            right: 0,
-                            child: floating
-                                ? Padding(
+                          // 固定态头部撤掉：统一带（页面级）承载 ←设置 与
+                          // 搜索（带下胶囊），这里只剩悬浮态两行胶囊头部
+                          if (floating)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: Padding(
                                     padding:
                                         const EdgeInsets.fromLTRB(8, 4, 8, 0),
                                     child: Column(
@@ -549,16 +599,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
                                         ),
                                       ],
                                     ),
-                                  )
-                                : GlassTopBar(
-                                    // 顶距固定 8：横屏挖孔在左缘，顶部不避让
-                                    themeSlot: 'ls-settings.nav',
-                                    topInset: 8,
-                                    leading: const BackButton(),
-                                    title: Text(tr('设置')),
-                                    bottom: _navSearchSlot(context),
                                   ),
-                          ),
+                            ),
                         ],
                       ),
                     ),
@@ -589,62 +631,87 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
                     child: detail,
                   ),
                 ),
-                if (sel != '/plugin-manage')
+                // 固定态右带撤掉：统一带（页面级）已盖住本面板，标题挂
+                // 其 head 位；悬浮态标题胶囊仍收在挖孔区下缘与左列对齐
+                if (floating && sel != '/plugin-manage')
                   Positioned(
                     top: 0,
                     left: -kLandscapeSettingsDividerWidth,
                     right: 0,
-                    child: floating
-                        // 悬浮态标题胶囊收在挖孔区下缘，与左列头部行对齐
-                        ? Container(
-                            height: GlassTopBar.height(context),
-                            alignment: Alignment.centerLeft,
-                            padding: EdgeInsets.only(
-                              left: 12 + kLandscapeSettingsDividerWidth,
-                              top: MediaQuery.paddingOf(context).top + 8,
-                            ),
-                            child: Align(
-                              alignment: Alignment.topLeft,
-                              child: _panelTitle(
-                                context,
-                                sel,
-                                selTitle,
-                                pill: true,
-                              ),
-                            ),
-                          )
-                        : GlassTopBar(
-                            // 顶距固定 8：横屏挖孔在左缘，顶部不避让；
-                            // 独立回读：左列带先画，同组会复用左带制备
-                            // 时右面板还是空背景的纹理；带左延分割条宽，
-                            // 标题 spacing 加回保持与面板内容对齐
-                            themeSlot: 'settings.topbar',
-                            topInset: 8,
-                            sharedNavGroup: false,
-                            titleSpacing:
-                                16 + kLandscapeSettingsDividerWidth,
-                            title: _panelTitle(context, sel, selTitle),
-                          ),
+                    child: Container(
+                      height: GlassTopBar.height(context),
+                      alignment: Alignment.centerLeft,
+                      padding: EdgeInsets.only(
+                        left: 12 + kLandscapeSettingsDividerWidth,
+                        top: MediaQuery.paddingOf(context).top + 8,
+                      ),
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: _panelTitle(
+                          context,
+                          sel,
+                          selTitle,
+                          pill: true,
+                        ),
+                      ),
+                    ),
                   ),
               ],
             ),
           ),
+          ],
+          ),
+          // 统一固定顶栏：一条玻璃带贯通左列+分割条+右面板，左段 ←设置，
+          // 面板标题挂 head 位对齐右面板内容；插件面板自带带 actions 的
+          // 头，带只铺到分割条右缘与其相接
+          if (!floating)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: bandRight,
+              child: GlassTopBar(
+                themeSlot: 'settings.topbar',
+                topInset: 8,
+                // ←/设置 内推挖孔宽：真机挖孔在横屏左缘（padding.left
+                // 为挖孔宽），与左列 SafeArea 同口径，否则顶进摄像头
+                // 切割区被裁切
+                leadingIndent: MediaQuery.paddingOf(context).left,
+                leading: const BackButton(),
+                title: Text(tr('设置')),
+                // 标题盒对齐右面板内容左缘（panelStart+16，与替换前的
+                // 右带 titleSpacing 44 口径一致）
+                head: sel == '/plugin-manage'
+                    ? null
+                    : Padding(
+                        padding: EdgeInsets.only(left: _navWidth + 44),
+                        child: _panelTitle(context, sel, selTitle),
+                      ),
+              ),
+            ),
+          // 搜索玻璃胶囊：带下悬浮（悬浮态头部第二行同款字段），列表
+          // 从其下穿过被实时模糊；左缘内推挖孔宽与列表 SafeArea 同口径
+          if (!floating)
+            Positioned(
+              top: GlassTopBar.height(context, topInset: 8) + 6,
+              left: MediaQuery.paddingOf(context).left,
+              width: _navWidth - MediaQuery.paddingOf(context).left,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                child: FloatingGlassSearchField(
+                  controller: _searchCtrl,
+                  hint: tr('搜索设置'),
+                  onChanged: (v) => setState(() => _query = v),
+                  showClear: _query.isNotEmpty,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  /// 左列固定态顶栏的搜索槽：竖屏设置页同款 PreferredSize 包法
-  PreferredSize _navSearchSlot(BuildContext context) => PreferredSize(
-        preferredSize: const Size.fromHeight(54),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 2, 8, 12),
-          child: _buildSearchBox(context),
-        ),
-      );
-
   /// 左列分类列表（悬浮/固定共用，仅顶距不同）；头部由宿主悬浮其上
-  /// （悬浮态胶囊行/固定态玻璃覆盖层），滚动内容从头部下穿过被实时模糊
+  /// （悬浮态胶囊行/固定态统一带），滚动内容从头部下穿过被实时模糊
   Widget _navListView(
     BuildContext context,
     List<(String, List<_CategoryEntry>)> groups,
@@ -719,7 +786,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     String title, {
     bool pill = false,
   }) {
-    final isSub = _panelParent.containsKey(sel);
+    final isSub = _parentOf(sel) != null;
     final inner = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -746,7 +813,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     final tappable = InkWell(
       onTap: isSub
           ? () => ref.read(landscapeSettingsCategoryProvider.notifier).state =
-                _panelParent[sel]
+                _parentOf(sel)
           : null,
       borderRadius: BorderRadius.circular(20),
       child: Padding(
@@ -765,7 +832,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
               icon: Icons.arrow_back,
               onTap: () => ref
                   .read(landscapeSettingsCategoryProvider.notifier)
-                  .state = _panelParent[sel],
+                  .state = _parentOf(sel),
             ),
           )
         : null;
@@ -802,7 +869,42 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     );
   }
 
+  /// 参数化子面板的前缀标题：sel 带参数（/cloud-login/xxx），switch 精确
+  /// 匹配不到，按前缀兜底
+  String? _prefixTitle(String sel) {
+    if (sel.startsWith('/cloud-login/')) return tr('添加账号');
+    if (sel.startsWith('/cloud-folders/')) return tr('选择文件夹');
+    return null;
+  }
+
+  /// 上级面板：先精确表，再参数化前缀（登录/选文件夹都归属网盘面板）
+  String? _parentOf(String sel) {
+    final exact = _panelParent[sel];
+    if (exact != null) return exact;
+    if (sel.startsWith('/cloud-login/') ||
+        sel.startsWith('/cloud-folders/')) {
+      return '/cloud';
+    }
+    return null;
+  }
+
   Widget? _detailFor(String path) {
+    // 参数化子面板：网盘登录 / 选择文件夹（provider、账号编码在 sel 里，
+    // 由网盘面板内入口写入）
+    if (path.startsWith('/cloud-login/')) {
+      return CloudPasswordLoginPage(
+        providerId: path.split('/')[2],
+        embedded: true,
+      );
+    }
+    if (path.startsWith('/cloud-folders/')) {
+      final uri = Uri.parse(path);
+      return CloudFolderPickerPage(
+        providerId: uri.pathSegments[1],
+        accountId: uri.queryParameters['account'] ?? '',
+        embedded: true,
+      );
+    }
     return switch (path) {
       '/settings/account' => const AccountSettingsPage(embedded: true),
       '/settings/general' => const SettingsCategoryPage(
@@ -851,6 +953,15 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
       '/wallpaper' => const WallpaperCenterPage(embedded: true),
       '/feedback' => const FeedbackPage(embedded: true),
       '/about' => const AboutPage(embedded: true),
+      // 网盘绑定 / 账号与安全：横屏改挂右面板容器（导航栏管理同款），
+      // 不再推全屏路由
+      '/cloud' => const CloudBindPage(embedded: true),
+      '/account' => const AccountPage(panelEmbedded: true),
+      // 工具子页：同上，横屏改挂右面板容器
+      '/audio-convert' => const AudioConvertPage(embedded: true),
+      '/audio-trim' => const AudioTrimPage(embedded: true),
+      '/qmc-decrypt' => const QmcDecryptPage(embedded: true),
+      '/batch-rename' => const BatchRenamePage(embedded: true),
       _ => null,
     };
   }

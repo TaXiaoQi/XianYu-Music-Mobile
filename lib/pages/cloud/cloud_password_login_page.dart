@@ -12,6 +12,8 @@ import '../../src/cloud/providers/webview_login_support.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/navigation/shell.dart'
+    show landscapeSettingsCategoryProvider;
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
@@ -29,9 +31,16 @@ enum _LoginMode { cookie, fields }
 void _noopSet(void Function() _) {}
 
 class CloudPasswordLoginPage extends ConsumerStatefulWidget {
-  const CloudPasswordLoginPage({super.key, required this.providerId});
+  const CloudPasswordLoginPage({
+    super.key,
+    required this.providerId,
+    this.embedded = false,
+  });
 
   final String providerId;
+
+  /// 横屏设置面板嵌入：不画自身 Scaffold/顶栏，成功后回网盘面板
+  final bool embedded;
 
   @override
   ConsumerState<CloudPasswordLoginPage> createState() =>
@@ -170,7 +179,7 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       await _saveLoginHint();
       if (!mounted) return;
       showXianYuToast(context, tr('绑定成功'));
-      context.pop();
+      _finish();
     } on CloudSmsRequiredException catch (e) {
       // 风控要求设备短信二次校验：provider 已自动发码，弹窗收码续登。
       if (!mounted) return;
@@ -311,6 +320,16 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
     }
   }
 
+  /// 绑定完成收尾：全屏页 pop；嵌入面板回网盘面板（面板重建重新拉取
+  /// 已绑账号）。短信弹窗内的成功走 dialog 自身 pop，不经这里
+  void _finish() {
+    if (widget.embedded) {
+      ref.read(landscapeSettingsCategoryProvider.notifier).state = '/cloud';
+    } else {
+      context.pop();
+    }
+  }
+
   Future<void> _submitCookie() async {
     if (_submitting) return;
     final raw = _cookieCtrl?.text ?? '';
@@ -326,7 +345,7 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       await CloudCredentialsStore.instance.saveAccount(account);
       if (!mounted) return;
       showXianYuToast(context, tr('绑定成功'));
-      context.pop();
+      _finish();
     } catch (e) {
       AppLog.warn('cloud', '${_provider.id} Cookie 登录失败: $e');
       if (!mounted) return;
@@ -342,56 +361,126 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final showCookie = _supportsCookie && _mode != _LoginMode.fields;
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    // 横屏设置面板嵌入：整块表单收进玻璃胶囊卡片（反馈页 TabBar 带同
+    // 款材质，壁纸模式读毛玻璃填充保证字色可读），标题由统一带 head 位承载
+    if (widget.embedded) {
+      return ListView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          landscapePanelBand(context, ref) + 12,
+          16,
+          24 + MediaQuery.of(context).padding.bottom,
+        ),
+        children: [
+          GlassBand(
+            // 独立回读：宿主左列带先画，同组会复用其制备纹理
+            sharedNavGroup: false,
+            borderRadius: BorderRadius.circular(24),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    tr('登录{name}后即可播放网盘内的音乐',
+                        {'name': _provider.displayName}),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  if (_supportsCookie && _supportsFields) ...[
+                    const SizedBox(height: 16),
+                    SegmentedButton<_LoginMode>(
+                      segments: [
+                        ButtonSegment(
+                          value: _LoginMode.cookie,
+                          label: Text(tr('Cookie 登录')),
+                        ),
+                        ButtonSegment(
+                          value: _LoginMode.fields,
+                          label: Text(tr('账号密码')),
+                        ),
+                      ],
+                      selected: {_mode!},
+                      onSelectionChanged: (s) => setState(() => _mode = s.first),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (showCookie)
+                    _buildCookieForm(scheme)
+                  else
+                    _buildFieldsForm(scheme),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              GlassTopBar.height(context) + 24,
-              24,
-              40 + MediaQuery.of(context).padding.bottom,
-            ),
-            children: [
-              Text(
-                tr('登录{name}后即可播放网盘内的音乐', {'name': _provider.displayName}),
-                style: TextStyle(
-                  fontSize: 13,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                ),
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              // 横屏表单收窄居中（登录表单口径），竖屏照旧全幅
+              constraints: BoxConstraints(
+                maxWidth: landscape ? 560 : double.infinity,
               ),
-              if (_supportsCookie && _supportsFields) ...[
-                const SizedBox(height: 16),
-                SegmentedButton<_LoginMode>(
-                  segments: [
-                    ButtonSegment(
-                      value: _LoginMode.cookie,
-                      label: Text(tr('Cookie 登录')),
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  GlassTopBar.height(context) + 24,
+                  24,
+                  40 + MediaQuery.of(context).padding.bottom,
+                ),
+                children: [
+                  Text(
+                    tr('登录{name}后即可播放网盘内的音乐', {'name': _provider.displayName}),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                     ),
-                    ButtonSegment(
-                      value: _LoginMode.fields,
-                      label: Text(tr('账号密码')),
+                  ),
+                  if (_supportsCookie && _supportsFields) ...[
+                    const SizedBox(height: 16),
+                    SegmentedButton<_LoginMode>(
+                      segments: [
+                        ButtonSegment(
+                          value: _LoginMode.cookie,
+                          label: Text(tr('Cookie 登录')),
+                        ),
+                        ButtonSegment(
+                          value: _LoginMode.fields,
+                          label: Text(tr('账号密码')),
+                        ),
+                      ],
+                      selected: {_mode!},
+                      onSelectionChanged: (s) =>
+                          setState(() => _mode = s.first),
                     ),
                   ],
-                  selected: {_mode!},
-                  onSelectionChanged: (s) =>
-                      setState(() => _mode = s.first),
-                ),
-              ],
-              const SizedBox(height: 24),
-              if (showCookie)
-                _buildCookieForm(scheme)
-              else
-                _buildFieldsForm(scheme),
-            ],
+                  const SizedBox(height: 24),
+                  if (showCookie)
+                    _buildCookieForm(scheme)
+                  else
+                    _buildFieldsForm(scheme),
+                ],
+              ),
+            ),
           ),
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: GlassTopBar(
+              // 横屏时挖孔在左缘，返回钮内推避让（与设置统一带同口径）
+              leadingIndent: MediaQuery.paddingOf(context).left,
               leading: const BackButton(),
               title: Text(_provider.displayName),
             ),

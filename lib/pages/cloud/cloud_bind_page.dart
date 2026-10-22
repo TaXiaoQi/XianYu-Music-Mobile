@@ -9,6 +9,7 @@ import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/navigation/shell.dart' show landscapeSettingsCategoryProvider;
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -18,8 +19,12 @@ import '../../src/widgets/predictive_dialog_route.dart';
 ///
 /// 绑定入口按 [CloudProvider.loginKind] 路由到对应登录页（WebView /
 /// 账密 / 扫码），不做盘名硬编码；每盘支持多账号。
+/// 横屏设置面板内以 embedded 模式嵌入（裸 ListView，标题由面板宿主
+/// 统一带 head 位绘制，导航栏管理同款）
 class CloudBindPage extends ConsumerStatefulWidget {
-  const CloudBindPage({super.key});
+  const CloudBindPage({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   ConsumerState<CloudBindPage> createState() => _CloudBindPageState();
@@ -79,6 +84,15 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
 
   Future<void> _openLogin(CloudProvider p) async {
     final kind = p.loginKind;
+    if (widget.embedded &&
+        (kind == CloudLoginKind.httpPassword ||
+            kind == CloudLoginKind.smsPassword)) {
+      // 嵌入面板模式：账密/短信登录切到右侧容器子面板，成功后由登录页
+      // 切回本面板；扫码/网页登录仍全屏推页
+      ref.read(landscapeSettingsCategoryProvider.notifier).state =
+          '/cloud-login/${p.id}';
+      return;
+    }
     Future<void> future;
     if (kind == CloudLoginKind.webviewCookie ||
         kind == CloudLoginKind.webviewToken) {
@@ -123,6 +137,13 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
   /// 打开文件夹选择：浏览该账号网盘目录，多选文件夹路径保存。
   /// 选中结果供后续网盘音乐扫描/入库消费。
   Future<void> _openFolderPicker(CloudAccount a) async {
+    if (widget.embedded) {
+      // 嵌入面板模式：选文件夹切到右侧容器子面板，保存后由选择页切回
+      // 本面板（宿主重建即刷新已选数）
+      ref.read(landscapeSettingsCategoryProvider.notifier).state =
+          '/cloud-folders/${a.provider}?account=${Uri.encodeComponent(a.accountId)}';
+      return;
+    }
     await context
         .push('/cloud/folder-picker/${a.provider}?account=${a.accountId}');
     if (!mounted) return;
@@ -132,6 +153,33 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    if (widget.embedded) {
+      // 与 NavManagePage.embedded 同款：裸 ListView，面板宿主统一带出
+      // 标题；顶距自垫栏高，滚动内容从宿主顶栏下穿过被实时模糊
+      final panelBand = landscapePanelBand(context, ref);
+      return RepaintBoundary(
+        child: ListView(
+          key: const PageStorageKey('cloud-bind-panel'),
+          padding: EdgeInsets.fromLTRB(16, panelBand + 8, 16, 40),
+          children: [
+            _LinkImportCard(),
+            const SizedBox(height: 24),
+            _sectionTitle(context, tr('支持网盘')),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 32),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else
+              for (final p in cloudProviders)
+                if (p.bindable) ...[
+                  _providerCard(context, p, scheme),
+                  const SizedBox(height: 10),
+                ],
+          ],
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,

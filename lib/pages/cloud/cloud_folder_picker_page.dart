@@ -29,10 +29,14 @@ class CloudFolderPickerPage extends ConsumerStatefulWidget {
     super.key,
     required this.providerId,
     required this.accountId,
+    this.embedded = false,
   });
 
   final String providerId;
   final String accountId;
+
+  /// 横屏设置面板嵌入：不画自身 Scaffold/顶栏，保存后回网盘面板
+  final bool embedded;
 
   @override
   ConsumerState<CloudFolderPickerPage> createState() =>
@@ -227,7 +231,12 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     );
     if (!mounted) return;
     showXianYuToast(context, tr('已保存 {n} 个文件夹', {'n': '${_selected.length}'}));
-    context.pop();
+    // 嵌入面板模式切回网盘面板（宿主重建本页刷新已选数）；独立页出栈
+    if (widget.embedded) {
+      ref.read(landscapeSettingsCategoryProvider.notifier).state = '/cloud';
+    } else {
+      context.pop();
+    }
   }
 
   String _dirNameOf(String path) {
@@ -249,6 +258,33 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final currentSelected = _stack.isNotEmpty && _selected.contains(_stack.last.path);
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    if (widget.embedded) {
+      // 与 CloudBindPage.embedded 同款：裸内容列，标题由面板宿主统一带
+      // head 位绘制；顶距自垫栏高，面包屑/工具行/列表/底条结构不变
+      final panelBand = landscapePanelBand(context, ref);
+      return RepaintBoundary(
+        child: Column(
+          children: [
+            SizedBox(height: panelBand),
+            Expanded(
+              child: Column(
+                children: [
+                  if (_selected.isNotEmpty)
+                    _selectedChips(context, scheme),
+                  if (_stack.isNotEmpty) _breadcrumb(context, scheme),
+                  if (_stack.isNotEmpty)
+                    _toolbar(context, scheme, currentSelected),
+                  Expanded(child: _list(context, scheme)),
+                  _bottomBar(context, scheme),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
@@ -256,11 +292,28 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
           Column(
             children: [
               SizedBox(height: GlassTopBar.height(context)),
-              if (_selected.isNotEmpty) _selectedChips(context, scheme),
-              if (_stack.isNotEmpty) _breadcrumb(context, scheme),
-              if (_stack.isNotEmpty) _toolbar(context, scheme, currentSelected),
-              Expanded(child: _list(context, scheme)),
-              _bottomBar(context, scheme),
+              Expanded(
+                // 横屏内容收窄居中（选择器口径），竖屏照旧全幅
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: landscape ? 560 : double.infinity,
+                    ),
+                    child: Column(
+                      children: [
+                        if (_selected.isNotEmpty)
+                          _selectedChips(context, scheme),
+                        if (_stack.isNotEmpty) _breadcrumb(context, scheme),
+                        if (_stack.isNotEmpty)
+                          _toolbar(context, scheme, currentSelected),
+                        Expanded(child: _list(context, scheme)),
+                        _bottomBar(context, scheme),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
           Positioned(
@@ -268,6 +321,8 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
             left: 0,
             right: 0,
             child: GlassTopBar(
+              // 横屏时挖孔在左缘，返回钮内推避让（与设置统一带同口径）
+              leadingIndent: MediaQuery.paddingOf(context).left,
               leading: const BackButton(),
               title: Text(tr('选择文件夹')),
             ),
