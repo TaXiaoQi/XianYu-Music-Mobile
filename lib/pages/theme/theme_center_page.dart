@@ -117,6 +117,9 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
         controller: _tab,
         // 固定不滚动,tab 等宽平均分布(与壁纸中心同口径)
         isScrollable: false,
+        // 嵌入面板时 TabBar 装进圆角玻璃胶囊，M3 默认底部分隔线会与
+        // 胶囊下缘叠成两根线，关掉
+        dividerColor: Colors.transparent,
         tabs: [
           Tab(text: tr('本地')),
           if (_lastLoggedIn == true) ...[
@@ -149,7 +152,8 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
     // 带 + 自带 TabBar 行玻璃带），页签内容从带下穿过被实时模糊
     final panelBand = landscapePanelBand(context, ref);
     final topInset = widget.embedded
-        ? panelBand + _tabBar.preferredSize.height
+        // +14：Tab 胶囊带下移 6 + 上下内距 8，内容初屏不被胶囊压住
+        ? panelBand + _tabBar.preferredSize.height + 14
         : (portraitFloating
               ? MediaQuery.paddingOf(context).top +
                     GlassTopBar.height(context, bottom: _tabBar) +
@@ -205,13 +209,18 @@ class _ThemeCenterPageState extends ConsumerState<ThemeCenterPage>
         children: [
           Positioned.fill(child: content),
           Positioned(
-            top: panelBand,
-            left: 0,
-            right: 0,
+            top: panelBand + 6,
+            left: 12,
+            right: 12,
             child: GlassBand(
-              // 独立回读：宿主左列带先画，同组会复用其制备纹理
+              // 搜索胶囊同款圆角玻璃胶囊；独立回读：宿主左列带先画，
+              // 同组会复用其制备纹理
               sharedNavGroup: false,
-              child: Material(color: Colors.transparent, child: _tabBar),
+              borderRadius: BorderRadius.circular(24),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Material(color: Colors.transparent, child: _tabBar),
+              ),
             ),
           ),
         ],

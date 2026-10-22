@@ -30,9 +30,18 @@ part 'account_page.profile_widgets.dart';
 part 'account_page.glass_widgets.dart';
 
 class AccountPage extends ConsumerStatefulWidget {
-  const AccountPage({super.key, this.embedded = false, this.onBack});
+  const AccountPage({
+    super.key,
+    this.embedded = false,
+    this.onBack,
+    this.panelEmbedded = false,
+  });
 
   final bool embedded;
+
+  /// 设置右面板容器嵌入（导航栏管理同款裸内容）：与 [embedded] 的区别
+  /// 在于不画页面自身顶栏（标题由面板宿主统一带 head 位承载）
+  final bool panelEmbedded;
   final VoidCallback? onBack;
 
   @override
@@ -79,6 +88,35 @@ class _AccountPageState extends ConsumerState<AccountPage>
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
+    if (widget.panelEmbedded) {
+      // 与 NavManagePage.embedded 同款：裸内容，标题由设置面板宿主统一
+      // 带 head 位绘制；透明 Scaffold 只为墨水效果与键盘避让。登录态
+      // 资料区是 ListView 自滚动；未登录表单含 Expanded，需有界高环境
+      final panelBand = landscapePanelBand(context, ref);
+      return Scaffold(
+        backgroundColor: Colors.transparent,
+        resizeToAvoidBottomInset: true,
+        body: RepaintBoundary(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(top: panelBand + 8),
+                  child: auth.isLoggedIn
+                      ? _ProfileView(
+                          user: auth.user!,
+                          onLogout: () => _confirmLogout(context),
+                        )
+                      : _buildAuthForm(context, auth),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final portraitFloating =
         !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&

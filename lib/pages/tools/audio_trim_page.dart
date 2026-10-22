@@ -17,7 +17,12 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/press_scale.dart';
 
 class AudioTrimPage extends ConsumerStatefulWidget {
-  const AudioTrimPage({super.key});
+  const AudioTrimPage({super.key, this.embedded = false});
+
+  /// 横屏设置面板嵌入模式（导航栏管理同款）：透明底、顶距自垫面板带高、
+  /// 不画自身顶栏（标题由面板宿主统一带 head 位承载）
+  final bool embedded;
+
   @override
   ConsumerState<AudioTrimPage> createState() => _AudioTrimPageState();
 }
@@ -379,11 +384,17 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
+      backgroundColor: widget.embedded
+          ? Colors.transparent
+          : appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+              top: widget.embedded
+                  ? landscapePanelBand(context, ref) + 8
+                  : GlassTopBar.height(context),
+            ),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
               children: [
@@ -433,15 +444,17 @@ class _AudioTrimPageState extends ConsumerState<AudioTrimPage> {
                 ),
               ),
             ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title: Text(tr('音频剪辑')),
+          // 面板嵌入模式不画自身顶栏（标题由宿主统一带承载）
+          if (!widget.embedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Text(tr('音频剪辑')),
+              ),
             ),
-          ),
         ],
       ),
     );

@@ -17,6 +17,18 @@ import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/navigation/shell.dart'
+    show landscapeSettingsCategoryProvider;
+
+/// 子页入口：横屏改挂设置右面板容器（/cloud、/account 已注册为嵌入
+/// 面板，导航栏管理同款），竖屏维持全屏路由推送
+void _openSubPanel(BuildContext context, WidgetRef ref, String path) {
+  if (MediaQuery.of(context).orientation == Orientation.landscape) {
+    ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
+  } else {
+    context.push(path);
+  }
+}
 
 class AccountSettingsPage extends ConsumerStatefulWidget {
   const AccountSettingsPage({super.key, this.embedded = false});
@@ -60,7 +72,7 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
       _sectionTitle(context, tr('账号状态')),
       _AccountStatusCard(
         user: user,
-        onManage: () => context.push('/account'),
+        onManage: () => _openSubPanel(context, ref, '/account'),
         onLogout: user != null ? _confirmLogout : null,
       ),
       const SizedBox(height: 24),
@@ -278,7 +290,7 @@ class _CloudEntryCard extends ConsumerWidget {
       radius: 16,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push('/cloud'),
+        onTap: () => _openSubPanel(context, ref, '/cloud'),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(

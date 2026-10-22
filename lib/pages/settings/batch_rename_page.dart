@@ -13,7 +13,11 @@ import '../../src/rust/api.dart';
 import '../../src/i18n/i18n.dart';
 
 class BatchRenamePage extends ConsumerStatefulWidget {
-  const BatchRenamePage({super.key});
+  const BatchRenamePage({super.key, this.embedded = false});
+
+  /// 横屏设置面板嵌入模式（导航栏管理同款）：透明底、顶距自垫面板带高、
+  /// 不画自身顶栏（标题由面板宿主统一带 head 位承载）
+  final bool embedded;
 
   @override
   ConsumerState<BatchRenamePage> createState() => _BatchRenamePageState();
@@ -152,12 +156,18 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
     final folders = ref.watch(libraryProvider).folders;
 
     return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
-      resizeToAvoidBottomInset: false,
+      backgroundColor: widget.embedded
+          ? Colors.transparent
+          : appScaffoldBackground(context, ref),
+      resizeToAvoidBottomInset: !widget.embedded,
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+              top: widget.embedded
+                  ? landscapePanelBand(context, ref) + 8
+                  : GlassTopBar.height(context),
+            ),
             child: RepaintBoundary(
         child: ListView(
         padding: const EdgeInsets.all(16),
@@ -331,13 +341,17 @@ class _BatchRenamePageState extends ConsumerState<BatchRenamePage> {
         ),
         ),
         ),
-        Positioned(
-          top: 0, left: 0, right: 0,
-          child: GlassTopBar(
-            leading: const BackButton(),
-            title:   Text(tr('批量重命名')),
-          ),
-        ),
+        // 面板嵌入模式不画自身顶栏（标题由宿主统一带承载）
+          if (!widget.embedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Text(tr('批量重命名')),
+              ),
+            ),
       ],
       ),
     );
