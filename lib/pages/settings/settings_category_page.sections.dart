@@ -362,8 +362,10 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             }),
             onTap: () => _pickNavBarPosition(context, ref, s),
           ),
+          // 悬浮式底栏仅竖屏底栏范式有意义，横屏嵌入面板不显示
           if ((s?.navBarPosition ?? NavBarPosition.bottom) ==
-              NavBarPosition.bottom)
+                  NavBarPosition.bottom &&
+              !widget.embedded)
             _switchTile(
               context,
               icon: Icons.subtitles_outlined,
@@ -760,7 +762,8 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.bedtime_outlined,
             title: tr('睡眠定时'),
-            trailing: const Icon(Icons.chevron_right, size: 18),
+            // 条自带 ›（_tile 对 onTap 行自动补），自绘的那份去掉
+            trailing: const SizedBox.shrink(),
             subtitle: ref.watch(sleepTimerProvider).active
                 ? tr('已开启，到点淡出并暂停')
                 : tr('到点淡出并暂停播放'),
@@ -1187,6 +1190,16 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
     await n.setEnablePredictiveBack(true);
   }
 
+  /// 工具子页入口：横屏改挂设置右面板容器（/audio-convert 等已注册为
+  /// 嵌入面板，导航栏管理同款），竖屏维持全屏路由推送
+  void _openToolPanel(BuildContext context, String path) {
+    if (MediaQuery.of(context).orientation == Orientation.landscape) {
+      ref.read(landscapeSettingsCategoryProvider.notifier).state = path;
+    } else {
+      context.push(path);
+    }
+  }
+
   List<Widget> _tools(BuildContext context) {
     return [
       _sectionHeader(context, tr('工具')),
@@ -1198,7 +1211,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('音频格式转换'),
             subtitle: tr('批量转换 WAV / FLAC / MP3 / AAC / Opus 等'),
             trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/audio-convert'),
+            onTap: () => _openToolPanel(context, '/audio-convert'),
           ),
           _tile(
             context,
@@ -1206,7 +1219,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('音频剪辑'),
             subtitle: tr('截取音频区间，支持无损剪切 / 重编码'),
             trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/audio-trim'),
+            onTap: () => _openToolPanel(context, '/audio-trim'),
           ),
           _tile(
             context,
@@ -1214,7 +1227,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('QMC 文件解密'),
             subtitle: tr('解密 QQ 音乐加密文件 .qmcflac / .qmcmp3'),
             trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/qmc-decrypt'),
+            onTap: () => _openToolPanel(context, '/qmc-decrypt'),
           ),
           _tile(
             context,
@@ -1222,7 +1235,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             title: tr('批量重命名'),
             subtitle: tr('按模板批量重命名文件'),
             trailing: const SizedBox.shrink(),
-            onTap: () => context.push('/batch-rename'),
+            onTap: () => _openToolPanel(context, '/batch-rename'),
           ),
         ],
       ),
