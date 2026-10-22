@@ -45,12 +45,18 @@ part 'playlists_page.list.dart';
 part 'playlists_page.songs.dart';
 
 class PlaylistsPage extends ConsumerWidget {
-  const PlaylistsPage({super.key});
+  const PlaylistsPage({super.key, this.paneEmbedded = false});
+
+  /// 横屏音乐库面板专用：锁定面板态布局，与 landscapeLibraryProvider
+  /// 解耦（切导航分支时该状态先于退场动画清空，会导致淡出中重建成
+  /// 路由态头部闪烁），见 LibraryPage.paneEmbedded
+  final bool paneEmbedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(playlistManagerProvider);
-    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    final inMusicPane =
+        paneEmbedded || ref.watch(landscapeLibraryProvider) != null;
     final filter = inMusicPane
         ? ref.watch(landscapeLibraryQueryProvider).trim().toLowerCase()
         : '';

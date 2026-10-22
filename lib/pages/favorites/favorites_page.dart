@@ -43,9 +43,18 @@ part 'favorites_page.songs.dart';
 part 'favorites_page.collections.dart';
 
 class FavoritesPage extends ConsumerStatefulWidget {
-  const FavoritesPage({super.key, this.initialTab = 0});
+  const FavoritesPage({
+    super.key,
+    this.initialTab = 0,
+    this.paneEmbedded = false,
+  });
 
   final int initialTab;
+
+  /// 横屏音乐库面板专用：锁定面板态布局，与 landscapeLibraryProvider
+  /// 解耦（切导航分支时该状态先于退场动画清空，会导致淡出中重建成
+  /// 路由态头部闪烁），见 LibraryPage.paneEmbedded
+  final bool paneEmbedded;
 
   @override
   ConsumerState<FavoritesPage> createState() => _FavoritesPageState();
@@ -84,7 +93,8 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   @override
   Widget build(BuildContext context) {
     final fav = ref.watch(favoritesProvider);
-    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    final inMusicPane =
+        widget.paneEmbedded || ref.watch(landscapeLibraryProvider) != null;
     final filter = inMusicPane
         ? ref.watch(landscapeLibraryQueryProvider).trim().toLowerCase()
         : '';

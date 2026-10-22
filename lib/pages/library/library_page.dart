@@ -28,9 +28,15 @@ import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
-  const LibraryPage({super.key, this.initialTab = 0});
+  const LibraryPage({super.key, this.initialTab = 0, this.paneEmbedded = false});
 
   final int initialTab;
+
+  /// 横屏音乐库面板专用：锁定面板态布局。切导航分支时
+  /// landscapeLibraryProvider 先于 LandscapeTabSwitcher 退场动画清空，
+  /// 若继续 watch 它，淡出中的本页会当场重建成路由态头部（全宽
+  /// tab pill + 排序行）造成闪烁；传入 true 后面板态不再依赖该状态
+  final bool paneEmbedded;
 
   @override
   ConsumerState<LibraryPage> createState() => _LibraryPageState();
@@ -366,7 +372,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final statusBar = MediaQuery.paddingOf(context).top;
     final landscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
-    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    // paneEmbedded 短路时不订阅 landscapeLibraryProvider：面板态布局与
+    // 该状态解耦（见 paneEmbedded 注释）
+    final inMusicPane =
+        widget.paneEmbedded || ref.watch(landscapeLibraryProvider) != null;
 
     if (inMusicPane) {
       ref.listen(landscapeLibraryQueryProvider, (prev, next) {

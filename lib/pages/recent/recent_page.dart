@@ -29,7 +29,12 @@ import '../../src/widgets/source_tag.dart';
 import '../../src/i18n/i18n.dart';
 
 class RecentPage extends ConsumerStatefulWidget {
-  const RecentPage({super.key});
+  const RecentPage({super.key, this.paneEmbedded = false});
+
+  /// 横屏音乐库面板专用：锁定面板态布局，与 landscapeLibraryProvider
+  /// 解耦（切导航分支时该状态先于退场动画清空，会导致淡出中重建成
+  /// 路由态头部闪烁），见 LibraryPage.paneEmbedded
+  final bool paneEmbedded;
 
   @override
   ConsumerState<RecentPage> createState() => _RecentPageState();
@@ -175,7 +180,8 @@ class _RecentPageState extends ConsumerState<RecentPage>
   @override
   Widget build(BuildContext context) {
     final recent = ref.watch(recentProvider);
-    final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
+    final inMusicPane =
+        widget.paneEmbedded || ref.watch(landscapeLibraryProvider) != null;
     final filter = inMusicPane
         ? ref.watch(landscapeLibraryQueryProvider).trim().toLowerCase()
         : '';

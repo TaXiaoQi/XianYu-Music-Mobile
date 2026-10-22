@@ -457,13 +457,16 @@ class _MusicLibraryPane extends ConsumerWidget {
           child: KeyedSubtree(
             key: musicLibraryPageKeys[index],
             child: switch (index) {
-              0 => const LibraryPage(),
-              1 => const FavoritesPage(),
-              2 => const RecentPage(),
-              3 => const PlaylistsPage(),
-              // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
-              _ => const LibraryFolderPage(embedded: true),
-            },
+            // paneEmbedded：面板态布局与 landscapeLibraryProvider 解耦——
+            // 切导航分支时该状态先于退场动画清空，watch 它会让淡出中的
+            // 面板当场重建成路由态头部（全宽 tab pill + 排序行）闪烁
+            0 => const LibraryPage(paneEmbedded: true),
+            1 => const FavoritesPage(paneEmbedded: true),
+            2 => const RecentPage(paneEmbedded: true),
+            3 => const PlaylistsPage(paneEmbedded: true),
+            // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
+            _ => const LibraryFolderPage(embedded: true),
+          },
           ),
         ),
       ),
