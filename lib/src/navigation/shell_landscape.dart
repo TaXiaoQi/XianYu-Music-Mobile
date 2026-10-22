@@ -111,10 +111,10 @@ class _LandscapeRail extends ConsumerWidget {
           (s) => s.valueOrNull?.navOrderLandscape ?? kDefaultNavOrder)),
     );
     final library = [
-      (tr('本地音乐'), Icons.library_music_outlined),
-      (tr('我的收藏'), Icons.favorite_outline),
-      (tr('最近播放'), Icons.history_outlined),
-      (tr('我的歌单'), Icons.queue_music_outlined),
+      (tr('本地音乐'), tr('本地'), Icons.library_music_outlined),
+      (tr('我的收藏'), tr('收藏'), Icons.favorite_outline),
+      (tr('最近播放'), tr('最近'), Icons.history_outlined),
+      (tr('我的歌单'), tr('歌单'), Icons.queue_music_outlined),
     ];
     final libSel = ref.watch(landscapeLibraryProvider);
 
@@ -137,9 +137,12 @@ class _LandscapeRail extends ConsumerWidget {
     // 从顶栏带下穿过被实时模糊——原 Expanded 视口从 logo 下起，滚到带
     // 底就出视口，带左段采不到内容（右侧内容列已页面自垫，rail 同款）。
     // 固定态品牌行改挂顶栏带 head 位（rail 在带下层，logo 留在 rail 里
-    // 会被带玻璃盖住）；悬浮态 rail 是独立玻璃卡，品牌行仍在卡内排布
+    // 会被带玻璃盖住）；悬浮态 rail 顶部品牌玻璃卡（与其他 rail 卡同款
+    // frostedCardSurface），rail 收窄三级联动（全称/弦予/隐藏）
+    final railBrand =
+        floating && railWidth >= kLandscapeBrandShortMinRail;
     final listTopPad = floating
-        ? 14.0 + (collapsed ? 0.0 : 34.0) + 6
+        ? 14.0 + (railBrand ? 44.0 + 6 : 0) + 6
         : GlassTopBar.height(context, topInset: 8) + 6;
     final content = Stack(
       children: [
@@ -203,8 +206,9 @@ class _LandscapeRail extends ConsumerWidget {
                         _railItem(
                           context,
                           ref,
-                          icon: library[j].$2,
+                          icon: library[j].$3,
                           title: library[j].$1,
+                          shortTitle: library[j].$2,
                           collapsed: collapsed,
                           // 文件夹管理(4)归属「本地音乐」：右侧容器打开时
                           // 保持其高亮
@@ -237,8 +241,9 @@ class _LandscapeRail extends ConsumerWidget {
                   _railItem(
                     context,
                     ref,
-                    icon: library[j].$2,
+                    icon: library[j].$3,
                     title: library[j].$1,
+                    shortTitle: library[j].$2,
                     collapsed: collapsed,
                     selected: libSel == j || (j == 0 && libSel == 4),
                     onTap: () {
@@ -250,15 +255,35 @@ class _LandscapeRail extends ConsumerWidget {
             ],
           ),
         ),
-        // 悬浮态品牌行：卡内流水排布（固定态挂顶栏带 head 位，见上）
-        if (floating && !collapsed)
+        // 悬浮态品牌玻璃卡：与其他 rail 卡同款（frostedCardSurface +
+        // settings.group 槽位），rail 收窄三级联动——固定态挂顶栏带 head
+        // 位（裸品牌），见上
+        if (railBrand)
           Positioned(
             top: 14,
-            left: 0,
-            right: 0,
+            // 与 ListView 水平边距同口径（12），卡宽对齐下方分组卡
+            left: 12,
+            right: 12,
             child: Padding(
               padding: const EdgeInsets.only(bottom: 6),
-              child: landscapeRailLogo(ref, scheme),
+              child: frostedCardSurface(
+                context: context,
+                ref: ref,
+                radius: 16,
+                themeSlot: 'settings.group',
+                child: SizedBox(
+                  height: 44,
+                  // 品牌在卡内水平居中（rail 拖宽后左对齐会明显偏左）；
+                  // 三级联动：≥150 全称、100-150「弦予」短档、<100 隐藏
+                  child: Center(
+                    child: landscapeRailLogo(
+                      ref,
+                      scheme,
+                      short: railWidth < kLandscapeBrandFullMinRail,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         // 主题提供侧栏贴纸时才出现；未启用主题时零尺寸，观感不变。
@@ -280,17 +305,12 @@ class _LandscapeRail extends ConsumerWidget {
       ],
     );
 
-    if (floating) {
-      return FloatingGlassSurface(radius: 18, child: content);
-    }
-
+    // 悬浮/固定共用 SafeArea 布局（分组卡自带玻璃底，整列不垫玻璃面；
+    // 悬浮 chrome 浮于内容上，rail 列仍在原位）。两态差异只在：悬浮态
+    // 顶部品牌玻璃卡（railBrand）与顶距/底距口径
     return SafeArea(
       right: false,
-      // 组卡（frostedCardSurface）自带玻璃底，整列不再垫玻璃，
-      // 否则卡间空隙和列底会露出第二层玻璃面
       child: Padding(
-        // 悬浮顶栏的胶囊元素从 rail 右缘起排（返回钮 x≈railWidth），
-        // logo 区不重叠，无需下移让位
         padding: EdgeInsets.zero,
         child: SizedBox(width: railWidth, child: content),
       ),
@@ -302,6 +322,7 @@ class _LandscapeRail extends ConsumerWidget {
     WidgetRef ref, {
     required IconData icon,
     required String title,
+    String? shortTitle,
     required bool selected,
     required VoidCallback onTap,
     bool collapsed = false,
@@ -311,6 +332,38 @@ class _LandscapeRail extends ConsumerWidget {
     // 字重/颜色对齐设置页 _CategoryTile（ListTile 默认）：常规粗细，
     // 非选中用 onSurface（不用淡化灰）
     final color = selected ? scheme.primary : scheme.onSurface;
+
+    // 弹性截断：侧栏宽可拖拽收窄（下限仅 icon 档），固定宽
+    // 文本在窄列下会把 Row 挤溢出（RenderFlex overflow）
+    Widget labelText(String t) => Expanded(
+          child: Text(
+            t,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: color,
+            ),
+          ),
+        );
+
+    // 全称放不下时换两字短档（本地音乐→本地），避免截成「本地…」；
+    // rail 宽可拖拽，用 TextPainter 按实际可用宽实测比定宽阈值可靠
+    String effectiveTitle(double textAvail) {
+      if (shortTitle == null) return title;
+      final tp = TextPainter(
+        text: TextSpan(
+          text: title,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      final fits = tp.width <= textAvail;
+      tp.dispose();
+      return fits ? title : shortTitle;
+    }
+
     return PressableScale(
       pressScale: 0.92,
       child: Padding(
@@ -330,39 +383,39 @@ class _LandscapeRail extends ConsumerWidget {
               color: selected ? scheme.primary.withValues(alpha: 0.14) : null,
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: collapsed
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                themeSlotIcon(
-                  ref,
-                  themeSlot,
-                  fallback: icon,
-                  size: 22,
-                  color: color,
-                ),
-                if (!collapsed) ...[
-                  const SizedBox(width: 10),
-                  // 弹性截断：侧栏宽可拖拽收窄（下限仅 icon 档），固定宽
-                  // 文本在窄列下会把 Row 挤溢出（RenderFlex overflow）
-                  Expanded(
-                    child: Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w400,
+            child: collapsed
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      themeSlotIcon(
+                        ref,
+                        themeSlot,
+                        fallback: icon,
+                        size: 22,
                         color: color,
                       ),
-                    ),
+                    ],
+                  )
+                : LayoutBuilder(
+                    builder: (context, cons) {
+                      final t = effectiveTitle(cons.maxWidth - 22 - 10);
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          themeSlotIcon(
+                            ref,
+                            themeSlot,
+                            fallback: icon,
+                            size: 22,
+                            color: color,
+                          ),
+                          const SizedBox(width: 10),
+                          labelText(t),
+                        ],
+                      );
+                    },
                   ),
-                ],
-              ],
-            ),
           ),
         ),
       ),

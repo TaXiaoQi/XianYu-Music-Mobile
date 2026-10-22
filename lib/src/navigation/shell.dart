@@ -8,6 +8,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/application_logger.dart';
 import '../core/app_colors.dart';
 import '../core/haptics.dart';
@@ -61,18 +62,15 @@ part 'shell_bottom_bar.dart';
 part 'shell_sliding_nav.dart';
 part 'shell_side_rail.dart';
 
-const double kLandscapeRailWidth = 176;
+const double kLandscapeRailWidth = 210;
 const double kLandscapeRailIconWidth = 60;
 const double kLandscapeRailCollapseAt = 120;
 
-/// 悬浮顶栏品牌胶囊所需最小 rail 宽（胶囊右缘 ~178 + 间隙余量）：rail
-/// 拖到比这更窄时品牌胶囊直接隐藏（随 rail 收窄同步），工具行从 rail
-/// 右缘起排不会压到胶囊
-const double kLandscapeFloatingBrandMinRail = 190;
+/// 品牌胶囊「弦予」短档最小 rail 宽：再窄直接隐藏
+const double kLandscapeBrandShortMinRail = 100;
 
-/// 品牌胶囊「弦予」短档最小 rail 宽（短胶囊右缘 ~135 + 10 间隙）：再窄
-/// 连短档都放不下，直接隐藏（全称档阈值 190）
-const double kLandscapeBrandShortMinRail = 150;
+/// 品牌胶囊全称档最小 rail 宽：低于此降「弦予」短档（100-150 区间）
+const double kLandscapeBrandFullMinRail = 150;
 
 final isLandscapeProvider = StateProvider<bool>((ref) => false);
 
@@ -350,6 +348,34 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   double _railWidth = kLandscapeRailWidth;
 
+  /// 拖拽宽度持久化：拖动中防抖落盘，启动时恢复
+  static const _railWidthKey = 'landscape.railWidth';
+  Timer? _railWidthPersistTimer;
+
+  void _scheduleRailWidthPersist() {
+    _railWidthPersistTimer?.cancel();
+    _railWidthPersistTimer = Timer(const Duration(milliseconds: 300), () {
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setDouble(_railWidthKey, _railWidth),
+      );
+    });
+  }
+
+  Future<void> _restoreRailWidth() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_railWidthKey);
+    if (saved == null || !mounted) return;
+    final restored = saved
+        .clamp(
+          kLandscapeRailIconWidth,
+          math.max(MediaQuery.sizeOf(context).width * 0.5, kLandscapeRailWidth),
+        )
+        .toDouble();
+    if (restored != _railWidth) {
+      setState(() => _railWidth = restored);
+    }
+  }
+
   StreamSubscription<dynamic>? _rotationSub;
 
   /// 悬浮 chrome（底栏/悬浮顶栏）完全隐藏后整树卸载。Impeller 下
@@ -440,6 +466,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         'xianyu/rotation/events',
       ).receiveBroadcastStream().listen(_onRotationEvent, onError: (_) {});
     }
+    unawaited(_restoreRailWidth());
   }
 
   void _onRotationEvent(Object? e) {
@@ -479,6 +506,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     _rotationSub?.cancel();
     _chromeGoneTimer?.cancel();
     _chromeFadeTimer?.cancel();
+    // 拖完立刻退出的场景：取消防抖并直接落盘
+    _railWidthPersistTimer?.cancel();
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setDouble(_railWidthKey, _railWidth),
+    );
     super.dispose();
   }
 
@@ -782,7 +814,11 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           enabled: landscapeFadeEnabled,
           suppress: anyPaneOpen,
           children: [
-            widget.navigationShell,
+            BranchFadeIn(
+              shellIndex: widget.navigationShell.currentIndex,
+              enabled: landscapeFadeEnabled,
+              child: widget.navigationShell,
+            ),
             if (libPaneMountable) ...[
               const _MusicLibraryPane(index: 0),
               const _MusicLibraryPane(index: 1),
@@ -977,6 +1013,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               screenW * 0.5,
             );
           });
+          _scheduleRailWidthPersist();
         },
       ),
     );
@@ -1057,8 +1094,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             ),
           ),
 
-          // 横屏 rail：固定态在带下层（列表视口全高，项滚上去从带下穿过
-          // 被实时模糊）；品牌行改挂带 head 位承载，不被玻璃盖住
+          // 横屏 rail：SafeArea 布局两态共用；悬浮态顶部品牌玻璃卡由
+          // rail 自挂（railBrand），固定态品牌挂顶栏带 head 位
           if (landscape)
             Positioned(
               left: 0,
@@ -1069,7 +1106,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 index: widget.index,
                 onSelect: select,
                 railWidth: _railWidth,
-                floating: false,
+                floating: floatingSearchBar,
               ),
             ),
 

@@ -1,6 +1,9 @@
+import 'dart:async' show Timer, unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
@@ -48,7 +51,37 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
   final Map<String, GlobalKey> _tileKeys = {};
   String? _lastCenteredSel;
 
-  double _navWidth = 260;
+  /// 横屏左列宽：默认/下限与主 rail 一致（210），拖拽宽度防抖持久化
+  static const _navWidthKey = 'landscape.settingsNavWidth';
+  double _navWidth = 210;
+  Timer? _navWidthPersistTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restoreNavWidth());
+  }
+
+  Future<void> _restoreNavWidth() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getDouble(_navWidthKey);
+    if (saved == null || !mounted) return;
+    final restored = saved
+        .clamp(210.0, MediaQuery.sizeOf(context).width * 0.5)
+        .toDouble();
+    if (restored != _navWidth) {
+      setState(() => _navWidth = restored);
+    }
+  }
+
+  void _scheduleNavWidthPersist() {
+    _navWidthPersistTimer?.cancel();
+    _navWidthPersistTimer = Timer(const Duration(milliseconds: 300), () {
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setDouble(_navWidthKey, _navWidth),
+      );
+    });
+  }
 
   /// 横屏子页面板 → 父分类：面板标题可点返回上一级（左列高亮随 sel 恢复）
   static const Map<String, String> _panelParent = {
@@ -66,6 +99,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
   @override
   void dispose() {
     _searchCtrl.dispose();
+    // 拖完立刻退出的场景：取消防抖并直接落盘
+    _navWidthPersistTimer?.cancel();
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setDouble(_navWidthKey, _navWidth),
+    );
     super.dispose();
   }
 
@@ -613,8 +651,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
             onDragUpdate: (dx) {
               final screenW = MediaQuery.sizeOf(context).width;
               setState(() {
-                _navWidth = (_navWidth + dx).clamp(260.0, screenW * 0.5);
+                _navWidth = (_navWidth + dx).clamp(210.0, screenW * 0.5);
               });
+              _scheduleNavWidthPersist();
             },
           ),
           Expanded(

@@ -11,7 +11,6 @@ import '../theme/theme_icon.dart';
 import '../navigation/shell.dart'
     show
         kLandscapeBrandShortMinRail,
-        kLandscapeFloatingBrandMinRail,
         landscapeDownloadOpenProvider,
         landscapeLibraryProvider,
         landscapeLibraryQueryProvider,
@@ -87,45 +86,15 @@ Widget landscapeRailLogo(
   ],
 );
 
-/// 顶栏品牌胶囊（悬浮 chrome 与固定带 head 同款）：rail 宽三级联动——
-/// ≥ kLandscapeFloatingBrandMinRail 显示「弦予音乐」全称；≥
-/// kLandscapeBrandShortMinRail 降级「弦予」；更窄直接隐藏（与侧边栏胶
-/// 囊收窄同步）。阈值已保证胶囊右缘不越过 rail 缘 + 10 间隙，不会压到
-/// 从 rail 缘起排的工具胶囊。胶囊自带挖孔避让
-Widget? landscapeBrandPill(WidgetRef ref, BuildContext context, double railWidth) {
-  if (railWidth < kLandscapeBrandShortMinRail) return null;
-  final short = railWidth < kLandscapeFloatingBrandMinRail;
-  return Padding(
-    padding: EdgeInsets.only(left: MediaQuery.paddingOf(context).left),
-    child: BiliPaiPill(
-      radius: 20,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: SizedBox(
-          height: 40,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: landscapeRailLogo(
-              ref,
-              Theme.of(context).colorScheme,
-              short: short,
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// 固定带裸品牌：直接画在带上（无胶囊底），rail 宽三级联动（全称/
-/// 弦予/隐藏，阈值同悬浮胶囊）。左缘对齐下面侧边栏卡片：rail 内容 =
-/// SafeArea(挖孔) + 12 边距，品牌同口径 +12
+/// 固定带裸品牌：直接画在带上（无胶囊底），rail 宽两级联动（全称/
+/// 隐藏，阈值取短版下限）。左缘在 safe + 34，视觉靠带内
 Widget? landscapeBrandLabel(WidgetRef ref, BuildContext context, double railWidth) {
+  // 固定带裸品牌无玻璃卡内边距，rail ≥ 短版阈值即容全称；
+  // 浮动卡的全称阈值(190)在此过保守，150-190 区间也应显示全称
   if (railWidth < kLandscapeBrandShortMinRail) return null;
-  final short = railWidth < kLandscapeFloatingBrandMinRail;
   return Padding(
-    padding: EdgeInsets.only(left: MediaQuery.paddingOf(context).left + 12),
-    child: landscapeRailLogo(ref, Theme.of(context).colorScheme, short: short),
+    padding: EdgeInsets.only(left: MediaQuery.paddingOf(context).left + 34),
+    child: landscapeRailLogo(ref, Theme.of(context).colorScheme),
   );
 }
 
@@ -203,12 +172,12 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
       // 对齐竖屏悬浮 chrome：玻璃圆钮 + 胶囊元素各自成型，悬浮于内容上；
       // 顶距固定 8——横屏延伸进摄像头区时 statusBar 是挖孔高度，不贴顶。
       // 工具行从 rail 中线起排（-12 补偿 chrome 外层 12 边距），拖分隔线
-      // 联动；品牌胶囊贴左独立悬浮压在 rail 上方，按 rail 宽三级联动
+      // 联动；品牌不进 chrome 行——缩回 rail 列内玻璃卡（shell_landscape
+      // 悬浮品牌行，与其他 rail 卡同款）
       return floatingChromeBar(
         context,
         topInset: 8,
         leadIndent: (leadingIndent - 12).clamp(0.0, double.infinity),
-        brand: landscapeBrandPill(ref, context, leadingIndent),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: tr('返回'),
