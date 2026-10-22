@@ -156,6 +156,7 @@ final appRouter = GoRouter(
         context,
         (_) => const EffectsPage(),
         key: state.pageKey,
+        location: state.matchedLocation,
       ),
     ),
     GoRoute(

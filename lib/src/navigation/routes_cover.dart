@@ -69,6 +69,9 @@ PageRoute<T> coverPageRoute<T>(
     settings: settings ?? RouteSettings(),
     builder: builder,
     predictiveBack: _enablePredictiveBack(context),
+    // 播放 Navigator 上的命令式覆盖页（如音效页）经 settings.name 携带
+    // matchedLocation，喂给 RoutePageBackdrop 解析主题包每页壁纸
+    location: settings?.name,
   );
 }
 

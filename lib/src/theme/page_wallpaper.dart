@@ -25,12 +25,14 @@ String? pageIdForLocation(String? location, {required bool landscape}) {
     return switch (location) {
       '/player' => 'ls-player',
       '/settings' => 'ls-settings',
+      '/effects' => 'ls-effects',
       _ => null,
     };
   }
   return switch (location) {
     '/player' => 'player',
     '/settings' => 'settings',
+    '/effects' => 'effects',
     '/recognize' => 'recognize',
     '/search' => 'search',
     '/search/result' => 'search_result',

@@ -281,7 +281,11 @@ class _LandscapeControlsRow extends ConsumerWidget {
           onPressed: mvRequested
               ? null
               : () => playerNavigatorKey.currentState?.push(
-                  coverPageRoute<void>(context, (_) => const EffectsPage()),
+                  coverPageRoute<void>(
+                    context,
+                    (_) => const EffectsPage(),
+                    settings: const RouteSettings(name: '/effects'),
+                  ),
                 ),
         )),
         PressableScale(pressScale: 0.88, child: IconButton(

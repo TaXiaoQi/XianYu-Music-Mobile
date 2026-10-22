@@ -1772,7 +1772,11 @@ class _TraditionalPlayerLayoutState
                   ),
                 ),
                 onTap: () => playerNavigatorKey.currentState?.push(
-                  coverPageRoute<void>(context, (_) => const EffectsPage()),
+                  coverPageRoute<void>(
+                    context,
+                    (_) => const EffectsPage(),
+                    settings: const RouteSettings(name: '/effects'),
+                  ),
                 ),
               ),
             ),
