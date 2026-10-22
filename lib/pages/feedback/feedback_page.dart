@@ -43,7 +43,7 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   final List<String> _betaImages = [];
   bool _submitting = false;
   bool _compressing = false;
-  bool _attachAllLogs = false;
+  bool _attachAllLogs = true;
 
   // 内测资格检测（与启动检测同源，避免重复申请）
   String _betaAccessState = 'unknown'; // unknown | checking | allowed | pending | denied
@@ -294,6 +294,9 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
             true);
     final tabBar = TabBar(
       controller: _tab,
+      // 嵌入面板时 TabBar 装进圆角玻璃胶囊，M3 默认底部分隔线会与
+      // 胶囊下缘叠成两根线，关掉（与主题/壁纸中心同口径）
+      dividerColor: Colors.transparent,
       tabs: [
         Tab(text: tr('提交反馈')),
         Tab(text: tr('申请内测')),
@@ -304,7 +307,8 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
     // 带 + 自带 TabBar 行玻璃带），页签内容从带下穿过被实时模糊
     final panelBand = landscapePanelBand(context, ref);
     final topInset = widget.embedded
-        ? panelBand + tabBar.preferredSize.height
+        // +14：Tab 胶囊带下移 6 + 上下内距 8，内容初屏不被胶囊压住
+        ? panelBand + tabBar.preferredSize.height + 14
         : portraitFloating
             ? MediaQuery.paddingOf(context).top +
                 66 +
@@ -332,14 +336,21 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
           ),
           if (widget.embedded)
             Positioned(
-              // TabBar 行玻璃带贴在宿主标题带下沿
-              top: panelBand,
-              left: 0,
-              right: 0,
+              // TabBar 搜索胶囊同款圆角玻璃胶囊，挂在宿主标题带下沿；
+              // 内容从胶囊下穿过被实时模糊
+              top: panelBand + 6,
+              left: 12,
+              right: 12,
               child: GlassBand(
                 // 独立回读：宿主左列带先画，同组会复用其制备纹理
                 sharedNavGroup: false,
-                child: tabBar,
+                borderRadius: BorderRadius.circular(24),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  // 透明 Material 包裹（主题/壁纸中心同款）：TabBar 直接
+                  // 裸放会在胶囊带上下缘画出描边线
+                  child: Material(color: Colors.transparent, child: tabBar),
+                ),
               ),
             )
           else
@@ -611,16 +622,21 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
               ],
             ),
           ),
-          CheckboxListTile(
-            dense: true,
-            value: _attachAllLogs,
-            title: Text(
-              tr('全部日志（{n} 条）', {'n': logs.length}),
-              style: const TextStyle(fontSize: 14),
+          // 透明 Material 直接作 ListTile 祖先：背景色 Container 包裹下
+          // ListTile 断言「背景/水波纹不可见」并随重建刷屏
+          Material(
+            color: Colors.transparent,
+            child: CheckboxListTile(
+              dense: true,
+              value: _attachAllLogs,
+              title: Text(
+                tr('全部日志（{n} 条）', {'n': logs.length}),
+                style: const TextStyle(fontSize: 14),
+              ),
+              secondary: Icon(Icons.description_outlined,
+                  size: 20, color: scheme.primary),
+              onChanged: (v) => setState(() => _attachAllLogs = v ?? false),
             ),
-            secondary:
-                Icon(Icons.description_outlined, size: 20, color: scheme.primary),
-            onChanged: (v) => setState(() => _attachAllLogs = v ?? false),
           ),
         ],
       ),
@@ -630,30 +646,39 @@ class _FeedbackPageState extends ConsumerState<FeedbackPage>
   Widget _typeButton(String type, String label) {
     final scheme = Theme.of(context).colorScheme;
     final selected = _feedbackType == type;
+    // 选中态与顶部 TabBar 同款：红字 + 底部红色下划线，不再用红色填充
     return Expanded(
       child: PressableScale(
         pressScale: 0.92,
         child: GestureDetector(
           onTap: () => setState(() => _feedbackType = type),
-          child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? scheme.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    width: 2.5,
+                    color:
+                        selected ? scheme.primary : Colors.transparent,
+                  ),
+                ),
+              ),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: selected ? scheme.primary : scheme.onSurfaceVariant,
+                ),
+              ),
             ),
           ),
         ),
       ),
-    ),
     );
   }
 

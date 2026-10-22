@@ -273,28 +273,32 @@ class _AboutPageState extends ConsumerState<AboutPage> {
             ),
           ),
           const SizedBox(height: 20),
-          if (_config.updateEnabled && PlatformCaps.supportsInAppUpdate)
-            PressableScale(
-              pressScale: 0.92,
-              child: FilledButton.icon(
-                onPressed: _checkingUpdate ? null : _checkUpdate,
-                icon: _checkingUpdate
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.system_update_alt, size: 18),
-                label: Text(_checkingUpdate ? tr('检查中…') : tr('检查更新')),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+          // 横屏面板按桌面端排布：一排实心钮 + 一排浅色钮，居中自适应；
+          // 竖屏保持全宽检查更新 + 「更多信息」列表卡片
+          if (widget.embedded) ..._landscapeActionButtons()
+          else ...[
+            if (_config.updateEnabled && PlatformCaps.supportsInAppUpdate)
+              PressableScale(
+                pressScale: 0.92,
+                child: FilledButton.icon(
+                  onPressed: _checkingUpdate ? null : _checkUpdate,
+                  icon: _checkingUpdate
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update_alt, size: 18),
+                  label: Text(_checkingUpdate ? tr('检查中…') : tr('检查更新')),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
               ),
-            ),
-          if (links.isNotEmpty) ...[
+            if (links.isNotEmpty) ...[
             const SizedBox(height: 28),
             Text(tr('更多信息'),
                 style: TextStyle(
@@ -343,6 +347,7 @@ class _AboutPageState extends ConsumerState<AboutPage> {
                 ],
               ),
             ),
+            ],
           ],
           const SizedBox(height: 28),
           Center(
@@ -406,6 +411,115 @@ class _AboutPageState extends ConsumerState<AboutPage> {
       padding: EdgeInsets.only(
           top: widget.embedded ? 0 : GlassTopBar.height(context)),
       child: child,
+    );
+  }
+
+  /// 横屏面板动作区（桌面端同款排布）：一排实心钮 + 一排浅色钮，居中
+  /// 自适应宽度；竖屏不走此分支
+  List<Widget> _landscapeActionButtons() {
+    return [
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        alignment: WrapAlignment.center,
+        children: [
+          if (_config.updateEnabled && PlatformCaps.supportsInAppUpdate)
+            _filledAction(
+              label: _checkingUpdate ? tr('检查中…') : tr('检查更新'),
+              icon: Icons.system_update_alt,
+              busy: _checkingUpdate,
+              onTap: _checkingUpdate ? null : _checkUpdate,
+            ),
+          if (_config.officialSiteUrl.isNotEmpty)
+            _filledAction(
+              label: tr('前往官网'),
+              icon: Icons.language,
+              onTap: () => _openUrl(_config.officialSiteUrl),
+            ),
+          if (_config.joinGroupUrl.isNotEmpty)
+            _filledAction(
+              label: tr('加入群组'),
+              icon: Icons.group,
+              onTap: () => _openUrl(_config.joinGroupUrl),
+            ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        alignment: WrapAlignment.center,
+        children: [
+          if (_config.projectUrl.isNotEmpty)
+            _tonalAction(
+              label: tr('开源地址'),
+              icon: Icons.code,
+              onTap: () => _openUrl(_config.projectUrl),
+            ),
+          _tonalAction(
+            label: tr('参考项目'),
+            icon: Icons.book_outlined,
+            onTap: () => _showReferenceProjects(_allReferenceProjects),
+          ),
+          if (_allAcknowledgements.isNotEmpty)
+            _tonalAction(
+              label: tr('致谢名单'),
+              icon: Icons.favorite_outline,
+              onTap: () => _showAcknowledgements(_allAcknowledgements),
+            ),
+        ],
+      ),
+    ];
+  }
+
+  Widget _filledAction({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onTap,
+    bool busy = false,
+  }) {
+    return PressableScale(
+      pressScale: 0.92,
+      child: FilledButton.icon(
+        onPressed: onTap,
+        icon: busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Icon(icon, size: 18),
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tonalAction({
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return PressableScale(
+      pressScale: 0.92,
+      child: FilledButton.tonalIcon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 18),
+        label: Text(label),
+        style: FilledButton.styleFrom(
+          backgroundColor: appCardFill(context, ref),
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
     );
   }
 }

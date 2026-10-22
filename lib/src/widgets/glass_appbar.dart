@@ -26,6 +26,7 @@ Widget glassBandWrap(
   /// false 独立回读，制备时机回到各自绘制点（同 SystemNavGlassPad 新
   /// 成员入组异常改独立回读的先例）
   bool sharedNavGroup = true,
+  BorderRadius? borderRadius,
   required Widget child,
 }) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -46,7 +47,22 @@ Widget glassBandWrap(
   final glassFill =
       themeSlot == null ? fill : themeTint(ref, themeSlot, fill);
   final inner = Container(
-    decoration: BoxDecoration(color: glassFill, border: null),
+    decoration: BoxDecoration(
+      color: glassFill,
+      // 胶囊形态描边（搜索胶囊/BiliPaiPill 同款语言）：盖住 blur 层顶/底
+      // 缘 1-2px 采样亮线伪影（Impeller clip 边缘 clamp 采样，带外亮
+      // 壁纸渗入）；solid/flat 无 blur 无伪影不描边，通栏方角带不描边
+      border: (!solid && !flatBackdrop && borderRadius != null)
+          ? Border.all(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.18)
+                  : Colors.white.withValues(alpha: 0.5),
+            )
+          : null,
+      // 圆角胶囊形态（搜索胶囊同款）：填充随圆角裁形，模糊区由外层
+      // ClipRRect 同步裁圆，四角不留方形模糊晕
+      borderRadius: borderRadius,
+    ),
     child: child,
   );
   if (solid || flatBackdrop) return inner;
@@ -55,7 +71,8 @@ Widget glassBandWrap(
   // RepaintBoundary 让动画帧复用旧玻璃 layer 不重采样（见
   // debug-liquid-glass-page-flash.md 第十轮），raster 期实时模糊不受影响
   final glass = RepaintBoundary(
-    child: ClipRect(
+    child: ClipRRect(
+      borderRadius: borderRadius ?? BorderRadius.zero,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         // 按路由实例分组（navGroupFor）：与被盖住的 shell 成员绝不混组
@@ -88,6 +105,7 @@ class GlassBand extends ConsumerWidget {
     super.key,
     this.themeSlot,
     this.sharedNavGroup = true,
+    this.borderRadius,
     required this.child,
   });
 
@@ -96,12 +114,18 @@ class GlassBand extends ConsumerWidget {
   /// 右面板侧的带传 false 退出共享回读组（详见 glassBandWrap）
   final bool sharedNavGroup;
 
+  /// 圆角胶囊形态（搜索胶囊同款），null 为通栏方角带
+  final BorderRadius? borderRadius;
+
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => glassBandWrap(
       context, ref,
-      themeSlot: themeSlot, sharedNavGroup: sharedNavGroup, child: child);
+      themeSlot: themeSlot,
+      sharedNavGroup: sharedNavGroup,
+      borderRadius: borderRadius,
+      child: child);
 }
 
 /// 横屏设置页左列与右面板间拖拽分割条宽度（settings 页 _SettingsDivider）；
@@ -136,6 +160,7 @@ class GlassTopBar extends ConsumerWidget {
     this.themeSlot,
     this.topInset,
     this.leadingIndent = 0,
+    this.head,
     this.sharedNavGroup = true,
   });
 
@@ -164,6 +189,10 @@ class GlassTopBar extends ConsumerWidget {
   /// 内容行起始缩进：横屏固定带贯通到屏幕左缘时，返回/标题等工具行
   /// 内容从 rail 右缘起排，玻璃背景仍铺满整行衬在 rail 标题区背后
   final double leadingIndent;
+
+  /// 带内左缘悬浮件：固定带贯通到屏幕左缘且 rail 移到带下层后，rail
+  /// 品牌行由带自身承载（画在带内容行上、玻璃之上），否则会被带盖住
+  final Widget? head;
 
   /// 右面板侧的带传 false 退出共享回读组（详见 glassBandWrap）
   final bool sharedNavGroup;
@@ -216,39 +245,52 @@ class GlassTopBar extends ConsumerWidget {
         SizedBox(height: statusBarHeight),
         SizedBox(
           height: kToolbarHeight,
-          child: Row(
+          // head 悬浮在工具行上层左缘（垂直居中），不占行内布局位——
+          // leading 的 leadingIndent 缩进仍从行起点算
+          child: Stack(
             children: [
-              if (leading != null)
-                Padding(
-                  padding: EdgeInsets.only(left: leadingIndent),
-                  child: PressableScale(pressScale: 0.92, child: leading!),
-                ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: titleSpacing ??
-                        (leading == null ? 16 + leadingIndent : 0),
-                    right: 16,
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: DefaultTextStyle(
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Theme.of(context).colorScheme.onSurface,
+              Row(
+                children: [
+                  if (leading != null)
+                    Padding(
+                      padding: EdgeInsets.only(left: leadingIndent),
+                      child: PressableScale(pressScale: 0.92, child: leading!),
+                    ),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: titleSpacing ??
+                            (leading == null ? 16 + leadingIndent : 0),
+                        right: 16,
                       ),
-                      child: title ?? const SizedBox.shrink(),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: DefaultTextStyle(
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                          child: title ?? const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  // SizedBox 是列表里的占位间距，不参与按压
+                  if (actions != null)
+                    ...actions!.map(
+                      (w) => w is SizedBox
+                          ? w
+                          : PressableScale(pressScale: 0.92, child: w),
+                    ),
+                ],
               ),
-              // SizedBox 是列表里的占位间距，不参与按压
-              if (actions != null)
-                ...actions!.map(
-                  (w) => w is SizedBox
-                      ? w
-                      : PressableScale(pressScale: 0.92, child: w),
+              if (head != null)
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  child: Center(child: head!),
                 ),
             ],
           ),
