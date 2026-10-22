@@ -133,53 +133,26 @@ class _LandscapeRail extends ConsumerWidget {
       ),
     );
 
-    final content = Column(
+    // Stack 取代 Column：列表视口全高（Positioned.fill），rail 项滚上去
+    // 从顶栏带下穿过被实时模糊——原 Expanded 视口从 logo 下起，滚到带
+    // 底就出视口，带左段采不到内容（右侧内容列已页面自垫，rail 同款）。
+    // 固定态品牌行改挂顶栏带 head 位（rail 在带下层，logo 留在 rail 里
+    // 会被带玻璃盖住）；悬浮态 rail 是独立玻璃卡，品牌行仍在卡内排布
+    final listTopPad = floating
+        ? 14.0 + (collapsed ? 0.0 : 34.0) + 6
+        : GlassTopBar.height(context, topInset: 8) + 6;
+    final content = Stack(
       children: [
-        SizedBox(height: floating ? 14 : 20),
-        if (!collapsed)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
-                themeSlotWidget(
-                  ref,
-                  'landscape.logo',
-                  size: 22,
-                  fallback: const SizedBox.shrink(),
-                ),
-                Text.rich(
-                  TextSpan(
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: scheme.onSurface,
-                    ),
-                    children: [
-                      TextSpan(text: tr('弦予')),
-                      TextSpan(
-                        text: tr('音乐'),
-                        style: const TextStyle(
-                          color: Color(0xFFEC4141),
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        Expanded(
+        Positioned.fill(
           child: ListView(
             // 左右各留 12 与右侧内容页边距对称：rail Positioned left:0，
-            // 卡片原先贴死屏幕左缘，圆角屏上会被裁切
+            // 卡片原先贴死屏幕左缘，圆角屏上会被裁切。顶距复刻原 Column
+            // 静止排布；底部预留贴纸块高，滚到底不压贴纸
             padding: EdgeInsets.fromLTRB(
               12,
-              6,
+              listTopPad,
               12,
-              floating ? 8 : 12,
+              (floating ? 8 : 12) + (collapsed ? 0 : 76),
             ),
             children: [
               if (!collapsed) ...[
@@ -277,12 +250,24 @@ class _LandscapeRail extends ConsumerWidget {
             ],
           ),
         ),
+        // 悬浮态品牌行：卡内流水排布（固定态挂顶栏带 head 位，见上）
+        if (floating && !collapsed)
+          Positioned(
+            top: 14,
+            left: 0,
+            right: 0,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: landscapeRailLogo(ref, scheme),
+            ),
+          ),
         // 主题提供侧栏贴纸时才出现；未启用主题时零尺寸，观感不变。
-        // 注意不可在此前放 Spacer：与上方 Expanded 平分剩余高度会把
-        // 列表视口砍半，音乐库后几项被挤到视口外且无法滚动露出
+        // 钉在 rail 底部（原 Column 尾位），列表底部已预留贴纸块高
         if (!collapsed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12,
             child: Align(
               alignment: Alignment.centerLeft,
               child: themeSlotSticker(
@@ -385,7 +370,7 @@ class _LandscapeRail extends ConsumerWidget {
   }
 }
 
-class _MusicLibraryPane extends StatelessWidget {
+class _MusicLibraryPane extends ConsumerWidget {
   const _MusicLibraryPane({required this.index});
 
   final int index;
@@ -400,21 +385,33 @@ class _MusicLibraryPane extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 固定态：shell 固定带盖住顶部，面板内容整体垫到带下（与首页/我的
+    // 自垫带高同口径）；悬浮态顶距由页面自垫 chrome 高，不再重复垫
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
+    final topInset =
+        MediaQuery.orientationOf(context) == Orientation.landscape && !floating
+        ? GlassTopBar.height(context, topInset: 8)
+        : 0.0;
     return PageWallpaperScope(
       pageId: _panePageIds[index],
       child: ColoredBox(
         color: Theme.of(context).scaffoldBackgroundColor,
-        child: KeyedSubtree(
-          key: musicLibraryPageKeys[index],
-          child: switch (index) {
-            0 => const LibraryPage(),
-            1 => const FavoritesPage(),
-            2 => const RecentPage(),
-            3 => const PlaylistsPage(),
-            // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
-            _ => const LibraryFolderPage(embedded: true),
-          },
+        child: Padding(
+          padding: EdgeInsets.only(top: topInset),
+          child: KeyedSubtree(
+            key: musicLibraryPageKeys[index],
+            child: switch (index) {
+              0 => const LibraryPage(),
+              1 => const FavoritesPage(),
+              2 => const RecentPage(),
+              3 => const PlaylistsPage(),
+              // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
+              _ => const LibraryFolderPage(embedded: true),
+            },
+          ),
         ),
       ),
     );

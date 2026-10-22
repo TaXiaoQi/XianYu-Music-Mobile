@@ -94,7 +94,11 @@ class MinePage extends ConsumerWidget {
   Widget _buildLandscapeProfile(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
-    final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 12 : 12.0;
+    // 固定态自垫带高+12：壳层不再垫 top，列表视口全高，内容从带下穿过
+    // 被顶栏实时模糊（+12 与原壳垫时代的带下呼吸距一致，初屏位置不变）
+    final topInset = floating
+        ? MediaQuery.paddingOf(context).top + 60 + 12
+        : GlassTopBar.height(context, topInset: 8) + 12;
     final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),

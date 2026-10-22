@@ -10,6 +10,8 @@ import '../i18n/i18n.dart';
 import '../theme/theme_icon.dart';
 import '../navigation/shell.dart'
     show
+        kLandscapeBrandShortMinRail,
+        kLandscapeFloatingBrandMinRail,
         landscapeDownloadOpenProvider,
         landscapeLibraryProvider,
         landscapeLibraryQueryProvider,
@@ -44,6 +46,89 @@ class LandscapeSearchBar extends ConsumerWidget {
   }
 }
 
+/// rail 品牌行（主题品牌图 + 弦予音乐）：悬浮态在 rail 卡内流水排布，
+/// 固定态挂顶栏带 head 位承载——rail 移到带下层后，logo 留在 rail 里
+/// 会被带玻璃盖住
+Widget landscapeRailLogo(
+  WidgetRef ref,
+  ColorScheme scheme, {
+  // 紧凑档：只显示「弦予」（rail 收窄放不下全称时降级，再窄才隐藏）
+  bool short = false,
+}) => Row(
+  mainAxisSize: MainAxisSize.min,
+  children: [
+    // 主题提供品牌图时才出现；未启用主题时是零尺寸，观感不变。
+    themeSlotWidget(
+      ref,
+      'landscape.logo',
+      size: 22,
+      fallback: const SizedBox.shrink(),
+    ),
+    Text.rich(
+      TextSpan(
+        style: TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          color: scheme.onSurface,
+        ),
+        children: [
+          TextSpan(text: tr('弦予')),
+          if (!short)
+            TextSpan(
+              text: tr('音乐'),
+              style: const TextStyle(
+                color: Color(0xFFEC4141),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+        ],
+      ),
+    ),
+  ],
+);
+
+/// 顶栏品牌胶囊（悬浮 chrome 与固定带 head 同款）：rail 宽三级联动——
+/// ≥ kLandscapeFloatingBrandMinRail 显示「弦予音乐」全称；≥
+/// kLandscapeBrandShortMinRail 降级「弦予」；更窄直接隐藏（与侧边栏胶
+/// 囊收窄同步）。阈值已保证胶囊右缘不越过 rail 缘 + 10 间隙，不会压到
+/// 从 rail 缘起排的工具胶囊。胶囊自带挖孔避让
+Widget? landscapeBrandPill(WidgetRef ref, BuildContext context, double railWidth) {
+  if (railWidth < kLandscapeBrandShortMinRail) return null;
+  final short = railWidth < kLandscapeFloatingBrandMinRail;
+  return Padding(
+    padding: EdgeInsets.only(left: MediaQuery.paddingOf(context).left),
+    child: BiliPaiPill(
+      radius: 20,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: SizedBox(
+          height: 40,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: landscapeRailLogo(
+              ref,
+              Theme.of(context).colorScheme,
+              short: short,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 固定带裸品牌：直接画在带上（无胶囊底），rail 宽三级联动（全称/
+/// 弦予/隐藏，阈值同悬浮胶囊）。左缘对齐下面侧边栏卡片：rail 内容 =
+/// SafeArea(挖孔) + 12 边距，品牌同口径 +12
+Widget? landscapeBrandLabel(WidgetRef ref, BuildContext context, double railWidth) {
+  if (railWidth < kLandscapeBrandShortMinRail) return null;
+  final short = railWidth < kLandscapeFloatingBrandMinRail;
+  return Padding(
+    padding: EdgeInsets.only(left: MediaQuery.paddingOf(context).left + 12),
+    child: landscapeRailLogo(ref, Theme.of(context).colorScheme, short: short),
+  );
+}
+
 class LandscapeGlobalTopBar extends ConsumerWidget {
   const LandscapeGlobalTopBar({
     super.key,
@@ -56,8 +141,9 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
 
   final bool floating;
 
-  /// 固定态内容行起始缩进（rail 宽）：玻璃贯通到屏幕左缘，返回/搜索从
-  /// rail 右缘起排不压 rail logo；悬浮态胶囊仍留内容列，忽略该值
+  /// 内容行起始缩进（rail 宽）：固定态玻璃贯通到屏幕左缘、悬浮态工具行
+  /// 从 rail 右缘起排（拖分隔线联动），返回/搜索不压 rail；品牌胶囊按
+  /// 该宽三级联动（全称/弦予/隐藏）
   final double leadingIndent;
 
   @override
@@ -115,10 +201,14 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
 
     if (floating) {
       // 对齐竖屏悬浮 chrome：玻璃圆钮 + 胶囊元素各自成型，悬浮于内容上；
-      // 顶距固定 8——横屏延伸进摄像头区时 statusBar 是挖孔高度，不贴顶
+      // 顶距固定 8——横屏延伸进摄像头区时 statusBar 是挖孔高度，不贴顶。
+      // 工具行从 rail 中线起排（-12 补偿 chrome 外层 12 边距），拖分隔线
+      // 联动；品牌胶囊贴左独立悬浮压在 rail 上方，按 rail 宽三级联动
       return floatingChromeBar(
         context,
         topInset: 8,
+        leadIndent: (leadingIndent - 12).clamp(0.0, double.infinity),
+        brand: landscapeBrandPill(ref, context, leadingIndent),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: tr('返回'),
@@ -170,11 +260,16 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
       );
     }
 
+    // 固定带：贯通玻璃 + 裸品牌——品牌不套胶囊底，直接画在带上；左缘
+    // 对齐下面侧边栏卡片（pad.left + 12，见 landscapeBrandLabel）；
+    // rail 收窄三级联动（全称/弦予/隐藏）。工具行（返回+搜索+动作）从
+    // rail 中线右缘起排，拖分隔线联动
     return GlassTopBar(
       // 顶距固定 8：横屏摄像头区延伸时 padding.top 是挖孔高度（挖孔在
       // 左缘，顶部无需避让），固定带与悬浮 chrome 同口径贴顶
       topInset: 8,
       leadingIndent: leadingIndent,
+      head: landscapeBrandLabel(ref, context, leadingIndent),
       leading: IconButton(
         icon: const Icon(Icons.arrow_back),
         tooltip: tr('返回'),

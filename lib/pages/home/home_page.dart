@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/recommend_sheets_preview_provider.dart';
@@ -109,8 +110,12 @@ class _HomePageState extends ConsumerState<HomePage> {
     final floating = ref.watch(
         settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
     // 悬浮 chrome 高 60 + 顶距 8；横屏 statusBar=0，尾距取 24 保证
-    // 首个区块标题与搜索胶囊拉开可见间距（竖屏靠 statusBar 自然撑开）
-    final topInset = floating ? MediaQuery.paddingOf(context).top + 60 + 24 : 12.0;
+    // 首个区块标题与搜索胶囊拉开可见间距（竖屏靠 statusBar 自然撑开）。
+    // 固定态自垫带高+12：壳层不再垫 top，列表视口全高，内容从带下穿过
+    // 被顶栏实时模糊（+12 与原壳垫时代的带下呼吸距一致，初屏位置不变）
+    final topInset = floating
+        ? MediaQuery.paddingOf(context).top + 60 + 24
+        : GlassTopBar.height(context, topInset: 8) + 12;
     return Scaffold(
       body: Stack(
         children: [
@@ -381,39 +386,16 @@ class _MostPlayedRow extends ConsumerWidget {
   }
 }
 
-class _AmbientBackground extends StatelessWidget {
+/// 页面底衬：干净的 scaffold 背景（壁纸模式下透出壁纸）。旧版在这里画
+/// 红蓝两个径向光斑，壁纸模式下与壁纸打架，已按竖屏口径改为纯底衬
+/// （账号面板同款）
+class _AmbientBackground extends ConsumerWidget {
   const _AmbientBackground();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return IgnorePointer(
-      child: Stack(
-        children: [
-          Positioned(
-            top: -80,
-            right: -60,
-            child: _glow(300, const Color(0x59EC4141)),
-          ),
-          Positioned(
-            bottom: 120,
-            left: -100,
-            child: _glow(340, const Color(0x4D5A78DC)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _glow(double size, Color color) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [color, color.withValues(alpha: 0)],
-        ),
-      ),
+      child: Container(color: appScaffoldBackground(context, ref)),
     );
   }
 }

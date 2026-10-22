@@ -900,15 +900,29 @@ Widget floatingChromeBar(
   /// 顶距覆盖：横屏延伸进摄像头区时 statusBar 是挖孔高度（60+），
   /// 悬浮 chrome 要贴顶，由调用方传 8 绕开
   double? topInset,
-}) {
+  /// 品牌胶囊：贴左独立悬浮（横屏悬浮态左缘「弦予音乐」，Rail 上方），
+  /// 调用方自带胶囊形态与挖孔避让；工具行不从它续排
+  Widget? brand,
+
+  /// 工具行（leading/title/actions）左缩进：横屏悬浮态传 rail 宽-12，
+  /// 工具行从 rail 中线起排跟手分隔线；默认 0 紧贴左缘（竖屏）
+  double leadIndent = 0,
+  }) {
   final statusBar = topInset ?? MediaQuery.paddingOf(context).top;
   final bottomH = bottom?.preferredSize.height ?? 0;
-  final lead = leading == null
-      ? const <Widget>[]
-      : [
-          _chromeGlassAction(context, leading),
-          const SizedBox(width: 10),
-        ];
+  // leadIndent > 0（横屏首页 chrome）：品牌贴左独立悬浮、工具行从缩进处
+  // 起排；leadIndent == 0（pane 内 chrome/竖屏）：品牌在流内续排不遮返回
+  final brandInFlow = leadIndent <= 0 && brand != null;
+  final lead = <Widget>[
+    if (brandInFlow) ...[
+      brand,
+      const SizedBox(width: 10),
+    ],
+    if (leading != null) ...[
+      _chromeGlassAction(context, leading),
+      const SizedBox(width: 10),
+    ],
+  ];
   Widget? bottomRow;
   if (bottom is PageSearchBarBottom) {
     bottomRow = SizedBox(
@@ -937,39 +951,53 @@ Widget floatingChromeBar(
         children: [
           SizedBox(
             height: kToolbarHeight - 8,
-            child: Row(
+            child: Stack(
+              alignment: Alignment.centerLeft,
               children: [
-                ...lead,
-                if (expandedTitle)
-                  Expanded(child: title)
-                else ...[
-                  BiliPaiPill(
-                    radius: 20,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14),
-                      child: SizedBox(
-                        height: 40,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: DefaultTextStyle(
-                            style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.3,
-                              color: Theme.of(context).colorScheme.onSurface,
+                // 工具行：leadIndent 从 rail 中线起排（拖分隔线联动）；
+                // 无缩进时品牌已在 lead 流内
+                Padding(
+                  padding: EdgeInsets.only(left: leadIndent),
+                  child: Row(
+                    children: [
+                      ...lead,
+                      if (expandedTitle)
+                        Expanded(child: title)
+                      else ...[
+                        BiliPaiPill(
+                          radius: 20,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            child: SizedBox(
+                              height: 40,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: DefaultTextStyle(
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.3,
+                                    color:
+                                        Theme.of(context).colorScheme.onSurface,
+                                  ),
+                                  child: title,
+                                ),
+                              ),
                             ),
-                            child: title,
                           ),
                         ),
-                      ),
-                    ),
+                        const Spacer(),
+                      ],
+                      for (final a in actions) ...[
+                        const SizedBox(width: 10),
+                        _chromeGlassAction(context, a),
+                      ],
+                    ],
                   ),
-                  const Spacer(),
-                ],
-                for (final a in actions) ...[
-                  const SizedBox(width: 10),
-                  _chromeGlassAction(context, a),
-                ],
+                ),
+                // 品牌胶囊：贴左独立悬浮（Rail 上方），仅缩进布局时叠加
+                if (brand != null && !brandInFlow)
+                  Align(alignment: Alignment.centerLeft, child: brand),
               ],
             ),
           ),

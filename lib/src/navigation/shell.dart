@@ -65,6 +65,15 @@ const double kLandscapeRailWidth = 176;
 const double kLandscapeRailIconWidth = 60;
 const double kLandscapeRailCollapseAt = 120;
 
+/// 悬浮顶栏品牌胶囊所需最小 rail 宽（胶囊右缘 ~178 + 间隙余量）：rail
+/// 拖到比这更窄时品牌胶囊直接隐藏（随 rail 收窄同步），工具行从 rail
+/// 右缘起排不会压到胶囊
+const double kLandscapeFloatingBrandMinRail = 190;
+
+/// 品牌胶囊「弦予」短档最小 rail 宽（短胶囊右缘 ~135 + 10 间隙）：再窄
+/// 连短档都放不下，直接隐藏（全称档阈值 190）
+const double kLandscapeBrandShortMinRail = 150;
+
 final isLandscapeProvider = StateProvider<bool>((ref) => false);
 
 final landscapeLibraryProvider = StateProvider<int?>((ref) => null);
@@ -989,74 +998,25 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             builder: (context, fade, child) =>
                 Opacity(opacity: fade, child: child),
             child: Padding(
+              // 只垫横向；竖向由页面自垫（悬浮态垫 chrome、固定态垫带高）。
+              // 壳层垫 top 会把滚动视口压到带底——内容滚到带下缘就出视口，
+              // 顶栏实时模糊永远采不到穿过带下的内容（设置页能透正是因为
+              // 其面板页面自垫）。tab 页固定态自垫 GlassTopBar.height(topInset:8)
               padding: EdgeInsets.only(
                 left: landscape ? _railWidth : 0,
                 right: (landscape && !useCameraArea) ? padding.right : 0,
-                // 固定顶栏改覆盖式后内容要下垫栏高：页面自身只在悬浮态
-                // 垫 inset，固定态由壳层统一垫（条件与顶栏可见条件一致）；
-                // 横屏挖孔在左缘，固定带顶距 8 贴顶不避让（与顶栏同参）
-                top: (landscape &&
-                        !floatingSearchBar &&
-                        !(anyPaneOpen || libPaneActive) &&
-                        contentPath == null)
-                    ? GlassTopBar.height(context, topInset: 8)
-                    : 0,
               ),
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: landscape
-                        ? (floatingSearchBar
-                              ? Stack(
-                                  children: [
-                                    Positioned.fill(
-                                      child: _landscapeFadePanel(
-                                        useCameraArea: useCameraArea,
-                                        padding: padding,
-                                        context: context,
-                                        child: landscapeHome,
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 0,
-                                      left: 0,
-                                      right: 0,
-                                      child: IgnorePointer(
-                                        ignoring: anyPaneOpen || libPaneActive,
-                                        child: Opacity(
-                                          opacity: anyPaneOpen || libPaneActive
-                                              ? 0
-                                              : 1,
-                                          child: LandscapeGlobalTopBar(
-                                            currentIndex: widget.index,
-                                            floating: true,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : Stack(
-                                  // 固定顶栏本体挂外层全屏 Stack（玻璃贯通
-                                  // 到屏幕左缘，衬在 rail 标题区背后），此处
-                                  // 只放页面内容
-                                  children: [
-                                    Positioned.fill(
-                                      child: _landscapeFadePanel(
-                                        useCameraArea: useCameraArea,
-                                        padding: padding,
-                                        context: context,
-                                        child: landscapeHome,
-                                      ),
-                                    ),
-                                  ],
-                                ))
-                        : _landscapeFadePanel(
-                            useCameraArea: useCameraArea,
-                            padding: padding,
-                            context: context,
-                            child: landscapeHome,
-                          ),
+                    // 悬浮/固定顶栏本体都挂外层全屏 Stack（悬浮胶囊行从屏
+                    // 幕左缘起排、固定玻璃贯通到屏幕左缘），此处只放页面内容
+                    child: _landscapeFadePanel(
+                      useCameraArea: useCameraArea,
+                      padding: padding,
+                      context: context,
+                      child: landscapeHome,
+                    ),
                   ),
                   if (landscape)
                     Positioned.fill(
@@ -1097,10 +1057,27 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             ),
           ),
 
+          // 横屏 rail：固定态在带下层（列表视口全高，项滚上去从带下穿过
+          // 被实时模糊）；品牌行改挂带 head 位承载，不被玻璃盖住
+          if (landscape)
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: _railWidth,
+              child: _LandscapeRail(
+                index: widget.index,
+                onSelect: select,
+                railWidth: _railWidth,
+                floating: false,
+              ),
+            ),
+
+          if (landscape) buildRailDivider(),
+
           // 固定顶栏（无 pane）：挂外层全屏 Stack，玻璃贯通到屏幕左缘、
-          // 衬在 rail 标题区背后（rail 在其上层，logo 文字不被盖）。
-          // 不能挂内层 Stack：那层垫了整根栏高的 Padding.top，顶栏会被
-          // 再下移一个栏高（离顶 64+8）。悬浮顶栏是胶囊元素，仍留内容列
+          // 盖在 rail 列表上层（品牌行由带 head 位承载，不被玻璃盖）。
+          // 不能挂内层 Stack：那层的兄弟层会被 Padding.top 下移。
           if (landscape &&
               !floatingSearchBar &&
               !(anyPaneOpen || libPaneActive) &&
@@ -1122,21 +1099,26 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               ),
             ),
 
-          if (landscape)
+          // 悬浮顶栏（无 pane）：与固定顶栏同层挂外层全屏 Stack——工具行
+          // 从 rail 中线起排（拖分隔线联动，固定顶栏同口径），品牌胶囊贴
+          // 左压在 rail 上方、rail 收窄到放不下时隐藏；pane 打开时让位
+          // pane 自带 chrome（仅条件挂载，无需渐隐）
+          if (landscape &&
+              floatingSearchBar &&
+              !(anyPaneOpen || libPaneActive) &&
+              contentPath == null)
             Positioned(
-              left: 0,
               top: 0,
-              bottom: 0,
-              width: _railWidth,
-              child: _LandscapeRail(
-                index: widget.index,
-                onSelect: select,
-                railWidth: _railWidth,
-                floating: false,
+              left: 0,
+              right: 0,
+              child: LandscapeGlobalTopBar(
+                currentIndex: widget.index,
+                floating: true,
+                // 工具行从 rail 右缘起排，拖分隔线联动（固定顶栏同口径）；
+                // 品牌胶囊按 rail 宽三级联动（顶栏内判定）
+                leadingIndent: _railWidth,
               ),
             ),
-
-          if (landscape) buildRailDivider(),
 
           if (isSide && !landscape)
             _SideNavRail(
