@@ -147,6 +147,25 @@ dependency_overrides:
   # （lock 失效即触发，2026-09-29 APK 构建失败根因）。钉 hosted 统一来源；
   # 鸿蒙态 pubspec_overrides 整体替换本块，ce 不在鸿蒙解析图里，无需此条。
   octo_image: ^2.1.0
+  # Android camerax 实现越过 camera 0.11.4 的 ^0.6.22 约束抬到 0.7.x：
+  # 0.7.2+1 起迁移 Built-in Kotlin（消构建 KGP 警告），camera 本体与鸿蒙
+  # openharmony-sig fork（适配版 0.11.0+2）的 ^0.11.0 钉版不受影响——
+  # 本包仅参与 Android 构建，鸿蒙态 override 被整体替换后按 ^0.6.22 解析，
+  # camera_platform_interface ^2.15.0 与 camera 0.11.4 的 ^2.11.0
+  # 同主版本兼容；0.7.4+8 起 camera-core 1.6.2 自带 concurrent-futures
+  # 修复，android/build.gradle.kts 的 concurrent-futures 补丁随之移除
+  camera_android_camerax: ^0.7.6
+  # flutter_image_compress_common vendor（third_party/，源自 hosted 1.1.1）：
+  # 其 android/build.gradle 本就双路径兼容（AGP 9 走 Built-in Kotlin），
+  # 但遗留的 `apply plugin: 'kotlin-android'` 文本会被 Flutter 工具静态正则
+  # 扫描（FlutterPluginUtils.kt getSubprojectPluginState：只扫文本不查运行
+  # 时状态），在本仓库 AGP 9.0.1 下每次构建都误报 KGP 警告。按官方迁移
+  # 指南终态剥离遗留 KGP 路径（buildscript classpath + apply 分支 +
+  # kotlinOptions 块），运行时行为与 hosted 1.1.1 完全一致；上游若发布
+  # 移除遗留路径的新版可撤 vendor。鸿蒙态 pubspec_overrides 整体替换本块
+  # 后该包回 hosted 解析，无碍
+  flutter_image_compress_common:
+    path: third_party/flutter_image_compress_common
 
 dev_dependencies:
   flutter_test:

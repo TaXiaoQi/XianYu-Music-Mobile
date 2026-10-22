@@ -1,0 +1,63 @@
+group 'com.fluttercandies.flutter_image_compress'
+version '1.0-SNAPSHOT'
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace 'com.fluttercandies.flutter_image_compress'
+    }
+
+    compileSdkVersion 34
+
+    sourceSets {
+        main.java.srcDirs += 'src/main/kotlin'
+    }
+
+    defaultConfig {
+        minSdkVersion 21
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // 1.3.7+ fixes several WebP writer bugs relevant to keepExif=true on
+    // WebP output: VP8-only / VP8L-only streams (which Bitmap.compress emits
+    // for lossy/lossless WebP without a VP8X header), corrupted output for
+    // WebP > 8191px, "invalid APP1 marker" writes, and the VP8X E flag not
+    // getting set on the RIFF header so viewers didn't look at the EXIF
+    // chunk. 1.3.3 pre-dates all of these. If bumped, also bump the
+    // KEEP-IN-SYNC copy in the example app: packages/flutter_image_compress/
+    // example/android/app/build.gradle.kts.
+    implementation 'androidx.exifinterface:exifinterface:1.4.2'
+    implementation 'androidx.heifwriter:heifwriter:1.0.0'
+    implementation 'commons-io:commons-io:2.16.1'
+}
+
+// vendor 剥离（对照 camera_android_camerax 0.7.6 的迁移终态）：上游 1.1.1 的
+// buildscript(KGP 1.8.20 classpath) + `if (!useBuiltInKotlin) apply plugin:
+// 'kotlin-android'` 遗留分支已移除——apply 文本会被 Flutter 工具静态正则扫描
+// （FlutterPluginUtils.getSubprojectPluginState 只扫 build 脚本文本）误报进
+// 红色 KGP 警告块，且自持的旧 KGP 会抢在 Flutter 的 2.3.20 之前生效。
+// Kotlin 由工具链供给：本仓库 gradle.properties 按 Flutter 模板写死
+// builtInKotlin=false，Flutter 在子项求值前自动补挂 kotlin-android（
+// detectApplyingKotlinGradlePlugin）；切 AGP 9 built-in Kotlin 后由 AGP
+// 直接提供扩展。两种路径下 kotlin 扩展均已存在，直接配置 jvmTarget 与
+// Java 17 对齐（KGP 默认 jvmTarget 与 compileOptions 17 不一致会编译报错）
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}

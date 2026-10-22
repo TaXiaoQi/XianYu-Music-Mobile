@@ -139,13 +139,13 @@ packages:
     source: hosted
     version: "0.11.4"
   camera_android_camerax:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
       name: camera_android_camerax
-      sha256: "8516fe308bc341a5067fb1a48edff0ddfa57c0d3cdcc9dbe7ceca3ba119e2577"
+      sha256: faf885ca8140f22df8dc05d1839afc702d0329dd9b0b2f0bc6f9b05f3f20e10c
       url: "https://pub.flutter-io.cn"
     source: hosted
-    version: "0.6.30"
+    version: "0.7.6"
   camera_avfoundation:
     dependency: transitive
     description:
@@ -424,12 +424,11 @@ packages:
     source: hosted
     version: "2.5.1"
   flutter_image_compress_common:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: flutter_image_compress_common
-      sha256: "76869e4d5f3d65f3431e7edff0b2d8ad1eea68b49c6a37772fdb1ae6016da9ed"
-      url: "https://pub.flutter-io.cn"
-    source: hosted
+      path: "third_party/flutter_image_compress_common"
+      relative: true
+    source: path
     version: "1.1.1"
   flutter_image_compress_macos:
     dependency: transitive
