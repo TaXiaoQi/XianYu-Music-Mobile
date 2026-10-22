@@ -1,0 +1,68 @@
+name: iOS Build
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-ios:
+    name: Flutter iOS build（未签名 ipa）
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Rust
+        # xianyu_core.podspec 的 script_phase 会在 Xcode 构建期调用
+        # scripts/ios-rust-hook.sh → cargo build --target aarch64-apple-ios，
+        # 因此 Runner 上必须预装该 rustup target。
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust -> target
+
+      - name: Setup Flutter
+        # pubspec.yaml 要求 Dart >=3.11，官方稳定版用 Dart 3.12.x（3.47 起 iOS 最低 15，
+        # 与 Podfile platform :ios, '15.0' 一致）。
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47"
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS（未签名）
+        # --no-codesign：CI 无签名证书，先出未签名包；
+        # 侧载工具（Sideloadly 等）安装时会用自己的证书重新签名。
+        # Runner scheme 会连带构建 XianYuWidget 扩展。
+        run: flutter build ios --release --no-codesign
+
+      - name: Package unsigned ipa
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/Runner.app
+          zip -qry "xianyu-music-v${VERSION}-ios-unsigned.ipa" Payload
+          shasum -a 256 "xianyu-music-v${VERSION}-ios-unsigned.ipa" > SHA256SUMS.txt
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xianyu-music-ios
+          path: |
+            *.ipa
+            SHA256SUMS.txt
+          if-no-files-found: error
