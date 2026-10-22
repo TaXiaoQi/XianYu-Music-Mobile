@@ -28,7 +28,7 @@ class _SubscriptionSection extends ConsumerWidget {
         const SizedBox(height: 4),
         Text(
           tr('随插件同步到云端，点击可重新导入最新版本'),
-          style: TextStyle(fontSize: 11, color: scheme.outline),
+          style: TextStyle(fontSize: 11, color: appSecondaryFg(scheme)),
         ),
         const SizedBox(height: 8),
         for (final sub in subscriptions)
@@ -86,7 +86,7 @@ class _SubscriptionSection extends ConsumerWidget {
                                   sub.url,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: scheme.outline,
+                                    color: appSecondaryFg(scheme),
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -97,7 +97,7 @@ class _SubscriptionSection extends ConsumerWidget {
                             icon: Icon(
                               Icons.delete_outline,
                               size: 20,
-                              color: scheme.outline,
+                              color: appSecondaryFg(scheme),
                             ),
                             tooltip: tr('移除订阅'),
                             onPressed: () async {
@@ -137,13 +137,13 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.extension_outlined, size: 56, color: scheme.outline),
+          Icon(Icons.extension_outlined, size: 56, color: appSecondaryFg(scheme)),
           const SizedBox(height: 12),
-          Text(tr('还没有安装插件'), style: TextStyle(color: scheme.onSurfaceVariant)),
+          Text(tr('还没有安装插件'), style: TextStyle(color: appSecondaryFg(scheme))),
           const SizedBox(height: 4),
           Text(
             tr('支持 LX / MusicFree 格式插件'),
-            style: TextStyle(fontSize: 12, color: scheme.outline),
+            style: TextStyle(fontSize: 12, color: appSecondaryFg(scheme)),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -296,7 +296,7 @@ class _CloudCard extends ConsumerWidget {
         const SizedBox(height: 2),
         Text(
           'v1.0.0 · 小奇 · $desc',
-          style: TextStyle(fontSize: 12, color: scheme.outline),
+          style: TextStyle(fontSize: 12, color: appSecondaryFg(scheme)),
           overflow: TextOverflow.ellipsis,
         ),
       ],
@@ -313,7 +313,7 @@ class _CloudCard extends ConsumerWidget {
       Icons.delete_outline,
       tr('删除'),
       onRemove,
-      color: scheme.outline,
+      color: appSecondaryFg(scheme),
     );
 
     final isWide = MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -376,13 +376,13 @@ class _CloudCard extends ConsumerWidget {
                         child: Icon(
                           Icons.drag_indicator,
                           size: 34,
-                          color: scheme.outline,
+                          color: appSecondaryFg(scheme),
                         ),
                       )
                     : Icon(
                         Icons.drag_indicator,
                         size: 34,
-                        color: scheme.outline,
+                        color: appSecondaryFg(scheme),
                       ),
               ),
             ),
@@ -400,7 +400,7 @@ class _CloudCard extends ConsumerWidget {
     Color? color,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final c = color ?? scheme.outline;
+    final c = color ?? appSecondaryFg(scheme);
     return PressableScale(
       pressScale: 0.88,
       child: InkWell(
@@ -515,13 +515,13 @@ class _PluginCard extends ConsumerWidget {
                         child: Icon(
                           Icons.drag_indicator,
                           size: 34,
-                          color: scheme.outline,
+                          color: appSecondaryFg(scheme),
                         ),
                       )
                     : Icon(
                         Icons.drag_indicator,
                         size: 34,
-                        color: scheme.outline,
+                        color: appSecondaryFg(scheme),
                       ),
               ),
             ),
@@ -657,7 +657,7 @@ class _PluginCard extends ConsumerWidget {
           const SizedBox(height: 2),
           Text(
             subText,
-            style: TextStyle(fontSize: 12, color: scheme.outline),
+            style: TextStyle(fontSize: 12, color: appSecondaryFg(scheme)),
             overflow: TextOverflow.ellipsis,
           ),
         ],
@@ -740,7 +740,7 @@ class _PluginCard extends ConsumerWidget {
     Color? color,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final c = color ?? scheme.outline;
+    final c = color ?? appSecondaryFg(scheme);
     return PressableScale(
       pressScale: 0.88,
       child: InkWell(

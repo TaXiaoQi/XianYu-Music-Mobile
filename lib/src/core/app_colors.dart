@@ -32,3 +32,9 @@ Color appCardFill(BuildContext context, WidgetRef ref) =>
     ref.watch(wallpaperActiveProvider)
         ? wallpaperBlockFill(context, ref)
         : appCardColor(context);
+
+/// 次要前景色（文字/图标）：以 onSurface 为基底降透明。
+/// onSurfaceVariant/outline 在壁纸文字颜色为「跟随主题」时不参与翻转，
+/// 直接铺在壁纸上会发灰不可读；onSurface 始终跟随壁纸文字模式翻转。
+Color appSecondaryFg(ColorScheme scheme) =>
+    scheme.onSurface.withValues(alpha: 0.62);

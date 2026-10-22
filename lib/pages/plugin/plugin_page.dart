@@ -110,30 +110,13 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
   void initState() {
     super.initState();
     if (widget.embedded && widget.asShellBranch) {
-      // 标题与右上角动作上交壳层顶栏：与首页/我的同一套公共容器
-      final override = ShellTopBarOverride(
-        title: '插件管理',
-        actions: [
-          ShellTopBarAction(
-            icon: Icons.settings_outlined,
-            tooltip: '插件设置',
-            onPressed: _showPluginSettingsSheet,
-          ),
-          ShellTopBarAction(
-            icon: Icons.add,
-            tooltip: '安装插件',
-            onPressed: _showInstallSheet,
-          ),
-        ],
-      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final controller = ProviderScope.containerOf(
+        _topBarOverrideController = ProviderScope.containerOf(
           context,
           listen: false,
         ).read(shellTopBarOverrideProvider.notifier);
-        _topBarOverrideController = controller;
-        controller.state = override;
+        _syncTopBarOverride();
       });
     }
     _loadAutoUpdatePref();
@@ -144,6 +127,38 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
         _loadCloudState();
       }
     });
+  }
+
+  /// 标题与右上角动作上交壳层顶栏：竖屏与首页/我的同款公共容器；
+  /// 横屏 chrome 为覆盖式，上交的动作会悬在弹窗之上（还能交互），
+  /// 且与页内头部行重复——横屏不上交，改由头部行自带入口
+  bool? _overrideSentLandscape;
+  void _syncTopBarOverride() {
+    final controller = _topBarOverrideController;
+    if (controller == null || !widget.embedded || !widget.asShellBranch) {
+      return;
+    }
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+    if (_overrideSentLandscape == landscape) return;
+    _overrideSentLandscape = landscape;
+    controller.state = landscape
+        ? null
+        : ShellTopBarOverride(
+            title: '插件管理',
+            actions: [
+              ShellTopBarAction(
+                icon: Icons.settings_outlined,
+                tooltip: '插件设置',
+                onPressed: _showPluginSettingsSheet,
+              ),
+              ShellTopBarAction(
+                icon: Icons.add,
+                tooltip: '安装插件',
+                onPressed: _showInstallSheet,
+              ),
+            ],
+          );
   }
 
   @override
@@ -310,8 +325,8 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
     final topInset = branchMode
         ? (landscape
               ? (portraitFloating
-                  // 悬浮态：shell 悬浮 chrome 贴顶，页面垫 chrome 高
-                  ? FlatTopBar.height(context)
+                  // 悬浮态：shell 悬浮 chrome 贴顶，页面垫 chrome 高 + 呼吸间距
+                  ? FlatTopBar.height(context) + 18
                   // 固定态：shell 固定带（topInset 8）盖住顶部，垫带高+呼吸
                   : GlassTopBar.height(context, topInset: 8) + 12)
               : GlassTopBar.height(
@@ -322,6 +337,12 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
               (embeddedPanel ? landscapePanelBand(context, ref) + 8 : 8));
 
     final sources = state.sources;
+    // 横竖屏切换时同步壳顶栏动作的上交/撤回（横屏撤回见 _syncTopBarOverride）
+    if (branchMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncTopBarOverride();
+      });
+    }
     final q = _query.trim().toLowerCase();
     final filtered = q.isEmpty
         ? sources
@@ -405,12 +426,39 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
                                   }),
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: scheme.outline,
+                                    // onSurfaceVariant 在壁纸文字「跟随主题」
+                                    // 模式下不翻转，铺壁纸上发灰；用统一次要前景
+                                    color: appSecondaryFg(scheme),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              const SizedBox(width: 4),
+                              // 横屏分支：设置/安装不上交壳顶栏（覆盖式
+                              // chrome 会把动作悬在弹窗上），改由头部行自带
+                              if (branchMode && landscape) ...[
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  color: appSecondaryFg(scheme),
+                                  tooltip: tr('插件设置'),
+                                  onPressed: _showPluginSettingsSheet,
+                                  icon: const Icon(
+                                    Icons.settings_outlined,
+                                    size: 20,
+                                  ),
+                                ),
+                                IconButton(
+                                  visualDensity: VisualDensity.compact,
+                                  color: appSecondaryFg(scheme),
+                                  tooltip: tr('安装插件'),
+                                  onPressed: _installing
+                                      ? null
+                                      : _showInstallSheet,
+                                  icon: const Icon(Icons.add, size: 22),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
                               FilledButton.tonalIcon(
                                 style: FilledButton.styleFrom(
                                   visualDensity: VisualDensity.compact,
@@ -514,7 +562,7 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
                                   tr('未找到匹配的插件'),
                                   style: TextStyle(
                                     fontSize: 13,
-                                    color: scheme.onSurfaceVariant,
+                                    color: appSecondaryFg(scheme),
                                   ),
                                 ),
                               ),
@@ -588,27 +636,10 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
             // 缘原位起排与其相接；其余分支原位
             left: 0,
             right: 0,
-            // 分支模式竖屏：标题/动作已上交壳顶栏，这里不画（占位交给
-            // 列表 topInset 避让）；横屏壳顶栏隐藏，自带无返回 FlatTopBar
+            // 分支模式：标题/动作不页面自绘（竖屏上交壳顶栏、横屏由
+            // 头部行自带），只交给列表 topInset 避让
             child: branchMode
-                ? (landscape
-                      ? FlatTopBar(
-                          title: tr('插件'),
-                          backgroundColor: appScaffoldBackground(context, ref),
-                          actions: [
-                            IconButton(
-                              icon: const Icon(Icons.settings_outlined),
-                              tooltip: tr('插件设置'),
-                              onPressed: _showPluginSettingsSheet,
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add),
-                              tooltip: tr('安装插件'),
-                              onPressed: _installing ? null : _showInstallSheet,
-                            ),
-                          ],
-                        )
-                      : const SizedBox.shrink())
+                ? const SizedBox.shrink()
                 : widget.embedded
                 ? GlassTopBar(
                     // 独立回读：统一带先画，同组会复用其制备纹理
