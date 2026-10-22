@@ -123,7 +123,7 @@ pub struct PlaybackSessionData {
 	#[test]
 	fn test_visualizer_wraps_ring_buffer() {
 		let v = SharedVisualizer::new();
-		for i in 0..(VISUALIZER_WINDOW_SIZE * 3) {
+		for _ in 0..(VISUALIZER_WINDOW_SIZE * 3) {
 			v.push_sample(0.0);
 		}
 		let snap = v.snapshot();

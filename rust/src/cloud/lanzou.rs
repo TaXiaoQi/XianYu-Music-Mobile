@@ -451,42 +451,6 @@ async fn post_form_follow(
 
 // ── HTML 正则提取（纯函数，便于单测） ────────────────────
 
-/// 文件夹行：f_id=(\d+) 与名称就近配对（HTML 脆弱，尽力而为）。
-fn extract_folder_rows(body: &str) -> Vec<(String, String)> {
-    let re = Regex::new(r"f_id='?(\d+)'?[^>]*>[\s\S]{0,400}?class='t'>([^<]+)").unwrap();
-    re.captures_iter(body)
-        .map(|c| (c[1].to_string(), html_unescape(&c[2]).trim().to_string()))
-        .collect()
-}
-
-/// class='t' 锚点名称列表（文件夹/文件名混排，顺序即文档序）。
-fn extract_names(body: &str) -> Vec<String> {
-    let re = Regex::new(r"class='t'[^>]*>([^<]{1,120})</a>").unwrap();
-    re.captures_iter(body).map(|c| c[1].to_string()).collect()
-}
-
-/// 文件页链接（去重保序）：mydisk/u.php 排除，/fn? 相对链接补 pc.woozooo.com。
-fn extract_file_links(body: &str) -> Vec<String> {
-    let re =
-        Regex::new(r"(?i)(?:https?://[a-z0-9]+\.lanzou[a-z]?\.com/|/fn\?)[A-Za-z0-9_.-]+").unwrap();
-    let mut out: Vec<String> = Vec::new();
-    for c in re.captures_iter(body) {
-        let raw = c[0].to_string();
-        if raw.contains("mydisk") || raw.contains("u.php") {
-            continue;
-        }
-        let link = if raw.starts_with('/') {
-            format!("https://pc.woozooo.com{raw}")
-        } else {
-            raw
-        };
-        if !out.contains(&link) {
-            out.push(link);
-        }
-    }
-    out
-}
-
 /// 多文件页 iframe 子页链接（src 含 file 才收；`//` 开头补 https:）。
 fn iframe_sub_links(page: &str) -> Vec<String> {
     let re = Regex::new(r#"(?i)<iframe[^>]+src="([^"]+)""#).unwrap();
@@ -1021,48 +985,6 @@ mod tests {
         assert_eq!(parse_lanzou_size("1 G"), 1073741824);
         assert_eq!(parse_lanzou_size("bad"), 0);
         assert_eq!(parse_lanzou_size(""), 0);
-    }
-
-    #[test]
-    fn folder_rows_extracted() {
-        let body = "<tr><a f_id='111' onclick=\"go()\"> junk </a><a class='t'>Song A</a></tr>\
-                    <tr><a f_id=222 title=y>more</a><a class='t'>FLAC 集</a></tr>";
-        let rows = extract_folder_rows(body);
-        assert_eq!(
-            rows,
-            vec![
-                ("111".to_string(), "Song A".to_string()),
-                ("222".to_string(), "FLAC 集".to_string()),
-            ]
-        );
-        assert!(extract_folder_rows("no match here").is_empty());
-    }
-
-    #[test]
-    fn name_rows_extracted() {
-        let body = "<a class='t' href=\"x\">song one.mp3</a> <a class='t' data-x>y</a>";
-        assert_eq!(
-            extract_names(body),
-            vec!["song one.mp3".to_string(), "y".to_string()]
-        );
-    }
-
-    #[test]
-    fn file_links_extracted_and_deduped() {
-        let body = concat!(
-            "<a href=\"https://wwe.lanzouw.com/ikZ1abc\">song.mp3</a>",
-            "<a href=\"/fn?iKz2def\">f2.flac</a>",
-            "<a href=\"https://wwe.lanzouw.com/u.php?a=b\">skip</a>",
-            "<a href=\"https://wwe.lanzouw.com/ikZ1abc\">dup</a>",
-            "<a href=\"https://pc.woozooo.com/mydisk.php?a=1\">skip2</a>",
-        );
-        assert_eq!(
-            extract_file_links(body),
-            vec![
-                "https://wwe.lanzouw.com/ikZ1abc".to_string(),
-                "https://pc.woozooo.com/fn?iKz2def".to_string(),
-            ]
-        );
     }
 
     #[test]

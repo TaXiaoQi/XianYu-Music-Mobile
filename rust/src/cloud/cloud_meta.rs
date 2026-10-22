@@ -10,7 +10,6 @@
 // 总字节×8/码率估算（头部码率），总长未知则不回填时长。
 
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
-use lofty::tag::ItemKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;

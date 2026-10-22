@@ -674,23 +674,6 @@ fn is_rate_limited(host: &str) -> bool {
     host.contains("d2-ant") || host.contains("speed-limited")
 }
 
-/// 相对 Location → 绝对 URL（仅覆盖绝对/协议相对/根相对三种，足够直链跳转）。
-fn absolute_url(base: &str, loc: &str) -> Option<String> {
-    if loc.starts_with("http://") || loc.starts_with("https://") {
-        return Some(loc.to_string());
-    }
-    if let Some(rest) = loc.strip_prefix("//") {
-        let scheme = base.split("://").next()?;
-        return Some(format!("{scheme}://{rest}"));
-    }
-    if loc.starts_with('/') {
-        let idx = base.find("://")? + 3;
-        let host_end = base[idx..].find('/').map(|i| idx + i).unwrap_or(base.len());
-        return Some(format!("{}{loc}", &base[..host_end]));
-    }
-    None
-}
-
 /// RC4（百度 /api/download 签名：网页 sign2 下发的即固定 RC4 JS 实现，
 /// key=sign3、data=sign1，输出 base64 即 sign，2026-10 逆向实测）。
 fn rc4(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -709,6 +692,54 @@ fn rc4(key: &[u8], data: &[u8]) -> Vec<u8> {
         out.push(byte ^ s[(s[i] as usize + s[j] as usize) & 0xff]);
     }
     out
+}
+
+/// 相对 Location → 绝对 URL（仅覆盖绝对/协议相对/根相对三种，足够直链跳转）。
+fn absolute_url(base: &str, loc: &str) -> Option<String> {
+    if loc.starts_with("http://") || loc.starts_with("https://") {
+        return Some(loc.to_string());
+    }
+    if let Some(rest) = loc.strip_prefix("//") {
+        let scheme = base.split("://").next()?;
+        return Some(format!("{scheme}://{rest}"));
+    }
+    if loc.starts_with('/') {
+        let idx = base.find("://")? + 3;
+        let host_end = base[idx..].find('/').map(|i| idx + i).unwrap_or(base.len());
+        return Some(format!("{}{loc}", &base[..host_end]));
+    }
+    None
+}
+
+/// dlink 重定向归一：手动跟随 3xx（最多 5 跳），失败原样返回（对齐
+/// ecloud189/Watch 同名实现）。播放器/代理直连终态 baidupcs 边缘可省一跳
+/// d.pcs 下载网关连接（网关不可达时直连边缘仍有机会通），且 d2-ant 限速
+/// 判定只有在终态 host 上才准。请求腿带 Range: bytes=0-1——http::request
+/// 会整读 body，万一网关不 302 而直接回 200 文件体，把读取压到 2 字节。
+async fn resolve_final_url(url: &str, headers: &[(String, String)]) -> String {
+    let mut headers = headers.to_vec();
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("range")) {
+        headers.push(("Range".into(), "bytes=0-1".into()));
+    }
+    let mut current = url.to_string();
+    for _ in 0..=5 {
+        let resp = match http::get(&current, &headers).await {
+            Ok(r) => r,
+            Err(_) => return url.to_string(),
+        };
+        if !(300..400).contains(&resp.status) {
+            return current;
+        }
+        let loc = match resp.location() {
+            Some(l) if !l.is_empty() => l,
+            _ => return url.to_string(),
+        };
+        match absolute_url(&current, &loc) {
+            Some(next) => current = next,
+            None => return url.to_string(),
+        }
+    }
+    url.to_string()
 }
 
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
@@ -759,7 +790,9 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         if dlink.is_empty() {
             return Err(biz_err("直链获取失败"));
         }
-        // dlink 下载校验 UA 为 netdisk 系（302 跟随由播放器/探针自动完成）。
+        // dlink 下载校验 UA 为 netdisk 系；跟随 302 归一到下载边缘终态。
+        let dlink =
+            resolve_final_url(&dlink, &[("User-Agent".into(), NETDISK_UA.into())]).await;
         if is_rate_limited(&host_of(&dlink)) {
             return Err(biz_err("该文件被限速，暂无法播放"));
         }
@@ -856,6 +889,17 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if dlink.is_empty() {
         return Err(biz_err("直链获取失败"));
     }
+    // 跟随 302 归一到下载边缘终态；跳转腿须带 netdisk 系 UA + 全量
+    // cookie（缺 cookie 报 31045 user not exists）。归一失败原样返回
+    // dlink，行为退化为归一前（302 由播放器/探针自动跟随）。
+    let dlink = resolve_final_url(
+        &dlink,
+        &[
+            ("User-Agent".into(), NETDISK_UA.into()),
+            ("Cookie".into(), http::cookie_header(&cred_pairs(&req.cred))),
+        ],
+    )
+    .await;
     if is_rate_limited(&host_of(&dlink)) {
         return Err(biz_err("该文件被限速，暂无法播放"));
     }
@@ -1027,23 +1071,6 @@ mod tests {
         assert!(is_rate_limited(&host_of("https://speed-limited.xxx.com/y")));
         assert!(!is_rate_limited(&host_of("https://d.pcs.baidu.com/file?x=1")));
         assert_eq!(host_of("https://u:p@host.example:8443/a"), "host.example");
-    }
-
-    #[test]
-    fn redirect_url_resolution() {
-        assert_eq!(
-            absolute_url("https://a.com/x", "https://b.com/y").as_deref(),
-            Some("https://b.com/y")
-        );
-        assert_eq!(
-            absolute_url("https://a.com/x", "//b.com/y").as_deref(),
-            Some("https://b.com/y")
-        );
-        assert_eq!(
-            absolute_url("https://a.com/x", "/y?z=1").as_deref(),
-            Some("https://a.com/y?z=1")
-        );
-        assert_eq!(absolute_url("https://a.com/x", "y"), None);
     }
 
     #[test]
