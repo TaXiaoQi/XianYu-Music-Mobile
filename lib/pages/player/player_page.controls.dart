@@ -767,12 +767,6 @@ class _ProgressBar extends ConsumerWidget {
 
   final bool showTime;
 
-  String _fmt(double s) {
-    final m = s ~/ 60;
-    final sec = (s % 60).floor();
-    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
@@ -815,42 +809,130 @@ class _ProgressBar extends ConsumerWidget {
     required double dur,
     required void Function(double secs) onCommit,
   }) {
-    final hasDuration = dur > 0;
+    return _SeekArea(
+      position: position,
+      dur: dur,
+      onCommit: onCommit,
+      showTime: showTime,
+    );
+  }
+}
+
+/// 进度条 + 拖动时间气泡（桌面端同款：拖动时缩略图上方显示「当前/总时长」）
+class _SeekArea extends StatefulWidget {
+  const _SeekArea({
+    required this.position,
+    required this.dur,
+    required this.onCommit,
+    required this.showTime,
+  });
+
+  final double position;
+  final double dur;
+  final void Function(double secs) onCommit;
+  final bool showTime;
+
+  @override
+  State<_SeekArea> createState() => _SeekAreaState();
+}
+
+class _SeekAreaState extends State<_SeekArea> {
+  double? _draft;
+
+  String _fmt(double s) {
+    final m = s ~/ 60;
+    final sec = (s % 60).floor();
+    return '${m.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasDuration = widget.dur > 0;
+    final v = hasDuration ? (_draft ?? widget.position).clamp(0.0, widget.dur) : 0.0;
+    final ratio = hasDuration ? (v / widget.dur).clamp(0.0, 1.0) : 0.0;
     return Column(
       children: [
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 3,
-            activeTrackColor: scheme.primary,
-            inactiveTrackColor: scheme.onSurface.withValues(alpha: 0.12),
-            thumbColor: scheme.primary,
-            overlayColor: scheme.primary.withValues(alpha: 0.16),
-            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-          ),
-          child: CommittedSlider(
-            value: hasDuration ? position.clamp(0, dur) : 0.0,
-            min: 0,
-            max: hasDuration ? dur : 1.0,
-            enabled: hasDuration,
-            onCommit: hasDuration ? onCommit : null,
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            // 与下方 SliderTheme 的 overlay/thumb 半径对应：轨道两端各缩进 14
+            final thumbX = 14 + ratio * (w - 28);
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3,
+                    activeTrackColor: scheme.primary,
+                    inactiveTrackColor:
+                        scheme.onSurface.withValues(alpha: 0.12),
+                    thumbColor: scheme.primary,
+                    overlayColor: scheme.primary.withValues(alpha: 0.16),
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                  ),
+                  child: CommittedSlider(
+                    value: v,
+                    min: 0,
+                    max: hasDuration ? widget.dur : 1.0,
+                    enabled: hasDuration,
+                    onChangeLive: hasDuration
+                        ? (x) => setState(() => _draft = x)
+                        : null,
+                    onCommit: hasDuration
+                        ? (x) {
+                            setState(() => _draft = null);
+                            widget.onCommit(x);
+                          }
+                        : null,
+                  ),
+                ),
+                if (_draft != null && hasDuration)
+                  Positioned(
+                    left: (thumbX - 45).clamp(0.0, math.max(0.0, w - 90)),
+                    bottom: 34,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        '${_fmt(v)}/${_fmt(widget.dur)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          height: 1.0,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
-        if (showTime)
+        if (widget.showTime)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  _fmt(position),
+                  _fmt(v),
                   style: TextStyle(
                     fontSize: 11,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),
                 Text(
-                  hasDuration ? _fmt(dur) : '--:--',
+                  hasDuration ? _fmt(widget.dur) : '--:--',
                   style: TextStyle(
                     fontSize: 11,
                     color: scheme.onSurfaceVariant,
