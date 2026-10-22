@@ -364,6 +364,8 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final floating = ref.watch(settingsProvider.select(
         (s) => s.valueOrNull?.floatingSearchBar ?? false));
     final statusBar = MediaQuery.paddingOf(context).top;
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     final inMusicPane = ref.watch(landscapeLibraryProvider) != null;
 
     if (inMusicPane) {
@@ -406,8 +408,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     if (inMusicPane) {
       headerTop = paneTop;
       header = _buildPaneHeader(context, paneTabBar, floating);
-    } else if (floating) {
-      headerTop = statusBar + 8;
+    } else if (floating || landscape) {
+      // 悬浮态：贴顶悬浮 chrome。横屏固定态：shell 固定带（带内全局
+      // chrome）盖住顶部，页面 header 整体下移到带下，沿用同款玻璃
+      // 搜索/动作/tab 胶囊，不另画贴顶顶栏
+      headerTop =
+          (floating ? statusBar : GlassTopBar.height(context, topInset: 8)) + 8;
       header = FloatingSearchTopBar(
         onBack: () => context.pop(),
         field: FloatingGlassSearchField(
@@ -446,8 +452,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
     final topInset = inMusicPane
         ? paneTop + (floating ? 10 : 4) + _kPaneHeaderHeight + 8
-        : (floating
-            ? statusBar + 8 + 44 + 10 + 48 + 14
+        : (floating || landscape
+            ? (floating
+                      ? statusBar
+                      : GlassTopBar.height(context, topInset: 8)) +
+                  8 +
+                  44 +
+                  10 +
+                  48 +
+                  14
             : GlassTopBar.height(context, bottom: tabBar));
 
     return HideShellChrome(

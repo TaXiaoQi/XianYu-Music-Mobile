@@ -119,9 +119,22 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     final portraitFloating = !inMusicPane &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         floating;
+    // 横屏固定态：shell 固定带盖住顶部（带内全局 chrome），页面沿用悬浮
+    // 玻璃 header 整体下移到带下，不另画贴顶顶栏
+    final landscapeFixed = !inMusicPane &&
+        MediaQuery.of(context).orientation == Orientation.landscape &&
+        !floating;
+    final floatHeader = portraitFloating || landscapeFixed;
     final topInset = portraitFloating
         ? statusBar + 8 + 44 + 10 + tabBar.preferredSize.height + 14
-        : 0.0;
+        : landscapeFixed
+            ? GlassTopBar.height(context, topInset: 8) +
+                8 +
+                44 +
+                10 +
+                tabBar.preferredSize.height +
+                14
+            : 0.0;
 
     return HideShellChrome(
       child: Scaffold(
@@ -132,7 +145,9 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
               portraitFloating,
               inMusicPane
                   ? paneTop + tabBarHeight + 2
-                  : GlassTopBar.height(context, bottom: tabBar),
+                  : (floatHeader
+                      ? topInset
+                      : GlassTopBar.height(context, bottom: tabBar)),
               fav.loading
                   ? const Center(child: CircularProgressIndicator())
                   : TabBarView(
@@ -165,14 +180,18 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
             Positioned(
               top: inMusicPane
                   ? paneTop
-                  : (portraitFloating ? statusBar + 8 : 0),
-              left: (inMusicPane || portraitFloating) ? 12 : 0,
-              right: (inMusicPane || portraitFloating) ? 12 : 0,
+                  : (portraitFloating
+                      ? statusBar + 8
+                      : landscapeFixed
+                          ? GlassTopBar.height(context, topInset: 8) + 8
+                          : 0),
+              left: (inMusicPane || floatHeader) ? 12 : 0,
+              right: (inMusicPane || floatHeader) ? 12 : 0,
               child: inMusicPane
                   ? (floating
                       ? FloatingTabPill(child: paneTabBar)
                       : _tabBarStrip(context, paneTabBar))
-                  : (portraitFloating
+                  : (floatHeader
                       ? FloatingSearchTopBar(
                           onBack: () => context.pop(),
                           field: FloatingGlassSearchField(

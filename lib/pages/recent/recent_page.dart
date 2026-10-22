@@ -189,6 +189,16 @@ class _RecentPageState extends ConsumerState<RecentPage>
     final portraitFloating = !inMusicPane &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         floating;
+    // 横屏固定态：shell 固定带盖住顶部（带内全局 chrome），页面沿用悬浮
+    // 玻璃 header 整体下移到带下，不另画贴顶顶栏
+    final landscapeFixed = !inMusicPane &&
+        MediaQuery.of(context).orientation == Orientation.landscape &&
+        !floating;
+    final floatHeader = portraitFloating || landscapeFixed;
+    final floatHeaderTop = portraitFloating
+        ? statusBar + 8
+        : GlassTopBar.height(context, topInset: 8) + 8;
+    final floatContentTop = floatHeaderTop + 44 + 14;
 
     final items = (!inMusicPane && _filtering) ? _result : null;
     final showControls = !inMusicPane;
@@ -198,13 +208,13 @@ class _RecentPageState extends ConsumerState<RecentPage>
         backgroundColor: appScaffoldBackground(context, ref),
         body: Stack(
           children: [
-            if (portraitFloating && !recent.loading && recent.entries.isNotEmpty)
+            if (floatHeader && !recent.loading && recent.entries.isNotEmpty)
               SizedBox.expand(
                 child: _RecentList(
                   recent: recent,
                   notifier: notifier,
                   filter: filter,
-                  contentTop: statusBar + 8 + 44 + 14,
+                  contentTop: floatContentTop,
                   items: items,
                   showSortBar: showControls,
                   sort: _sort,
@@ -216,7 +226,9 @@ class _RecentPageState extends ConsumerState<RecentPage>
                 padding: EdgeInsets.only(
                   top: inMusicPane
                       ? paneTop + (hasHeader ? 48 : 8)
-                      : GlassTopBar.height(context),
+                      : (floatHeader
+                          ? floatContentTop
+                          : GlassTopBar.height(context)),
                 ),
                 child: recent.loading
                     ? const Center(child: CircularProgressIndicator())
@@ -267,10 +279,10 @@ class _RecentPageState extends ConsumerState<RecentPage>
               ),
             if (!inMusicPane)
               Positioned(
-                top: portraitFloating ? statusBar + 8 : 0,
-                left: portraitFloating ? 12 : 0,
-                right: portraitFloating ? 12 : 0,
-                child: portraitFloating
+                top: floatHeader ? floatHeaderTop : 0,
+                left: floatHeader ? 12 : 0,
+                right: floatHeader ? 12 : 0,
+                child: floatHeader
                     ? FloatingSearchTopBar(
                         onBack: () => context.pop(),
                         field: FloatingGlassSearchField(

@@ -309,7 +309,11 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
     final embeddedPanel = widget.embedded && !widget.asShellBranch;
     final topInset = branchMode
         ? (landscape
-              ? FlatTopBar.height(context)
+              ? (portraitFloating
+                  // 悬浮态：shell 悬浮 chrome 贴顶，页面垫 chrome 高
+                  ? FlatTopBar.height(context)
+                  // 固定态：shell 固定带（topInset 8）盖住顶部，垫带高+呼吸
+                  : GlassTopBar.height(context, topInset: 8) + 12)
               : GlassTopBar.height(
                   context,
                   bottom: PageSearchBarBottom(onTap: () {}),
@@ -580,11 +584,9 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
           ),
           Positioned(
             top: 0,
-            // 嵌入面板：带头左延分割条宽与左列顶栏相接（不留壁纸缝），
-            // 其余分支原位
-            left: !branchMode && widget.embedded
-                ? -kLandscapeSettingsDividerWidth
-                : 0,
+            // 嵌入面板：统一带（页面级）只铺到分割条右缘，此头从面板左
+            // 缘原位起排与其相接；其余分支原位
+            left: 0,
             right: 0,
             // 分支模式竖屏：标题/动作已上交壳顶栏，这里不画（占位交给
             // 列表 topInset 避让）；横屏壳顶栏隐藏，自带无返回 FlatTopBar
@@ -609,10 +611,9 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
                       : const SizedBox.shrink())
                 : widget.embedded
                 ? GlassTopBar(
-                    // 带左延分割条宽，标题 spacing 加回保持原位
-                    titleSpacing: 18 + kLandscapeSettingsDividerWidth,
-                    // 独立回读：宿主左列带先画，同组会复用其制备纹理
+                    // 独立回读：统一带先画，同组会复用其制备纹理
                     sharedNavGroup: false,
+                    titleSpacing: 18,
                     title: Text(
                       tr('插件'),
                       style: const TextStyle(

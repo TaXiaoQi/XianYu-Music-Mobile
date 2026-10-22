@@ -64,6 +64,11 @@ class PlaylistsPage extends ConsumerWidget {
     final portraitFloating = !inMusicPane &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         floating;
+    // 横屏固定态：shell 固定带盖住顶部（带内全局 chrome），页面标题/动作
+    // 收进玻璃胶囊整体下移到带下，不另画贴顶顶栏
+    final landscapeFixed = !inMusicPane &&
+        MediaQuery.of(context).orientation == Orientation.landscape &&
+        !floating;
 
     return HideShellChrome(
       child: Scaffold(
@@ -82,7 +87,14 @@ class PlaylistsPage extends ConsumerWidget {
             else
               Padding(
                 padding: EdgeInsets.only(
-                  top: inMusicPane ? paneTop + headerH + 4 : GlassTopBar.height(context),
+                  top: inMusicPane
+                      ? paneTop + headerH + 4
+                      : (landscapeFixed
+                          ? GlassTopBar.height(context, topInset: 8) +
+                              8 +
+                              44 +
+                              14
+                          : GlassTopBar.height(context)),
                 ),
                 child: state.loading
                     ? const Center(child: CircularProgressIndicator())
@@ -162,21 +174,60 @@ class PlaylistsPage extends ConsumerWidget {
               ),
             if (!inMusicPane)
               Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: GlassTopBar(
-                  leading: const BackButton(),
-                  title:   Text(tr('我的歌单')),
-                  actions: [
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      tooltip: tr('新建歌单'),
-                      onPressed: () => _promptCreate(context, manager),
-                    ),
-                    ],
-                  ),
-                ),
+                top: landscapeFixed
+                    ? GlassTopBar.height(context, topInset: 8) + 8
+                    : 0,
+                left: landscapeFixed ? 12 : 0,
+                right: landscapeFixed ? 12 : 0,
+                child: landscapeFixed
+                    ? Row(
+                        children: [
+                          BiliPaiPill(
+                            radius: 20,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              child: SizedBox(
+                                height: 40,
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    tr('我的歌单'),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          BiliPaiIconButton(
+                            icon: Icons.add,
+                            tooltip: tr('新建歌单'),
+                            onTap: () => _promptCreate(context, manager),
+                          ),
+                          const SizedBox(width: 10),
+                          BiliPaiIconButton(
+                            icon: Icons.file_download_outlined,
+                            tooltip: tr('导入歌单'),
+                            onTap: () => context.push('/playlist-import'),
+                          ),
+                        ],
+                      )
+                    : GlassTopBar(
+                        leading: const BackButton(),
+                        title:   Text(tr('我的歌单')),
+                        actions: [
+                          IconButton(
+                            icon: const Icon(Icons.add),
+                            tooltip: tr('新建歌单'),
+                            onPressed: () => _promptCreate(context, manager),
+                          ),
+                          ],
+                        ),
+              ),
           ],
         ),
         ),
