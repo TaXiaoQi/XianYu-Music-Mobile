@@ -251,9 +251,46 @@ fn h_headers(cookie: &str) -> Vec<(String, String)> {
     h
 }
 
-/// 分享 outLink 请求头（Dart 固定 {'User-Agent': _ua}，无 Referer/Cookie）。
-fn share_headers() -> Vec<(String, String)> {
-    vec![("User-Agent".to_string(), UA.to_string())]
+/// 分享网关（share-kd-njs）匿名签名头：2026-10 起该网关强制校验
+/// mcloud-sign 全家桶（缺失一律 01000101「服务器响应异常」），匿名无
+/// Authorization/Caller；实测 10702/7.13.3/10213406 常量组被接受。
+fn share_headers_signed(body: &str) -> Vec<(String, String)> {
+    let ts = now_ms();
+    let rand = format!("{ts:016x}");
+    let ts_str = format_unix_ts(ts / 1000);
+    let sign = cal_sign(body, &ts_str, &rand);
+    vec![
+        ("User-Agent".to_string(), UA.to_string()),
+        (
+            "Content-Type".to_string(),
+            "application/json;charset=UTF-8".to_string(),
+        ),
+        ("CMS-DEVICE".to_string(), "default".to_string()),
+        ("mcloud-channel".to_string(), "1000101".to_string()),
+        ("mcloud-client".to_string(), "10702".to_string()),
+        ("mcloud-route".to_string(), "001".to_string()),
+        ("mcloud-sign".to_string(), format!("{ts_str},{rand},{sign}")),
+        ("mcloud-version".to_string(), "7.13.3".to_string()),
+        (
+            "x-DeviceInfo".to_string(),
+            "||9|12.27.0|chrome|120.0|1||windows 10|1536X864|zh-cn|||".to_string(),
+        ),
+        ("x-huawei-channelSrc".to_string(), "10213406".to_string()),
+        ("x-inner-ntwk".to_string(), "2".to_string()),
+        ("x-m4c-caller".to_string(), "PC".to_string()),
+        ("x-m4c-src".to_string(), "10002".to_string()),
+        ("x-SvcType".to_string(), "1".to_string()),
+        ("X-Yun-Api-Version".to_string(), "v1".to_string()),
+        ("X-Yun-App-Channel".to_string(), "10213406".to_string()),
+        ("X-Yun-Channel-Source".to_string(), "10213406".to_string()),
+        (
+            "X-Yun-Client-Info".to_string(),
+            "||9|7.13.3|chrome|120.0|1||windows 10||zh-cn|||Y2hyb21l||".to_string(),
+        ),
+        ("X-Yun-Module-Type".to_string(), "100".to_string()),
+        ("X-Yun-Svc-Type".to_string(), "1".to_string()),
+        ("Inner-Hcy-Router-Https".to_string(), "1".to_string()),
+    ]
 }
 
 /// Dart (x ?? '').toString() 语义：null/缺失 → ''，字符串原样，其余 JSON 序列化。
@@ -385,13 +422,17 @@ fn file_from_content(e: &Value, path: &str) -> Value {
     file_json(&id, &name, is_dir, size, Some(&parent), None, None)
 }
 
-/// outLinkInfo.fileList 条目 → CloudFile（分享解析场景，无 parentId）。
+/// getOutLinkInfoV6 coLst 条目 → CloudFile（新协议：目录在 caLst，coLst
+/// 仅文件）。id 取 path（"/caID/coID" 全路径，dlFromOutLinkV3 的
+/// coIDLst 即传它），缺失回落 coID。
 fn file_from_outlink(e: &Value) -> Value {
-    let id = jstr(e.get("contentId"));
-    let name = jstr(e.get("contentName"));
-    let is_dir = e.get("isCatalog").and_then(Value::as_i64) == Some(1);
-    let size = e.get("contentSize").and_then(Value::as_i64).unwrap_or(0);
-    file_json(&id, &name, is_dir, size, None, None, None)
+    let mut id = jstr(e.get("path"));
+    if id.is_empty() {
+        id = jstr(e.get("coID"));
+    }
+    let name = jstr(e.get("coName"));
+    let size = e.get("coSize").and_then(Value::as_i64).unwrap_or(0);
+    file_json(&id, &name, false, size, None, None, None)
 }
 
 /// hcy file/list 请求体（纯函数，单测断言）：pageCursor 首页空串，翻页
@@ -409,6 +450,36 @@ fn list_body(path: &str, cursor: &str) -> Value {
         "orderDirection": "DESC",
         "pageInfo": { "pageCursor": cursor, "pageSize": 100 },
         "parentFileId": parent,
+    })
+}
+
+/// 分享解析列表请求体（纯函数，单测断言）：2026-10 新协议，报文包
+/// getOutLinkInfoReq；根目录 pCaID 固定字符串 "root"（空串/-1/0 均返回
+/// 空列表），bNum/eNum 为 1 起始闭区间分页。
+fn share_list_body(guid: &str, pwd: &str) -> Value {
+    json!({
+        "getOutLinkInfoReq": {
+            "linkID": guid,
+            "passwd": pwd,
+            "pCaID": "root",
+            "bNum": 1,
+            "eNum": 100,
+            "srtDr": 1,
+            "caSrt": "",
+            "coSrt": "",
+        }
+    })
+}
+
+/// 分享直链请求体（纯函数，单测断言）：dlFromOutLinkV3 新报文包
+/// dlFromOutLinkReqV3，coIDLst.item 传列目录返回的 path（如 "/caID/coID"）。
+fn share_dl_body(link_id: &str, item: &str, account: &str) -> Value {
+    json!({
+        "dlFromOutLinkReqV3": {
+            "account": account,
+            "linkID": link_id,
+            "coIDLst": { "item": [item] },
+        }
     })
 }
 
@@ -522,13 +593,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         info.share_id.clone()
     };
     let pwd = req.param_str("pwd");
+    let body = share_list_body(&guid, &pwd);
     let resp = post_json_follow(
         "https://share-kd-njs.yun.139.com/yun-share/richlifeApp/devapp/IOutLink/getOutLinkInfoV6",
-        &share_headers(),
-        &json!({
-            "outLinkGUID": guid,
-            "passcode": pwd,
-        }),
+        &share_headers_signed(&body.to_string()),
+        &body,
     )
     .await
     .map_err(biz_err)?;
@@ -536,22 +605,41 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("分享链接解析失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let list = j
+    // 2026-10 新协议：data.caLst 目录 + data.coLst 文件；两者皆空判失效。
+    let data = j
         .get("data")
         .filter(|d| d.is_object())
-        .and_then(|d| d.get("outLinkInfo"))
-        .and_then(|o| o.get("fileList"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let dirs = data
+        .get("caLst")
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    if list.is_empty() {
+    let list = data
+        .get("coLst")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if dirs.is_empty() && list.is_empty() {
         return Err(biz_err("分享已失效"));
     }
-    let files: Vec<Value> = list
+    let mut files: Vec<Value> = dirs
         .iter()
         .filter(|e| e.is_object())
-        .map(file_from_outlink)
+        .map(|e| {
+            file_json(
+                &jstr(e.get("caID")),
+                &jstr(e.get("caName")),
+                true,
+                0,
+                None,
+                None,
+                None,
+            )
+        })
         .collect();
+    files.extend(list.iter().filter(|e| e.is_object()).map(file_from_outlink));
     let passcode = if pwd.is_empty() { None } else { Some(pwd.as_str()) };
     Ok(CloudOut::plain(share_parse_json(
         "mobile139",
@@ -563,19 +651,20 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     )))
 }
 
-/// 分享免转存直链（dlFromOutLinkV3）。Dart getShareDirectLink 不带凭据请求
-/// （仅 UA），空 cred 可解析。
+/// 分享免转存直链（dlFromOutLinkV3）。2026-10 新协议：报文包
+/// dlFromOutLinkReqV3，coIDLst 传列目录 path；匿名一律 200000401
+/// 「IP鉴权失败」拒绝，需登录态（Basic authorization，账号传手机号）。
 async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
+    require_cred(req)?;
     let share = req.param_obj("share");
     let file = req.param_obj("file");
+    let account = parse_authorization(&req.cred_str("authorization"))?.account;
+    let (basic, _rotated) = prepare_auth(req).await?;
+    let body = share_dl_body(&jstr(share.get("shareId")), &jstr(file.get("id")), &account);
     let resp = post_json_follow(
         "https://share-kd-njs.yun.139.com/yun-share/richlifeApp/devapp/IOutLink/dlFromOutLinkV3",
-        &share_headers(),
-        &json!({
-            "outLinkGUID": jstr(share.get("shareId")),
-            "passcode": jstr(share.get("passcode")),
-            "fileIds": [file.get("id").cloned().unwrap_or(json!(""))],
-        }),
+        &hcy_headers(&basic, &body.to_string()),
+        &body,
     )
     .await
     .map_err(biz_err)?;
@@ -583,15 +672,7 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("分享直链获取失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let first = j
-        .get("data")
-        .filter(|d| d.is_object())
-        .and_then(|d| d.get("fileList"))
-        .and_then(Value::as_array)
-        .and_then(|l| l.first())
-        .cloned()
-        .unwrap_or(Value::Null);
-    let url = jstr(first.get("downloadUrl"));
+    let url = jstr(j.pointer("/data/redrUrl"));
     if url.is_empty() {
         return Err(biz_err("分享直链获取失败"));
     }
@@ -823,17 +904,64 @@ mod tests {
     }
 
     #[test]
+    fn share_list_body_shape() {
+        let r = &share_list_body("GUID1", "k3")["getOutLinkInfoReq"];
+        assert_eq!(r["linkID"], "GUID1");
+        assert_eq!(r["passwd"], "k3");
+        // 根目录 pCaID 固定字符串 "root"（空串/-1/0 实测均回空列表）。
+        assert_eq!(r["pCaID"], "root");
+        assert_eq!(r["bNum"], json!(1));
+        assert_eq!(r["eNum"], json!(100));
+        assert_eq!(r["srtDr"], json!(1));
+        assert_eq!(r["caSrt"], "");
+        assert_eq!(r["coSrt"], "");
+    }
+
+    #[test]
+    fn share_dl_body_shape() {
+        let r = &share_dl_body("GUID1", "/caID/coID", "16608240512")["dlFromOutLinkReqV3"];
+        assert_eq!(r["linkID"], "GUID1");
+        assert_eq!(r["account"], "16608240512");
+        assert_eq!(r["coIDLst"]["item"], json!(["/caID/coID"]));
+    }
+
+    #[test]
     fn outlink_item_mapping() {
-        let e = json!({
-            "contentId": "f1",
-            "contentName": "song.mp3",
-            "isCatalog": 0,
-            "contentSize": 9,
-        });
-        let f = file_from_outlink(&e);
-        assert_eq!(f["id"], "f1");
-        assert_eq!(f["name"], "song.mp3");
-        assert!(f.get("parentId").is_none());
+        // 2026-10 新协议 coLst 条目：path 优先作 id（dlFromOutLinkV3 用它），
+        // 缺失回落 coID；目录条目不进 coLst。
+        let f = file_from_outlink(&json!({
+            "coID": "FlhXF9",
+            "coName": "天天-陶喆.flac",
+            "coType": 2,
+            "coSize": 29768198,
+            "path": "/FlhXF9",
+        }));
+        assert_eq!(f["id"], "/FlhXF9");
+        assert_eq!(f["name"], "天天-陶喆.flac");
+        assert_eq!(f["isDir"], json!(false));
+        assert_eq!(f["size"], json!(29768198));
+        let f2 = file_from_outlink(&json!({ "coID": "X1", "coName": "a.mp3" }));
+        assert_eq!(f2["id"], "X1");
+        assert_eq!(f2["name"], "a.mp3");
+    }
+
+    #[test]
+    fn share_headers_signed_shape() {
+        let h = share_headers_signed(r#"{"getOutLinkInfoReq":{"linkID":"G"}}"#);
+        let keys: Vec<&str> = h.iter().map(|(k, _)| k.as_str()).collect();
+        // 匿名分享网关头：不带 Authorization / Caller。
+        assert!(!keys.contains(&"Authorization"));
+        assert!(!keys.contains(&"Caller"));
+        for need in ["CMS-DEVICE", "mcloud-sign", "mcloud-client", "X-Yun-Module-Type"] {
+            assert!(keys.contains(&need), "missing {need}");
+        }
+        let ct = h.iter().find(|(k, _)| *k == "Content-Type").unwrap();
+        assert_eq!(ct.1, "application/json;charset=UTF-8");
+        let sign = h.iter().find(|(k, _)| k == "mcloud-sign").unwrap();
+        let parts: Vec<&str> = sign.1.split(',').collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[2].len(), 32);
+        assert_eq!(parts[2].to_uppercase(), parts[2]);
     }
 
     #[test]
