@@ -270,6 +270,10 @@ extension PlayerNotifierSession on PlayerNotifier {
         position: pos,
         duration: currentItem.durationMs / 1000.0,
         playMode: mode,
+        // 恢复上次实际播放音质，否则重启后徽标/音质菜单兜底成「HQ · 默认」，
+        // 用户会误以为设置的最高音质没生效（2026-10-22 反馈：牡丹亭母带放
+        // 着，徽标却显示 HQ，需手动重选才恢复显示）。
+        currentQuality: data['currentQuality'] as String?,
       );
 
       if (!currentItem.isOnline && currentItem.coverUrl?.isNotEmpty != true) {
@@ -404,6 +408,7 @@ extension PlayerNotifierSession on PlayerNotifier {
             'currentPositionSecs': 0.0,
             'isPlaying': false,
             'sessionQualityOverride': null,
+            'currentQuality': null,
             'queueSongMeta': <String, dynamic>{},
             'updatedAt': DateTime.now().millisecondsSinceEpoch,
           }),
@@ -438,6 +443,7 @@ extension PlayerNotifierSession on PlayerNotifier {
         'currentPositionSecs': state.position,
         'isPlaying': state.isPlaying,
         'sessionQualityOverride': null,
+        'currentQuality': state.currentQuality,
         'queueSongMeta': queueSongMeta,
         'updatedAt': DateTime.now().millisecondsSinceEpoch,
       });

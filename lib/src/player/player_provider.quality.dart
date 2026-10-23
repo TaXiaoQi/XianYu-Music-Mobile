@@ -218,6 +218,8 @@ extension PlayerNotifierQuality on PlayerNotifier {
               .map((e) => e.path == item.path ? updated : e)
               .toList(),
         );
+        // 队列元数据的 onlineQuality 已变，同步落盘供重启恢复。
+        unawaited(_persistSession());
       }
       return true;
     } catch (_) {

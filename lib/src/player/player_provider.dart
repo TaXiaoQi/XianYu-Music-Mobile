@@ -1039,6 +1039,9 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             isPlaying: startPlayback,
           );
           state = state.copyWith(currentQuality: start.quality);
+          // 音质落盘：在线曲目无其他全量持久化触发点，不写则重启恢复后
+          // 徽标/音质菜单拿不到上次实际音质（session 恢复依赖此字段）。
+          unawaited(_persistSession());
         } on _StartOnlineTimeoutException {
           final lowerChain = _lowerQualityChain(start.quality, candidates);
           if (lowerChain.isEmpty) rethrow;
@@ -1065,6 +1068,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             isPlaying: startPlayback,
           );
           state = state.copyWith(currentQuality: retry.quality);
+          unawaited(_persistSession());
         }
         _refreshQualityMenuState(probe);
         unawaited(_prewarmOnlineSizes(item));

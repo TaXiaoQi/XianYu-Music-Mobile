@@ -470,7 +470,7 @@ class _PluginCard extends ConsumerWidget {
     final tagLabel = source.format == PluginFormat.lx
         ? tr('落雪')
         : source.format == PluginFormat.anime
-        ? 'anime'
+        ? 'AM'
         : source.format == PluginFormat.musicfree
         ? (source.author.toLowerCase().contains('toskysun') ? 'BK' : 'MF')
         : tr('未知');
