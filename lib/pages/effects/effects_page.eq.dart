@@ -14,6 +14,21 @@ class _EqSection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 总开关（对齐桌面端「启用均衡器」）：关闭后预设与推子置灰，
+        // 引擎侧 enabled=false 直接旁通；增益曲线保留，重开即恢复。
+        SwitchListTile(
+          secondary: const Icon(Icons.equalizer),
+          title:   Text(tr('启用均衡器')),
+          value: settings.eqEnabled,
+          onChanged: (v) => manager.setEqEnabled(v),
+        ),
+        IgnorePointer(
+          ignoring: !settings.eqEnabled,
+          child: Opacity(
+            opacity: settings.eqEnabled ? 1.0 : 0.45,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
         SizedBox(
           height: 42,
           child: ListView(
@@ -95,6 +110,10 @@ class _EqSection extends ConsumerWidget {
                   onCommit: (v) => notifier.setEqGain(i, v),
                 ),
             ],
+          ),
+        ),
+              ],
+            ),
           ),
         ),
       ],

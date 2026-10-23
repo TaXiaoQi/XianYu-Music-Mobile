@@ -117,6 +117,7 @@ class SoundEffectSettings {
   final bool v4aEnabled;
   final bool bypass;
   final double audioBoost;
+  final bool eqEnabled;
   final List<double> eqGains;
 
   const SoundEffectSettings({
@@ -188,6 +189,7 @@ class SoundEffectSettings {
     this.v4aEnabled = false,
     this.bypass = false,
     this.audioBoost = 0,
+    this.eqEnabled = true,
     this.eqGains = const [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   });
 
@@ -260,6 +262,7 @@ class SoundEffectSettings {
     bool? v4aEnabled,
     bool? bypass,
     double? audioBoost,
+    bool? eqEnabled,
     List<double>? eqGains,
   }) {
     return SoundEffectSettings(
@@ -331,6 +334,7 @@ class SoundEffectSettings {
       v4aEnabled: v4aEnabled ?? this.v4aEnabled,
       bypass: bypass ?? this.bypass,
       audioBoost: audioBoost ?? this.audioBoost,
+      eqEnabled: eqEnabled ?? this.eqEnabled,
       eqGains: eqGains ?? this.eqGains,
     );
   }
@@ -532,11 +536,12 @@ class SoundEffectSettings {
         'v4aEnabled': v4aEnabled,
         'bypass': bypass,
         'audioBoost': audioBoost,
+        'eqEnabled': eqEnabled,
         'eqGains': eqGains,
       };
 
   Map<String, dynamic> toEqualizerRustJson() => {
-        'enabled': eqGains.any((g) => g != 0),
+        'enabled': eqEnabled && eqGains.any((g) => g != 0),
         'preamp': 0.0,
         'gains': eqGains,
       };
@@ -611,6 +616,7 @@ class SoundEffectSettings {
       v4aEnabled: j['v4aEnabled'] as bool? ?? false,
       bypass: j['bypass'] as bool? ?? false,
       audioBoost: (j['audioBoost'] as num?)?.toDouble() ?? 0,
+      eqEnabled: j['eqEnabled'] as bool? ?? true,
       eqGains: (j['eqGains'] as List? ?? const [])
           .map((e) => (e as num).toDouble())
           .toList(),
@@ -711,6 +717,10 @@ class SoundEffectManager extends StateNotifier<SoundEffectState> {
     final gains = [...state.settings.eqGains];
     gains[index] = value;
     await _update(state.settings.copyWith(eqGains: gains));
+  }
+
+  Future<void> setEqEnabled(bool v) async {
+    await _update(state.settings.copyWith(eqEnabled: v));
   }
 
   Future<void> applyEqPreset(String name) async {

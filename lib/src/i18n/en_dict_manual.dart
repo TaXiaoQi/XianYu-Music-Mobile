@@ -206,6 +206,7 @@ const Map<String, String> enDictManual = {
   '变调': 'Pitch',
   '变速变调': 'Speed & pitch',
   '变速时保持音调': 'Preserve pitch when changing speed',
+  '启用均衡器': 'Enable equalizer',
   '标题 - 歌手': 'Title - Artist',
   '标题 - 歌手 - 专辑': 'Title - Artist - Album',
   '标准': 'Standard',
@@ -855,6 +856,7 @@ const Map<String, String> enDictManual = {
   '无法打开链接': 'Cannot open the link',
   '无法读取所选文件': 'Cannot read the selected file',
   '无法获取播放链接': 'Cannot get the playback URL',
+
   '无法获取插件脚本，请检查 URL 与网络':
       'Cannot fetch the plugin script; check the URL and network',
   '无法获取更新脚本': 'Could not fetch the update script',
