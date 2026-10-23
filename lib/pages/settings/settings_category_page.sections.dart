@@ -911,25 +911,23 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.usb_outlined,
             title: tr('USB 独占输出 (Bit-perfect)'),
             subtitle: PlatformCaps.isOhos
-                ? tr('鸿蒙版暂不支持：系统未公开 USB 直通建流接口，适配后将开放')
+                ? tr(
+                  '鸿蒙：经 usbManager 独占驱动 DAC（v1 支持 16bit PCM；无 DAC 或格式不支持自动回退）',
+                )
                 : tr(
                   '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
                 ),
             value: s?.usbExclusiveOutput ?? false,
-            enabled: !PlatformCaps.isOhos,
             onChanged: (v) => n.setUsbExclusiveOutput(v),
           ),
           _switchTile(
             context,
             icon: Icons.high_quality,
             title: tr('Bit-perfect 直出'),
-            subtitle: PlatformCaps.isOhos
-                ? tr('依赖 USB 独占输出（鸿蒙版暂不支持）')
-                : tr(
-                  'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
-                ),
+            subtitle: tr(
+              'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+            ),
             value: s?.bitPerfectOutput ?? false,
-            enabled: !PlatformCaps.isOhos,
             onChanged: (v) => n.setBitPerfectOutput(v),
           ),
           _switchTile(
@@ -937,7 +935,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             icon: Icons.graphic_eq_outlined,
             title: tr('DSD 原生直出'),
             subtitle: PlatformCaps.isOhos
-                ? tr('依赖 USB 独占输出（鸿蒙版暂不支持）')
+                ? tr('依赖 USB 独占输出（鸿蒙版暂不支持 DoP 直通）')
                 : tr(
                   'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
                 ),

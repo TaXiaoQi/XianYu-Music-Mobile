@@ -6,7 +6,10 @@
 //!
 //! 仅在 `target_os = "android"` 编译；其他平台提供桩函数返回不支持。
 //! 鸿蒙（`target_env = "ohos"`，注意 ohos triple 的 target_os 是 "linux"）
-//! 共享模式由 `ohos_audio`（OHAudio 系统混音器输出）实现，USB 独占保持桩文案。
+//! 由 `ohos_audio` 实现：共享模式走 OHAudio 系统混音器；USB 独占为
+//! 「Rust 管线产环形缓冲 + ArkTS usbManager 拉取」联合实现——管线与
+//! FFI 导出（xianyu_ohos_usb_*）在 ohos_audio，UAC claim 与等时传输
+//! 在 ohos/entry `plugins/UsbExclusivePlayer.ets`。
 
 use serde::{Deserialize, Serialize};
 

@@ -7,10 +7,15 @@
 //! 静态链接 `libohaudio.so`）：管线线程产出字节写入环形缓冲，
 //! `OnWriteData` 回调在系统线程搬运到设备，欠载时补零维持时间轴。
 //!
-//! 平台边界：OHAudio 无独占/设备独占语义，USB 独占与 DSD DoP 直通不实现
-//! （`shared_mode=false` 直接报错）；音频焦点由系统对渲染流自动托管
-//! （audio_session 插件无 ohos 实现，Dart 侧直接放行）。强制打断时系统
-//! 自动暂停渲染流，恢复播放由用户手动触发（diag 可见 interrupt 事件）。
+//! 平台边界：`shared_mode=true` 走 OHAudio 系统混音器（音频焦点由系统对
+//! 渲染流自动托管，audio_session 插件无 ohos 实现，Dart 侧直接放行；
+//! 强制打断时系统自动暂停渲染流，恢复播放由用户手动触发——diag 可见
+//! interrupt 事件）。`shared_mode=false` 为 USB 拉取独占（椒盐式路线）：
+//! 管线照常解码 → DSP → 环形缓冲，但不出声（无渲染流），由 ArkTS 侧经
+//! usbManager claim UAC 接口后按等时传输拉取 ring 数据直写 DAC——
+//! 见 ohos/entry `plugins/UsbExclusivePlayer.ets` 与 Dart 侧
+//! `usb_exclusive_service.dart`（FFI 导出见本文件底部）。DSD DoP 直通
+//! 不在鸿蒙实现（DSD 容器按 PCM 解码走常规管线）。
 
 use super::ExclusivePlayRequest;
 use crate::player::buffered_source::BufferedSource;
@@ -250,6 +255,11 @@ struct OhosPlayback {
     running: Arc<AtomicBool>,
     /// 工作线程退出原因（空=正常 Stop）。
     last_error: Arc<Mutex<Option<String>>>,
+    /// USB 拉取模式：管线环形缓冲句柄，供 FFI（xianyu_ohos_usb_*）拉取；
+    /// None = OHAudio 共享模式（ring 只在写回调内消费）。
+    /// 生命周期：随 OhosPlayback 存续，Stop 先 join 管线线程再 drop，
+    /// FFI 侧不会读到悬空指针。
+    usb_ring: Option<Arc<PipeShared>>,
 }
 
 impl Drop for OhosPlayback {
@@ -272,11 +282,12 @@ fn instance() -> &'static Mutex<Option<OhosPlayback>> {
 // =========================================================================
 
 pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<String, String> {
-    // OHAudio 无独占语义：非共享请求保持与桩一致的文案。
-    if !request.shared_mode {
-        return Err("USB 独占模式仅在 Android 端可用".to_string());
+    // shared = OHAudio 系统混音器；非 shared = USB 拉取独占（ArkTS claim UAC）。
+    // USB 模式允许 bit-perfect（DSP 旁路），共享模式维持强制关闭。
+    let usb_mode = !request.shared_mode;
+    if !usb_mode {
+        request.bit_perfect = false;
     }
-    request.bit_perfect = false;
     // SSRF 纵深：HTTP 直链为 IP 字面量且命中禁区时拒绝（对齐 android 路径）。
     // 放行本机回环——在线播放的 DSP 管线输入是 Dart 本地回环代理 URL。
     if request.path.starts_with("http://") || request.path.starts_with("https://") {
@@ -288,7 +299,8 @@ pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<Str
 
     let progress = Arc::new(OhosProgress::new());
     let (tx, rx) = mpsc::channel::<OhosCommand>();
-    let (init_tx, init_rx) = mpsc::sync_channel::<Result<(String, u32, u16), String>>(1);
+    let (init_tx, init_rx) =
+        mpsc::sync_channel::<Result<(String, u32, u16, Option<Arc<PipeShared>>), String>>(1);
     let progress_clone = progress.clone();
     let bit_perfect = Arc::new(AtomicBool::new(request.bit_perfect));
     let bit_perfect_clone = bit_perfect.clone();
@@ -297,7 +309,6 @@ pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<Str
     let last_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let last_error_clone = last_error.clone();
 
-    let shared_mode = request.shared_mode;
     let stream_cache = request.stream_cache_url.is_some();
 
     let handle = thread::Builder::new()
@@ -315,18 +326,18 @@ pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<Str
         })
         .map_err(|e| e.to_string())?;
 
-    // 初始化等待窗口对齐 android：流缓存直读含最小缓冲等待，最宽。
+    // 初始化等待窗口：流缓存直读含最小缓冲等待，最宽；其余模式一致。
     let init_wait = if stream_cache {
         Duration::from_secs(15)
-    } else if shared_mode {
-        Duration::from_secs(6)
     } else {
-        Duration::from_secs(3)
+        Duration::from_secs(6)
     };
+    let mut usb_ring: Option<Arc<PipeShared>> = None;
     let device_name = match init_rx.recv_timeout(init_wait) {
-        Ok(Ok((name, sr, ch))) => {
+        Ok(Ok((name, sr, ch, ring))) => {
             progress.sample_rate.store(sr, Ordering::Relaxed);
             progress.channels.store(ch as u32, Ordering::Relaxed);
+            usb_ring = ring;
             name
         }
         Ok(Err(e)) => {
@@ -335,7 +346,7 @@ pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<Str
         }
         Err(_) => {
             let _ = handle.join();
-            return Err("OHAudio 管线初始化超时".to_string());
+            return Err("音频管线初始化超时".to_string());
         }
     };
 
@@ -347,6 +358,7 @@ pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<Str
         bit_perfect,
         running,
         last_error,
+        usb_ring,
     };
 
     let mut guard = instance().lock().map_err(|e| e.to_string())?;
@@ -726,7 +738,7 @@ unsafe extern "C" fn on_write_data(
 fn run_ohos_playback(
     request: ExclusivePlayRequest,
     cmd_rx: Receiver<OhosCommand>,
-    init_tx: SyncSender<Result<(String, u32, u16), String>>,
+    init_tx: SyncSender<Result<(String, u32, u16, Option<Arc<PipeShared>>), String>>,
     progress: Arc<OhosProgress>,
     bit_perfect: Arc<AtomicBool>,
     running: Arc<AtomicBool>,
@@ -734,6 +746,9 @@ fn run_ohos_playback(
 ) {
     // 诊断残留清零：上一会话的死因注解不得泄入本会话
     reset_pipeline_diag();
+
+    // USB 拉取模式：不建渲染流，ring 由外部（ArkTS）消费。
+    let usb_mode = !request.shared_mode;
 
     // 1. 预构建流缓存直读 Reader（在线歌曲，对齐 android 共享路径）
     let mut cache_state: Option<crate::player::stream_cache::StreamingTempFileState> = None;
@@ -875,7 +890,8 @@ fn run_ohos_playback(
     let user_volume = Arc::new(AtomicU32::new(request.volume.to_bits()));
     let is_paused = Arc::new(AtomicBool::new(!request.is_playing));
 
-    // 6. 创建 OHAudio 渲染流（callback 模式）
+    // 6. 输出通道：共享模式创建 OHAudio 渲染流并启动；USB 拉取模式只备好
+    //    环形缓冲（固定 S16LE 交错 PCM，ArkTS 侧按 DAC alt setting 拉取）。
     let shared = Arc::new(PipeShared {
         ring: Mutex::new(RingInner {
             buf: VecDeque::new(),
@@ -883,18 +899,42 @@ fn run_ohos_playback(
         progress: progress.clone(),
         bytes_per_sample: AtomicU32::new(4),
     });
-    let (renderer, device_format, stream_sample_rate, stream_channels) =
-        match create_renderer(&shared, source_sample_rate, playback_channels) {
+    let (renderer, device_format, stream_sample_rate, stream_channels);
+    let mut renderer_started = false;
+    if usb_mode {
+        renderer = std::ptr::null_mut();
+        device_format = OutFormat::S16;
+        stream_sample_rate = source_sample_rate;
+        stream_channels = playback_channels;
+        shared.bytes_per_sample.store(2, Ordering::Relaxed);
+    } else {
+        let (r, fmt, sr, ch) = match create_renderer(&shared, source_sample_rate, playback_channels)
+        {
             Ok(r) => r,
             Err(e) => {
                 let _ = init_tx.send(Err(e));
                 return;
             }
         };
+        renderer = r;
+        device_format = fmt;
+        stream_sample_rate = sr;
+        stream_channels = ch;
+        shared
+            .bytes_per_sample
+            .store(fmt.bytes_per_sample() as u32, Ordering::Relaxed);
+        // 启动渲染流（回调开始取数）
+        let start_result = unsafe { OH_AudioRenderer_Start(renderer) };
+        if start_result != AUDIOSTREAM_SUCCESS {
+            let _ = init_tx.send(Err(format!("OHAudio 启动失败: code={start_result}")));
+            unsafe {
+                OH_AudioRenderer_Release(renderer);
+            }
+            return;
+        }
+        renderer_started = true;
+    }
     let bytes_per_sample = device_format.bytes_per_sample();
-    shared
-        .bytes_per_sample
-        .store(bytes_per_sample as u32, Ordering::Relaxed);
 
     let effective_rate = sound_effect.effective_sample_rate();
     progress.sample_rate.store(effective_rate, Ordering::Relaxed);
@@ -911,19 +951,9 @@ fn run_ohos_playback(
     let visualizer = global_visualizer();
     visualizer.reset();
 
-    // 7. 启动渲染流（回调开始取数）
-    let start_result = unsafe { OH_AudioRenderer_Start(renderer) };
-    if start_result != AUDIOSTREAM_SUCCESS {
-        let _ = init_tx.send(Err(format!("OHAudio 启动失败: code={start_result}")));
-        unsafe {
-            OH_AudioRenderer_Release(renderer);
-        }
-        return;
-    }
-    let mut renderer_started = true;
-
     let device_name = format!(
-        "系统混音器 ({}Hz, {}ch shared){}",
+        "{} ({}Hz, {}ch){}",
+        if usb_mode { "USB 独占" } else { "系统混音器 shared" },
         stream_sample_rate,
         stream_channels,
         if downmix_active {
@@ -932,7 +962,12 @@ fn run_ohos_playback(
             String::new()
         }
     );
-    let _ = init_tx.send(Ok((device_name, stream_sample_rate, stream_channels)));
+    let _ = init_tx.send(Ok((
+        device_name,
+        stream_sample_rate,
+        stream_channels,
+        if usb_mode { Some(shared.clone()) } else { None },
+    )));
 
     // 8. 产出循环：解码 → DSP → 字节 → 环形缓冲（回调侧消费）。
     // 环形缓冲上限 ~300ms，防管线跑太远拉高内存与 seek 延迟。
@@ -976,10 +1011,10 @@ fn run_ohos_playback(
                     ring.buf.clear();
                 }
                 is_paused.store(!is_playing, Ordering::Relaxed);
-                if is_playing && !renderer_started {
+                if !usb_mode && is_playing && !renderer_started {
                     let r = unsafe { OH_AudioRenderer_Start(renderer) };
                     renderer_started = r == AUDIOSTREAM_SUCCESS;
-                } else if !is_playing && renderer_started {
+                } else if !usb_mode && !is_playing && renderer_started {
                     unsafe {
                         OH_AudioRenderer_Pause(renderer);
                     }
@@ -987,7 +1022,7 @@ fn run_ohos_playback(
                 }
             }
             Ok(OhosCommand::Pause) => {
-                if renderer_started {
+                if !usb_mode && renderer_started {
                     unsafe {
                         OH_AudioRenderer_Pause(renderer);
                     }
@@ -997,7 +1032,7 @@ fn run_ohos_playback(
             }
             Ok(OhosCommand::Resume) => {
                 is_paused.store(false, Ordering::Relaxed);
-                if !renderer_started {
+                if !usb_mode && !renderer_started {
                     let r = unsafe { OH_AudioRenderer_Start(renderer) };
                     renderer_started = r == AUDIOSTREAM_SUCCESS;
                 }
@@ -1023,7 +1058,7 @@ fn run_ohos_playback(
                     if is_paused.load(Ordering::Relaxed) {
                         is_paused.store(false, Ordering::Relaxed);
                     }
-                    if !renderer_started {
+                    if !usb_mode && !renderer_started {
                         let r = unsafe { OH_AudioRenderer_Start(renderer) };
                         renderer_started = r == AUDIOSTREAM_SUCCESS;
                     }
@@ -1194,11 +1229,111 @@ fn run_ohos_playback(
     }
 
     // 9. 清理。running=false 供 Flutter 检测自然结束/异常退出。
+    // USB 拉取模式无渲染流：ring 停止产出后外部拉取自然归零。
     running.store(false, Ordering::Relaxed);
-    unsafe {
-        if renderer_started {
-            OH_AudioRenderer_Stop(renderer);
+    if !usb_mode {
+        unsafe {
+            if renderer_started {
+                OH_AudioRenderer_Stop(renderer);
+            }
+            OH_AudioRenderer_Release(renderer);
         }
-        OH_AudioRenderer_Release(renderer);
     }
+}
+
+// =========================================================================
+// USB 拉取模式 FFI（仅 ohos；Dart 侧经 DynamicLibrary 直查符号调用，
+// 不走 frb codegen——见 lib/src/player/usb_exclusive_service.dart）
+// =========================================================================
+
+/// 当前 USB 拉取会话的环形缓冲句柄（None = 无会话或 OHAudio 共享模式）。
+fn usb_shared() -> Option<Arc<PipeShared>> {
+    let guard = instance().lock().ok()?;
+    guard.as_ref()?.usb_ring.clone()
+}
+
+/// 拉取环形缓冲中最多 `cap` 字节（不足不补零），返回实际读取字节数。
+/// 读取量即视为已播放量（消费点计数，对齐 OHAudio 写回调语义）；
+/// 欠载由调用方补零发送，位置不会虚走。
+///
+/// # Safety
+/// `dst` 须指向调用方分配的 ≥`cap` 字节可写内存；仅在 USB 拉取会话
+/// 存续期（startUsbExclusivePlayback 成功后、stop 前）调用。
+#[cfg(target_env = "ohos")]
+#[no_mangle]
+pub extern "C" fn xianyu_ohos_usb_ring_read(dst: *mut u8, cap: usize) -> usize {
+    if dst.is_null() || cap == 0 {
+        return 0;
+    }
+    let Some(shared) = usb_shared() else {
+        return 0;
+    };
+    let mut copied = 0usize;
+    if let Ok(mut ring) = shared.ring.lock() {
+        let take = cap.min(ring.buf.len());
+        if take > 0 {
+            let (a, b) = ring.buf.as_slices();
+            let n_a = take.min(a.len());
+            unsafe {
+                std::ptr::copy_nonoverlapping(a.as_ptr(), dst, n_a);
+                let n_b = (take - n_a).min(b.len());
+                if n_b > 0 {
+                    std::ptr::copy_nonoverlapping(b.as_ptr(), dst.add(n_a), n_b);
+                }
+            }
+            ring.buf.drain(..take);
+        }
+        copied = take;
+    }
+    if copied > 0 {
+        let bps = shared.bytes_per_sample.load(Ordering::Relaxed).max(1) as usize;
+        shared
+            .progress
+            .samples_played
+            .fetch_add((copied / bps) as u64, Ordering::Relaxed);
+    }
+    copied
+}
+
+/// 环形缓冲当前字节数（0 = 无会话或已耗尽，调用方补零维持时间轴）。
+#[cfg(target_env = "ohos")]
+#[no_mangle]
+pub extern "C" fn xianyu_ohos_usb_ring_level() -> usize {
+    usb_shared()
+        .and_then(|s| s.ring.lock().ok().map(|r| r.buf.len()))
+        .unwrap_or(0)
+}
+
+/// 输出格式 JSON（`{"sampleRate":..,"channels":..,"bytesPerSample":..}`），
+/// 管线起播后可用。写入调用方缓冲并追加 '\0'，返回写入长度（0 = 未就绪）。
+///
+/// # Safety
+/// `buf` 须指向调用方分配的 ≥`cap` 字节可写内存。
+#[cfg(target_env = "ohos")]
+#[no_mangle]
+pub extern "C" fn xianyu_ohos_usb_format_json(buf: *mut u8, cap: usize) -> usize {
+    if buf.is_null() || cap == 0 {
+        return 0;
+    }
+    let Some(shared) = usb_shared() else {
+        return 0;
+    };
+    let rate = shared.progress.sample_rate.load(Ordering::Relaxed);
+    let ch = shared.progress.channels.load(Ordering::Relaxed);
+    if rate == 0 || ch == 0 {
+        return 0;
+    }
+    let json = serde_json::json!({
+        "sampleRate": rate,
+        "channels": ch,
+        "bytesPerSample": shared.bytes_per_sample.load(Ordering::Relaxed),
+    })
+    .to_string();
+    let bytes = json.as_bytes();
+    let n = bytes.len().min(cap - 1);
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, n);
+        *buf.add(n) = 0;
+    }
+    n
 }

@@ -53,6 +53,7 @@ import 'mv_auto_sync.dart';
 import 'audio_head_cache.dart';
 import 'mv_provider.dart';
 import 'sleep_timer.dart';
+import 'usb_exclusive_service.dart';
 import 'audio_proxy_server.dart';
 import 'media_url.dart';
 import 'cast_provider.dart';

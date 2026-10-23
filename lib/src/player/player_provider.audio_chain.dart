@@ -211,9 +211,7 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     }
   }
 
-  /// 鸿蒙版(HAP)：Rust 输出层无 AAudio，USB 独占在此平台必然启动失败，
-  /// 直接短路避免每次起播白试 + 60s 冷却（2026-10-23 反馈：ALN-AL00）。
-  /// 共享 DSP 管线（EQ/音效）由 ohos_audio 输出层支持，不在此短路。
+  /// 鸿蒙平台标记（ohos triple 上 Platform.operatingSystem 返回 'ohos'）。
   bool get _isOhos => Platform.operatingSystem == 'ohos';
 
   Future<bool> _tryStartExclusive(
@@ -221,10 +219,6 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     required double startAtSecs,
     required bool isPlaying,
   }) async {
-    if (_isOhos) {
-      AppLog.info('exclusive', '鸿蒙版无 AAudio 输出层，USB 独占不可用');
-      return false;
-    }
     if (!path.startsWith('http')) {
       LastAudioSource.recordFilePath(path);
     }
@@ -234,6 +228,56 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       final settings = _ref.read(settingsProvider).valueOrNull;
       final bitPerfect = settings?.bitPerfectOutput ?? false;
       final dsd = settings?.dsdNativePassthrough ?? false;
+      if (_isOhos) {
+        // 鸿蒙 USB 独占（椒盐式）：Rust 管线（解码→DSP→环形缓冲）先起，
+        // 等格式就绪后由 ArkTS usbManager claim UAC 接口拉取直写 DAC。
+        // 任一步失败都停掉管线并回落普通播放。
+        try {
+          await startUsbExclusivePlayback(
+            path: path,
+            deviceId: -1,
+            volume: _mvAudioOverride ? 0.0 : _ref.read(volumeProvider),
+            startTimeSecs: startAtSecs,
+            isPlaying: isPlaying,
+            volumeBalanceGain: bitPerfect ? 1.0 : _effectiveBalanceGain(),
+            equalizerSettingsJson:
+                bitPerfect ? '' : jsonEncode(sfx.toEqualizerRustJson()),
+            soundEffectSettingsJson: bitPerfect ? '' : jsonEncode(sfx.toRustJson()),
+            bitPerfect: bitPerfect,
+            dsdNativePassthrough: dsd,
+            sharedMode: false,
+            // 跳过静音：独占直出时也走解码器外层包装，直出照样能剪静音
+            skipSilenceEnabled: settings?.skipSilenceEnabled ?? false,
+            skipSilenceThresholdDb: settings?.skipSilenceThresholdDb ?? -45.0,
+            skipSilenceKeepMs: settings?.skipSilenceKeepMs ?? 500,
+          );
+          final fmt = await UsbExclusiveService.instance
+              .waitFormat(const Duration(seconds: 3));
+          if (fmt == null) {
+            throw Exception('USB 输出格式未就绪（无 DAC / 解码失败）');
+          }
+          await UsbExclusiveService.instance.startDevice(
+            sampleRate: fmt.sampleRate,
+            channels: fmt.channels,
+            bytesPerSample: fmt.bytesPerSample,
+          );
+          UsbExclusiveService.instance.onDeviceLost = () {
+            unawaited(_onExclusiveDisconnect());
+          };
+        } catch (e) {
+          try {
+            await UsbExclusiveService.instance.stopDevice();
+          } catch (_) {}
+          try {
+            await stopUsbExclusivePlayback();
+          } catch (_) {}
+          rethrow;
+        }
+        state = state.copyWith(usbExclusive: true, isPlaying: isPlaying);
+        _startExclusivePolling();
+        _syncToSystemMediaSession();
+        return true;
+      }
       await startUsbExclusivePlayback(
         path: path,
         deviceId: settings?.usbExclusiveDeviceId ?? -1,
@@ -330,10 +374,19 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
 
   Future<void> _stopExclusive() async {
     _stopExclusivePolling();
+    UsbExclusiveService.instance.onDeviceLost = null;
     try {
       await stopUsbExclusivePlayback();
     } catch (e) {
       AppLog.warn('player', '停止独占播放失败: $e');
+    }
+    if (_isOhos) {
+      // ArkTS 侧等时循环 + releaseInterface/closePipe（幂等）
+      try {
+        await UsbExclusiveService.instance.stopDevice();
+      } catch (e) {
+        AppLog.warn('player', '停止 USB 设备拉取失败: $e');
+      }
     }
     // 管线没了，预排的下一首与过渡计数一并作废
     _gaplessNextIndex = -1;

@@ -3,6 +3,7 @@ import { FlutterAbility, FlutterEngine, MethodChannel } from '@ohos/flutter_ohos
 import { GeneratedPluginRegistrant } from '../plugins/GeneratedPluginRegistrant';
 import { FolderImportChannel } from '../plugins/FolderImportChannel';
 import { DeviceInfoChannel } from '../plugins/DeviceInfoChannel';
+import { UsbExclusivePlayer } from '../plugins/UsbExclusivePlayer';
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { AbilityConstant, Want } from '@kit.AbilityKit';
 import { WatchLinkServerDispatcher } from './WatchLinkServerDispatcher';
@@ -20,6 +21,9 @@ export default class EntryAbility extends FlutterAbility {
     // 设备信息通道：反馈/日志上报带品牌机型与鸿蒙版本号
     DeviceInfoChannel.attach(
       flutterEngine.dartExecutor.getBinaryMessenger(), this.context)
+    // USB 独占输出（椒盐式）：Rust 管线产 PCM，本类 claim UAC 接口后
+    // 等时传输直写 DAC；控制面 start/stop + 数据面 push（Dart 每 8ms 推）
+    UsbExclusivePlayer.attach(flutterEngine.dartExecutor.getBinaryMessenger())
     // 手表联动 SPP 通道（ohos 服务端角色）：协议与安卓 WatchLink.kt
     // 一致（字节管道 + Dart 侧帧/心跳），实机差异见 WatchLinkServerDispatcher。
     WatchLinkServerDispatcher.attach(

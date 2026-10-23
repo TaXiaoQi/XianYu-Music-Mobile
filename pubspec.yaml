@@ -43,6 +43,8 @@ dependencies:
 
   # flutter_rust_bridge 运行时依赖
   flutter_rust_bridge: 2.12.0
+  # dart:ffi 原生内存分配（鸿蒙 USB 独占拉取缓冲；与 frb 同源传递依赖）
+  ffi: ^2.2.0
 
   # 状态管理与路由
   flutter_riverpod: ^2.6.0
