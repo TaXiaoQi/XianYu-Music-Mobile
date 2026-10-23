@@ -623,6 +623,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     bool continueStatsSession = false,
     bool skipOnFailure = true,
     bool shuffleAdvance = true,
+    // 手动切歌（下一首/上一首按钮与媒体会话）标记：失败时无论
+    // onlineFailureBehavior 为何都自动跳下一首——用户明确表达了
+    // 「切过去」的意图，失败死在原地（+DNS 故障下分钟级静默解析）
+    // 即反馈的「切歌卡住」。
+    bool manualNav = false,
   }) async {
     if (index < 0 || index >= state.queue.length) return;
     _playEpoch++;
@@ -677,7 +682,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         _skipDepth++;
         final next = _pickNextIndex();
         if (next >= 0 && next != index) {
-          await _playAt(next);
+          await _playAt(next, manualNav: manualNav);
           return;
         }
         _skipDepth = 0;
@@ -937,12 +942,15 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         final behavior =
             _ref.read(settingsProvider).valueOrNull?.onlineFailureBehavior ??
             'stop';
-        if (behavior == 'skip') {
+        if (behavior == 'skip' || manualNav) {
           _markOnlineSourceFailed(item);
           _skipDepth++;
           final next = _pickNextIndex();
           if (next >= 0 && next != index) {
-            await _playAt(next);
+            if (manualNav && behavior != 'skip') {
+              _showPlaybackToast(tr('已跳过无法播放的歌曲'));
+            }
+            await _playAt(next, manualNav: manualNav);
             return;
           }
         }
@@ -1507,7 +1515,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Future<void> next() async {
     if (await _playFromTempQueue()) return;
     final i = _pickNextIndex();
-    if (i >= 0) await _playAt(i);
+    if (i >= 0) await _playAt(i, manualNav: true);
   }
 
   Future<void> previous() async {
@@ -1521,11 +1529,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       final i = _randomPrevIndex();
       // 后退不压 history 不清 future（future 已在 _randomPrevIndex 中记下
       // 返程），否则前进时无法原路返回
-      if (i >= 0) await _playAt(i, shuffleAdvance: false);
+      if (i >= 0) await _playAt(i, shuffleAdvance: false, manualNav: true);
       return;
     }
     final i = state.queueIndex <= 0 ? n - 1 : state.queueIndex - 1;
-    await _playAt(i);
+    await _playAt(i, manualNav: true);
   }
 
   void _showPlaybackToast(String message) {
