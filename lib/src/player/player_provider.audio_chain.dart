@@ -256,14 +256,19 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
           if (fmt == null) {
             throw Exception('USB 输出格式未就绪（无 DAC / 解码失败）');
           }
-          await UsbExclusiveService.instance.startDevice(
+          final deviceName = await UsbExclusiveService.instance.startDevice(
             sampleRate: fmt.sampleRate,
             channels: fmt.channels,
             bytesPerSample: fmt.bytesPerSample,
           );
-          UsbExclusiveService.instance.onDeviceLost = () {
+          UsbExclusiveService.instance.onDeviceLost = (reason) {
+            AppLog.warn('usb-dac', 'USB 设备丢失，走回退链: $reason');
             unawaited(_onExclusiveDisconnect());
           };
+          AppLog.info('usb-dac',
+              'USB 独占启动成功: 设备=$deviceName '
+              '${fmt.sampleRate}Hz/${fmt.channels}ch/${fmt.bytesPerSample * 8}bit'
+              '${bitPerfect ? ' (bit-perfect)' : ''}');
         } catch (e) {
           try {
             await UsbExclusiveService.instance.stopDevice();

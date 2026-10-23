@@ -104,6 +104,15 @@ export class UsbExclusivePlayer {
   private hasFeedback: boolean = false;
   private fbInFlight: boolean = false;
   private outCount: number = 0;
+  private lastFbLogRatio: number = 0;
+  private lastFbLogMs: number = 0;
+
+  // —— 欠载/丢弃统计（用户反馈链路诊断：1s 节流汇总）——
+  private zeroPkgs: number = 0; // 自上次上报以来的补零包数
+  private zeroPkgsTotal: number = 0;
+  private lastZeroReportMs: number = 0;
+  private droppedAcc: number = 0; // 自上次上报以来的队列满丢弃字节
+  private lastDropReportMs: number = 0;
 
   constructor(messenger: BinaryMessenger) {
     this.channel = new MethodChannel(messenger, CHANNEL);
@@ -113,6 +122,25 @@ export class UsbExclusivePlayer {
       },
     };
     this.channel.setMethodCallHandler(handler);
+  }
+
+  /**
+   * 日志双写：hilog 仅开发态可见，用户反馈导不出；关键事件同步回传
+   * Dart 侧记入 AppLog（随反馈上传）。level: 'info' | 'warn' | 'error'。
+   */
+  private sendLog(level: string, msg: string): void {
+    if (level === 'error') {
+      Log.e(TAG, msg);
+    } else if (level === 'warn') {
+      Log.w(TAG, msg);
+    } else {
+      Log.i(TAG, msg);
+    }
+    try {
+      this.channel.invokeMethod('log', { level: level, msg: msg });
+    } catch (e) {
+      // 通道关闭/未就绪：hilog 已有记录，忽略
+    }
   }
 
   static attach(messenger: BinaryMessenger): void {
@@ -162,11 +190,15 @@ export class UsbExclusivePlayer {
         }
       }
       if (dev == null) {
-        throw new Error('未发现 USB 音频 (UAC) 设备');
+        throw new Error(`未发现 USB 音频 (UAC) 设备（共枚举到 ${devices.length} 台 USB 设备）`);
       }
+      this.sendLog('info',
+        `start: 设备=${dev.productName !== '' ? dev.productName : dev.name} vid=0x${dev.vendorId.toString(16)} pid=0x${dev.productId.toString(16)}`);
       // 2. 设备访问授权（系统弹窗；已授权则直接过）
-      if (!usbManager.hasRight(dev.name)) {
+      const hadRight: boolean = usbManager.hasRight(dev.name);
+      if (!hadRight) {
         const granted: boolean = await usbManager.requestRight(dev.name);
+        this.sendLog('info', `授权弹窗结果: ${granted}`);
         if (!granted) {
           throw new Error('用户拒绝 USB 设备授权');
         }
@@ -178,19 +210,29 @@ export class UsbExclusivePlayer {
       const raw: ArrayBuffer = usbManager.getRawDescriptor(pipe);
       const formats: UacFormat[] = UsbExclusivePlayer.parseFormats(new Uint8Array(raw));
       const alts: UacAlt[] = this.joinAlts(dev, formats);
+      this.sendLog('info', `描述符解析: 格式 ${formats.length} 组，可用 alt ${alts.length} 个`);
       const sel: UacAlt | null = this.chooseAlt(alts, sampleRate, channels, bytesPerSample);
       if (sel == null) {
+        // 附上设备实际支持的格式（上限 8 条），用户反馈可直接判断格式缺口
+        const fmtDesc: string = alts.slice(0, 8).map((a: UacAlt): string =>
+          `if${a.ifaceNum}/alt${a.alt}:${a.subframeBytes * 8}bit/${a.channels}ch/` +
+          `${a.continuous ? a.rates.join('-') + 'Hz连续' : a.rates.join('/') + 'Hz'}`).join('; ');
         throw new Error(
-          `DAC 无 ${sampleRate}Hz/${channels}ch/${bytesPerSample * 8}bit 交替设置（v1 仅支持 S16）`);
+          `DAC 无 ${sampleRate}Hz/${channels}ch/${bytesPerSample * 8}bit 交替设置（v1 仅支持 S16）` +
+          `${fmtDesc !== '' ? '，支持: ' + fmtDesc : ''}`);
       }
+      this.sendLog('info',
+        `选中 alt: iface=${sel.ifaceNum} alt=${sel.alt} ${sel.subframeBytes * 8}bit/` +
+        `${sel.channels}ch ${sel.rates.join('/')}Hz${sel.continuous ? '(连续)' : ''} maxPkt=${sel.maxPacket}`);
       // 5. claim（force 允许抢占）→ setInterface 激活 alt setting
       let ret: number = usbManager.claimInterface(pipe, sel.iface, true);
       if (ret !== 0) {
         // 某些设备未激活配置：先 setConfiguration 再试一次
         try {
           usbManager.setConfiguration(pipe, dev.configs[0]);
+          this.sendLog('info', 'claim 首次失败，已 setConfiguration 后重试');
         } catch (e) {
-          Log.w(TAG, `setConfiguration failed: ${(e as BusinessError).message}`);
+          this.sendLog('warn', `setConfiguration failed: ${(e as BusinessError).message}`);
         }
         ret = usbManager.claimInterface(pipe, sel.iface, true);
       }
@@ -202,6 +244,7 @@ export class UsbExclusivePlayer {
       if (ret !== 0) {
         throw new Error(`setInterface 失败 code=${ret}`);
       }
+      this.sendLog('info', `claim/setInterface ok (ret=${ret})`);
       // 6. 起等时循环
       this.selected = sel;
       this.nominalRate = sampleRate;
@@ -225,6 +268,10 @@ export class UsbExclusivePlayer {
       for (let k = 0; k < WINDOW_MS; k++) {
         this.submitOut();
       }
+      this.sendLog('info',
+        `等时循环启动: ${sampleRate}Hz/${channels}ch/${bytesPerSample * 8}bit ` +
+        `frameBytes=${this.frameBytes.toFixed(2)} pkt/传输=${this.packetsPerTransfer} ` +
+        `${this.hasFeedback ? '有feedback调速' : '无feedback'} 队列=${QUEUE_MS}ms`);
       const ok: StartOk = {
         deviceName: dev.productName !== '' ? dev.productName : dev.name,
         sampleRate: sampleRate,
@@ -233,7 +280,7 @@ export class UsbExclusivePlayer {
       result.success(ok);
     } catch (e) {
       const msg: string = e instanceof Error ? e.message : String(e);
-      Log.w(TAG, `start failed: ${msg}`);
+      this.sendLog('error', `start failed: ${msg}`);
       this.running = false;
       this.cleanup();
       result.error('usb_error', msg, '');
@@ -241,6 +288,7 @@ export class UsbExclusivePlayer {
   }
 
   private handleStop(result: MethodResult): void {
+    this.sendLog('info', 'stop: 释放 UAC 接口并关闭管道');
     this.running = false;
     // 取消在途传输（回调回来发现 running=false 自行退出）
     const pend: usbManager.UsbDataTransferParams[] = this.pending;
@@ -261,6 +309,18 @@ export class UsbExclusivePlayer {
     let dropped: number = 0;
     if (pcm != null && pcm.length > 0 && this.running) {
       dropped = this.enqueue(pcm);
+      if (dropped > 0) {
+        // 队列满丢弃（正常应恒为 0）：1s 节流汇总上报
+        this.droppedAcc += dropped;
+        const now: number = Date.now();
+        if (this.lastDropReportMs === 0) {
+          this.lastDropReportMs = now;
+        } else if (now - this.lastDropReportMs >= 1000) {
+          this.sendLog('warn', `push 队列满丢弃: 近1s ${this.droppedAcc}B`);
+          this.droppedAcc = 0;
+          this.lastDropReportMs = now;
+        }
+      }
     }
     // 满队列丢弃（返回丢弃量便于 Dart 侧诊断；正常应恒为 0）
     result.success(dropped);
@@ -281,7 +341,21 @@ export class UsbExclusivePlayer {
       return;
     }
     const buf: Uint8Array = new Uint8Array(packet);
-    this.takeBytes(buf);
+    const got: number = this.takeBytes(buf);
+    if (got < packet) {
+      // 欠载补零（静音输出）：1s 节流汇总上报，判断卡顿是否来自数据面
+      this.zeroPkgs++;
+      this.zeroPkgsTotal++;
+      const now: number = Date.now();
+      if (this.lastZeroReportMs === 0) {
+        this.lastZeroReportMs = now;
+      } else if (now - this.lastZeroReportMs >= 1000) {
+        this.sendLog('warn',
+          `ring 欠载补零: 近1s ${this.zeroPkgs} 包（累计 ${this.zeroPkgsTotal}）`);
+        this.zeroPkgs = 0;
+        this.lastZeroReportMs = now;
+      }
+    }
     const self: UsbExclusivePlayer = this;
     const params: usbManager.UsbDataTransferParams = {
       devPipe: this.pipe as usbManager.USBDevicePipe,
@@ -406,6 +480,15 @@ export class UsbExclusivePlayer {
     const ratio: number = freq / this.nominalRate;
     if (ratio > 0.95 && ratio < 1.05) {
       this.rateRatio = ratio;
+      // 首次或变化 >0.002 时上报（2s 节流）：观察 DAC 实际主频与调速方向
+      const now: number = Date.now();
+      if (this.lastFbLogRatio === 0 ||
+        (Math.abs(ratio - this.lastFbLogRatio) > 0.002 && now - this.lastFbLogMs >= 2000)) {
+        this.sendLog('info',
+          `feedback 实测 ${Math.round(freq)}Hz（标称 ${this.nominalRate}，ratio=${ratio.toFixed(4)}）`);
+        this.lastFbLogRatio = ratio;
+        this.lastFbLogMs = now;
+      }
     }
   }
 
@@ -434,7 +517,7 @@ export class UsbExclusivePlayer {
       return;
     }
     this.running = false;
-    Log.w(TAG, `device lost: ${msg}`);
+    this.sendLog('error', `device lost: ${msg}`);
     this.cleanup();
     this.channel.invokeMethod('deviceLost', msg);
   }
@@ -460,12 +543,12 @@ export class UsbExclusivePlayer {
         usbManager.releaseInterface(pipe, iface);
       }
     } catch (e) {
-      Log.w(TAG, `releaseInterface: ${(e as BusinessError).message}`);
+      this.sendLog('warn', `releaseInterface: ${(e as BusinessError).message}`);
     }
     try {
       usbManager.closePipe(pipe);
     } catch (e) {
-      Log.w(TAG, `closePipe: ${(e as BusinessError).message}`);
+      this.sendLog('warn', `closePipe: ${(e as BusinessError).message}`);
     }
     this.pipe = null;
   }

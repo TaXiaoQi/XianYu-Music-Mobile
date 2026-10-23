@@ -7,6 +7,8 @@ import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../core/application_logger.dart';
+
 /// USB 独占输出格式（Rust 管线产出，ArkTS claim UAC alt setting 用）。
 class UsbExclusiveFormat {
   const UsbExclusiveFormat({
@@ -81,9 +83,10 @@ class UsbExclusiveService {
   Timer? _pushTimer;
   bool _pushing = false;
 
-  /// 设备热拔出回调（ArkTS 等时回调报 NO_DEVICE / 提交异常时触发）。
-  /// 由 PlayerNotifier 注入，转 `_onExclusiveDisconnect` 走回退链。
-  void Function()? onDeviceLost;
+  /// 设备热拔出回调（ArkTS 等时回调报 NO_DEVICE / 提交异常时触发），
+  /// [reason] 为 ArkTS 侧给出的原因描述。由 PlayerNotifier 注入，
+  /// 转 `_onExclusiveDisconnect` 走回退链。
+  void Function(String reason)? onDeviceLost;
 
   bool get _ohos => Platform.operatingSystem == 'ohos' && _ffiReady;
 
@@ -200,7 +203,30 @@ class UsbExclusiveService {
     switch (call.method) {
       case 'deviceLost':
         final cb = onDeviceLost;
-        if (cb != null) cb();
+        if (cb != null) {
+          cb(call.arguments is String
+              ? call.arguments as String
+              : 'unknown');
+        }
+        return null;
+      case 'log':
+        // ArkTS 关键事件双写：hilog（开发态）+ AppLog（随用户反馈上传）
+        final args = call.arguments as Map<Object?, Object?>?;
+        final level = (args?['level'] as String?) ?? 'info';
+        final msg = (args?['msg'] as String?) ?? '';
+        switch (level) {
+          case 'error':
+            AppLog.error('usb-dac', msg);
+            break;
+          case 'warn':
+            AppLog.warn('usb-dac', msg);
+            break;
+          case 'debug':
+            AppLog.debug('usb-dac', msg);
+            break;
+          default:
+            AppLog.info('usb-dac', msg);
+        }
         return null;
       default:
         throw MissingPluginException('usb_exclusive: ${call.method}');
