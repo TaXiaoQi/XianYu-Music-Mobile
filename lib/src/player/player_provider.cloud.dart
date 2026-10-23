@@ -153,6 +153,10 @@ extension PlayerNotifierCloud on PlayerNotifier {
       DirectLinkCache.instance.invalidate(key);
       final fresh = await resolve();
       DirectLinkCache.instance.put(key, fresh);
+      // 重试前快速探活：下载节点网络级不可达（起播超时的常见根因）时
+      // 秒级判负并给准确文案，不让播放器对死节点再干等一轮 10s 超时；
+      // 链路可达则无感直通，与原行为一致。
+      await _assertCloudLinkReachable(fresh);
       await _startOnlineUrl(
         fresh.url,
         headers: fresh.headers,
@@ -164,6 +168,31 @@ extension PlayerNotifierCloud on PlayerNotifier {
       unawaited(_enrichCloudCover(item));
       unawaited(_probeCloudSourceFormat(fresh, item));
       unawaited(_probeCloudHeadMeta(fresh, item));
+    }
+  }
+
+  /// 直链网络级探活（仅重试链路调用）：GET Range 0-1 短超时，2xx/3xx/4xx
+  /// 均视为链路可达（4xx 交给起播链路按既有换链/竞速逻辑处理），连接
+  /// 超时或 5xx 判负。只看状态码即断开，避免网关无视 Range 时全量拉流。
+  Future<void> _assertCloudLinkReachable(CloudDirectLink link) async {
+    HttpClientResponse? resp;
+    try {
+      final req = await sharedHttpClient
+          .openUrl('GET', Uri.parse(link.url))
+          .timeout(const Duration(seconds: 4));
+      link.headers.forEach(req.headers.set);
+      req.headers.set('Range', 'bytes=0-1');
+      resp = await req.close().timeout(const Duration(seconds: 5));
+      if (resp.statusCode >= 500) {
+        throw StateError(tr('网盘下载节点暂不可用，请稍后重试'));
+      }
+    } on StateError {
+      rethrow;
+    } catch (e) {
+      AppLog.warn('cloud', '直链探活失败: $e');
+      throw StateError(tr('网盘下载节点连接失败，请检查网络'));
+    } finally {
+      unawaited(resp?.listen(null).cancel().catchError((_) {}));
     }
   }
 

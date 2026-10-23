@@ -905,8 +905,8 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     }
     Ok(CloudOut::plain(direct_link_json(
         &dlink,
-        // 播放头带全量 cookie：d.pcs dlink 302 → baidupcs 终态期间 PCS
-        // 校验会话（缺 cookie 报 31045）；播放器/探针自动跟随 302。
+        // 播放头继续透传 netdisk UA + 全量 cookie：归一失败退化为 dlink
+        // 时 302 腿仍需会话校验；终态边缘对多余 cookie 不敏感。
         json!({
             "User-Agent": NETDISK_UA,
             "Cookie": http::cookie_header(&cred_pairs(&req.cred)),
