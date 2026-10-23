@@ -60,6 +60,17 @@ fn search_url(b: &Brand, keyword: &str, page: i64) -> String {
     )
 }
 
+/// 列目录 URL（纯函数，单测断言）。_fetch_total=1 必带：缺了响应没有
+/// metadata._total，翻页判断恒 false，大目录只出第一页 100 条且无加载更多。
+fn list_dir_url(b: &Brand, page: i64, pdir_fid: &str) -> String {
+    format!(
+        "https://{}/1/clouddrive/file?{}&_page={page}&_size=100&_fetch_total=1&pdir_fid={}&_sort=file_type:asc,file_name:asc",
+        b.api_host,
+        common_query(b),
+        http::url_encode(pdir_fid)
+    )
+}
+
 /// 桌面版浏览器 UA（分享/直链请求用）。
 fn desktop_ua() -> &'static str {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -232,13 +243,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if page < 1 {
         return Err(biz_err("非法翻页游标"));
     }
-    let url = format!(
-        "https://{}/1/clouddrive/file?{}&_page={}&_size=100&pdir_fid={}&_sort=file_type:asc,file_name:asc",
-        b.api_host,
-        common_query(b),
-        page,
-        http::url_encode(&path)
-    );
+    let url = list_dir_url(b, page, &path);
     let resp = http::get(&url, &auth_headers(b, &req.cred))
         .await
         .map_err(biz_err)?;
@@ -284,7 +289,13 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .or_else(|| j.pointer("/data/_total"))
         .and_then(Value::as_i64)
         .unwrap_or(0);
-    let has_next = page * 100 < total;
+    // 翻页判断：_total 在顶层 metadata._total（data._total 兜底），已有
+    // 时按页码换算；缺席时按满页兜底（返回满 100 条大概率还有下一页）。
+    let has_next = if total > 0 {
+        page * 100 < total && !files.is_empty()
+    } else {
+        files.len() >= 100
+    };
     let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
@@ -755,6 +766,19 @@ mod tests {
         assert_eq!(
             search_url(&UC, "flac", 1),
             "https://pc-api.uc.cn/1/clouddrive/file/search?pr=UCBrowser&fr=pc&_page=1&_size=50&_fetch_total=1&_sort=file_type:desc,updated_at:desc&_is_hl=1&q=flac"
+        );
+    }
+
+    #[test]
+    fn list_dir_url_shape() {
+        // 网页端抓包形态：_fetch_total=1 必带，否则响应无 _total、翻页失效。
+        assert_eq!(
+            list_dir_url(&QUARK, 2, "fidabc"),
+            "https://drive-pc.quark.cn/1/clouddrive/file?pr=ucpro&fr=pc&sys=win32&ve=3.23.2&_page=2&_size=100&_fetch_total=1&pdir_fid=fidabc&_sort=file_type:asc,file_name:asc"
+        );
+        assert_eq!(
+            list_dir_url(&UC, 1, "fid/含特殊 字符"),
+            "https://pc-api.uc.cn/1/clouddrive/file?pr=UCBrowser&fr=pc&sys=win32&ve=3.23.2&_page=1&_size=100&_fetch_total=1&pdir_fid=fid%2F%E5%90%AB%E7%89%B9%E6%AE%8A+%E5%AD%97%E7%AC%A6&_sort=file_type:asc,file_name:asc"
         );
     }
 
