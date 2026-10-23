@@ -70,12 +70,12 @@ ShareLinkInfo? parseUrlToProvider(String raw) {
     );
   }
 
-  // 天翼：cloud.189.cn/t/xxx（web 分享）/ content 相关链接
-  m = RegExp(r'cloud\.189\.cn/(?:t|web/share)/([A-Za-z0-9]+)').firstMatch(url);
+  // 天翼：cloud.189.cn/t/xxx（web 分享）；web/share?code=xxx（web 分享页变体）
+  m = RegExp(r'cloud\.189\.cn/(?:t|web/share)/([A-Za-z0-9]+)|cloud\.189\.cn/web/share\?code=([A-Za-z0-9]+)').firstMatch(url);
   if (m != null) {
     return ShareLinkInfo(
       providerId: 'ecloud189',
-      shareId: m.group(1)!,
+      shareId: (m.group(1) ?? m.group(2))!,
       passcode: _queryParam(url, 'accessCode'),
       url: url,
     );
@@ -103,16 +103,18 @@ ShareLinkInfo? parseUrlToProvider(String raw) {
     );
   }
 
-  // 123 盘：123pan.com / 123684 / 123865 / 123912 等域名 /s/xxx-提取码
+  // 123 盘：新域名 {uid}.share.123pan.cn/123pan/{key}，经典域名
+  // 123pan.com / 123684 / 123865 / 123912 等 /s/{key}；key 现为 a-b
+  // 连字符形态，整段即 ShareKey（实测拆开报 ShareKey格式异常）；提取码取 ?pwd=
   m = RegExp(
-    r'(?:123pan|123684|123865|123912|123685)\.(?:com|cn)/s/([A-Za-z0-9]+)'
-    r'(?:-([A-Za-z0-9]+))?',
+    r'[A-Za-z0-9]+\.share\.123pan\.cn/123pan/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)|'
+    r'(?:123pan|123684|123865|123912|123685)\.(?:com|cn)/s/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)',
   ).firstMatch(url);
   if (m != null) {
     return ShareLinkInfo(
       providerId: 'pan123',
-      shareId: m.group(1)!,
-      passcode: m.group(2) ?? _queryParam(url, 'pwd'),
+      shareId: m.group(1) ?? m.group(2)!,
+      passcode: _queryParam(url, 'pwd'),
       url: url,
     );
   }

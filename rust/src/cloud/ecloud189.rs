@@ -122,6 +122,38 @@ fn file_id_of(data: &Value) -> String {
         .unwrap_or_else(|| "-1".to_string())
 }
 
+/// 天翼 open 分享接口固定返回 XML（Accept/UA 协商均无效，2026-10-23 实测），
+/// 不引 XML 依赖，按平铺标量做文本提取：取首个 `<tag>text</tag>` 的内文。
+fn xml_text(xml: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = xml.find(&open)? + open.len();
+    let end = start + xml[start..].find(&close)?;
+    Some(xml[start..end].trim().to_string())
+}
+
+/// 提取重复条目块（listShareDir 的 fileShareResponseInfos）：返回每个
+/// `<tag>…</tag>` 的内文切片，块内平铺标量再逐个 xml_text 取字段。
+fn xml_blocks(xml: &str, tag: &str) -> Vec<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut out = Vec::new();
+    let mut rest = xml;
+    while let Some(i) = rest.find(&open) {
+        let start = i + open.len();
+        let Some(j) = rest[start..].find(&close) else { break };
+        out.push(rest[start..start + j].to_string());
+        rest = &rest[start + j + close.len()..];
+    }
+    out
+}
+
+/// checkAccessCode 响应判定：成功回空体，错误码 HTTP 200 且
+/// `<successResp><success>false</success></successResp>`（2026-10-23 实测）。
+fn access_code_ok(body: &str) -> bool {
+    !body.contains("<success>false</success>")
+}
+
 /// 通用请求头（Cookie 非空才带，对齐 Dart `if (cookie.isNotEmpty)`）。
 fn auth_headers(cookie: &str) -> Vec<(String, String)> {
     let mut h = vec![
@@ -315,15 +347,14 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if !info_resp.is_ok() {
         return Err(biz_err("分享链接解析失败"));
     }
-    let ij = info_resp.json().map_err(biz_err)?;
-    let data = ij.get("data").cloned().unwrap_or(Value::Null);
-    if !data.is_object() {
-        return Err(biz_err("分享已失效"));
-    }
-    let share_id = jstr(data.get("shareId"));
-    let file_id = file_id_of(&data);
-    let is_dir = dir_flag_189(data.get("isDir"));
-    // 有提取码：checkAccessCode 校验（仅看 HTTP 状态，对齐 Dart）。
+    // 接口固定返回 XML（<shareVO>…</shareVO>；Accept/UA 协商均无效，
+    // 2026-10-23 实测），按平铺标量提取；失效/错误包无 fileId。
+    let xml = info_resp.body;
+    let file_id = xml_text(&xml, "fileId").ok_or_else(|| biz_err("分享已失效"))?;
+    let share_id = xml_text(&xml, "shareId").unwrap_or_default();
+    let is_dir = xml_text(&xml, "isFolder").as_deref() == Some("true");
+    // 有提取码：checkAccessCode 校验。错误码也是 HTTP 200（
+    // <successResp><success>false</success></successResp>），必须看响应体。
     if !pwd.is_empty() {
         let chk = http::post_form(
             "https://cloud.189.cn/api/open/share/checkAccessCode.action",
@@ -335,7 +366,7 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         )
         .await
         .map_err(biz_err)?;
-        if !chk.is_ok() {
+        if !chk.is_ok() || !access_code_ok(&chk.body) {
             return Err(biz_err("提取码错误"));
         }
     }
@@ -343,9 +374,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if !is_dir {
         files.push(file_json(
             &file_id,
-            &jstr(data.get("fileName")),
+            &xml_text(&xml, "fileName").unwrap_or_default(),
             false,
-            num_i64(data.get("fileSize")).unwrap_or(0),
+            xml_text(&xml, "fileSize")
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0),
             None,
             None,
             None,
@@ -360,18 +393,20 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         if !list_resp.is_ok() {
             return Err(biz_err("分享文件列表获取失败"));
         }
-        let lj = list_resp.json().map_err(biz_err)?;
-        let entries = lj
-            .pointer("/data/fileShareResponseInfos")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-        for e in &entries {
+        // XML：重复 <fileShareResponseInfos> 条目块（字段名与旧 JSON 同构，
+        // 块内平铺标量；目录型分享报文形态未实测）。
+        for b in xml_blocks(&list_resp.body, "fileShareResponseInfos") {
+            let entry_dir = xml_text(&b, "isDir")
+                .or_else(|| xml_text(&b, "isFolder"))
+                .as_deref()
+                == Some("true");
             files.push(file_json(
-                &jstr(e.get("fileId")),
-                &jstr(e.get("fileName")),
-                dir_flag_189(e.get("isDir")),
-                num_i64(e.get("fileSize")).unwrap_or(0),
+                &xml_text(&b, "fileId").unwrap_or_default(),
+                &xml_text(&b, "fileName").unwrap_or_default(),
+                entry_dir,
+                xml_text(&b, "fileSize")
+                    .and_then(|s| s.parse::<i64>().ok())
+                    .unwrap_or(0),
                 None,
                 None,
                 None,
@@ -578,6 +613,39 @@ mod tests {
         assert_eq!(file_id_of(&json!({ "fileId": "f-1" })), "f-1");
         assert_eq!(file_id_of(&json!({})), "-1");
         assert_eq!(file_id_of(&json!({ "fileId": null })), "-1");
+    }
+
+    #[test]
+    fn xml_text_extracts_sharevo() {
+        // 2026-10-23 实测报文（截取）：平铺标量、值两端无空白。
+        let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><shareVO><fileId>725191279626469549</fileId><fileName>Falling U (爱上你)-T-ara.flac</fileName><fileSize>28002902</fileSize><isFolder>false</isFolder><needAccessCode>1</needAccessCode><expireTime>0</expireTime></shareVO>";
+        assert_eq!(xml_text(xml, "fileId").as_deref(), Some("725191279626469549"));
+        assert_eq!(xml_text(xml, "isFolder").as_deref(), Some("false"));
+        assert_eq!(xml_text(xml, "fileSize").as_deref(), Some("28002902"));
+        assert_eq!(xml_text(xml, "shareId"), None);
+        assert_eq!(xml_text(xml, "missing"), None);
+    }
+
+    #[test]
+    fn xml_blocks_extracts_entries() {
+        let xml = "<listShareDirResponse><count>2</count><fileShareResponseInfos><fileId>a1</fileId><fileName>甲.flac</fileName><isDir>false</isDir></fileShareResponseInfos><fileShareResponseInfos><fileId>b2</fileId><fileName>专辑</fileName><isDir>true</isDir></fileShareResponseInfos></listShareDirResponse>";
+        let blocks = xml_blocks(xml, "fileShareResponseInfos");
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(xml_text(&blocks[0], "fileId").as_deref(), Some("a1"));
+        assert_eq!(xml_text(&blocks[0], "isDir").as_deref(), Some("false"));
+        assert_eq!(xml_text(&blocks[1], "fileId").as_deref(), Some("b2"));
+        assert_eq!(xml_text(&blocks[1], "isDir").as_deref(), Some("true"));
+        assert!(xml_blocks(xml, "nonexistent").is_empty());
+    }
+
+    #[test]
+    fn access_code_body_rule() {
+        // 错误码 HTTP 200 + <success>false</success>；成功为空体。
+        assert!(!access_code_ok(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><successResp><success>false</success></successResp>"
+        ));
+        assert!(access_code_ok(""));
+        assert!(access_code_ok("<successResp><success>true</success></successResp>"));
     }
 
     #[test]

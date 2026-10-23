@@ -71,14 +71,19 @@ pub fn parse_url_to_provider(raw: &str) -> Option<ShareLinkInfo> {
         });
     }
 
-    // 天翼：cloud.189.cn/t/xxx（web 分享）
-    if let Some(m) = regex::Regex::new(r"cloud\.189\.cn/(?:t|web/share)/([A-Za-z0-9]+)")
+    // 天翼：cloud.189.cn/t/xxx（web 分享）；web/share?code=xxx（web 分享页变体）
+    if let Some(m) = regex::Regex::new(r"cloud\.189\.cn/(?:t|web/share)/([A-Za-z0-9]+)|cloud\.189\.cn/web/share\?code=([A-Za-z0-9]+)")
         .ok()
         .and_then(|re| re.captures(url))
     {
         return Some(ShareLinkInfo {
             provider_id: "ecloud189",
-            share_id: m[1].to_string(),
+            // 两个分支各占一个捕获组，取先命中者。
+            share_id: m
+                .get(1)
+                .or_else(|| m.get(2))
+                .map(|c| c.as_str().to_string())
+                .unwrap_or_default(),
             passcode: query_param(url, "accessCode"),
             url: url.to_string(),
         });
@@ -110,20 +115,23 @@ pub fn parse_url_to_provider(raw: &str) -> Option<ShareLinkInfo> {
         });
     }
 
-    // 123 盘：123pan.com / 123684 / 123865 / 123912 等域名 /s/xxx-提取码
+    // 123 盘：新域名 {uid}.share.123pan.cn/123pan/{key}，经典域名
+    // 123pan.com / 123684 / 123865 / 123912 等 /s/{key}；key 现为 a-b
+    // 连字符形态，整段即 ShareKey（实测拆开报 ShareKey格式异常）；提取码取 ?pwd=
     if let Some(m) = regex::Regex::new(
-        r"(?:123pan|123684|123865|123912|123685)\.(?:com|cn)/s/([A-Za-z0-9]+)(?:-([A-Za-z0-9]+))?",
+        r"[A-Za-z0-9]+\.share\.123pan\.cn/123pan/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)|(?:123pan|123684|123865|123912|123685)\.(?:com|cn)/s/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)",
     )
     .ok()
     .and_then(|re| re.captures(url))
     {
+        let id = m
+            .get(1)
+            .map(|c| c.as_str().to_string())
+            .unwrap_or_else(|| m[2].to_string());
         return Some(ShareLinkInfo {
             provider_id: "pan123",
-            share_id: m[1].to_string(),
-            passcode: m
-                .get(2)
-                .map(|c| c.as_str().to_string())
-                .or_else(|| query_param(url, "pwd")),
+            share_id: id,
+            passcode: query_param(url, "pwd"),
             url: url.to_string(),
         });
     }
@@ -282,6 +290,18 @@ mod tests {
     }
 
     #[test]
+    fn ecloud189_web_share_code() {
+        // web 分享页变体；中文访问码尾巴不参与提取（用户单独填）。
+        let i = parse("https://cloud.189.cn/web/share?code=NJRbUfrQfIZb（访问码：cm8n）");
+        assert_eq!(i.provider_id, "ecloud189");
+        assert_eq!(i.share_id, "NJRbUfrQfIZb");
+        assert_eq!(i.passcode, None);
+        let i2 = parse("https://cloud.189.cn/web/share?code=NJRbUfrQfIZb&accessCode=cm8n");
+        assert_eq!(i2.share_id, "NJRbUfrQfIZb");
+        assert_eq!(i2.passcode.as_deref(), Some("cm8n"));
+    }
+
+    #[test]
     fn mobile139() {
         let i = parse("https://yun.139.com/shareweb/#/w/i/abcDEF123");
         assert_eq!(i.provider_id, "mobile139");
@@ -297,11 +317,27 @@ mod tests {
     }
 
     #[test]
-    fn pan123_inline_pwd() {
-        let i = parse("https://www.123pan.com/s/abc123-pwd9");
+    fn pan123_new_share_domain() {
+        let i = parse("https://1823556104.share.123pan.cn/123pan/4xPFjv-68d5A?pwd=vRuu");
+        assert_eq!(i.provider_id, "pan123");
+        assert_eq!(i.share_id, "4xPFjv-68d5A");
+        assert_eq!(i.passcode.as_deref(), Some("vRuu"));
+    }
+
+    #[test]
+    fn pan123_classic_domain_hyphen_key() {
+        let i = parse("https://www.123684.com/s/4xPFjv-68d5A?pwd=vRuu");
+        assert_eq!(i.provider_id, "pan123");
+        assert_eq!(i.share_id, "4xPFjv-68d5A");
+        assert_eq!(i.passcode.as_deref(), Some("vRuu"));
+    }
+
+    #[test]
+    fn pan123_classic_domain_plain_key() {
+        let i = parse("https://www.123pan.com/s/abc123");
         assert_eq!(i.provider_id, "pan123");
         assert_eq!(i.share_id, "abc123");
-        assert_eq!(i.passcode.as_deref(), Some("pwd9"));
+        assert_eq!(i.passcode.as_deref(), None);
     }
 
     #[test]
