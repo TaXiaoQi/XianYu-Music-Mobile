@@ -687,7 +687,7 @@ mod tests {
         );
         assert_eq!(
             search_url("周深", 1),
-            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum=1&recursive=1&mediaType=0&filename=%E5%91%A8%E6%B7%B1"
+            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=60&pageNum=1&recursive=1&mediaType=0&filename=%E5%91%A8%E6%B7%B1"
         );
     }
 
