@@ -324,14 +324,7 @@ try {
     } # end legacy back-sync
 } finally { Pop-Location }
 
-# ---- 7. rust .so (built in the main project; artifact -> ohos/entry/libs,
-#         which lives in the mirror only in legacy mirror mode) ----
-if (-not $SkipRust) {
-    & (Join-Path $ScriptDir 'build-rust-ohos.ps1')
-    if ($LASTEXITCODE -ge 8) { throw "rust build failed" }
-}
-
-# ---- 8. build / run ----
+# ---- 7. target ABI (detected before the rust build: -Emu hinges on it) ----
 # Target ABI: explicit -Abi wins; otherwise probe the connected device's ABI
 # list (emulator = x86_64, phones = arm64). Falls back to arm64 when no device
 # is reachable — matching the historical default.
@@ -348,6 +341,20 @@ if ($targetAbi -eq '') {
     Write-Host "[ohos] target ABI (explicit): $targetAbi" -ForegroundColor Cyan
 }
 
+# ---- 8. rust .so (built in the main project; artifact -> ohos/entry/libs,
+#         which lives in the mirror only in legacy mirror mode) ----
+# 模拟器 so（x86_64，~16MB）按需物化：仅 -Run（模拟器调试）或 -Abi x64 才
+# 构建复制，真机构建不再往 ohos/entry/libs 塞 x86_64 —— 否则绕过本脚本
+# 直接 flutter build hap / DevEco 打包时，hvigor 会把 entry/libs 下的
+# x86_64 原样收进 arm64 发布包（2026-10-22 实测 32.8MB vs 27.8MB）。
+if (-not $SkipRust) {
+    $rustArgs = @()
+    if ($Run -or $targetAbi -eq 'x64') { $rustArgs += '-Emu' }
+    & (Join-Path $ScriptDir 'build-rust-ohos.ps1') @rustArgs
+    if ($LASTEXITCODE -ge 8) { throw "rust build failed" }
+}
+
+# ---- 9. build / run ----
 # 打包前剔除对侧架构的 rust so：hvigor 会把 entry/libs 下所有 ABI 目录原样
 # 打进 HAP，entry/libs/x86_64 只有 build-rust-ohos.ps1 为模拟器调试复制的
 # libxianyu_core.so（~14MB），混进 arm64 发布包直接让体积翻倍（30.9MB -> 16MB）。

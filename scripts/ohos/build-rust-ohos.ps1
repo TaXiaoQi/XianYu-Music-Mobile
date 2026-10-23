@@ -1,23 +1,28 @@
-﻿# build-rust-ohos.ps1 - cross-compile libxianyu_core.so for OpenHarmony/HarmonyOS NEXT
+# build-rust-ohos.ps1 - cross-compile libxianyu_core.so for OpenHarmony/HarmonyOS NEXT
 #
-# Targets: aarch64-unknown-linux-ohos (real device) + x86_64-unknown-linux-ohos (emulator)
+# Targets: aarch64-unknown-linux-ohos (real device, default) + x86_64-unknown-linux-ohos
+#          (emulator; opt-in via -Emu — hvigor packages ohos/entry/libs as-is, so a
+#          stray x86_64 copy turns every device release HAP into +16MB dead weight)
 # Rust Tier 2 targets, distributed by rustup.
 # Toolchain source: HarmonyOS SDK shipped with DevEco Studio (native/llvm + native/sysroot)
 #
 # Usage:
-#   ./scripts/build-rust-ohos.ps1                          # both archs, auto-detect SDK
-#   ./scripts/build-rust-ohos.ps1 -Archs aarch64           # single arch
+#   ./scripts/build-rust-ohos.ps1                          # device arch, auto-detect SDK
+#   ./scripts/build-rust-ohos.ps1 -Emu                     # device + emulator archs
+#   ./scripts/build-rust-ohos.ps1 -Archs aarch64           # explicit arch list
 #   ./scripts/build-rust-ohos.ps1 -SdkRoot <SDK root>      # SDK dir containing native/llvm/bin/clang.exe
 #   ./scripts/build-rust-ohos.ps1 -RustDir <rust crate>    # xianyu_core crate dir (default: main project)
 #
 # Artifacts:
 #   <rust>/target/<target>/release/libxianyu_core.so
-#   auto-copied to ohos/entry/libs/{arm64-v8a,x86_64}/ when ohos/entry exists
+#   auto-copied to ohos/entry/libs/{arm64-v8a[,x86_64]}/ when ohos/entry exists
 param(
     [string]$SdkRoot = "",
     [string]$RustDir = "",
-    [string[]]$Archs = @('aarch64', 'x86_64')
+    [string[]]$Archs = @(),
+    [switch]$Emu
 )
+if ($Archs.Count -eq 0) { $Archs = if ($Emu) { @('aarch64', 'x86_64') } else { @('aarch64') } }
 
 $ErrorActionPreference = 'Continue' # native tool stderr must not abort; explicit LASTEXITCODE checks below
 
