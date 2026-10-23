@@ -228,6 +228,9 @@ enum OhosCommand {
     SetNext {
         path: String,
         stream_cache_url: Option<String>,
+        /// 头部参数保留以对齐 android 管线签名；ohos 侧在线源不走无缝
+        /// 拼接（prepare_next_source 直接拒绝），消费侧不解包。
+        #[allow(dead_code)]
         stream_cache_headers_json: Option<String>,
     },
     CancelNext,
@@ -332,13 +335,11 @@ pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<Str
     } else {
         Duration::from_secs(6)
     };
-    let mut usb_ring: Option<Arc<PipeShared>> = None;
-    let device_name = match init_rx.recv_timeout(init_wait) {
+    let (device_name, usb_ring) = match init_rx.recv_timeout(init_wait) {
         Ok(Ok((name, sr, ch, ring))) => {
             progress.sample_rate.store(sr, Ordering::Relaxed);
             progress.channels.store(ch as u32, Ordering::Relaxed);
-            usb_ring = ring;
-            name
+            (name, ring)
         }
         Ok(Err(e)) => {
             let _ = handle.join();

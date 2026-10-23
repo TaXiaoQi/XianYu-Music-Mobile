@@ -115,6 +115,7 @@ fn dir_flag_189(v: Option<&Value>) -> bool {
 }
 
 /// `(data['fileId'] ?? '-1').toString()`。
+#[cfg(test)]
 fn file_id_of(data: &Value) -> String {
     data.get("fileId")
         .filter(|v| !v.is_null())
@@ -256,10 +257,13 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 /// 文件搜索 URL（纯函数，单测断言）：filename 关键词 + 全盘 folderId=-11
 /// 递归搜索。路径**无 /api 前缀**（cloud.189.cn/open/file/searchFiles.action，
 /// 带 /api 的 open 路径 404，MediaHelp 等同域 Cookie 实现同款），参数含
-/// recursive=1（递归子目录）与 mediaType=0；翻页 pageNum，pageSize=1000。
+/// recursive=1（递归子目录）与 mediaType=0；翻页 pageNum。pageSize 实测
+/// 上限 100（1000 直接 HTTP 400，2026-10-23 桌面端实测），取抓包参考值 60。
+const SEARCH_PAGE_SIZE: i64 = 60;
+
 fn search_url(keyword: &str, page: i64) -> String {
     format!(
-        "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum={page}&recursive=1&mediaType=0&filename={}",
+        "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize={SEARCH_PAGE_SIZE}&pageNum={page}&recursive=1&mediaType=0&filename={}",
         http::url_encode(keyword)
     )
 }
@@ -315,7 +319,7 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             files.push(file_from_search_item(e));
         }
     }
-    let next_cursor = if files.len() >= 1000 {
+    let next_cursor = if files.len() >= SEARCH_PAGE_SIZE as usize {
         Some((page + 1).to_string())
     } else {
         None
@@ -679,7 +683,7 @@ mod tests {
         // 无 /api 前缀 + recursive/mediaType 参数（对齐同域 Cookie 实现抓包）。
         assert_eq!(
             search_url("lo fi", 2),
-            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=1000&pageNum=2&recursive=1&mediaType=0&filename=lo+fi"
+            "https://cloud.189.cn/open/file/searchFiles.action?folderId=-11&pageSize=60&pageNum=2&recursive=1&mediaType=0&filename=lo+fi"
         );
         assert_eq!(
             search_url("周深", 1),

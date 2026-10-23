@@ -16,22 +16,37 @@
 //! `ohos_audio` 输出层直接复用；AAudio 相关的 ffi/stream/dsd/playback
 //! 仅在 android 编译。测试依赖 ffi 的格式转换，保持 android 门控。
 #![allow(dead_code)]
-pub(crate) use crate::player::buffered_source::{BlockProducer, BufferedSource};
+// 以下 re-export 仅供 android 专属子模块（playback/stream/dsd/ffi）消费；
+// ohos 侧只用 decoder 与诊断基础设施，不门控会在 ohos target 下报
+// unused_imports（decoder 共享，qmc2/io/Arc/Duration 等两平台都用）。
+pub(crate) use crate::player::buffered_source::BlockProducer;
+#[cfg(target_os = "android")]
+pub(crate) use crate::player::buffered_source::BufferedSource;
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::output::ExclusivePlayRequest;
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::dsd_dop::{parse_dsd_info, DopStreamSource};
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::equalizer::{
     ClipGuardSource, Equalizer, EqualizerHandle, EqualizerSettings, UserVolumeSource,
 };
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::loudness::VolumeNormalizer;
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::sound_effect::{SoundEffectBlockProcessor, SoundEffectSettings};
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::types::global_visualizer;
 pub(crate) use crate::player::qmc2::{looks_like_qmc_encrypted, extract_ekey_from_footer, QmcCrypto, QmcDecryptReader};
 pub(crate) use std::io::{Read, Seek, SeekFrom};
-pub(crate) use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+pub(crate) use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(target_os = "android")]
+pub(crate) use std::sync::atomic::{AtomicU32, AtomicU64};
+#[cfg(target_os = "android")]
 pub(crate) use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 pub(crate) use std::sync::{Arc, Mutex, OnceLock};
 /// 记录工作线程退出原因到共享 slot（诊断用：Flutter 侧在 active=false 时读取展示）。
 /// 模块级定义（macro_rules! 仅对定义点之后的代码可见）。
+#[cfg(target_os = "android")]
 macro_rules! set_exit_reason {
     ($last_error:expr, $msg:expr) => {
         if let Ok(mut slot) = $last_error.lock() {
@@ -39,6 +54,7 @@ macro_rules! set_exit_reason {
         }
     };
 }
+#[cfg(target_os = "android")]
 pub(crate) use std::thread;
 pub(crate) use std::time::Duration;
 
