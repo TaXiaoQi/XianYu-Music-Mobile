@@ -300,8 +300,75 @@ async fn download_thread(
 	};
 
 	if !response.status().is_success() {
-		fail_download(&format!("HTTP {}", response.status()), 0);
-		return;
+		let status = response.status();
+		// 百度 d.pcs 实测（2026-10）：同 URL+headers，带 Range 的分段探针 206
+		// 通过、全量 GET 403。403/429 时补 Range: bytes=0- 重试一次——语义与
+		// 全量等价（响应体仍从 0 起，缓存按 0 写入不受影响），并落 403 响应
+		// 体前段作风控证据（errno/拦截页特征）。
+		if status == reqwest::StatusCode::FORBIDDEN
+			|| status == reqwest::StatusCode::TOO_MANY_REQUESTS
+		{
+			let body_head: String = response
+				.text()
+				.await
+				.unwrap_or_default()
+				.chars()
+				.take(240)
+				.collect();
+			eprintln!("[stream_cache] HTTP {status}，body: {body_head}");
+			// 探针同构重试：裸 client（无压缩协商），仅透传网盘原始 headers
+			// （剔除注入的 Accept/Accept-Encoding）+ Range: bytes=0-，与
+			// cloud-head 206 成功形态一致——通过则坐实 Accept/压缩协商触发
+			// 风控；仍 403 则为 IP 级风控。
+			let probe_client = reqwest::Client::builder()
+				.timeout(core::time::Duration::from_secs(20))
+				.build();
+			match probe_client {
+				Ok(pc) => {
+					let mut probe_req = pc
+						.get(url)
+						.header(reqwest::header::RANGE, "bytes=0-");
+					if let Some(hs) = headers {
+						for (k, v) in hs {
+							let kl = k.to_ascii_lowercase();
+							if kl == "accept" || kl == "accept-encoding" {
+								continue;
+							}
+							if let (Ok(name), Ok(val)) = (
+								reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+								reqwest::header::HeaderValue::from_str(v),
+							) {
+								probe_req = probe_req.header(name, val);
+							}
+						}
+					}
+					match probe_req.send().await {
+						Ok(r) if r.status().is_success() => {
+							eprintln!(
+								"[stream_cache] 探针同构重试通过 status={}（原请求含 Accept/压缩协商被风控）",
+								r.status()
+							);
+							response = r;
+						}
+						Ok(r) => {
+							fail_download(&format!("HTTP {status}（探针同构重试 HTTP {}）", r.status()), 0);
+							return;
+						}
+						Err(e) => {
+							fail_download(&format!("HTTP {status}（探针同构重试请求失败: {e}）"), 0);
+							return;
+						}
+					}
+				}
+				Err(e) => {
+					fail_download(&format!("HTTP {status}（重试 client 构建失败: {e}）"), 0);
+					return;
+				}
+			}
+		} else {
+			fail_download(&format!("HTTP {}", status), 0);
+			return;
+		}
 	}
 
 	// 检查 Content-Type
