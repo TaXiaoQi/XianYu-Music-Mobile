@@ -256,7 +256,7 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
         ),
         ModernChoiceOption(
           label: tr('小'),
-          subtitle: tr('整体缩小 15%，同屏内容更多'),
+          subtitle: tr('与标准档一致，为后续细分预留'),
           value: 0,
         ),
         ModernChoiceOption(

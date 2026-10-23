@@ -50,8 +50,12 @@ enum AppFontSize {
   final bool followsSystem;
 }
 
-/// 整套 UI 缩放档位值（与 uiScaleIndex 对应：小/标准/大/特大）
-const kUiScaleValues = [0.85, 1.0, 1.15, 1.3];
+/// 整套 UI 缩放档位值（与 uiScaleIndex 对应：小/标准/大/特大）。
+/// 已并入系统「显示大小」静态校正：设备默认档 density 高于设计观感
+/// 基准（实机对比默认档 vs 小档 ≈0.9），原表 ×0.9 写死；小与标准
+/// 同映射 0.9（用户指定，锁同一目标观感）。大/特大保持原档距
+/// （+15%/+30%）。系统调档时 app 仍跟随变化，仅整体偏小一档
+const kUiScaleValues = [0.9, 0.9, 1.035, 1.17];
 
 /// 整套 UI 缩放系数：越界档位回退标准
 double uiScaleOf(int index) =>
@@ -1045,3 +1049,4 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
 );
+

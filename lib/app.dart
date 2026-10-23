@@ -11,7 +11,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
 import 'src/core/app_colors.dart';
-import 'src/core/platform_caps.dart';
 import 'src/core/system_ui.dart' show androidSdkIntProvider;
 import 'src/auth/account_api.dart';
 import 'src/i18n/i18n.dart';
@@ -492,12 +491,11 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                 settings,
                 baseMq.orientation == Orientation.landscape,
               );
-              // 鸿蒙「显示大小」映射校正：系统默认档的 density 高于观感
-              // 基准，整套 UI 相对臃肿（实机对比默认档 vs 小档 ≈0.9）。
-              // OHOS 各档等比乘 0.9——系统默认档映射到小档观感；系统调小
-              // 后 UI 相应再小一档。安卓/iOS 显示大小行为正常，不校正
-              final uiScale = (uiIndex < 0 ? systemScale : uiScaleOf(uiIndex)) *
-                  (PlatformCaps.isOhos ? 0.9 : 1.0);
+              // 「跟随系统」档直接乘系统字体缩放因子；固定档走静态校
+              // 正表（kUiScaleValues 已并入系统默认档 0.9 观感校正），
+              // 无运行时变量
+              final uiScale =
+                  uiIndex < 0 ? systemScale : uiScaleOf(uiIndex);
               Widget routeChild = MediaQuery(
                 data: baseMq.copyWith(textScaler: textScaler),
                 child: child!,
