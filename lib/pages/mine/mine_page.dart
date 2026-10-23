@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/auth_provider.dart';
-import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/theme/theme_icon.dart';
 import '../../src/download/download_provider.dart';
@@ -53,7 +52,6 @@ class MinePage extends ConsumerWidget {
         ? statusBar + 8 + 44 + 14
         : GlassTopBar.height(context, bottom: searchBar);
     final portrait = Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
         children: [
@@ -101,22 +99,25 @@ class MinePage extends ConsumerWidget {
         : GlassTopBar.height(context, topInset: 8) + 12;
     final loggedIn = ref.watch(authProvider.select((a) => a.isLoggedIn));
     return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
+      body: Stack(
         children: [
-          const SizedBox(height: 18),
-          const _AccountArea(),
-          if (loggedIn) ...[
-            const SizedBox(height: 16),
-            StatsSummaryCard(),
-          ],
-          const SizedBox(height: 16),
-          const _StatsRow(),
-          const SizedBox(height: 24),
-          const _QuickCards(),
-          const SizedBox(height: 12),
+          ListView(
+            padding: EdgeInsets.fromLTRB(24, topInset, 24, 24),
+            children: [
+              const SizedBox(height: 18),
+              const _AccountArea(),
+              if (loggedIn) ...[
+                const SizedBox(height: 16),
+                StatsSummaryCard(),
+              ],
+              const SizedBox(height: 16),
+              const _StatsRow(),
+              const SizedBox(height: 24),
+              const _QuickCards(),
+              const SizedBox(height: 12),
+            ],
+          ),
         ],
       ),
     );

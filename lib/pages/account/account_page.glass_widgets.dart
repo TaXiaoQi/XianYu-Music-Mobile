@@ -136,14 +136,3 @@ class _GlassTile extends StatelessWidget {
     );
   }
 }
-
-class _AmbientBackground extends ConsumerWidget {
-  const _AmbientBackground();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IgnorePointer(
-      child: Container(color: appScaffoldBackground(context, ref)),
-    );
-  }
-}

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/recommend_sheets_preview_provider.dart';
@@ -85,7 +84,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     return Scaffold(
       body: Stack(
         children: [
-          const _AmbientBackground(),
           RepaintBoundary(
             child: ListView(
             padding: EdgeInsets.fromLTRB(
@@ -119,7 +117,6 @@ class _HomePageState extends ConsumerState<HomePage> {
     return Scaffold(
       body: Stack(
         children: [
-          const _AmbientBackground(),
           ListView(
             padding: EdgeInsets.fromLTRB(
                 18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
@@ -382,20 +379,6 @@ class _MostPlayedRow extends ConsumerWidget {
       ),
       ),
       ),
-    );
-  }
-}
-
-/// 页面底衬：干净的 scaffold 背景（壁纸模式下透出壁纸）。旧版在这里画
-/// 红蓝两个径向光斑，壁纸模式下与壁纸打架，已按竖屏口径改为纯底衬
-/// （账号面板同款）
-class _AmbientBackground extends ConsumerWidget {
-  const _AmbientBackground();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return IgnorePointer(
-      child: Container(color: appScaffoldBackground(context, ref)),
     );
   }
 }

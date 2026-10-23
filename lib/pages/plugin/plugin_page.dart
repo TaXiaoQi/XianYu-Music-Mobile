@@ -359,7 +359,6 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
     final searchingNoMatch = q.isNotEmpty && filtered.isEmpty;
 
     return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
       body: Stack(
         clipBehavior: Clip.none,

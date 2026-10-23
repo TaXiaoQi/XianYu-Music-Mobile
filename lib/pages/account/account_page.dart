@@ -127,13 +127,11 @@ class _AccountPageState extends ConsumerState<AccountPage>
             ) ==
             true);
     return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: true,
       body: RepaintBoundary(
         child: Stack(
           fit: StackFit.expand,
           children: [
-            const _AmbientBackground(),
             SafeArea(
               top: false,
               child: Padding(

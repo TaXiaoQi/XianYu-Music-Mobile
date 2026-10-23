@@ -512,8 +512,48 @@ class _SettingsBound extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // 根层无页面作用域（pageId = null）：解析结果即全局用户壁纸
     final cb = ref.watch(pageWallpaperProvider);
-    if (cb == null) return const SizedBox.shrink();
+    if (cb == null) return const _FallbackAmbientGlow();
     return CustomBackgroundLayer(background: cb);
+  }
+}
+
+/// 兜底壁纸：无用户壁纸/主题壁纸时根层恒画的经典红蓝双径向光斑。
+/// 与真壁纸同层同轨——底不随页面滚动/tab 切换/转场重建，只有组件动；
+/// 页面（透明 Scaffold）与透明垫底的覆盖路由直接透出，开/关壁纸只是
+/// 换一张「壁纸」，观感连续
+class _FallbackAmbientGlow extends StatelessWidget {
+  const _FallbackAmbientGlow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned(
+          top: -80,
+          right: -60,
+          child: _glow(300, const Color(0x59EC4141)),
+        ),
+        Positioned(
+          bottom: 120,
+          left: -100,
+          child: _glow(340, const Color(0x4D5A78DC)),
+        ),
+      ],
+    );
+  }
+
+  Widget _glow(double size, Color color) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [color, color.withValues(alpha: 0)],
+        ),
+      ),
+    );
   }
 }
 
@@ -610,6 +650,8 @@ class RoutePageBackdrop extends ConsumerWidget {
 
   Widget _buildCore(
       BuildContext context, WidgetRef ref, PageWallpaper? pageWp) {
+    // 实底垫：兜底光斑只给壳层一级页（透明 Scaffold 直接透根层
+    // _FallbackAmbientGlow）；覆盖路由二级页垫实底遮住根层，保持纯色
     final plain = ColoredBox(color: appSurfaceBg(context), child: child);
     if (pageWp != null) {
       // 主题包页面壁纸（静图）：整页垫层，转场随页面一起进出。
