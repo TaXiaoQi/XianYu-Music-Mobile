@@ -8,6 +8,7 @@ extension _PluginPageUpdates on _PluginPageState {
       engine,
       ref.read(pluginManagerProvider.notifier),
       subscriptionsReader: () => ref.read(pluginSubscriptionsProvider),
+      api: ref.read(accountApiProvider),
     );
   }
 

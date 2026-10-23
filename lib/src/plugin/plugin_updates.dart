@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/application_logger.dart';
+import '../auth/account_api.dart';
+import '../sync/plugin_sync_state.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 import 'plugin_preferences.dart';
@@ -100,9 +102,10 @@ class PluginUpdateService {
   final PluginEngine engine;
   final PluginManager manager;
   final List<PluginSubscription> Function()? subscriptionsReader;
+  final AccountApi? api;
 
   PluginUpdateService(this.engine, this.manager,
-      {this.subscriptionsReader});
+      {this.subscriptionsReader, this.api});
 
   final Map<String, ({int at, List<({String url, String? version, String? name})> items})>
       _subCache = {};
@@ -324,6 +327,23 @@ class PluginUpdateService {
       );
       if (newSource.id != source.id) {
         await manager.remove(source.id);
+        // 补别名：收藏/播放队列存的旧 pluginId 仍可换算到现行插件
+        await manager.linkPluginAlias(source.id, newSource.id);
+        // 同步记账：更新即换 id，云端仍存的旧脚本会被「先拉后推」的
+        // download 按 id 原样恢复，旧脚本一跑又自报更新，弹窗因此
+        // 反复出现（#666888）。对齐删除流程的云端语义：旧版本从云端
+        // 移除，并落下"不再恢复"墓碑兜底云端删除失败/竞态的情况。
+        final wasSynced = await PluginSyncState.isSynced(source.id);
+        await PluginSyncState.addDownloadSkipIds([source.id]);
+        await PluginSyncState.removeSyncedIds([source.id]);
+        final ciyuanxiId = api?.ciyuanxiId ?? '';
+        if (api != null && wasSynced && ciyuanxiId.isNotEmpty) {
+          try {
+            await api!.deleteCloudPlugins([source.id]);
+          } catch (e) {
+            AppLog.warn('plugin', '更新后清理云端旧版本失败(${source.id}): $e');
+          }
+        }
       }
       return (
         success: true,
@@ -386,6 +406,7 @@ Future<void> runPluginAutoUpdateOnStartup(
       manager,
       subscriptionsReader: () =>
           container.read(pluginSubscriptionsProvider),
+      api: container.read(accountApiProvider),
     );
     final installed = await service.checkAndInstallAll();
     if (installed > 0 && log != null) {

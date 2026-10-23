@@ -541,6 +541,20 @@ class PluginManager extends StateNotifier<PluginListState> {
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
+  /// 更新换 id 后补别名：收藏/播放队列存的旧 pluginId 仍可换算到现行插件
+  ///（来源标签、播放解析都依赖 id 匹配）；链尾若也是旧键则压缩成直达。
+  /// 须在旧插件 remove 之后调用，否则别名会被 destroy 清掉。
+  Future<void> linkPluginAlias(String oldId, String newId) async {
+    if (oldId.isEmpty || newId.isEmpty || oldId == newId) return;
+    final engine = await _getEngine();
+    final aliases = Map<String, String>.of(state.idAliases)
+      ..removeWhere((_, v) => v == oldId)
+      ..[oldId] = newId;
+    await engine.store.saveAliases(aliases);
+    engine.linkAlias(oldId, newId);
+    state = state.copyWith(idAliases: aliases);
+  }
+
   Future<List<PluginUserVar>> getUserVars(String pluginId) async {
     final engine = await _getEngine();
     final source = state.sources.where((s) => s.id == pluginId).toList();
