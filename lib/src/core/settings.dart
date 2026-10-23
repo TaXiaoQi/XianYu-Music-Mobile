@@ -300,6 +300,11 @@ class AppSettings {
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
     this.statusBarLyricsEnabled = false,
+    this.bluetoothLyricsEnabled = false,
+    this.bluetoothLyricsAutoEnabled = false,
+    this.bluetoothAutoResumeEnabled = false,
+    this.autoPlayOnLaunch = false,
+    this.simultaneousPlaybackEnabled = false,
     this.floatingLyricsX = 0,
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
@@ -520,6 +525,18 @@ class AppSettings {
 
   final bool statusBarLyricsEnabled;
 
+  final bool bluetoothLyricsEnabled;
+
+  final bool bluetoothLyricsAutoEnabled;
+
+  final bool bluetoothAutoResumeEnabled;
+
+  /// 自动播放：打开软件后自动继续上次的播放
+  final bool autoPlayOnLaunch;
+
+  /// 同时播放：不申请音频焦点，可与其他应用同时出声
+  final bool simultaneousPlaybackEnabled;
+
   final int floatingLyricsX;
 
   final int floatingLyricsY;
@@ -651,6 +668,11 @@ class AppSettings {
     int? floatingLyricsWidthPercent,
     bool? floatingLyricsUseLyricFont,
     bool? statusBarLyricsEnabled,
+    bool? bluetoothLyricsEnabled,
+    bool? bluetoothLyricsAutoEnabled,
+    bool? bluetoothAutoResumeEnabled,
+    bool? autoPlayOnLaunch,
+    bool? simultaneousPlaybackEnabled,
     int? floatingLyricsX,
     int? floatingLyricsY,
     bool? watchLinkageEnabled,
@@ -811,6 +833,15 @@ class AppSettings {
           floatingLyricsUseLyricFont ?? this.floatingLyricsUseLyricFont,
       statusBarLyricsEnabled:
           statusBarLyricsEnabled ?? this.statusBarLyricsEnabled,
+      bluetoothLyricsEnabled:
+          bluetoothLyricsEnabled ?? this.bluetoothLyricsEnabled,
+      bluetoothLyricsAutoEnabled:
+          bluetoothLyricsAutoEnabled ?? this.bluetoothLyricsAutoEnabled,
+      bluetoothAutoResumeEnabled:
+          bluetoothAutoResumeEnabled ?? this.bluetoothAutoResumeEnabled,
+      autoPlayOnLaunch: autoPlayOnLaunch ?? this.autoPlayOnLaunch,
+      simultaneousPlaybackEnabled:
+          simultaneousPlaybackEnabled ?? this.simultaneousPlaybackEnabled,
       floatingLyricsX: floatingLyricsX ?? this.floatingLyricsX,
       floatingLyricsY: floatingLyricsY ?? this.floatingLyricsY,
       watchLinkageEnabled: watchLinkageEnabled ?? this.watchLinkageEnabled,
@@ -1008,6 +1039,15 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsUseLyricFont:
           prefs.getBool('floatingLyricsUseLyricFont') ?? false,
       statusBarLyricsEnabled: prefs.getBool('statusBarLyricsEnabled') ?? false,
+      bluetoothLyricsEnabled:
+          prefs.getBool('bluetoothLyricsEnabled') ?? false,
+      bluetoothLyricsAutoEnabled:
+          prefs.getBool('bluetoothLyricsAutoEnabled') ?? false,
+      bluetoothAutoResumeEnabled:
+          prefs.getBool('bluetoothAutoResumeEnabled') ?? false,
+      autoPlayOnLaunch: prefs.getBool('autoPlayOnLaunch') ?? false,
+      simultaneousPlaybackEnabled:
+          prefs.getBool('simultaneousPlaybackEnabled') ?? false,
       floatingLyricsX: prefs.getInt('floatingLyricsX') ?? 0,
       floatingLyricsY: prefs.getInt('floatingLyricsY') ?? 96,
       watchLinkageEnabled: prefs.getBool('watchLinkageEnabled') ?? true,

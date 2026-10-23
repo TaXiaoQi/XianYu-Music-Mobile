@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto 媒体能力声明：仅声明 media 模板（音频浏览 + 播控） -->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>

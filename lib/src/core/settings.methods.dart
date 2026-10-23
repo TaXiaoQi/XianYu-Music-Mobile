@@ -191,6 +191,20 @@ class SettingsStore {
         next.floatingLyricsUseLyricFont,
       ),
       prefs.setBool('statusBarLyricsEnabled', next.statusBarLyricsEnabled),
+      prefs.setBool('bluetoothLyricsEnabled', next.bluetoothLyricsEnabled),
+      prefs.setBool(
+        'bluetoothLyricsAutoEnabled',
+        next.bluetoothLyricsAutoEnabled,
+      ),
+      prefs.setBool(
+        'bluetoothAutoResumeEnabled',
+        next.bluetoothAutoResumeEnabled,
+      ),
+      prefs.setBool('autoPlayOnLaunch', next.autoPlayOnLaunch),
+      prefs.setBool(
+        'simultaneousPlaybackEnabled',
+        next.simultaneousPlaybackEnabled,
+      ),
       prefs.setInt('floatingLyricsX', next.floatingLyricsX),
       prefs.setInt('floatingLyricsY', next.floatingLyricsY),
       prefs.setBool('watchLinkageEnabled', next.watchLinkageEnabled),
@@ -552,6 +566,16 @@ extension SettingsNotifierMethods on SettingsNotifier {
 
   Future<void> setStatusBarLyricsEnabled(bool v) =>
       _settingsStore.update((s) => s.copyWith(statusBarLyricsEnabled: v));
+  Future<void> setBluetoothLyricsEnabled(bool v) =>
+      _settingsStore.update((s) => s.copyWith(bluetoothLyricsEnabled: v));
+  Future<void> setBluetoothLyricsAutoEnabled(bool v) =>
+      _settingsStore.update((s) => s.copyWith(bluetoothLyricsAutoEnabled: v));
+  Future<void> setBluetoothAutoResumeEnabled(bool v) =>
+      _settingsStore.update((s) => s.copyWith(bluetoothAutoResumeEnabled: v));
+  Future<void> setAutoPlayOnLaunch(bool v) =>
+      _settingsStore.update((s) => s.copyWith(autoPlayOnLaunch: v));
+  Future<void> setSimultaneousPlaybackEnabled(bool v) =>
+      _settingsStore.update((s) => s.copyWith(simultaneousPlaybackEnabled: v));
   Future<void> setFloatingLyricsLocked(bool v) =>
       _settingsStore.update((s) => s.copyWith(floatingLyricsLocked: v));
   Future<void> setFloatingLyricsTextColor(int v) =>

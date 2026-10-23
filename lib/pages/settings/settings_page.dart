@@ -1806,6 +1806,13 @@ const _settingsSearchItems = <_SearchItem>[
     categoryName: '歌词',
     keywords: '通知栏 锁屏 车机 蓝牙 状态栏',
   ),
+  _SearchItem(
+    label: '蓝牙歌词',
+    section: '车机歌词',
+    path: '/settings/lyrics',
+    categoryName: '歌词',
+    keywords: '车机 汽车 AVRCP 媒体会话 蓝牙播放',
+  ),
 
   _SearchItem(
     label: '音量',

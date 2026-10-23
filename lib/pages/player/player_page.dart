@@ -31,6 +31,8 @@ import '../../src/lyrics/lyric_model.dart';
 import '../../src/lyrics/lyrics_repository.dart';
 import '../../src/player/online_quality_probe.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/player/sleep_timer.dart';
+import '../../src/player/sleep_timer_sheet.dart';
 import '../../src/rust/api.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/navigation/shell.dart' show isLandscapeProvider;
@@ -879,69 +881,6 @@ class _TraditionalPlayerLayoutState
     }
   }
 
-  int _sleepMinutes = 10;
-
-  DateTime? _sleepDeadline;
-
-  Timer? _sleepFire;
-
-  Future<void> _loadSleepMinutes() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      if (!mounted) return;
-      setState(
-        () => _sleepMinutes = prefs.getInt('player_sleep_minutes') ?? 10,
-      );
-    } catch (e) {
-      AppLog.warn('ui', '读取定时暂停设置失败: $e');
-    }
-  }
-
-  void _startSleepTimer(int minutes) {
-    _sleepFire?.cancel();
-    setState(() {
-      _sleepMinutes = minutes;
-      _sleepDeadline = DateTime.now().add(Duration(minutes: minutes));
-    });
-    _sleepFire = Timer(Duration(minutes: minutes), _onSleepTimeout);
-    _persistSleepMinutes();
-    showXianYuToast(
-      context,
-      tr('已定时：{n} 分钟后暂停播放', {'n': minutes}),
-      duration: const Duration(seconds: 1),
-    );
-  }
-
-  void _cancelSleepTimer() {
-    _sleepFire?.cancel();
-    _sleepFire = null;
-    if (_sleepDeadline == null) return;
-    setState(() => _sleepDeadline = null);
-  }
-
-  void _onSleepTimeout() {
-    _sleepFire = null;
-    if (!mounted) return;
-    setState(() => _sleepDeadline = null);
-    if (ref.read(playerProvider).isPlaying) {
-      ref.read(playerProvider.notifier).pauseFromSystem(origin: 'sleepTimer');
-      showXianYuToast(
-        context,
-        tr('定时时间到，已暂停播放'),
-        duration: const Duration(seconds: 2),
-      );
-    }
-  }
-
-  Future<void> _persistSleepMinutes() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('player_sleep_minutes', _sleepMinutes);
-    } catch (e) {
-      AppLog.warn('ui', '保存定时暂停设置失败: $e');
-    }
-  }
-
   late final PageController _pageController;
 
   final bool _flashOn = false;
@@ -952,7 +891,6 @@ class _TraditionalPlayerLayoutState
   void initState() {
     super.initState();
     _loadCoverAppearancePrefs();
-    _loadSleepMinutes();
     _eq = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -963,7 +901,6 @@ class _TraditionalPlayerLayoutState
   @override
   void dispose() {
     _eq.dispose();
-    _sleepFire?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -1967,11 +1904,23 @@ class _TraditionalPlayerLayoutState
                 ],
               ),
             ),
-            _SleepTimerRow(
-              initialMinutes: _sleepMinutes,
-              deadlineGetter: () => _sleepDeadline,
-              onCommit: _startSleepTimer,
-              onCancel: _cancelSleepTimer,
+            // 睡眠定时入口（复用全局设置的 showSleepTimerSheet 弹窗）
+            Consumer(
+              builder: (context, sheetRef, _) {
+                final active = sheetRef.watch(sleepTimerProvider).active;
+                return PressableScale(child: ListTile(
+                  leading: Icon(
+                    Icons.bedtime_outlined,
+                    color: active ? scheme.primary : scheme.onSurfaceVariant,
+                    size: 22,
+                  ),
+                  title: Text(tr('睡眠定时')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    showSleepTimerSheet(ctx);
+                  },
+                ));
+              },
             ),
             if (widget.mvSupported && widget.onToggleMv != null)
               PressableScale(child: ListTile(

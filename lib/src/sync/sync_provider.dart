@@ -376,24 +376,43 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _ref.read(bgSyncSourceProvider.notifier).state = '登录同步';
     final upload = state.uploadConfig;
     try {
-      if (upload.playlists) {
-        await syncPlaylistsUpload();
-        await syncPlaylistsDownload();
+      // 各数据域并发执行（域内先后顺序保持原语义：上传/下载依赖不变）。
+      // 串行时网盘绑定排在歌单/插件之后才落库，登录后进网盘页看到的是
+      // 空绑定，体感像「没同步」。域 service 自带错误兜底（写入各自状
+      // 态），外层 catch 仅防未预期异常炸整组——单域失败不影响其余域。
+      Future<void> guard(Future<void> Function() run) async {
+        try {
+          await run();
+        } catch (e) {
+          AppLog.warn('sync', '登录同步域执行失败: $e');
+        }
       }
-      if (upload.plugins) {
-        await syncPluginsUpload();
-        await syncPluginsDownload();
-      }
-      if (upload.favorites) {
-        await syncFavoritesDownload();
-        await syncFavoritesUpload();
-      }
-      if (upload.cloudCreds) {
-        // 先拉后推：把云端绑定合并进本地，再把合并结果推回云端
-        await syncCloudCredsDownload();
-        await syncCloudCredsUpload();
-      }
-      await syncListenStats();
+      await Future.wait([
+        if (upload.playlists)
+          guard(() async {
+            await syncPlaylistsUpload();
+            await syncPlaylistsDownload();
+          }),
+        if (upload.plugins)
+          guard(() async {
+            await syncPluginsUpload();
+            await syncPluginsDownload();
+          }),
+        if (upload.favorites)
+          guard(() async {
+            await syncFavoritesDownload();
+            await syncFavoritesUpload();
+          }),
+        if (upload.cloudCreds)
+          guard(() async {
+            // 先拉后推：把云端绑定合并进本地，再把合并结果推回云端
+            await syncCloudCredsDownload();
+            await syncCloudCredsUpload();
+          }),
+        guard(syncListenStats),
+      ]);
+      // UI 段并发结束后串行：通知弹窗与设置冲突对话框需要独占交互，
+      // 且设置同步内部可能联动歌单/插件域，须等对应域空闲后执行。
       if (context.mounted) {
         await _ref.read(notificationServiceProvider).showPendingListenResetNotice(context);
       }

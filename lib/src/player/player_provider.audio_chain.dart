@@ -154,15 +154,52 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     }
   }
 
+  /// 「同时播放」开关变更：
+  /// · 重配音频会话（iOS mixWithOthers）；
+  /// · 重建播放器让 handleAudioSessionActivation 的新值生效——仅在非播放态
+  ///   重建（播放中下次起播经 _playAt 的模式比对自动补建）；
+  /// · 已加载源但暂停中：挂 pending 让下次播放经 _playAt 带进度全量重载，
+  ///   否则重建后裸 play() 无源可放；
+  /// · 开启时主动 abandon 焦点：旧播放器虽 dispose，但 audio_session 原生
+  ///   缓存的焦点申请仍在，不释放的话其他应用请求焦点时仍会把我们当
+  ///   焦点持有者通知（触发打断暂停），与共存目标相悖。
+  Future<void> _onSimultaneousPlaybackChanged(bool enabled) async {
+    if (simultaneousPlaybackActive == enabled) return;
+    simultaneousPlaybackActive = enabled;
+    await _configureAudioSession(enabled);
+    if (state.isPlaying) return;
+    if (enabled) {
+      try {
+        final session = await AudioSession.instance;
+        await session.setActive(false);
+      } catch (e) {
+        AppLog.warn('audio_session', 'abandon focus failed: $e');
+      }
+    }
+    final cur = state.current;
+    if (cur != null && state.queueIndex >= 0) {
+      if (cur.isOnline) {
+        _restoredOnlinePending = state.position;
+      } else {
+        _restoredLocalPending = state.position;
+      }
+    }
+    await _rebuildPlayer('simultaneous-playback-toggle');
+  }
+
   /// Rust 管线（独占/DSP）接管后系统播放器完全退出，Android 上音频焦点必须
   /// 由应用层主动申请——interruptionEventStream 的前提是本应用持有焦点，
   /// 未持焦点的管线播放对来电/其他应用抢焦点完全免疫（打断暂停形同虚设的根因）。
   /// 鸿蒙版：audio_session 插件无 ohos 实现（必然抛异常），且 OHAudio 渲染流
   /// 由系统音频焦点自动托管（被抢焦点时系统直接暂停渲染流），直接放行。
   /// 焦点被拒（如正在通话）时不接管，回落系统播放器路径由其 play() 内部申请。
+  /// 「同时播放」开启时跳过申请：共存模式下不打断其他应用。
   Future<bool> _ensurePipelineAudioFocus() async {
     if (_isOhos) {
       AppLog.info('audio_session', '鸿蒙版 OHAudio 由系统焦点托管，跳过 audio_session 申请');
+      return true;
+    }
+    if (simultaneousPlaybackActive) {
       return true;
     }
     try {

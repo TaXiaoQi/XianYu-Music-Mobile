@@ -15,6 +15,13 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+// HiCar SDK 条件接入：华为准入制离线分发（邮件申请 → 签协议 → 获 AAR），
+// 无公开 maven 坐标，AAR 受协议限制不入库（.gitignore 已排除）。把
+// huawei-hicar-sdk.aar 放入 app/libs/ 重新构建即自动切换到 src/hicar/kotlin
+// 真实现；缺失时走 src/nohicar/kotlin 空实现，常规构建零影响。两份
+// HiCarBridge 类名/签名一致，调用点（MainActivity）无需感知差异。
+val hasHiCarSdk = file("libs/huawei-hicar-sdk.aar").exists()
+
 android {
     namespace = "com.xianyumusic.app"
     // file_picker 依赖的 flutter_plugin_android_lifecycle 要求 compileSdk >= 36；
@@ -97,6 +104,14 @@ android {
             )
         }
     }
+
+    sourceSets {
+        // HiCar 条件编译：AAR 在位编 src/hicar/kotlin 真实现，否则编
+        // src/nohicar/kotlin 空实现（两份 HiCarBridge 类名/签名一致）
+        getByName("main") {
+            kotlin.srcDir(if (hasHiCarSdk) "src/hicar/kotlin" else "src/nohicar/kotlin")
+        }
+    }
 }
 
 kotlin {
@@ -110,6 +125,10 @@ flutter {
 }
 
 dependencies {
+    // HiCar SDK（准入制离线分发，见文件顶部说明）：AAR 就位才参与编译
+    if (hasHiCarSdk) {
+        implementation(files("libs/huawei-hicar-sdk.aar"))
+    }
     // 华为 Wear Engine SDK（Android 手机侧）：查询穿戴设备 + ping 远程冷启动
     // 腕上端应用。宿主服务为华为运动健康，授权弹窗由运动健康承载。
     // 版本号可按官方「版本更新说明」页升级。

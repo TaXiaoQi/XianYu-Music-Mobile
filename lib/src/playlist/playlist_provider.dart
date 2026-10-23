@@ -137,35 +137,39 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
     await _ref.read(playerProvider.notifier).playQueue(items, startIndex: index);
   }
 
-  QueueItem _toQueueItem(ImportedSong song) {
-    if (song.isLocal) {
-      return QueueItem(
-        path: song.path,
-        title: song.title,
-        artist: song.artist,
-        album: song.album,
-        durationMs: song.duration * 1000,
-      );
-    }
-    final songJson = <String, dynamic>{
-      'pluginId': song.pluginId,
-      'source': song.source,
-      'format': song.format,
-      'musicInfo': song.musicInfo,
-    };
+  QueueItem _toQueueItem(ImportedSong song) => importedSongToQueueItem(song);
+}
+
+/// ImportedSong → QueueItem 公开转换：播放器媒体会话（Android Auto 浏览树）
+/// 与歌单 UI 共用，保证线上歌渲染元数据口径一致。
+QueueItem importedSongToQueueItem(ImportedSong song) {
+  if (song.isLocal) {
     return QueueItem(
       path: song.path,
       title: song.title,
       artist: song.artist,
       album: song.album,
       durationMs: song.duration * 1000,
-      coverUrl: song.coverUrl,
-      onlineSongJson: jsonEncodeSafe(songJson),
-      onlineQuality: '320k',
-      source: song.source,
-      onlineInfoJson: jsonEncodeSafe(song.musicInfo ?? <String, dynamic>{}),
     );
   }
+  final songJson = <String, dynamic>{
+    'pluginId': song.pluginId,
+    'source': song.source,
+    'format': song.format,
+    'musicInfo': song.musicInfo,
+  };
+  return QueueItem(
+    path: song.path,
+    title: song.title,
+    artist: song.artist,
+    album: song.album,
+    durationMs: song.duration * 1000,
+    coverUrl: song.coverUrl,
+    onlineSongJson: jsonEncodeSafe(songJson),
+    onlineQuality: '320k',
+    source: song.source,
+    onlineInfoJson: jsonEncodeSafe(song.musicInfo ?? <String, dynamic>{}),
+  );
 }
 
 String jsonEncodeSafe(Map<String, dynamic> map) {

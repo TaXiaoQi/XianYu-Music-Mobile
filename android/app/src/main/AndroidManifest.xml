@@ -70,6 +70,11 @@
             </intent-filter>
         </service>
 
+        <!-- Android Auto：声明媒体应用能力（浏览树实现在 XianYuAudioHandler.getChildren） -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <!-- audio_service 控制中心/锁屏按键广播接收器 -->
         <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
             android:exported="true">

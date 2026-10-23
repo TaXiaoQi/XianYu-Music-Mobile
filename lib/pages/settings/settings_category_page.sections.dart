@@ -720,7 +720,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
         ),
       ],
       if (PlatformCaps.supportsStatusBarLyrics) ...[
-        _sectionHeader(context, tr('通知栏歌词')),
+        _sectionHeader(context, tr('车机歌词')),
         _CardGroup(
           children: [
             _switchTile(
@@ -730,6 +730,30 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
               subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
               value: s?.statusBarLyricsEnabled ?? false,
               onChanged: (v) => n.setStatusBarLyricsEnabled(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.bluetooth_audio_outlined,
+              title: tr('蓝牙歌词'),
+              subtitle: tr('把当前歌词行写入媒体会话，车机经蓝牙 AVRCP 显示歌词'),
+              value: s?.bluetoothLyricsEnabled ?? false,
+              onChanged: (v) => n.setBluetoothLyricsEnabled(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.bluetooth_searching_outlined,
+              title: tr('自动跟随蓝牙接入'),
+              subtitle: tr('连上车机 / 蓝牙音箱时自动开启蓝牙歌词，断开自动恢复'),
+              value: s?.bluetoothLyricsAutoEnabled ?? false,
+              onChanged: (v) => n.setBluetoothLyricsAutoEnabled(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.play_circle_outline_rounded,
+              title: tr('蓝牙接入自动续播'),
+              subtitle: tr('连上车机 / 蓝牙音箱后自动恢复播放'),
+              value: s?.bluetoothAutoResumeEnabled ?? false,
+              onChanged: (v) => n.setBluetoothAutoResumeEnabled(v),
             ),
           ],
         ),
@@ -746,7 +770,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
     bool exclusivePlaying,
   ) {
     return [
-      _sectionHeader(context, tr('播放')),
+      _sectionHeader(context, tr('播放设置')),
       _CardGroup(
         children: [
           _tile(
@@ -777,6 +801,59 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             value: (s?.songClickAction ?? 'single') == 'double',
             onChanged: (v) => n.setSongClickAction(v ? 'double' : 'single'),
           ),
+          _switchTile(
+            context,
+            icon: Icons.branding_watermark_outlined,
+            title: tr('被打断后自动恢复播放'),
+            subtitle: tr('来电、导航语音等临时打断结束后自动继续；被其他应用占用输出时始终暂停并提示'),
+            value: s?.autoResumeAfterInterruption ?? true,
+            onChanged: (v) => n.setAutoResumeAfterInterruption(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.play_circle_outline,
+            title: tr('自动播放'),
+            subtitle: tr('打开软件后自动继续上次的播放进度'),
+            value: s?.autoPlayOnLaunch ?? false,
+            onChanged: (v) => n.setAutoPlayOnLaunch(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.surround_sound_outlined,
+            title: tr('同时播放'),
+            subtitle: tr('不申请音频焦点，可与其他应用同时出声（此时来电、拔出耳机不会自动暂停）'),
+            value: s?.simultaneousPlaybackEnabled ?? false,
+            onChanged: (v) => n.setSimultaneousPlaybackEnabled(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.balance_outlined,
+            title: tr('音量平衡'),
+            subtitle: tr('按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量'),
+            value: s?.volumeBalanceEnabled ?? false,
+            onChanged: (v) => n.setVolumeBalanceEnabled(v),
+          ),
+          if (s?.volumeBalanceEnabled ?? false) ...[
+            _tile(
+              context,
+              icon: Icons.tune_outlined,
+              title: tr('整体增益偏移'),
+              trailing: _gainOffsetSlider(s, n),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.shield_outlined,
+              title: tr('防削波破音保护'),
+              subtitle: tr('增益可能超出 0 dB 极限时自动压低；无峰值标签的歌曲不提升音量'),
+              value: s?.volumeBalancePreventClipping ?? true,
+              onChanged: (v) => n.setVolumeBalancePreventClipping(v),
+            ),
+          ],
+        ],
+      ),
+      _sectionHeader(context, tr('在线播放')),
+      _CardGroup(
+        children: [
           _tile(
             context,
             icon: Icons.high_quality_outlined,
@@ -816,43 +893,6 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             ),
             onTap: () => _pickFailureBehavior(context, ref, s),
           ),
-          _switchTile(
-            context,
-            icon: Icons.branding_watermark_outlined,
-            title: tr('被打断后自动恢复播放'),
-            subtitle: tr('来电、导航语音等临时打断结束后自动继续；被其他应用占用输出时始终暂停并提示'),
-            value: s?.autoResumeAfterInterruption ?? true,
-            onChanged: (v) => n.setAutoResumeAfterInterruption(v),
-          ),
-        ],
-      ),
-      _sectionHeader(context, tr('音量平衡 (ReplayGain)')),
-      _CardGroup(
-        children: [
-          _switchTile(
-            context,
-            icon: Icons.balance_outlined,
-            title: tr('音量平衡'),
-            subtitle: tr('按歌曲内置的 ReplayGain 标签调整增益，让不同歌曲响度一致；无标签的歌曲保持原音量'),
-            value: s?.volumeBalanceEnabled ?? false,
-            onChanged: (v) => n.setVolumeBalanceEnabled(v),
-          ),
-          if (s?.volumeBalanceEnabled ?? false) ...[
-            _tile(
-              context,
-              icon: Icons.tune_outlined,
-              title: tr('整体增益偏移'),
-              trailing: _gainOffsetSlider(s, n),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.shield_outlined,
-              title: tr('防削波破音保护'),
-              subtitle: tr('增益可能超出 0 dB 极限时自动压低；无峰值标签的歌曲不提升音量'),
-              value: s?.volumeBalancePreventClipping ?? true,
-              onChanged: (v) => n.setVolumeBalancePreventClipping(v),
-            ),
-          ],
         ],
       ),
       _sectionHeader(context, tr('输出')),
@@ -870,30 +910,39 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             context,
             icon: Icons.usb_outlined,
             title: tr('USB 独占输出 (Bit-perfect)'),
-            subtitle: tr(
-              '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
-            ),
+            subtitle: PlatformCaps.isOhos
+                ? tr('鸿蒙版暂不支持：系统未公开 USB 直通建流接口，适配后将开放')
+                : tr(
+                  '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
+                ),
             value: s?.usbExclusiveOutput ?? false,
+            enabled: !PlatformCaps.isOhos,
             onChanged: (v) => n.setUsbExclusiveOutput(v),
           ),
           _switchTile(
             context,
             icon: Icons.high_quality,
             title: tr('Bit-perfect 直出'),
-            subtitle: tr(
-              'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
-            ),
+            subtitle: PlatformCaps.isOhos
+                ? tr('依赖 USB 独占输出（鸿蒙版暂不支持）')
+                : tr(
+                  'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+                ),
             value: s?.bitPerfectOutput ?? false,
+            enabled: !PlatformCaps.isOhos,
             onChanged: (v) => n.setBitPerfectOutput(v),
           ),
           _switchTile(
             context,
             icon: Icons.graphic_eq_outlined,
             title: tr('DSD 原生直出'),
-            subtitle: tr(
-              'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
-            ),
+            subtitle: PlatformCaps.isOhos
+                ? tr('依赖 USB 独占输出（鸿蒙版暂不支持）')
+                : tr(
+                  'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
+                ),
             value: s?.dsdNativePassthrough ?? false,
+            enabled: !PlatformCaps.isOhos,
             onChanged: (v) => n.setDsdNativePassthrough(v),
           ),
           _switchTile(

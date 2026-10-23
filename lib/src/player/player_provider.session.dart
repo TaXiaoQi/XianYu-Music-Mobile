@@ -346,6 +346,19 @@ extension PlayerNotifierSession on PlayerNotifier {
           'pos=${pos.toStringAsFixed(1)} '
           'dur=${state.duration.toStringAsFixed(1)} '
           'online=${currentItem.isOnline}');
+      // 「自动播放」：恢复完成后自动续播。经 toggle 走 pending 恢复链
+      // （在线/SAF/网盘重载源，本地已预载直接 play），origin 归入自动
+      // 续播类，与蓝牙自动续播互斥防双触发。
+      if (state.current != null) {
+        try {
+          final s = await _ref.read(settingsProvider.future);
+          if (s.autoPlayOnLaunch) {
+            unawaited(toggle(origin: 'autoPlayOnLaunch'));
+          }
+        } catch (e) {
+          AppLog.warn('session', '自动播放触发失败: $e');
+        }
+      }
     } catch (e) {
       AppLog.warn('session', '恢复播放会话异常: $e');
     }

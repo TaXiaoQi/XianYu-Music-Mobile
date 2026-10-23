@@ -134,7 +134,7 @@ class _ScrollingTextState extends State<ScrollingText>
                     clipBehavior: Clip.none,
                     children: [
                       Positioned(
-                        left: dx - 20,
+                        left: dx,
                         top: 0,
                         child: Text(
                           widget.text,
@@ -144,7 +144,7 @@ class _ScrollingTextState extends State<ScrollingText>
                         ),
                       ),
                       Positioned(
-                        left: dx - 20 + _textWidth + _gap,
+                        left: dx + _textWidth + _gap,
                         top: 0,
                         child: Text(
                           widget.text,

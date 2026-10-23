@@ -718,6 +718,10 @@ class MainActivity : AudioServiceActivity() {
         FlutterMessengerHolder.messenger = flutterEngine.dartExecutor.binaryMessenger
         // 手表联动 RFCOMM 传输层（Kotlin 仅字节管道，协议在 Dart 侧）
         com.xianyumusic.app.watch.WatchLink.register(flutterEngine.dartExecutor.binaryMessenger, this)
+        // 蓝牙音频设备连接沿（A2DP）：驱动「自动跟随蓝牙接入」
+        BluetoothAudioWatcher.register(flutterEngine.dartExecutor.binaryMessenger, this)
+        // HiCar 桥接（AAR 在位为真实现，缺省为空实现；见 build.gradle.kts 条件编译）
+        com.xianyumusic.app.hicar.HiCarBridge.init(this)
         // 系统分享：原生 ACTION_SEND + 普通 startActivity，国产 ROM 才会弹自家分享面板
         SystemShare.register(flutterEngine.dartExecutor.binaryMessenger, this)
         deepLinkChannel = MethodChannel(

@@ -56,6 +56,12 @@ class _ReverbSection extends ConsumerWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              // 显式「关闭」chip（对齐空间音效与桌面端混响的「无」）
+              ChoiceChip(
+                label: Text(tr('关闭')),
+                selected: settings.reverbKind == 'none',
+                onSelected: (_) => notifier.clearReverb(),
+              ),
               for (final p in [...reverbPresets, ...algoReverbPresets])
                 ChoiceChip(
                   label: Text(p.label),

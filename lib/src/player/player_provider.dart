@@ -31,6 +31,7 @@ import '../core/settings.dart';
 import '../download/download_provider.dart';
 import '../effects/sound_effect_provider.dart';
 import '../favorites/favorites_provider.dart';
+import '../playlist/playlist_provider.dart';
 import '../home/home_providers.dart';
 import '../library/saf_channel.dart';
 import '../plugin/plugin_search.dart';
@@ -74,6 +75,14 @@ part 'player_provider.media_handler.dart';
 
 XianYuAudioHandler? audioHandler;
 
+/// 「同时播放」期望状态：true = 不申请音频焦点，与其他应用共存。
+/// 播放器实例的会话激活行为在构造期固定（handleAudioSessionActivation），
+/// 开关切换后经 [playerBuiltSimultaneous] 比对，在起播/暂停等安全时机重建。
+bool simultaneousPlaybackActive = false;
+
+/// 当前播放器实例构建时的「同时播放」状态（_GatedAudioPlayer 构造时记录）
+bool playerBuiltSimultaneous = false;
+
 final Map<String, int> _qualitySizeByUrl = {};
 
 final Set<String> _prewarmKeys = {};
@@ -103,11 +112,16 @@ class _GatedAudioPlayer extends AudioPlayer {
   _GatedAudioPlayer()
     : super(
         handleInterruptions: false,
+        // 「同时播放」开启时不代为激活音频会话：Android 上即不申请音频焦点，
+        // 与其他应用共存（audio_session 0.1.25 无 none 焦点类型可配）
+        handleAudioSessionActivation: !simultaneousPlaybackActive,
         // 鸿蒙不走 just_audio 内置本地代理：在线流的 headers/Range/206 全由
         // app 侧 AudioProxyServer（AudioHeadCache）自足代理，AVPlayer 直连它
         // 即可；内置代理层在鸿蒙上曾致在线播放静默失败（fatal/404），绕开。
         useProxyForRequestHeaders: !PlatformCaps.isOhos,
-      );
+      ) {
+    playerBuiltSimultaneous = simultaneousPlaybackActive;
+  }
 
   @override
   Future<void> play() async {
@@ -426,13 +440,39 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
   }
 
+  /// 按设置配置音频会话。「同时播放」开启时 iOS 加 mixWithOthers 与其他
+  /// 应用混音；Android 的共存由播放器跳过会话激活实现（见 _GatedAudioPlayer），
+  /// 配置里无需特殊焦点类型（0.1.25 无 none 可选）。鸿蒙 configure 必抛，
+  /// 由 catch 吞掉（系统托管焦点）。
+  Future<void> _configureAudioSession(bool simultaneous) async {
+    final session = await AudioSession.instance;
+    try {
+      if (simultaneous) {
+        await session.configure(
+          const AudioSessionConfiguration(
+            avAudioSessionCategory: AVAudioSessionCategory.playback,
+            avAudioSessionCategoryOptions:
+                AVAudioSessionCategoryOptions.mixWithOthers,
+            androidAudioAttributes: AndroidAudioAttributes(
+              contentType: AndroidAudioContentType.music,
+              usage: AndroidAudioUsage.media,
+            ),
+          ),
+        );
+      } else {
+        await session.configure(const AudioSessionConfiguration.music());
+      }
+    } catch (e) {
+      AppLog.warn('audio_session', 'configure failed: $e');
+    }
+  }
+
   Future<void> _init() async {
     AudioSession.instance.then((session) async {
-      try {
-        await session.configure(const AudioSessionConfiguration.music());
-      } catch (e) {
-        AppLog.warn('audio_session', 'configure failed: $e');
-      }
+      await _configureAudioSession(
+        _ref.read(settingsProvider).valueOrNull?.simultaneousPlaybackEnabled ??
+            false,
+      );
       _interruptionSub = session.interruptionEventStream.listen((event) async {
         if (!event.begin) {
           if (_interruptedByInterruption) {
@@ -576,6 +616,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     );
     _ref.listen(
       settingsProvider.select(
+        (s) => s.valueOrNull?.simultaneousPlaybackEnabled ?? false,
+      ),
+      (prev, next) {
+        if (prev != next) _onSimultaneousPlaybackChanged(next);
+      },
+    );
+    _ref.listen(
+      settingsProvider.select(
         (s) => (
           s.valueOrNull?.volumeBalanceEnabled ?? false,
           s.valueOrNull?.volumeBalanceGainOffsetDb ?? 0,
@@ -630,6 +678,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     bool manualNav = false,
   }) async {
     if (index < 0 || index >= state.queue.length) return;
+    // 「同时播放」切换后的首次起播：播放器的会话激活行为构造期固定，
+    // 模式不匹配先重建（源随后全量重载，用户无感）
+    if (playerBuiltSimultaneous != simultaneousPlaybackActive) {
+      await _rebuildPlayer('simultaneous-playback-apply');
+    }
     _playEpoch++;
     final epoch = _playEpoch;
     final wasPlaying = state.isPlaying;
@@ -1416,7 +1469,27 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _persistSession();
   }
 
+  /// 自动续播类来源（启动自动播放/蓝牙自动续播）：出声中或已有自动续播在
+  /// 途中时直接忽略——冷启动时蓝牙事件与自动播放可能几乎同时到达，
+  /// 无守卫会让后到者把刚续上的播放又暂停掉。
+  static const _autoResumeOrigins = {'autoPlayOnLaunch', 'btAutoResume'};
+  bool _autoResuming = false;
+
   Future<void> toggle({String origin = 'unknown'}) async {
+    if (_autoResumeOrigins.contains(origin)) {
+      if (state.isPlaying || _autoResuming) return;
+      _autoResuming = true;
+      try {
+        await _toggle(origin: origin);
+      } finally {
+        _autoResuming = false;
+      }
+      return;
+    }
+    await _toggle(origin: origin);
+  }
+
+  Future<void> _toggle({String origin = 'unknown'}) async {
     if (state.current == null) return;
     if (origin != 'unknown') _pauseOrigin = origin;
     AppLog.info(

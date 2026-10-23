@@ -377,22 +377,32 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
-/// 文件搜索 URL（纯函数，单测断言）。端点 filesearch 为设计稿形态：
-/// 全盘检索（dir=/），app_id 照抄 list，响应 list 与 /api/list 同构。
+/// 文件搜索 URL（纯函数，单测断言）。端点为 web 端搜索实测形态：
+/// 设计稿的 /api/filesearch 已不存在（2026-10 实测恒 404），真实端点
+/// /api/search 响应含 list/has_more/display_count，条目与 /api/list 同构。
 fn search_url(keyword: &str) -> String {
     format!(
-        "https://pan.baidu.com/api/filesearch?dir=/&key={}&web=1&clienttype=0&app_id={APP_ID}",
+        "https://pan.baidu.com/api/search?dir=/&key={}&web=1&clienttype=0&app_id={APP_ID}",
         http::url_encode(keyword)
     )
 }
 
-/// filesearch 条目 → CloudFile（映射纯函数，单测断言）。
+/// 搜索条目 → CloudFile（映射纯函数，单测断言）。
 /// 播放（filemetas dlink）只需 fs_id；path 一并带回，响应无 parent_path
 /// （parentId 留空）。
 fn file_from_search_item(e: &Value) -> Value {
+    // 名称 server_filename 为主、name 兜底（搜索条目键名存在两形态摇摆）。
+    let name = {
+        let n = jstr(e.get("server_filename"));
+        if n.is_empty() {
+            jstr(e.get("name"))
+        } else {
+            n
+        }
+    };
     file_json(
         &jstr(e.get("fs_id")),
-        &jstr(e.get("server_filename")),
+        &name,
         num_i64(e.get("isdir")) == Some(1),
         num_i64(e.get("size")).unwrap_or(0),
         None,
@@ -401,8 +411,8 @@ fn file_from_search_item(e: &Value) -> Value {
     )
 }
 
-/// 文件搜索：keyword 必填；filesearch 无翻页参数，结果一次返回
-/// （nextCursor 恒空），返回结构与 list_dir 同构（list_result_json）。
+/// 文件搜索：keyword 必填；响应含 has_more 但网页端按单页展示，TS 契约
+/// 为一次性拉全（nextCursor 恒空），返回结构与 list_dir 同构（list_result_json）。
 async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     // xpan 无全盘搜索 API，OAuth 轨明确降级提示。
@@ -417,11 +427,13 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .await
         .map_err(biz_err)?;
     if !resp.is_ok() {
-        return Err(biz_err("搜索请求失败"));
+        // 带上状态码：403/503 等形态是百度频控/风控判别的关键证据
+        return Err(biz_err(&format!("搜索请求失败 (HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
-    if num_i64(j.get("errno")) != Some(0) {
-        return Err(biz_err("搜索请求失败"));
+    let errno = num_i64(j.get("errno")).unwrap_or(-1);
+    if errno != 0 {
+        return Err(biz_err(&format!("搜索请求失败 (errno={errno})")));
     }
     let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
     let files: Vec<Value> = list.iter().map(file_from_search_item).collect();
@@ -1033,13 +1045,14 @@ mod tests {
 
     #[test]
     fn search_url_shape() {
+        // 2026-10 实测：/api/filesearch 恒 404，真实端点为 /api/search。
         assert_eq!(
             search_url("lofi beats"),
-            "https://pan.baidu.com/api/filesearch?dir=/&key=lofi+beats&web=1&clienttype=0&app_id=250528"
+            "https://pan.baidu.com/api/search?dir=/&key=lofi+beats&web=1&clienttype=0&app_id=250528"
         );
         assert_eq!(
             search_url("周深"),
-            "https://pan.baidu.com/api/filesearch?dir=/&key=%E5%91%A8%E6%B7%B1&web=1&clienttype=0&app_id=250528"
+            "https://pan.baidu.com/api/search?dir=/&key=%E5%91%A8%E6%B7%B1&web=1&clienttype=0&app_id=250528"
         );
     }
 
@@ -1063,6 +1076,9 @@ mod tests {
         // 目录条目 isdir==1。
         let d = file_from_search_item(&json!({ "fs_id": 9, "server_filename": "m", "isdir": 1 }));
         assert_eq!(d["isDir"], true);
+        // 缺 server_filename 时回退 name。
+        let n = file_from_search_item(&json!({ "fs_id": 7, "name": "b.mp3", "isdir": 0 }));
+        assert_eq!(n["name"], "b.mp3");
     }
 
     #[test]

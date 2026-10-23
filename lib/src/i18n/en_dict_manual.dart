@@ -1,4 +1,13 @@
 const Map<String, String> enDictManual = {
+  '鸿蒙版暂不支持：系统未公开 USB 直通建流接口，适配后将开放':
+      'Not yet supported on HarmonyOS: the system has no public API to open a USB direct stream; will be enabled once adapted',
+  '依赖 USB 独占输出（鸿蒙版暂不支持）':
+      'Requires USB exclusive output (not yet supported on HarmonyOS)',
+  '自动播放': 'Auto-play',
+  '打开软件后自动继续上次的播放进度': 'Resume last playback on app launch',
+  '同时播放': 'Simultaneous playback',
+  '不申请音频焦点，可与其他应用同时出声（此时来电、拔出耳机不会自动暂停）':
+      'No audio focus requested; plays alongside other apps (calls and headphone unplug will not auto-pause)',
   ' · 文件缺失': ' · File missing',
   '不一致的设置项': 'Differing settings',
   '等 {n} 项': '+{n} more',
@@ -170,6 +179,15 @@ const Map<String, String> enDictManual = {
       'Replay the same song by switching sources via the plugin, based on origin info',
   '把当前歌词行推送到系统通知栏 / 锁屏展示':
       'Pushes the current lyric line to the system notification / lock screen',
+  '蓝牙歌词': 'Bluetooth lyrics',
+  '把当前歌词行写入媒体会话，车机经蓝牙 AVRCP 显示歌词':
+      'Writes the current lyric line into the media session; car head units show lyrics via Bluetooth AVRCP',
+  '自动跟随蓝牙接入': 'Auto-enable on Bluetooth connect',
+  '连上车机 / 蓝牙音箱时自动开启蓝牙歌词，断开自动恢复':
+      'Automatically enables Bluetooth lyrics when a car head unit or Bluetooth speaker connects, and restores when disconnected',
+  '蓝牙接入自动续播': 'Auto-resume on Bluetooth connect',
+  '连上车机 / 蓝牙音箱后自动恢复播放':
+      'Automatically resumes playback when a car head unit or Bluetooth speaker connects',
   '版本信息、项目主页': 'Version info and project homepage',
   '榜单': 'Charts',
   '薄荷': 'Mint',
@@ -1185,7 +1203,7 @@ const Map<String, String> enDictManual = {
   '注销后账号数据将被清除且无法恢复。验证码将发送到注册邮箱：{email}':
       'All account data will be cleared and cannot be recovered. A code will be sent to {email}',
   '注销账号失败': 'Failed to delete the account',
-  '车机歌词': 'Car lyrics',
+  '车机歌词': 'Car & Bluetooth lyrics',
   '资料修改前置确认': 'Profile change pre-confirmation',
   '自定义背景与动态壁纸': 'Custom backgrounds and live wallpapers',
   '自定义歌词字体': 'Custom lyrics font',
@@ -1716,6 +1734,8 @@ const Map<String, String> enDictManual = {
   '操作失败：{e}': 'Operation failed: {e}',
   '弦予音乐隐私政策': 'XianYu Music Privacy Policy',
   '播放': 'Playback',
+  '播放设置': 'Playback settings',
+  '在线播放': 'Online playback',
   '和': 'and',
   '同意并继续': 'Agree and continue',
   '不同意并退出': 'Decline and exit',

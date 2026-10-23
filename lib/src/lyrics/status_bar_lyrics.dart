@@ -56,8 +56,10 @@ class StatusBarLyricsController {
 
   // ---- 设置变化 ----
 
+  bool _btEnabled(AppSettings s) => s.statusBarLyricsEnabled || s.bluetoothLyricsEnabled;
+
   void _onSettingsChanged(AppSettings s) {
-    final enabled = s.statusBarLyricsEnabled;
+    final enabled = _btEnabled(s);
     if (enabled && !_enabled) {
       _enabled = true;
       final state = _container.read(playerProvider);
@@ -65,6 +67,10 @@ class StatusBarLyricsController {
     } else if (!enabled && _enabled) {
       _enabled = false;
       _cancel();
+    } else if (_enabled) {
+      // 两个出口单独关闭时也要收回对应的展示（通知栏/媒体会话标题）
+      if (!s.statusBarLyricsEnabled) _channel.invokeMethod('cancel');
+      if (!s.bluetoothLyricsEnabled) _restoreTitle();
     }
   }
 
@@ -72,7 +78,7 @@ class StatusBarLyricsController {
 
   void _onPlaybackChanged(PlaybackState state) {
     final s = _container.read(settingsProvider).valueOrNull;
-    if (s == null || !s.statusBarLyricsEnabled) return;
+    if (s == null || !_btEnabled(s)) return;
 
     final item = state.current;
     if (item == null || !state.isPlaying) {
@@ -86,6 +92,8 @@ class StatusBarLyricsController {
       _songKey = key;
       _lyrics = const [];
       _lastPushedLine = null;
+      // 切歌即恢复真实标题，避免旧歌末句歌词残留到新媒体会话元数据
+      if (s.bluetoothLyricsEnabled) _restoreTitle();
       _fetchLyrics(item);
       return;
     }
@@ -127,19 +135,34 @@ class StatusBarLyricsController {
   // ---- 推送原生 ----
 
   void _push(String line, QueueItem item) {
-    _channel.invokeMethod('show', {
-      'title': item.title,
-      'artist': item.artist,
-      'lyric': line,
-      if (item.coverPath != null && item.coverPath!.isNotEmpty)
-        'coverPath': item.coverPath,
-      if (item.coverUrl != null && item.coverUrl!.isNotEmpty)
-        'coverUrl': item.coverUrl,
-    });
+    final s = _container.read(settingsProvider).valueOrNull;
+    if (s?.statusBarLyricsEnabled == true) {
+      _channel.invokeMethod('show', {
+        'title': item.title,
+        'artist': item.artist,
+        'lyric': line,
+        if (item.coverPath != null && item.coverPath!.isNotEmpty)
+          'coverPath': item.coverPath,
+        if (item.coverUrl != null && item.coverUrl!.isNotEmpty)
+          'coverUrl': item.coverUrl,
+      });
+    }
+    // 蓝牙歌词：写入媒体会话元数据标题，车机经蓝牙 AVRCP 读取显示
+    if (s?.bluetoothLyricsEnabled == true) {
+      audioHandler?.setBluetoothLyric(line, songPath: item.path);
+    }
+  }
+
+  void _restoreTitle() {
+    final item = _container.read(playerProvider).current;
+    if (item != null) {
+      audioHandler?.setBluetoothLyric(null, songPath: item.path);
+    }
   }
 
   void _cancel() {
     _channel.invokeMethod('cancel');
+    _restoreTitle();
   }
 }
 

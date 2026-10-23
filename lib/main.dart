@@ -11,6 +11,7 @@ import 'src/core/application_logger.dart';
 import 'src/core/platform_caps.dart';
 import 'src/core/rust_init.dart';
 import 'src/core/settings.dart';
+import 'src/player/bluetooth_audio_watcher.dart';
 import 'src/player/cast_provider.dart';
 import 'src/plugin/plugin_updates.dart';
 import 'src/plugin/fallback_modules/sync.dart';
@@ -67,6 +68,7 @@ Future<void> main() async {
 
   if (PlatformCaps.supportsStatusBarLyrics) {
     container.read(statusBarLyricsControllerProvider).init();
+    container.read(bluetoothAudioWatcherProvider).init();
   }
 
   if (PlatformCaps.supportsHomeWidgets) {
