@@ -250,6 +250,14 @@ extension PlayerNotifierCloud on PlayerNotifier {
   /// 命中项封面 URL 回填当前队列条目（标题全等优先，否则取首条带封面项）。
   Future<void> _enrichCloudCover(QueueItem item) async {
     if (item.coverUrl?.isNotEmpty == true) return;
+    // 列表期预探/本地索引已命中内嵌封面：正确封面已在显示，无需联网兜底
+    if (_ref
+            .read(cloudHeadMetaProvider)[item.path]
+            ?.coverPath
+            ?.isNotEmpty ==
+        true) {
+      return;
+    }
     try {
       final artist = item.artist.trim();
       final parts = artist.isEmpty
@@ -290,7 +298,16 @@ extension PlayerNotifierCloud on PlayerNotifier {
   void _patchCloudCover(String path, String coverUrl) {
     final idx = state.queue.indexWhere((e) => e.path == path);
     if (idx < 0) return;
-    final patched = state.queue[idx].copyWithCloudCover(coverUrl);
+    final cur = state.queue[idx];
+    // 搜索在途期间状态可能已变化：已带网络封面、头部探测已回填内嵌封面、
+    // 或列表期预探已命中内嵌封面时，播放页已在显示正确封面，联网兜底图
+    // （关键词匹配，可能张冠李戴）不再覆盖。
+    if (cur.coverUrl?.isNotEmpty == true ||
+        cur.coverPath?.isNotEmpty == true ||
+        _ref.read(cloudHeadMetaProvider)[path]?.coverPath?.isNotEmpty == true) {
+      return;
+    }
+    final patched = cur.copyWithCloudCover(coverUrl);
     final queue = [...state.queue]..[idx] = patched;
     state = state.copyWith(
       queue: queue,
