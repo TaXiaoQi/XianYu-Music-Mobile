@@ -1,4 +1,5 @@
 import 'dart:async' show Timer, unawaited;
+import 'dart:math' show min;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -66,9 +67,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getDouble(_navWidthKey);
     if (saved == null || !mounted) return;
-    final restored = saved
-        .clamp(210.0, MediaQuery.sizeOf(context).width * 0.5)
-        .toDouble();
+    final maxW = MediaQuery.sizeOf(context).width * 0.5;
+    // num.clamp 契约：lower > upper 时抛 ArgumentError(lower)——竖屏宽 < 420
+    // 时 maxW < 210，直接 clamp 会崩（[FATAL] Invalid argument(s): 210.0）。
+    // 竖屏下横屏左列不可见，跳过恢复保持默认即可。
+    if (maxW < 210.0) return;
+    final restored = saved.clamp(210.0, maxW).toDouble();
     if (restored != _navWidth) {
       setState(() => _navWidth = restored);
     }
@@ -650,8 +654,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
           _SettingsDivider(
             onDragUpdate: (dx) {
               final screenW = MediaQuery.sizeOf(context).width;
+              final maxW = screenW * 0.5;
               setState(() {
-                _navWidth = (_navWidth + dx).clamp(210.0, screenW * 0.5);
+                // 窄屏（分屏/极窄横屏）下 maxW 可能 < 210，clamp 下限取
+                // min 防止 ArgumentError(210.0)（同 _restoreNavWidth）。
+                _navWidth = (_navWidth + dx)
+                    .clamp(min(210.0, maxW), maxW)
+                    .toDouble();
               });
               _scheduleNavWidthPersist();
             },
