@@ -79,7 +79,7 @@ enum SettingsCategory {
     SettingsCategory.general => tr('常规'),
     SettingsCategory.appearance => tr('外观'),
     SettingsCategory.lyrics => tr('歌词'),
-    SettingsCategory.playback => tr('播放'),
+    SettingsCategory.playback => tr('播放设置'),
     SettingsCategory.download => tr('下载'),
     SettingsCategory.tools => tr('工具'),
     SettingsCategory.watch => tr('腕上联动'),
