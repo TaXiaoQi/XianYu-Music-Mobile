@@ -5,11 +5,18 @@
 //! 直接路由到 USB DAC，实现 bit-perfect 独占播放。
 //!
 //! 仅在 `target_os = "android"` 编译；其他平台提供桩函数返回不支持。
+//! 鸿蒙（`target_env = "ohos"`，注意 ohos triple 的 target_os 是 "linux"）
+//! 共享模式由 `ohos_audio`（OHAudio 系统混音器输出）实现，USB 独占保持桩文案。
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(target_os = "android")]
+// decoder/diag 基础设施被 ohos_audio 复用，模块在 any(android, ohos) 下编译，
+// AAudio 相关子模块在其内部再按 android 门控。
+#[cfg(any(target_os = "android", target_env = "ohos"))]
 pub(crate) mod android_aaudio;
+
+#[cfg(target_env = "ohos")]
+pub(crate) mod ohos_audio;
 
 /// 独占播放启动请求。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -73,10 +80,19 @@ pub fn start_exclusive_playback(request: ExclusivePlayRequest) -> Result<String,
     {
         android_aaudio::start_exclusive_playback(request)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
     {
-        let _ = request;
-        Err("USB 独占模式仅在 Android 端可用".to_string())
+        ohos_audio::start_exclusive_playback(request)
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+    {
+        // 非 Android/鸿蒙平台（Windows 走独立实现）：
+        // 按 sharedMode 区分文案，避免共享 DSP 管线误报「USB 独占」。
+        if request.shared_mode {
+            Err("DSP 音频管线在当前平台不可用".to_string())
+        } else {
+            Err("USB 独占模式仅在 Android 端可用".to_string())
+        }
     }
 }
 
@@ -86,6 +102,10 @@ pub fn stop_exclusive_playback() {
     {
         android_aaudio::stop_exclusive_playback();
     }
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::stop_exclusive_playback();
+    }
 }
 
 /// 跳转到指定位置（秒）。`is_playing` 控制跳转后是否恢复播放。
@@ -94,7 +114,11 @@ pub fn seek_exclusive(time_secs: f64, is_playing: bool) {
     {
         android_aaudio::seek_exclusive(time_secs, is_playing);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::seek_exclusive(time_secs, is_playing);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = (time_secs, is_playing);
     }
@@ -106,6 +130,10 @@ pub fn pause_exclusive() {
     {
         android_aaudio::pause_exclusive();
     }
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::pause_exclusive();
+    }
 }
 
 /// 从暂停恢复独占播放（不改变进度）。
@@ -113,6 +141,10 @@ pub fn resume_exclusive() {
     #[cfg(target_os = "android")]
     {
         android_aaudio::resume_exclusive();
+    }
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::resume_exclusive();
     }
 }
 
@@ -122,7 +154,11 @@ pub fn set_exclusive_volume(volume: f32) {
     {
         android_aaudio::set_exclusive_volume(volume);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_volume(volume);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = volume;
     }
@@ -134,7 +170,11 @@ pub fn set_exclusive_volume_balance_gain(gain: f32) {
     {
         android_aaudio::set_exclusive_volume_balance_gain(gain);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_volume_balance_gain(gain);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = gain;
     }
@@ -146,7 +186,11 @@ pub fn set_exclusive_equalizer(settings_json: String) -> Result<(), String> {
     {
         android_aaudio::set_exclusive_equalizer(&settings_json)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_equalizer(&settings_json)
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = settings_json;
         Ok(())
@@ -159,7 +203,11 @@ pub fn set_exclusive_sound_effect(settings_json: String) -> Result<(), String> {
     {
         android_aaudio::set_exclusive_sound_effect(&settings_json)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_sound_effect(&settings_json)
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = settings_json;
         Ok(())
@@ -173,7 +221,11 @@ pub fn set_exclusive_bit_perfect(enabled: bool) {
     {
         android_aaudio::set_exclusive_bit_perfect(enabled);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_bit_perfect(enabled);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = enabled;
     }
@@ -185,7 +237,11 @@ pub fn set_exclusive_skip_silence(enabled: bool, threshold_db: f32, keep_ms: u32
     {
         android_aaudio::set_exclusive_skip_silence(enabled, threshold_db, keep_ms);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_skip_silence(enabled, threshold_db, keep_ms);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = (enabled, threshold_db, keep_ms);
     }
@@ -201,7 +257,11 @@ pub fn set_exclusive_next(
     {
         android_aaudio::set_exclusive_next(path, stream_cache_url, stream_cache_headers_json);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_next(path, stream_cache_url, stream_cache_headers_json);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = (path, stream_cache_url, stream_cache_headers_json);
     }
@@ -213,6 +273,10 @@ pub fn cancel_exclusive_next() {
     {
         android_aaudio::cancel_exclusive_next();
     }
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::cancel_exclusive_next();
+    }
 }
 
 /// 取出并清空管线诊断（seek / 无缝拼接 / 交叉 / 跳过静音等关键事件）。
@@ -221,7 +285,11 @@ pub fn take_exclusive_pipeline_diag() -> String {
     {
         android_aaudio::take_pipeline_diag()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        android_aaudio::take_pipeline_diag()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         String::new()
     }
@@ -233,7 +301,11 @@ pub fn set_exclusive_crossfade(ms: u32) {
     {
         android_aaudio::set_exclusive_crossfade(ms);
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::set_exclusive_crossfade(ms);
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         let _ = ms;
     }
@@ -245,7 +317,11 @@ pub fn is_exclusive_bit_perfect() -> bool {
     {
         android_aaudio::is_exclusive_bit_perfect()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::is_exclusive_bit_perfect()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         false
     }
@@ -257,7 +333,11 @@ pub fn is_exclusive_active() -> bool {
     {
         android_aaudio::is_exclusive_active()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::is_exclusive_active()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         false
     }
@@ -269,7 +349,11 @@ pub fn get_exclusive_position_secs() -> f64 {
     {
         android_aaudio::get_exclusive_position_secs()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::get_exclusive_position_secs()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         0.0
     }
@@ -281,7 +365,11 @@ pub fn get_exclusive_sample_rate() -> u32 {
     {
         android_aaudio::get_exclusive_sample_rate()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::get_exclusive_sample_rate()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         0
     }
@@ -293,7 +381,11 @@ pub fn get_exclusive_device_info() -> String {
     {
         android_aaudio::get_exclusive_device_info()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::get_exclusive_device_info()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         serde_json::json!({
             "active": false,
@@ -312,7 +404,11 @@ pub fn get_exclusive_channels() -> u16 {
     {
         android_aaudio::get_exclusive_channels()
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_env = "ohos")]
+    {
+        ohos_audio::get_exclusive_channels()
+    }
+    #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     {
         0
     }

@@ -472,9 +472,7 @@ class _PluginCard extends ConsumerWidget {
         : source.format == PluginFormat.anime
         ? 'anime'
         : source.format == PluginFormat.musicfree
-        ? (source.author.toLowerCase().contains('toskysun')
-              ? 'BakaMusic'
-              : 'MusicFree')
+        ? (source.author.toLowerCase().contains('toskysun') ? 'BK' : 'MF')
         : tr('未知');
 
     return frostedCardSurface(
@@ -576,32 +574,23 @@ class _PluginCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(5),
-              ),
-              child: Text(
-                tagLabel,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: iconColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            if (subTag != null) ...[
-              const SizedBox(width: 6),
+            // 类型标与付费/免费品牌小标合并为一枚短标（如 BK\聆澜），
+            // 为插件名腾出空间（#666888 名称显示不全）；付费品牌金色高亮
+            if (subTag != null)
               Builder(
                 builder: (_) {
-                  // 付费来源金色高亮；免费聚合音源（全豆要/次合代）用 baka 配色
                   final dark = scheme.brightness == Brightness.dark;
                   final tagColor = subTag.paid
                       ? const Color(0xFFE6A23C)
                       : (dark
                             ? const Color(0xFF93C5FD)
                             : const Color(0xFF1D4ED8));
+                  final paid = tr('付费');
+                  var brand = subTag.label;
+                  if (brand.startsWith(paid)) {
+                    brand = brand.substring(paid.length);
+                  }
+                  if (brand.isEmpty) brand = paid;
                   return Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,
@@ -618,7 +607,7 @@ class _PluginCard extends ConsumerWidget {
                           : null,
                     ),
                     child: Text(
-                      subTag.label,
+                      '$tagLabel\\$brand',
                       style: TextStyle(
                         fontSize: 10,
                         color: tagColor,
@@ -627,26 +616,23 @@ class _PluginCard extends ConsumerWidget {
                     ),
                   );
                 },
-              ),
-            ],
-            if (source.updateAvailable) ...[
-              const SizedBox(width: 6),
+              )
+            else
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                 decoration: BoxDecoration(
-                  color: scheme.error.withValues(alpha: 0.14),
+                  color: iconBg,
                   borderRadius: BorderRadius.circular(5),
                 ),
                 child: Text(
-                  tr('可更新'),
+                  tagLabel,
                   style: TextStyle(
                     fontSize: 10,
-                    color: scheme.error,
+                    color: iconColor,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-            ],
             if (hasVars) ...[
               const SizedBox(width: 6),
               Icon(Icons.tune_outlined, size: 15, color: scheme.primary),

@@ -154,11 +154,17 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     }
   }
 
-  /// Rust 管线（独占/DSP）接管后 ExoPlayer 完全退出，音频焦点必须由应用层
-  /// 主动申请——interruptionEventStream 的前提是本应用持有焦点，未持焦点的
-  /// 管线播放对来电/其他应用抢焦点完全免疫（打断暂停形同虚设的根因）。
-  /// 焦点被拒（如正在通话）时不接管，回落 ExoPlayer 路径由其 play() 内部申请。
+  /// Rust 管线（独占/DSP）接管后系统播放器完全退出，Android 上音频焦点必须
+  /// 由应用层主动申请——interruptionEventStream 的前提是本应用持有焦点，
+  /// 未持焦点的管线播放对来电/其他应用抢焦点完全免疫（打断暂停形同虚设的根因）。
+  /// 鸿蒙版：audio_session 插件无 ohos 实现（必然抛异常），且 OHAudio 渲染流
+  /// 由系统音频焦点自动托管（被抢焦点时系统直接暂停渲染流），直接放行。
+  /// 焦点被拒（如正在通话）时不接管，回落系统播放器路径由其 play() 内部申请。
   Future<bool> _ensurePipelineAudioFocus() async {
+    if (_isOhos) {
+      AppLog.info('audio_session', '鸿蒙版 OHAudio 由系统焦点托管，跳过 audio_session 申请');
+      return true;
+    }
     try {
       final session = await AudioSession.instance;
       return await session.setActive(true);
@@ -168,11 +174,20 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     }
   }
 
+  /// 鸿蒙版(HAP)：Rust 输出层无 AAudio，USB 独占在此平台必然启动失败，
+  /// 直接短路避免每次起播白试 + 60s 冷却（2026-10-23 反馈：ALN-AL00）。
+  /// 共享 DSP 管线（EQ/音效）由 ohos_audio 输出层支持，不在此短路。
+  bool get _isOhos => Platform.operatingSystem == 'ohos';
+
   Future<bool> _tryStartExclusive(
     String path, {
     required double startAtSecs,
     required bool isPlaying,
   }) async {
+    if (_isOhos) {
+      AppLog.info('exclusive', '鸿蒙版无 AAudio 输出层，USB 独占不可用');
+      return false;
+    }
     if (!path.startsWith('http')) {
       LastAudioSource.recordFilePath(path);
     }
@@ -218,6 +233,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
     Map<String, String>? streamCacheHeaders,
     bool castPlayback = false,
   }) async {
+    // 鸿蒙版 ohos_audio 输出层（OHAudio 共享流）已支持 DSP 管线，
+    // 启动失败自然走下方冷却与回退逻辑。
     if (DateTime.now().isBefore(_dspFailUntil)) {
       AppLog.warn('play', '[dsp] 跳过接管: 失败冷却中(至 $_dspFailUntil)');
       return false;

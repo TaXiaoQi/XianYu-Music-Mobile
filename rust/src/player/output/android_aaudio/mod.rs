@@ -9,6 +9,12 @@
 //! 动态加载 `libaaudio.so`（API 26+），低版本自动降级。
 //!
 //! 拆分说明：FFI 绑定见 ffi，解码见 decoder，播放状态机见 playback，DSD 直通见 dsd，流创建见 stream。
+//!
+//! 本模块整体在 `any(android, ohos)`（即 `any(target_os = "android",
+//! target_env = "ohos")`）下编译：decoder（Symphonia 解码）与
+//! 管线诊断（PIPELINE_DIAG / reset / take）是平台无关的共享基础设施，
+//! `ohos_audio` 输出层直接复用；AAudio 相关的 ffi/stream/dsd/playback
+//! 仅在 android 编译。测试依赖 ffi 的格式转换，保持 android 门控。
 #![allow(dead_code)]
 pub(crate) use crate::player::buffered_source::{BlockProducer, BufferedSource};
 pub(crate) use crate::player::output::ExclusivePlayRequest;
@@ -37,21 +43,47 @@ pub(crate) use std::thread;
 pub(crate) use std::time::Duration;
 
 mod decoder;
+#[cfg(target_os = "android")]
 mod dsd;
+#[cfg(target_os = "android")]
 mod ffi;
+#[cfg(target_os = "android")]
 mod playback;
+#[cfg(target_os = "android")]
 mod stream;
 
+#[cfg(target_os = "android")]
 pub use playback::*;
 pub(crate) use decoder::*;
+#[cfg(target_os = "android")]
 pub(crate) use dsd::*;
+#[cfg(target_os = "android")]
 pub(crate) use ffi::*;
+#[cfg(target_os = "android")]
 pub(crate) use stream::*;
 
 /// 管线内诊断事件环（seek/panic 等，容量 16）：音频线程 EOF 退出时并入
 /// last_error 上报 Flutter——管线线程的 eprintln 在 Android 上不可见，
 /// 死亡消息是唯一能带出运行时现场的信道路径。
 pub(crate) static PIPELINE_DIAG: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+/// 从 URL 提取小写扩展名（去掉 query/fragment），供流式源格式探测。
+/// 无扩展名返回 None（此时 symphonia 依赖嗅探）。
+/// （原在 dsd.rs，decoder 在 ohos 下也用它，上移到共享层。）
+pub(crate) fn url_path_extension(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next()?;
+    let file = path.rsplit('/').next()?;
+    let ext = file.rsplit('.').next()?;
+    if ext.is_empty() || ext.len() == file.len() {
+        return None;
+    }
+    let lower = ext.to_ascii_lowercase();
+    // 仅接受合理扩展名形态（字母数字），排除版本号类路径段。
+    if !lower.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return None;
+    }
+    Some(lower)
+}
 
 pub(crate) fn record_pipeline_diag(msg: &str) {
     let slot = PIPELINE_DIAG.get_or_init(|| Mutex::new(Vec::new()));
@@ -90,7 +122,7 @@ pub fn reset_pipeline_diag() {
 // 测试
 // =========================================================================
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "android"))]
 mod tests {
     use super::*;
 

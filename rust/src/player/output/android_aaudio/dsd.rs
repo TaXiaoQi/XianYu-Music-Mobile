@@ -8,23 +8,6 @@ pub(crate) fn is_dsd_path(path: &str) -> bool {
     lower.ends_with(".dsf") || lower.ends_with(".dff") || lower.ends_with(".dsd")
 }
 
-/// 从 URL 提取小写扩展名（去掉 query/fragment），供流式源格式探测。
-/// 无扩展名返回 None（此时 symphonia 依赖嗅探）。
-pub(crate) fn url_path_extension(url: &str) -> Option<String> {
-    let path = url.split(['?', '#']).next()?;
-    let file = path.rsplit('/').next()?;
-    let ext = file.rsplit('.').next()?;
-    if ext.is_empty() || ext.len() == file.len() {
-        return None;
-    }
-    let lower = ext.to_ascii_lowercase();
-    // 仅接受合理扩展名形态（字母数字），排除版本号类路径段。
-    if !lower.chars().all(|c| c.is_ascii_alphanumeric()) {
-        return None;
-    }
-    Some(lower)
-}
-
 /// DSD 原生 DoP 直出：读 1-bit DSD 流按 DoP 1.0 打包成 24-bit 帧，
 /// 直接写入支持 DoP 的 DSD-DAC（AAudio 独占 I24），绕过音量/EQ/音效 DSP。
 pub(crate) fn run_dsd_passthrough(
