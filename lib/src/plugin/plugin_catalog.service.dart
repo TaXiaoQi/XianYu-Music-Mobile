@@ -126,6 +126,32 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         .contains('getRecommendSheetTags');
   }
 
+  /// MF 插件 getRecommendSheetTags 的标签形态：
+  /// {defaultTag}（少数插件）、{tags:[...]}（旧约定）、
+  /// {pinned:[...], data:[{title, data:[...]}]}（MusicFree 标准形态，
+  /// 酷我/JOOX 等社区插件）。标准形态按 pinned 首个标签作默认，兜底
+  /// 首分组首标签；标签须原样回传（如酷我 pinned 带 digest 影响取数端点）。
+  dynamic _defaultRecommendTag(dynamic tags) {
+    if (tags is! Map) return null;
+    final defaultTag = tags['defaultTag'];
+    if (defaultTag != null) return defaultTag;
+    final legacyTags = tags['tags'];
+    if (legacyTags is List && legacyTags.isNotEmpty) return legacyTags.first;
+    final candidates = <dynamic>[
+      if (tags['pinned'] is List) ...(tags['pinned'] as List),
+      if (tags['data'] is List &&
+          (tags['data'] as List).isNotEmpty &&
+          (tags['data'] as List).first is Map)
+        ...((((tags['data'] as List).first as Map)['data'] ?? const []) as List),
+    ];
+    for (final candidate in candidates) {
+      if (candidate is Map && candidate['id'] != null) {
+        return Map<String, dynamic>.from(candidate);
+      }
+    }
+    return null;
+  }
+
   /// 推荐歌单首页：getRecommendSheetTags 取默认标签，getRecommendSheetsByTag
   /// 拉第一页。无标签协议的插件以 null 标签调用，由插件自身回退默认。
   /// lxKey 用于二级页把多平台 LX 音源按平台拆分（与榜单页同款）
@@ -135,13 +161,12 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       return _getLxRecommendSheets(source, lxKey: lxKey);
     }
     try {
-      final tags = await _call(source, 'getRecommendSheetTags', []);
       dynamic tag;
-      if (tags is Map) {
-        tag = tags['defaultTag'] ??
-            ((tags['tags'] as List?)?.isNotEmpty == true
-                ? (tags['tags'] as List).first
-                : null);
+      try {
+        tag = _defaultRecommendTag(
+            await _call(source, 'getRecommendSheetTags', []));
+      } catch (_) {
+        // 标签接口异常不阻塞默认推荐，交由插件以 null 标签走自身默认逻辑
       }
       final result = await _call(source, 'getRecommendSheetsByTag', [tag, 1]);
       return extractMfResultList(result)
