@@ -8,15 +8,18 @@ abstract final class PlaylistSongSyncState {
   static const _pendingDeletedKey = 'playlist_song_pending_deleted';
   static const _downloadSkipKey = 'playlist_download_skip';
 
+  /// 读取 JSON map。必须返回可变副本：调用方（clearTombstones/add* 等）
+  /// 会原地 remove/赋值。const {} 会让 Dart ImmutableMap 的 remove 抛
+  /// "Cannot modify unmodifiable map"（键不存在也抛），歌单下载因此全挂。
   static Future<Map<String, dynamic>> _readMap(String key) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(key);
-    if (raw == null || raw.isEmpty) return const {};
+    if (raw == null || raw.isEmpty) return {};
     try {
       final v = jsonDecode(raw);
-      return v is Map ? v.cast<String, dynamic>() : const {};
+      return v is Map ? Map<String, dynamic>.from(v) : {};
     } catch (_) {
-      return const {};
+      return {};
     }
   }
 
