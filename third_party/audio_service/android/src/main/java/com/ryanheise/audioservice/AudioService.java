@@ -63,6 +63,10 @@ public class AudioService extends MediaBrowserServiceCompat {
 
     private static final String SHARED_PREFERENCES_NAME = "audio_service_preferences";
 
+    // MediaItem.extras 里的通知栏逐行歌词键（Dart 侧 XianYuAudioHandler 写入，
+    // buildNotification 读取渲染，见该方法内注释）。
+    public static final String NOTIF_LYRICS_LINE_KEY = "NOTIF_LYRICS_LINE";
+
     private static final int NOTIFICATION_ID = 1124;
     // Android 16 Live Updates 实时活动通知（ColorOS 16 流体云胶囊载体），与媒体通知并存
     private static final int LIVE_UPDATE_NOTIFICATION_ID = 1125;
@@ -700,6 +704,16 @@ public class AudioService extends MediaBrowserServiceCompat {
             synchronized (this) {
                 if (artBitmap != null)
                     builder.setLargeIcon(artBitmap);
+            }
+            // 通知栏逐行歌词：Dart 侧把当前歌词行写进 MediaItem.extras
+            // （NOTIF_LYRICS_LINE，随 mediaItem 更新经 setMetadata 到达此处），
+            // 命中时改写为「标题=歌名 / 正文=当前歌词行 / 副标题=歌手」排版；
+            // 无歌词时保持原样（正文=歌手、副标题=专辑）。
+            String notifLyric = mediaMetadata.getString(NOTIF_LYRICS_LINE_KEY);
+            if (notifLyric != null && !notifLyric.isEmpty()) {
+                builder.setContentText(notifLyric);
+                if (description.getSubtitle() != null)
+                    builder.setSubText(description.getSubtitle());
             }
         }
         if (config.androidNotificationClickStartsActivity)

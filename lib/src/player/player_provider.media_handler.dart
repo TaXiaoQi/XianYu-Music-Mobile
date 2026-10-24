@@ -201,6 +201,29 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     }
   }
 
+  /// 通知栏逐行歌词：把当前歌词行写进 MediaItem.extras（NOTIF_LYRICS_LINE），
+  /// 原生 AudioService.buildNotification 读取后渲染为「标题=歌名 / 正文=歌词 /
+  /// 副标题=歌手」。与蓝牙歌词同一套防串台策略：仅作用于 path 匹配的曲目，
+  /// 切歌后 extras 自动失效回退原排版。
+  String? _notifLyric;
+  String? _notifLyricPath;
+
+  void setNotifLyric(String? line, {required String songPath}) {
+    if (line == null) {
+      if (_notifLyricPath == songPath) _notifLyricPath = null;
+      _notifLyric = null;
+    } else {
+      _notifLyric = line;
+      _notifLyricPath = songPath;
+    }
+    final item = _lastSyncItem;
+    if (item != null) {
+      mediaItem.add(
+        _buildMediaItem(item, _lastSyncDuration, _materializer.artUriFor(item)),
+      );
+    }
+  }
+
   final CoverMaterializer _materializer = CoverMaterializer();
 
   as_pkg.MediaItem _buildMediaItem(
@@ -209,6 +232,9 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
         _bluetoothLyric != null && item.path == _bluetoothLyricPath
             ? _bluetoothLyric
             : null;
+    final notifLyric = _notifLyric != null && item.path == _notifLyricPath
+        ? _notifLyric
+        : null;
     return as_pkg.MediaItem(
       id: item.path,
       album: item.album.isEmpty ? tr('弦予音乐') : item.album,
@@ -217,6 +243,11 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
       duration:
           durationSecs > 0 ? Duration(milliseconds: (durationSecs * 1000).round()) : null,
       artUri: artUri,
+      // audio_service 序列化：字符串 extras 落 MediaMetadataCompat.putString，
+      // 原生经 mediaMetadata.getString 直读
+      extras: notifLyric == null
+          ? null
+          : <String, dynamic>{'NOTIF_LYRICS_LINE': notifLyric},
     );
   }
 

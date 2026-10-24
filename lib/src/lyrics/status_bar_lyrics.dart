@@ -69,7 +69,10 @@ class StatusBarLyricsController {
       _cancel();
     } else if (_enabled) {
       // 两个出口单独关闭时也要收回对应的展示（通知栏/媒体会话标题）
-      if (!s.statusBarLyricsEnabled) _channel.invokeMethod('cancel');
+      if (!s.statusBarLyricsEnabled) {
+        _channel.invokeMethod('cancel');
+        _clearNotifLyric();
+      }
       if (!s.bluetoothLyricsEnabled) _restoreTitle();
     }
   }
@@ -146,6 +149,9 @@ class StatusBarLyricsController {
         if (item.coverUrl != null && item.coverUrl!.isNotEmpty)
           'coverUrl': item.coverUrl,
       });
+      // 媒体通知本体同步逐行歌词：写进 MediaItem.extras（NOTIF_LYRICS_LINE），
+      // 原生通知构建时以「正文=歌词 / 副标题=歌手」排版渲染
+      audioHandler?.setNotifLyric(line, songPath: item.path);
     }
     // 蓝牙歌词：写入媒体会话元数据标题，车机经蓝牙 AVRCP 读取显示
     if (s?.bluetoothLyricsEnabled == true) {
@@ -160,9 +166,17 @@ class StatusBarLyricsController {
     }
   }
 
+  void _clearNotifLyric() {
+    final item = _container.read(playerProvider).current;
+    if (item != null) {
+      audioHandler?.setNotifLyric(null, songPath: item.path);
+    }
+  }
+
   void _cancel() {
     _channel.invokeMethod('cancel');
     _restoreTitle();
+    _clearNotifLyric();
   }
 }
 
