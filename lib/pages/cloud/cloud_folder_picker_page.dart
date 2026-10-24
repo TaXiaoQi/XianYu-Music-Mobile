@@ -75,8 +75,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
   }
 
   Future<void> _init() async {
-    final accounts =
-        await CloudCredentialsStore.instance.accountsFor(_provider.id);
+    final accounts = await CloudCredentialsStore.instance.accountsFor(
+      _provider.id,
+    );
     if (!mounted) return;
     final valid = accounts.any((a) => a.accountId == widget.accountId)
         ? widget.accountId
@@ -86,10 +87,14 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
       return;
     }
     _accountId = valid;
-    final saved =
-        await CloudFolderSelectionStore.instance.pathsFor(_provider.id, valid);
-    final names =
-        await CloudFolderNameCache.instance.namesFor(_provider.id, valid);
+    final saved = await CloudFolderSelectionStore.instance.pathsFor(
+      _provider.id,
+      valid,
+    );
+    final names = await CloudFolderNameCache.instance.namesFor(
+      _provider.id,
+      valid,
+    );
     if (!mounted) return;
     setState(() {
       _selected.addAll(saved);
@@ -102,8 +107,10 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
   }
 
   Future<Map<String, String>> _cred() async {
-    final cred =
-        await CloudCredentialsStore.instance.credFor(_provider.id, _accountId);
+    final cred = await CloudCredentialsStore.instance.credFor(
+      _provider.id,
+      _accountId,
+    );
     if (cred != null) return cred;
     final sole = await CloudCredentialsStore.instance.soleCredFor(_provider.id);
     return sole ?? const {};
@@ -112,10 +119,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
   /// 进入子目录：与浏览页同款语义（path 优先，回退 id）。
   void _enter(String name, String? entryPath, String entryId) {
     final cur = _stack.last.path;
-    final next =
-        (entryPath != null && entryPath.isNotEmpty && entryPath != cur)
-            ? entryPath
-            : entryId;
+    final next = (entryPath != null && entryPath.isNotEmpty && entryPath != cur)
+        ? entryPath
+        : entryId;
     setState(() => _stack.add(_Crumb(next, name)));
     _load();
   }
@@ -143,7 +149,11 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     });
     try {
       final cred = await _cred();
-      final r = await _provider.listDir(cred, path, cursor: more ? _cursor : null);
+      final r = await _provider.listDir(
+        cred,
+        path,
+        cursor: more ? _cursor : null,
+      );
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
       // 名称 heal：当前列表命中的已选键回填缓存——跨设备同步来的选择
       //（本地无名称记录）首次浏览到其父目录即可显示可读名；setState
@@ -162,8 +172,13 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
         if (heal.isNotEmpty) _names = {..._names, ...heal};
       });
       if (heal.isNotEmpty) {
-        unawaited(CloudFolderNameCache.instance
-            .remember(_provider.id, _accountId, heal));
+        unawaited(
+          CloudFolderNameCache.instance.remember(
+            _provider.id,
+            _accountId,
+            heal,
+          ),
+        );
       }
     } catch (e) {
       if (!mounted || _stack.isEmpty || _stack.last.path != path) return;
@@ -172,10 +187,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
         _loading = false;
         _appending = false;
       });
-      showXianYuToast(
-        context,
-        e is CloudException ? e.message : tr('目录加载失败'),
-      );
+      showXianYuToast(context, e is CloudException ? e.message : tr('目录加载失败'));
     }
   }
 
@@ -195,8 +207,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
   void _rememberName(Map<String, String> entries) {
     if (entries.isEmpty) return;
     _names = {..._names, ...entries};
-    unawaited(CloudFolderNameCache.instance
-        .remember(_provider.id, _accountId, entries));
+    unawaited(
+      CloudFolderNameCache.instance.remember(_provider.id, _accountId, entries),
+    );
   }
 
   /// 列表条目的存储键（path 优先，回退 id），与勾选写入同口径
@@ -209,10 +222,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
 
   void _toggleEntry(String name, String? entryPath, String entryId) {
     final cur = _stack.last.path;
-    final key =
-        (entryPath != null && entryPath.isNotEmpty && entryPath != cur)
-            ? entryPath
-            : entryId;
+    final key = (entryPath != null && entryPath.isNotEmpty && entryPath != cur)
+        ? entryPath
+        : entryId;
     setState(() {
       if (!_selected.remove(key)) {
         _selected.add(key);
@@ -231,9 +243,14 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     );
     if (!mounted) return;
     showXianYuToast(context, tr('已保存 {n} 个文件夹', {'n': '${_selected.length}'}));
-    // 嵌入面板模式切回网盘面板（宿主重建本页刷新已选数）；独立页出栈
+    // 嵌入面板模式切回网盘面板（宿主重建本页刷新已选数）；独立页出栈。
+    // 详情面板语境（设置面板未开）收起详情回宿主面板
     if (widget.embedded) {
-      ref.read(landscapeSettingsCategoryProvider.notifier).state = '/cloud';
+      if (ref.read(landscapeSettingsCategoryProvider) != null) {
+        ref.read(landscapeSettingsCategoryProvider.notifier).state = '/cloud';
+      } else {
+        ref.read(landscapeDetailProvider.notifier).state = null;
+      }
     } else {
       context.pop();
     }
@@ -249,15 +266,14 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
     final cached = _names[path];
     if (cached != null && cached.isNotEmpty) return cached;
     final idx = path.lastIndexOf('/');
-    return idx >= 0 && idx < path.length - 1
-        ? path.substring(idx + 1)
-        : path;
+    return idx >= 0 && idx < path.length - 1 ? path.substring(idx + 1) : path;
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final currentSelected = _stack.isNotEmpty && _selected.contains(_stack.last.path);
+    final currentSelected =
+        _stack.isNotEmpty && _selected.contains(_stack.last.path);
     final landscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
     if (widget.embedded) {
@@ -271,8 +287,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
             Expanded(
               child: Column(
                 children: [
-                  if (_selected.isNotEmpty)
-                    _selectedChips(context, scheme),
+                  if (_selected.isNotEmpty) _selectedChips(context, scheme),
                   if (_stack.isNotEmpty) _breadcrumb(context, scheme),
                   if (_stack.isNotEmpty)
                     _toolbar(context, scheme, currentSelected),
@@ -543,12 +558,21 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
   /// 当前目录下的文件展示行（与文件夹行同样式，仅无勾选框、不可进入）。
   Widget _fileRow(CloudFile f, ColorScheme scheme) {
     const audioExts = {
-      '.mp3', '.flac', '.m4a', '.aac', '.wav', '.ogg', '.ape', '.wma',
-      '.opus', '.dsf', '.dff', '.mka',
+      '.mp3',
+      '.flac',
+      '.m4a',
+      '.aac',
+      '.wav',
+      '.ogg',
+      '.ape',
+      '.wma',
+      '.opus',
+      '.dsf',
+      '.dff',
+      '.mka',
     };
     final name = f.name.toLowerCase();
-    final isAudio =
-        audioExts.any((e) => name.endsWith(e));
+    final isAudio = audioExts.any((e) => name.endsWith(e));
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
       child: Row(
@@ -596,8 +620,9 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
         children: [
           OutlinedButton(
             // 根目录（面包屑只剩"全部文件"）时不可再返回
-            onPressed:
-                _stack.length > 1 ? () => _jumpTo(_stack.length - 2) : null,
+            onPressed: _stack.length > 1
+                ? () => _jumpTo(_stack.length - 2)
+                : null,
             child: Text(tr('返回上一级')),
           ),
           const SizedBox(width: 8),
@@ -620,8 +645,11 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.folder_special_rounded,
-                      size: 18, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.folder_special_rounded,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 4),
                   Text(tr('选择当前')),
                 ],

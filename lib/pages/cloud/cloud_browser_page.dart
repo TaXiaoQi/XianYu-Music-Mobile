@@ -11,7 +11,10 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/download/download_provider.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/navigation/shell.dart'
+    show landscapeDetailProvider, LandscapeCloudManageDetail;
 import '../../src/player/player_provider.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
@@ -516,7 +519,15 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
               ),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => context.push('/cloud'),
+                onPressed: () {
+                  // 横屏：内嵌右容器详情面板；竖屏走路由
+                  if (useLandscape(ref)) {
+                    ref.read(landscapeDetailProvider.notifier).state =
+                        const LandscapeCloudManageDetail();
+                  } else {
+                    context.push('/cloud');
+                  }
+                },
                 child: Text(tr('去绑定')),
               ),
             ],

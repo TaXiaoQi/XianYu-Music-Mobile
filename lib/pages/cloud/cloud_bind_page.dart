@@ -9,7 +9,11 @@ import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
-import '../../src/navigation/shell.dart' show landscapeSettingsCategoryProvider;
+import '../../src/navigation/shell.dart'
+    show
+        landscapeSettingsCategoryProvider,
+        landscapeDetailProvider,
+        LandscapeCloudPickerDetail;
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -58,8 +62,10 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
       final list = await CloudCredentialsStore.instance.accountsFor(p.id);
       map[p.id] = list;
       for (final a in list) {
-        final paths = await CloudFolderSelectionStore.instance
-            .pathsFor(p.id, a.accountId);
+        final paths = await CloudFolderSelectionStore.instance.pathsFor(
+          p.id,
+          a.accountId,
+        );
         if (paths.isNotEmpty) {
           counts['${p.id}|${a.accountId}'] = paths.length;
         }
@@ -74,21 +80,21 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
   }
 
   String _kindLabel(CloudLoginKind kind) => switch (kind) {
-        CloudLoginKind.webviewCookie ||
-        CloudLoginKind.webviewToken =>
-          tr('网页登录'),
-        CloudLoginKind.httpPassword => tr('账号密码'),
-        CloudLoginKind.smsPassword => tr('手机号 + 验证码'),
-        CloudLoginKind.qrCode => tr('扫码登录'),
-      };
+    CloudLoginKind.webviewCookie || CloudLoginKind.webviewToken => tr('网页登录'),
+    CloudLoginKind.httpPassword => tr('账号密码'),
+    CloudLoginKind.smsPassword => tr('手机号 + 验证码'),
+    CloudLoginKind.qrCode => tr('扫码登录'),
+  };
 
   Future<void> _openLogin(CloudProvider p) async {
     final kind = p.loginKind;
     if (widget.embedded &&
+        ref.read(landscapeSettingsCategoryProvider) != null &&
         (kind == CloudLoginKind.httpPassword ||
             kind == CloudLoginKind.smsPassword)) {
-      // 嵌入面板模式：账密/短信登录切到右侧容器子面板，成功后由登录页
-      // 切回本面板；扫码/网页登录仍全屏推页
+      // 设置面板嵌入：账密/短信登录切到右侧容器子面板，成功后由登录页
+      // 切回本面板。详情面板嵌入（设置面板未开）无子面板可切，落到底部
+      // 全屏推登录页；扫码/网页登录两种语境均全屏推页
       ref.read(landscapeSettingsCategoryProvider.notifier).state =
           '/cloud-login/${p.id}';
       return;
@@ -137,15 +143,27 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
   /// 打开文件夹选择：浏览该账号网盘目录，多选文件夹路径保存。
   /// 选中结果供后续网盘音乐扫描/入库消费。
   Future<void> _openFolderPicker(CloudAccount a) async {
-    if (widget.embedded) {
-      // 嵌入面板模式：选文件夹切到右侧容器子面板，保存后由选择页切回
+    if (widget.embedded &&
+        ref.read(landscapeSettingsCategoryProvider) != null) {
+      // 设置面板嵌入：选文件夹切到右侧容器子面板，保存后由选择页切回
       // 本面板（宿主重建即刷新已选数）
       ref.read(landscapeSettingsCategoryProvider.notifier).state =
           '/cloud-folders/${a.provider}?account=${Uri.encodeComponent(a.accountId)}';
       return;
     }
-    await context
-        .push('/cloud/folder-picker/${a.provider}?account=${a.accountId}');
+    if (widget.embedded) {
+      // 详情面板嵌入：切到网盘选文件夹详情面板，保存后收起回宿主面板
+      ref
+          .read(landscapeDetailProvider.notifier)
+          .state = LandscapeCloudPickerDetail(
+        providerId: a.provider,
+        accountId: a.accountId,
+      );
+      return;
+    }
+    await context.push(
+      '/cloud/folder-picker/${a.provider}?account=${a.accountId}',
+    );
     if (!mounted) return;
     _reload(); // 返回后刷新行内已选数
   }
@@ -274,7 +292,9 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
                         _kindLabel(p.loginKind),
                         style: TextStyle(
                           fontSize: 11,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                          color: scheme.onSurfaceVariant.withValues(
+                            alpha: 0.75,
+                          ),
                         ),
                       ),
                     ],
@@ -304,11 +324,7 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
     );
   }
 
-  Widget _accountRow(
-    BuildContext context,
-    CloudAccount a,
-    ColorScheme scheme,
-  ) {
+  Widget _accountRow(BuildContext context, CloudAccount a, ColorScheme scheme) {
     // 账号行只显示云盘昵称（无昵称才退 accountId 那串标识）——
     // accountId 是内部凭据标识，对用户无意义。
     final title = a.nickname.isEmpty ? a.accountId : a.nickname;
