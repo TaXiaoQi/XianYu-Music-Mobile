@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../i18n/i18n.dart';
+
 OverlayEntry? _currentToast;
 
 /// 提示宿主 overlay（app.dart builder 栈顶）：toast 一律插这里，
@@ -60,9 +62,23 @@ class XianYuProgressToastHandle {
   final ValueNotifier<String> _text = ValueNotifier('');
   final ValueNotifier<double?> _progress = ValueNotifier(null);
   final ValueNotifier<bool> _done = ValueNotifier(false);
+  final ValueNotifier<bool> _cancelled = ValueNotifier(false);
+  VoidCallback? _onCancel;
   OverlayEntry? _entry;
   bool _finished = false;
   Timer? _removeTimer;
+
+  /// 是否已由用户点击取消（供轮询侧判断，不代表任务已终止）
+  bool get cancelled => _cancelled.value;
+
+  /// 点击取消按钮的回调（onCancel 挂钩）；null=不可取消
+  VoidCallback? get onCancel => _onCancel;
+
+  void _requestCancel() {
+    if (_finished || _cancelled.value) return;
+    _cancelled.value = true;
+    _onCancel?.call();
+  }
 
   void update(String text, {double? progress}) {
     if (_finished) return;
@@ -100,9 +116,12 @@ class XianYuProgressToastHandle {
 
 XianYuProgressToastHandle showXianYuProgressToast(
   BuildContext context,
-  String message,
-) {
-  final handle = XianYuProgressToastHandle._().._text.value = message;
+  String message, {
+  VoidCallback? onCancel,
+}) {
+  final handle = XianYuProgressToastHandle._()
+    .._text.value = message
+    .._onCancel = onCancel;
   final entry = OverlayEntry(
     builder: (ctx) => _XianYuProgressToast(handle: handle),
   );
@@ -123,7 +142,10 @@ class _XianYuProgressToast extends StatelessWidget {
       width: media.size.width,
       left: 0,
       bottom: media.viewPadding.bottom + 28,
+      // 不可取消的进度提示整体穿透点击；带取消按钮时仅卡片本身可交互
+      //（Align 命中测试不覆盖空白区域），卡片外的界面仍可正常点按
       child: IgnorePointer(
+        ignoring: handle.onCancel == null,
         child: Align(
           alignment: Alignment.bottomCenter,
           child: Container(
@@ -185,6 +207,38 @@ class _XianYuProgressToast extends StatelessWidget {
                             ),
                           );
                         },
+                      ),
+                    );
+                  },
+                ),
+                // 手动同步的可取消按钮：点击后仅置取消标志，任务在下一项边界停止
+                ValueListenableBuilder<bool>(
+                  valueListenable: handle._cancelled,
+                  builder: (context, cancelled, _) {
+                    if (handle.onCancel == null || cancelled) {
+                      return const SizedBox.shrink();
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: SizedBox(
+                        height: 26,
+                        child: TextButton(
+                          onPressed: handle._requestCancel,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 0),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            tr('取消'),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12.5,
+                              decoration: TextDecoration.none,
+                            ),
+                          ),
+                        ),
                       ),
                     );
                   },

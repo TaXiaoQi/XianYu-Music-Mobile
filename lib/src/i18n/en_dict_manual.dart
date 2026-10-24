@@ -1601,6 +1601,14 @@ const Map<String, String> enDictManual = {
   '收藏上传失败: {e}': 'Favorites upload failed: {e}',
   '已拉取 {n} 首收藏': 'Pulled {n} favorites',
   '收藏下载失败: {e}': 'Favorites download failed: {e}',
+  '正在获取云端与本地数据…': 'Fetching cloud and local data…',
+  '数据获取失败，无法展示对比': 'Failed to load data, comparison unavailable',
+  '云端暂无数据，覆盖后本地将被清空':
+      'Cloud is empty, overwriting will wipe local data',
+  '本地暂无数据，覆盖后云端将被清空':
+      'Local data is empty, overwriting will wipe cloud data',
+  '云端': 'Cloud',
+  '本地': 'Local',
   '已上传 {n} 个订阅链接': 'Uploaded {n} subscriptions',
   '订阅上传失败: {e}': 'Subscription upload failed: {e}',
   '插件 "{name}" 脚本读取失败，已跳过': 'Plugin "{name}" script read failed, skipped',

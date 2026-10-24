@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/auth/account_api.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
@@ -11,6 +12,10 @@ import '../../src/responsive/landscape.dart';
 import '../../src/core/db_path.dart';
 import '../../src/rust/api.dart' as rust;
 import '../../src/sync/sync_provider.dart';
+import '../../src/favorites/favorites_provider.dart';
+import '../../src/playlist/playlist_store.dart';
+import '../../src/plugin/plugin_provider.dart';
+import '../../src/plugin/plugin_subscriptions.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/glass_settings.dart';
@@ -571,19 +576,33 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
   }
 }
 
+/// 覆盖对比行：label 域名 / unit 计数单位 / cloud、local 双端数量
+typedef OverwriteStatRow = ({String label, String unit, int cloud, int local});
+
 /// 手动覆盖同步确认弹窗：手动按钮=强制覆盖（上传覆盖云端/下载覆盖本地），
 /// 自动同步仍走对比合并。文案与桌面端 SettingsAccount 完全一致。
+/// [compare] 在弹窗内异步取「云端 vs 本地」数量对比，取数失败仅提示、
+/// 不阻断覆盖；[sourceIsCloud]=true 表示下载（云端是覆盖源），覆盖源
+/// 全为 0 时红字警告"覆盖后将被清空"，避免云端空数据误覆盖本地。
 Future<void> _confirmOverwriteSync(
   BuildContext context, {
   required String title,
   required String message,
   required Future<void> Function() action,
+  Future<List<OverwriteStatRow>> Function()? compare,
+  bool sourceIsCloud = false,
 }) async {
   final ok = await showPredictiveDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(tr(title)),
-      content: Text(tr(message)),
+      content: SingleChildScrollView(
+        child: _OverwriteConfirmBody(
+          message: message,
+          compare: compare,
+          sourceIsCloud: sourceIsCloud,
+        ),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
@@ -597,6 +616,178 @@ Future<void> _confirmOverwriteSync(
     ),
   );
   if (ok == true) await action();
+}
+
+/// 手动同步进度浮层（桌面端同款「可取消的小进度提示」）：手动入口挂桥，
+/// 插件域逐项推进文案与进度，取消后服务在下一项边界软停止（已完成项保留）；
+/// 自动同步/登录同步不经过这里，保持静默只写行内状态
+Future<void> _runManualSync(
+  BuildContext context, {
+  required String label,
+  required bool cancellable,
+  required SyncItemState Function(SyncState st) pick,
+  required Future<void> Function(SyncManualCtx? manual) action,
+}) async {
+  // 跨域互斥：任一域在途时拒绝发起新同步（对齐桌面端 anyDomainSyncing），
+  // 并发会互踩行内状态且进度消息串门
+  final container = ProviderScope.containerOf(context, listen: false);
+  final st0 = container.read(syncProvider);
+  final busy = st0.playlistSync.syncing ||
+      st0.favoritesSync.syncing ||
+      st0.pluginSync.syncing ||
+      st0.settingsSync.syncing;
+  if (busy) {
+    showXianYuToast(context, tr('已有同步任务进行中，请稍候'));
+    return;
+  }
+  XianYuProgressToastHandle? toastRef;
+  final manual = cancellable
+      ? SyncManualCtx(onStep: (done, total, name) {
+          toastRef?.update(
+            tr('正在同步插件 "{name}" ({done}/{total})...', {
+              'name': name,
+              'done': done,
+              'total': total,
+            }),
+            progress: done / total,
+          );
+        })
+      : null;
+  final handle = showXianYuProgressToast(
+    context,
+    label,
+    onCancel: manual == null ? null : () => manual.cancelled = true,
+  );
+  toastRef = handle;
+  try {
+    await action(manual);
+    final st = container.read(syncProvider);
+    final item = pick(st);
+    if (manual?.cancelled == true) {
+      handle.complete(tr('已取消同步'));
+    } else if (item.errors.isNotEmpty) {
+      handle.fail(item.errors.first);
+    } else {
+      handle.complete(item.lastSummary ?? tr('同步完成'));
+    }
+  } catch (_) {
+    handle.fail(tr('同步失败，请稍后重试'));
+  }
+}
+
+/// 弹窗正文：无对比取数时直接显示静态文案；有取数时先显示加载中，
+/// 成功后将文案替换为「将用云端 N …覆盖本地 M …」带数量的对比描述，
+/// 失败则保留静态文案并附错误提示（不阻断覆盖）。
+class _OverwriteConfirmBody extends StatelessWidget {
+  const _OverwriteConfirmBody({
+    required this.message,
+    required this.compare,
+    required this.sourceIsCloud,
+  });
+
+  final String message;
+  final Future<List<OverwriteStatRow>> Function()? compare;
+  final bool sourceIsCloud;
+
+  static String _detail(List<OverwriteStatRow> rows, bool cloudSide) =>
+      rows.map((r) => '${cloudSide ? r.cloud : r.local} ${r.unit}${r.label}').join('、');
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (compare == null) return Text(tr(message));
+    return FutureBuilder<List<OverwriteStatRow>>(
+      future: compare!(),
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return Text(
+            tr('正在获取云端与本地数据…'),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          );
+        }
+        final rows = snap.data;
+        final failed = rows == null || rows.isEmpty;
+        final pattern = sourceIsCloud
+            ? '将用云端 {a}覆盖本地 {b}，操作不可逆，确定继续吗？'
+            : '将用本地 {a}覆盖云端 {b}，操作不可逆，确定继续吗？';
+        final text = failed
+            ? tr(message)
+            : tr(pattern)
+                .replaceAll('{a}', _detail(rows, true))
+                .replaceAll('{b}', _detail(rows, false));
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(text),
+            if (failed)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  tr('云端与本地数据获取失败'),
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodySmall
+                      ?.copyWith(color: scheme.error),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 歌单对比：本地读 PlaylistStore，云端走 file_sync_download 快照
+Future<List<OverwriteStatRow>> _playlistCompareStats(WidgetRef ref) async {
+  final local = await PlaylistStore().loadAll();
+  final localSongs = local.fold<int>(0, (n, p) => n + p.songs.length);
+  final data = await ref.read(accountApiProvider).fileSyncDownload();
+  final cloudPls =
+      ((data?['playlists'] as List?) ?? const []).whereType<Map>().toList();
+  final cloudSongs = cloudPls.fold<int>(
+      0, (n, pl) => n + ((pl['songs'] as List?) ?? const []).length);
+  return [
+    (label: '歌单', unit: '个', cloud: cloudPls.length, local: local.length),
+    (label: '歌曲', unit: '首', cloud: cloudSongs, local: localSongs),
+  ];
+}
+
+/// 收藏对比
+Future<List<OverwriteStatRow>> _favoritesCompareStats(WidgetRef ref) async {
+  final localCount = ref.read(favoritesProvider).entries.length;
+  final cloud = await ref.read(accountApiProvider).downloadFavorites();
+  return [
+    (label: '歌曲', unit: '首', cloud: cloud.favorites.length, local: localCount),
+  ];
+}
+
+/// 插件对比（不含内置插件，口径与覆盖下载清除范围一致）
+Future<List<OverwriteStatRow>> _pluginsCompareStats(WidgetRef ref) async {
+  final localPlugins = ref
+      .read(pluginManagerProvider)
+      .sources
+      .where((p) => !p.isBuiltin)
+      .length;
+  final localSubs = ref.read(pluginSubscriptionsProvider).length;
+  final snapshot = await ref.read(accountApiProvider).downloadPluginSnapshot();
+  return [
+    (
+      label: '插件',
+      unit: '个',
+      cloud: ((snapshot['plugins'] as List?) ?? const []).length,
+      local: localPlugins,
+    ),
+    (
+      label: '订阅',
+      unit: '条',
+      cloud: ((snapshot['subscriptions'] as List?) ?? const []).length,
+      local: localSubs,
+    ),
+  ];
 }
 
 class _ManualSyncCard extends ConsumerWidget {
@@ -620,14 +811,29 @@ class _ManualSyncCard extends ConsumerWidget {
           onUpload: () => _confirmOverwriteSync(
             context,
             title: '覆盖上传歌单',
-            message: '将用本地歌单全量覆盖云端，云端多出的歌单会被移除；本地歌单为空时云端歌单将被全部清空。确定继续吗？',
-            action: () => notifier.syncPlaylistsUpload(overwrite: true),
+            message: '将用本地歌单全量覆盖云端，云端多出的歌单会被移除，操作不可逆，确定继续吗？',
+            compare: () => _playlistCompareStats(ref),
+            action: () => _runManualSync(
+              context,
+              label: tr('正在上传歌单...'),
+              cancellable: false,
+              pick: (s) => s.playlistSync,
+              action: (m) => notifier.syncPlaylistsUpload(overwrite: true),
+            ),
           ),
           onDownload: () => _confirmOverwriteSync(
             context,
             title: '覆盖下载歌单',
-            message: '将用云端歌单全量覆盖本地，本地多出的歌单会被移除。确定继续吗？',
-            action: () => notifier.syncPlaylistsDownload(overwrite: true),
+            message: '将用云端歌单全量覆盖本地，本地多出的歌单会被移除，操作不可逆，确定继续吗？',
+            compare: () => _playlistCompareStats(ref),
+            sourceIsCloud: true,
+            action: () => _runManualSync(
+              context,
+              label: tr('正在下载歌单...'),
+              cancellable: false,
+              pick: (s) => s.playlistSync,
+              action: (m) => notifier.syncPlaylistsDownload(overwrite: true),
+            ),
           ),
         ),
         _SyncActionTile(
@@ -636,14 +842,29 @@ class _ManualSyncCard extends ConsumerWidget {
           onUpload: () => _confirmOverwriteSync(
             context,
             title: '覆盖上传收藏',
-            message: '将用本地收藏全量覆盖云端，云端多出的收藏会被移除。确定继续吗？',
-            action: () => notifier.syncFavoritesUpload(overwrite: true),
+            message: '将用本地收藏全量覆盖云端，云端多出的收藏会被移除，操作不可逆，确定继续吗？',
+            compare: () => _favoritesCompareStats(ref),
+            action: () => _runManualSync(
+              context,
+              label: tr('正在上传收藏...'),
+              cancellable: false,
+              pick: (s) => s.favoritesSync,
+              action: (m) => notifier.syncFavoritesUpload(overwrite: true),
+            ),
           ),
           onDownload: () => _confirmOverwriteSync(
             context,
             title: '覆盖下载收藏',
-            message: '将用云端收藏全量覆盖本地，本地多出的收藏会被移除。确定继续吗？',
-            action: () => notifier.syncFavoritesDownload(overwrite: true),
+            message: '将用云端收藏全量覆盖本地，本地多出的收藏会被移除，操作不可逆，确定继续吗？',
+            compare: () => _favoritesCompareStats(ref),
+            sourceIsCloud: true,
+            action: () => _runManualSync(
+              context,
+              label: tr('正在下载收藏...'),
+              cancellable: false,
+              pick: (s) => s.favoritesSync,
+              action: (m) => notifier.syncFavoritesDownload(overwrite: true),
+            ),
           ),
         ),
         _SyncActionTile(
@@ -652,14 +873,29 @@ class _ManualSyncCard extends ConsumerWidget {
           onUpload: () => _confirmOverwriteSync(
             context,
             title: '覆盖上传插件',
-            message: '将用本地插件全量覆盖云端，云端多出的插件与订阅会被移除。确定继续吗？',
-            action: () => notifier.syncPluginsUpload(overwrite: true),
+            message: '将用本地插件全量覆盖云端，云端多出的插件与订阅会被移除，操作不可逆，确定继续吗？',
+            compare: () => _pluginsCompareStats(ref),
+            action: () => _runManualSync(
+              context,
+              label: tr('正在上传插件...'),
+              cancellable: true,
+              pick: (s) => s.pluginSync,
+              action: (m) => notifier.syncPluginsUpload(overwrite: true, manual: m),
+            ),
           ),
           onDownload: () => _confirmOverwriteSync(
             context,
             title: '覆盖下载插件',
-            message: '将清空本地插件与订阅，并按云端内容重新安装。确定继续吗？',
-            action: () => notifier.syncPluginsDownload(overwrite: true),
+            message: '将清空本地插件与订阅，并按云端内容重新安装，操作不可逆，确定继续吗？',
+            compare: () => _pluginsCompareStats(ref),
+            sourceIsCloud: true,
+            action: () => _runManualSync(
+              context,
+              label: tr('正在恢复插件...'),
+              cancellable: true,
+              pick: (s) => s.pluginSync,
+              action: (m) => notifier.syncPluginsDownload(overwrite: true, manual: m),
+            ),
           ),
         ),
         _SyncActionTile(
@@ -668,14 +904,26 @@ class _ManualSyncCard extends ConsumerWidget {
           onUpload: () => _confirmOverwriteSync(
             context,
             title: '覆盖上传设置',
-            message: '将用本地设置覆盖云端设置。确定继续吗？',
-            action: () => notifier.syncSettingsUpload(),
+            message: '将用本地设置覆盖云端设置，操作不可逆，确定继续吗？',
+            action: () => _runManualSync(
+              context,
+              label: tr('正在上传设置...'),
+              cancellable: false,
+              pick: (s) => s.settingsSync,
+              action: (m) => notifier.syncSettingsUpload(),
+            ),
           ),
           onDownload: () => _confirmOverwriteSync(
             context,
             title: '覆盖下载设置',
             message: '将用云端设置覆盖本地设置。确定继续吗？',
-            action: () => notifier.syncSettingsDownload(),
+            action: () => _runManualSync(
+              context,
+              label: tr('正在下载设置...'),
+              cancellable: false,
+              pick: (s) => s.settingsSync,
+              action: (m) => notifier.syncSettingsDownload(),
+            ),
           ),
         ),
         // 网盘账号无手动同步按钮（对齐桌面端）：登录后变更实时触发上传

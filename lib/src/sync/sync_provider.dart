@@ -216,6 +216,18 @@ class SyncDomainLens {
 /// 当前后台同步来源标签（'登录同步'/'自动同步'），null=空闲；账号页据此区分进度文案
 final bgSyncSourceProvider = StateProvider<String?>((_) => null);
 
+/// 手动同步上下文：仅手动入口由 UI 层创建传入，用于逐项进度上报与取消标志；
+/// 自动同步/登录同步不传（保持原有静默行为）。取消语义为软取消——
+/// 域服务在下一项边界检查后停止，已完成项与同步账本保持自洽
+class SyncManualCtx {
+  SyncManualCtx({this.onStep});
+
+  /// 逐项进度回调：(已完成数, 总数, 当前项名称)
+  final void Function(int done, int total, String label)? onStep;
+
+  bool cancelled = false;
+}
+
 class SyncNotifier extends StateNotifier<SyncState> {
   SyncNotifier(this._ref) : super(const SyncState()) {
     _init();
@@ -304,11 +316,11 @@ class SyncNotifier extends StateNotifier<SyncState> {
   Future<void> syncFavoritesDownload({bool overwrite = false}) =>
       _favoritesSyncSvc.download(overwrite: overwrite);
 
-  Future<void> syncPluginsUpload({bool overwrite = false}) =>
-      _pluginsSyncSvc.upload(overwrite: overwrite);
+  Future<void> syncPluginsUpload({bool overwrite = false, SyncManualCtx? manual}) =>
+      _pluginsSyncSvc.upload(overwrite: overwrite, manual: manual);
 
-  Future<void> syncPluginsDownload({bool overwrite = false}) =>
-      _pluginsSyncSvc.download(overwrite: overwrite);
+  Future<void> syncPluginsDownload({bool overwrite = false, SyncManualCtx? manual}) =>
+      _pluginsSyncSvc.download(overwrite: overwrite, manual: manual);
 
   Future<void> syncSettingsUpload() => _settingsSyncSvc.upload();
 
