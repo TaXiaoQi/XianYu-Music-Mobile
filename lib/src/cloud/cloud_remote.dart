@@ -17,8 +17,9 @@ import 'cloud_credentials_store.dart';
 import 'cloud_types.dart';
 
 /// rotated_cred 回写：rust 刷新的凭据落盘。
-/// accountId 定位规则：cred 内冗余的 accountId 键（阿里登录时存入）；
-/// 免登录分享直链无凭据，跳过回写。
+/// accountId 定位规则：优先 cred 内冗余的 accountId 键（阿里登录时存入）；
+/// 夸克/UC 等凭据不冗余该键，按凭据内容匹配绑定账号（cred 取自存储原样、
+/// 轮换只发生在响应后，全等即同账号）；免登录分享直链无凭据，跳过回写。
 Future<void> _applyRotatedCred(
   String provider,
   Map<String, String> cred,
@@ -26,12 +27,32 @@ Future<void> _applyRotatedCred(
 ) async {
   final rotated = data['rotated_cred'];
   if (rotated is! Map<String, dynamic> || rotated.isEmpty) return;
-  final accountId = cred['accountId'] ?? '';
+  var accountId = cred['accountId'] ?? '';
+  if (accountId.isEmpty || accountId == '_') {
+    accountId = await _matchAccountByCred(provider, cred);
+  }
   AppLog.info('cloud',
       '凭据轮换回写 provider=$provider accountId=$accountId rotatedKeys=${rotated.keys.toList()}');
-  if (accountId.isEmpty || accountId == '_') return;
+  if (accountId.isEmpty) return;
   await CloudCredentialsStore.instance
       .updateCred(provider, accountId, rotated.map((k, v) => MapEntry(k, v.toString())));
+}
+
+/// 凭据内容匹配账号：逐账号全等比对存储凭据与本次请求凭据。
+Future<String> _matchAccountByCred(
+  String provider,
+  Map<String, String> cred,
+) async {
+  if (cred.isEmpty) return '';
+  final accounts = await CloudCredentialsStore.instance.accountsFor(provider);
+  for (final a in accounts) {
+    final c = a.cred;
+    if (c.length == cred.length &&
+        c.entries.every((e) => cred[e.key] == e.value)) {
+      return a.accountId;
+    }
+  }
+  return '';
 }
 
 /// 公共执行器：构造 reqJson → rust cloud_proxy → 解包出顶层载荷。
