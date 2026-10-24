@@ -12,7 +12,42 @@ class _CloudImportTab extends ConsumerStatefulWidget {
 }
 
 class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
-  static const _autoKey = '__auto__';
+  static const String _autoKey = '__auto__';
+
+  // 下拉菜单条目：圆角卡片风，选中项主色 14% 底 + 主色文字
+  DropdownMenuItem<String> _sourceMenuRow(String value, String label, String? selectedId) {
+    final scheme = Theme.of(context).colorScheme;
+    final isSel = value == (selectedId ?? _autoKey);
+    return DropdownMenuItem(
+      value: value,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: AlignmentDirectional.centerStart,
+        height: 36,
+        decoration: BoxDecoration(
+          color: isSel
+              ? Color.alphaBlend(
+                  scheme.primary.withValues(alpha: 0.14),
+                  appCardColor(context),
+                )
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 14.5,
+            color: isSel ? scheme.primary : scheme.onSurface,
+            fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
 
   String? _selectedPluginId;
   PluginSource? _resolved;
@@ -360,20 +395,29 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: selected ?? _autoKey,
-          items: [
-            DropdownMenuItem(value: _autoKey, child: Text(tr('自动识别'))),
-            for (final p in plugins)
-              DropdownMenuItem(value: p.id, child: Text(p.name)),
-          ],
-          onChanged: (v) => setState(() {
-            _selectedPluginId = v;
-            _resolved = null;
-          }),
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            isDense: true,
+        Theme(
+          // SDK 菜单选中项用 focusColor 画灰条（dropdown.dart Ink(focusColor)），
+          // 置透明后由下方条目自带的主色圆角高亮替代
+          data: Theme.of(context).copyWith(focusColor: Colors.transparent),
+          child: DropdownButtonFormField<String>(
+            initialValue: selected ?? _autoKey,
+            borderRadius: BorderRadius.circular(14),
+            dropdownColor: appCardColor(context),
+            menuMaxHeight: 320,
+            items: [
+              _sourceMenuRow(_autoKey, tr('自动识别'), selected),
+              for (final p in plugins) _sourceMenuRow(p.id, p.name, selected),
+            ],
+            onChanged: (v) => setState(() {
+              _selectedPluginId = v;
+              _resolved = null;
+            }),
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              isDense: true,
+            ),
           ),
         ),
         const SizedBox(height: 14),
