@@ -4,13 +4,15 @@ class _LandscapeControlsRow extends ConsumerWidget {
   const _LandscapeControlsRow({
     required this.notifier,
     required this.current,
-    this.onLyricAdjust,
+    this.onMore,
   });
 
   final PlayerNotifier notifier;
   final QueueItem? current;
 
-  final VoidCallback? onLyricAdjust;
+  /// 尾按钮回调：传统模式传「更多」弹层（横屏弹层内桌面歌词项已换成
+  /// 歌词调节，行内词按钮即桌面歌词快捷入口）；advanced 模式暂传歌词调节
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -76,84 +78,96 @@ class _LandscapeControlsRow extends ConsumerWidget {
             ),
           ),
         ),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
-          icon: _StateSwapIcon(
-            stateKey: (dlActive, dlDone),
-            child: dlActive
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white.withValues(alpha: 0.8),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
+            icon: _StateSwapIcon(
+              stateKey: (dlActive, dlDone),
+              child: dlActive
+                  ? SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                    )
+                  : themeSlotIcon(
+                      ref,
+                      'action.download',
+                      fallback: dlDone
+                          ? Icons.check_circle_outline
+                          : Icons.download_outlined,
+                      color: dlDone ? const Color(0xFF07C160) : idle,
                     ),
-                  )
-                : themeSlotIcon(
-                    ref,
-                    'action.download',
-                    fallback: dlDone
-                        ? Icons.check_circle_outline
-                        : Icons.download_outlined,
-                    color: dlDone ? const Color(0xFF07C160) : idle,
-                  ),
-          ),
-          onPressed: () {
-            if (item == null) return;
-            if (dlActive) {
-              showXianYuToast(context, tr('正在下载中…'));
-              return;
-            }
-            if (dlDone) {
-              showXianYuToast(
-                context,
-                isLocal ? tr('本地音乐已在设备') : tr('已下载，可到下载页查看'),
-              );
-              return;
-            }
-            _showDownloadQualitySheet(context, ref, item);
-          },
-        )),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          tooltip: tr('收藏'),
-          icon: _StateSwapIcon(
-            stateKey: isFav,
-            child: themeSlotIcon(
-              ref,
-              'action.favorite',
-              fallback: isFav ? Icons.favorite : Icons.favorite_border,
-              color: isFav ? const Color(0xFFEC4141) : idle,
             ),
+            onPressed: () {
+              if (item == null) return;
+              if (dlActive) {
+                showXianYuToast(context, tr('正在下载中…'));
+                return;
+              }
+              if (dlDone) {
+                showXianYuToast(
+                  context,
+                  isLocal ? tr('本地音乐已在设备') : tr('已下载，可到下载页查看'),
+                );
+                return;
+              }
+              _showDownloadQualitySheet(context, ref, item);
+            },
           ),
-          onPressed: () {
-            if (item != null) {
-              ref.read(favoritesProvider.notifier).toggle(item);
-            }
-          },
-        )),
+        ),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            tooltip: tr('收藏'),
+            icon: _StateSwapIcon(
+              stateKey: isFav,
+              child: themeSlotIcon(
+                ref,
+                'action.favorite',
+                fallback: isFav ? Icons.favorite : Icons.favorite_border,
+                color: isFav ? const Color(0xFFEC4141) : idle,
+              ),
+            ),
+            onPressed: () {
+              if (item != null) {
+                ref.read(favoritesProvider.notifier).toggle(item);
+              }
+            },
+          ),
+        ),
       ],
     );
 
     final centerCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          icon: themeSlotWidget(
-            ref,
-            'player.mode',
-            size: 28,
-            fallback: _PlayModeIcon(mode: playMode, color: idle, size: 28),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            icon: themeSlotWidget(
+              ref,
+              'player.mode',
+              size: 28,
+              fallback: _PlayModeIcon(mode: playMode, color: idle, size: 28),
+            ),
+            onPressed: notifier.cyclePlayMode,
           ),
-          onPressed: notifier.cyclePlayMode,
-        )),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          icon: Icon(Icons.skip_previous, color: idle),
-          onPressed: notifier.previous,
-        )),
+        ),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            icon: Icon(Icons.skip_previous, color: idle),
+            onPressed: notifier.previous,
+          ),
+        ),
         Container(
           width: 64,
           height: 64,
@@ -176,59 +190,68 @@ class _LandscapeControlsRow extends ConsumerWidget {
                     color: Colors.white,
                   ),
                 )
-              : PressableScale(pressScale: 0.92, child: IconButton(
-                  icon: PlayPauseMorphIcon(
-                    playing: isPlaying,
-                    size: 34,
-                    color: Colors.white,
+              : PressableScale(
+                  pressScale: 0.92,
+                  child: IconButton(
+                    icon: PlayPauseMorphIcon(
+                      playing: isPlaying,
+                      size: 34,
+                      color: Colors.white,
+                    ),
+                    iconSize: 34,
+                    onPressed: notifier.toggle,
                   ),
-                  iconSize: 34,
-                  onPressed: notifier.toggle,
-                )),
-        ),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          icon: Icon(Icons.skip_next, color: idle),
-          onPressed: notifier.next,
-        )),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          tooltip: tr('桌面歌词'),
-          icon: Container(
-            width: 28,
-            height: 28,
-            alignment: Alignment.center,
-            child: _StateSwapIcon(
-              stateKey: lyricsEnabled,
-              child: Container(
-                width: 28,
-                height: 28,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: !mvRequested && lyricsEnabled
-                      ? accent.withValues(alpha: 0.14)
-                      : Colors.transparent,
                 ),
-                child: Text(
-                  tr('词'),
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                    color: mvRequested
-                        ? Colors.white.withValues(alpha: 0.32)
-                        : lyricsEnabled
-                        ? accent
-                        : idle,
+        ),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            icon: Icon(Icons.skip_next, color: idle),
+            onPressed: notifier.next,
+          ),
+        ),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            tooltip: tr('桌面歌词'),
+            icon: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              child: _StateSwapIcon(
+                stateKey: lyricsEnabled,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: !mvRequested && lyricsEnabled
+                        ? accent.withValues(alpha: 0.14)
+                        : Colors.transparent,
+                  ),
+                  child: Text(
+                    tr('词'),
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: mvRequested
+                          ? Colors.white.withValues(alpha: 0.32)
+                          : lyricsEnabled
+                          ? accent
+                          : idle,
+                    ),
                   ),
                 ),
               ),
             ),
+            onPressed: mvRequested
+                ? null
+                : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
           ),
-          onPressed: mvRequested
-              ? null
-              : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-        )),
+        ),
       ],
     );
 
@@ -237,82 +260,96 @@ class _LandscapeControlsRow extends ConsumerWidget {
       children: [
         Tooltip(
           message: tr('音质'),
-          child: PressableScale(pressScale: 0.88, child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () {
-              if (item == null) return;
-              if (item.isOnline) {
-                _showQualitySheet(context, ref);
-              } else {
-                showXianYuToast(context, tr('本地音乐以原音质播放'));
-              }
-            },
-            child: Container(
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(shape: BoxShape.circle),
-              child: Text(
-                mvQualityShown ? mvQuality : _qualityAbbr(currentQuality),
-                maxLines: 1,
-                softWrap: false,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: idle,
+          child: PressableScale(
+            pressScale: 0.88,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(14),
+              onTap: () {
+                if (item == null) return;
+                if (item.isOnline) {
+                  _showQualitySheet(context, ref);
+                } else {
+                  showXianYuToast(context, tr('本地音乐以原音质播放'));
+                }
+              },
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(shape: BoxShape.circle),
+                child: Text(
+                  mvQualityShown ? mvQuality : _qualityAbbr(currentQuality),
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: idle,
+                  ),
                 ),
               ),
             ),
           ),
-        )),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          tooltip: tr('音效'),
-          icon: _StateSwapIcon(
-            stateKey: !bypass && _hasPlayerEffects(sfx),
-            child: Icon(
-              Icons.graphic_eq,
-              color: mvRequested
-                  ? Colors.white.withValues(alpha: 0.32)
-                  : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
-            ),
-          ),
-          onPressed: mvRequested
-              ? null
-              : () => playerNavigatorKey.currentState?.push(
-                  coverPageRoute<void>(
-                    context,
-                    (_) => const EffectsPage(),
-                    settings: const RouteSettings(name: '/effects'),
-                  ),
-                ),
-        )),
-        PressableScale(pressScale: 0.88, child: IconButton(
-          iconSize: 28,
-          icon: themeSlotIcon(
-            ref,
-            'player.queue',
-            fallback: Icons.queue_music,
-            size: 28,
-            color: idle,
-          ),
-          onPressed: () => showSheetDialog<void>(
-            context,
-            (_) => _QueueSheet(player: ref.read(playerProvider)),
-          ),
-        )),
-        if (onLyricAdjust != null)
-          PressableScale(pressScale: 0.88, child: IconButton(
+        ),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
             iconSize: 28,
-            tooltip: tr('歌词调节'),
-            icon: Icon(
-              Icons.tune_rounded,
-              size: 22,
-              color: Colors.white.withValues(alpha: 0.9),
+            tooltip: tr('音效'),
+            icon: _StateSwapIcon(
+              stateKey: !bypass && _hasPlayerEffects(sfx),
+              child: Icon(
+                Icons.graphic_eq,
+                color: mvRequested
+                    ? Colors.white.withValues(alpha: 0.32)
+                    : (!bypass && _hasPlayerEffects(sfx) ? accent : idle),
+              ),
             ),
-            onPressed: onLyricAdjust,
-          )),
+            onPressed: mvRequested
+                ? null
+                : () => playerNavigatorKey.currentState?.push(
+                    coverPageRoute<void>(
+                      context,
+                      (_) => const EffectsPage(),
+                      settings: const RouteSettings(name: '/effects'),
+                    ),
+                  ),
+          ),
+        ),
+        PressableScale(
+          pressScale: 0.88,
+          child: IconButton(
+            iconSize: 28,
+            icon: themeSlotIcon(
+              ref,
+              'player.queue',
+              fallback: Icons.queue_music,
+              size: 28,
+              color: idle,
+            ),
+            onPressed: () => showSheetDialog<void>(
+              context,
+              (_) => _QueueSheet(player: ref.read(playerProvider)),
+            ),
+          ),
+        ),
+        if (onMore != null)
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              iconSize: 28,
+              tooltip: tr('更多'),
+              icon: themeSlotIcon(
+                ref,
+                'action.more',
+                fallback: Icons.more_horiz,
+                size: 24,
+                color: Colors.white.withValues(alpha: 0.85),
+              ),
+              onPressed: onMore,
+            ),
+          ),
       ],
     );
 
@@ -332,4 +369,3 @@ class _LandscapeControlsRow extends ConsumerWidget {
     );
   }
 }
-

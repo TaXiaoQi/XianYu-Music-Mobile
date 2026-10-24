@@ -418,39 +418,41 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 PredictiveCoverReturn.instance.lyricsActive.value = true;
               },
               child: Center(
-                child: PressableScale(child: Hero(
-                  tag: 'player-cover',
-                  flightShuttleBuilder:
-                      (ctx, animation, direction, fromCtx, toCtx) {
-                        return PlayerCoverShuttle(
-                          animation: animation,
-                          songPath: current?.path ?? '',
-                          networkUrl: current?.coverUrl,
-                          fromRadius: 23,
-                          toRadius: 31,
-                          borderColor: Colors.white.withValues(alpha: 0.18),
-                          shadow: BoxShadow(
-                            color: scheme.primary.withValues(alpha: 0.28),
-                            blurRadius: 36,
-                            spreadRadius: 2,
-                          ),
-                          gradient: [
-                            scheme.primary,
-                            scheme.primary.withValues(alpha: 0.72),
-                          ],
-                        );
-                      },
-                  child: FlyingCoverAnchor(
-                    child: CoverReturnSource(
-                      songPath: current?.path,
-                      networkUrl: current?.coverUrl,
-                      child: _BigCover(
-                        current: current,
-                        size: MediaQuery.of(context).size.width * 0.64,
+                child: PressableScale(
+                  child: Hero(
+                    tag: 'player-cover',
+                    flightShuttleBuilder:
+                        (ctx, animation, direction, fromCtx, toCtx) {
+                          return PlayerCoverShuttle(
+                            animation: animation,
+                            songPath: current?.path ?? '',
+                            networkUrl: current?.coverUrl,
+                            fromRadius: 23,
+                            toRadius: 31,
+                            borderColor: Colors.white.withValues(alpha: 0.18),
+                            shadow: BoxShadow(
+                              color: scheme.primary.withValues(alpha: 0.28),
+                              blurRadius: 36,
+                              spreadRadius: 2,
+                            ),
+                            gradient: [
+                              scheme.primary,
+                              scheme.primary.withValues(alpha: 0.72),
+                            ],
+                          );
+                        },
+                    child: FlyingCoverAnchor(
+                      child: CoverReturnSource(
+                        songPath: current?.path,
+                        networkUrl: current?.coverUrl,
+                        child: _BigCover(
+                          current: current,
+                          size: MediaQuery.of(context).size.width * 0.64,
+                        ),
                       ),
                     ),
                   ),
-                )),
+                ),
               ),
             ),
         ],
@@ -611,56 +613,58 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                             return Center(
                               child: GestureDetector(
                                 onTap: () {
-                                  setState(
-                                      () => _showLyrics = !_showLyrics);
+                                  setState(() => _showLyrics = !_showLyrics);
                                   PredictiveCoverReturn
                                           .instance
                                           .lyricsActive
-                                          .value = _showLyrics;
+                                          .value =
+                                      _showLyrics;
                                 },
-                                child: PressableScale(child: Hero(
-                                  tag: 'player-cover',
-                                  flightShuttleBuilder:
-                                      (
-                                        ctx,
-                                        animation,
-                                        direction,
-                                        fromCtx,
-                                        toCtx,
-                                      ) => PlayerCoverShuttle(
-                                        animation: animation,
-                                        songPath: current?.path ?? '',
+                                child: PressableScale(
+                                  child: Hero(
+                                    tag: 'player-cover',
+                                    flightShuttleBuilder:
+                                        (
+                                          ctx,
+                                          animation,
+                                          direction,
+                                          fromCtx,
+                                          toCtx,
+                                        ) => PlayerCoverShuttle(
+                                          animation: animation,
+                                          songPath: current?.path ?? '',
+                                          networkUrl: current?.coverUrl,
+                                          fromRadius: 23,
+                                          toRadius: 31,
+                                          borderColor: Colors.white.withValues(
+                                            alpha: 0.18,
+                                          ),
+                                          shadow: BoxShadow(
+                                            color: scheme.primary.withValues(
+                                              alpha: 0.28,
+                                            ),
+                                            blurRadius: 36,
+                                            spreadRadius: 2,
+                                          ),
+                                          gradient: [
+                                            scheme.primary,
+                                            scheme.primary.withValues(
+                                              alpha: 0.72,
+                                            ),
+                                          ],
+                                        ),
+                                    child: FlyingCoverAnchor(
+                                      child: CoverReturnSource(
+                                        songPath: current?.path,
                                         networkUrl: current?.coverUrl,
-                                        fromRadius: 23,
-                                        toRadius: 31,
-                                        borderColor: Colors.white.withValues(
-                                          alpha: 0.18,
+                                        child: _BigCover(
+                                          current: current,
+                                          size: coverSize,
                                         ),
-                                        shadow: BoxShadow(
-                                          color: scheme.primary.withValues(
-                                            alpha: 0.28,
-                                          ),
-                                          blurRadius: 36,
-                                          spreadRadius: 2,
-                                        ),
-                                        gradient: [
-                                          scheme.primary,
-                                          scheme.primary.withValues(
-                                            alpha: 0.72,
-                                          ),
-                                        ],
-                                      ),
-                                  child: FlyingCoverAnchor(
-                                    child: CoverReturnSource(
-                                      songPath: current?.path,
-                                      networkUrl: current?.coverUrl,
-                                      child: _BigCover(
-                                        current: current,
-                                        size: coverSize,
                                       ),
                                     ),
                                   ),
-                                )),
+                                ),
                               ),
                             );
                           },
@@ -681,7 +685,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                                 PredictiveCoverReturn
                                         .instance
                                         .lyricsActive
-                                        .value = _showLyrics;
+                                        .value =
+                                    _showLyrics;
                               },
                               onRomajiAvailable: (has) {
                                 if (_lyricsViewHasRomaji != has) {
@@ -708,7 +713,8 @@ class _PlayerPageState extends ConsumerState<PlayerPage> {
                 notifier: notifier,
                 current: current,
                 landscape: true,
-                onLyricAdjust: () =>
+                // advanced 模式横屏无更多弹层，沿用歌词调节（仅图标随行尾按钮换新）
+                onMore: () =>
                     _TraditionalPlayerLayoutState._showLyricAdjustMenu(
                       context,
                       ref,
@@ -1049,8 +1055,7 @@ class _TraditionalPlayerLayoutState
                     if (_showLyrics != (i == 1)) {
                       setState(() => _showLyrics = i == 1);
                     }
-                    PredictiveCoverReturn
-                        .instance.lyricsActive.value = i == 1;
+                    PredictiveCoverReturn.instance.lyricsActive.value = i == 1;
                   },
                   itemBuilder: (context, i) {
                     if (i == 0) {
@@ -1194,10 +1199,13 @@ class _TraditionalPlayerLayoutState
               _LandscapeControlsRow(
                 notifier: widget.notifier,
                 current: current,
-                onLyricAdjust: () => _showLyricAdjustMenu(
+                onMore: () => _showCoverMoreSheet(
                   context,
-                  ref,
-                  hasRomaji: _lyricsViewHasRomaji,
+                  ref
+                          .read(settingsProvider)
+                          .valueOrNull
+                          ?.floatingLyricsEnabled ??
+                      false,
                 ),
               ),
               const SizedBox(height: 16),
@@ -1240,35 +1248,37 @@ class _TraditionalPlayerLayoutState
           children: [
             for (final (value, label) in labels)
               Expanded(
-                child: PressableScale(child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () {
-                    notifier.setLyricAlignment(value);
-                  },
-                  child: Container(
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      color: align == value
-                          ? const Color(0xFFEC4141).withValues(alpha: 0.14)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: align == value
-                            ? FontWeight.w700
-                            : FontWeight.w500,
+                child: PressableScale(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () {
+                      notifier.setLyricAlignment(value);
+                    },
+                    child: Container(
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
                         color: align == value
-                            ? const Color(0xFFEC4141)
-                            : scheme.onSurfaceVariant,
+                            ? const Color(0xFFEC4141).withValues(alpha: 0.14)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: align == value
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: align == value
+                              ? const Color(0xFFEC4141)
+                              : scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
                   ),
-                )),
+                ),
               ),
           ],
         ),
@@ -1283,29 +1293,35 @@ class _TraditionalPlayerLayoutState
     required VoidCallback onTap,
   }) {
     final scheme = Theme.of(ctx).colorScheme;
-    return PressableScale(child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
+    return PressableScale(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onSurface,
+                ),
               ),
-            ),
-            const Spacer(),
-            Icon(Icons.chevron_right_rounded, size: 20, color: scheme.outline),
-          ],
+              const Spacer(),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: scheme.outline,
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
   }
 
   static Widget _buildLyricMenuSwitch(
@@ -1317,37 +1333,39 @@ class _TraditionalPlayerLayoutState
     bool enabled = true,
   }) {
     final scheme = Theme.of(ctx).colorScheme;
-    return PressableScale(child: InkWell(
-      onTap: enabled ? () => onChanged(!value) : null,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: enabled ? scheme.onSurfaceVariant : scheme.outline,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: enabled ? scheme.onSurface : scheme.outline,
+    return PressableScale(
+      child: InkWell(
+        onTap: enabled ? () => onChanged(!value) : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: enabled ? scheme.onSurfaceVariant : scheme.outline,
               ),
-            ),
-            const Spacer(),
-            Switch.adaptive(
-              value: value,
-              onChanged: enabled ? onChanged : null,
-              activeThumbColor: const Color(0xFFEC4141),
-            ),
-          ],
+              const SizedBox(width: 12),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? scheme.onSurface : scheme.outline,
+                ),
+              ),
+              const Spacer(),
+              Switch.adaptive(
+                value: value,
+                onChanged: enabled ? onChanged : null,
+                activeThumbColor: const Color(0xFFEC4141),
+              ),
+            ],
+          ),
         ),
       ),
-    ));
+    );
   }
 
   Widget _buildTopBar(BuildContext context, {bool landscape = false}) {
@@ -1355,10 +1373,13 @@ class _TraditionalPlayerLayoutState
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
-          PressableScale(pressScale: 0.88, child: IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down, size: 28),
-            onPressed: () => Navigator.of(context).pop(),
-          )),
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: const Icon(Icons.keyboard_arrow_down, size: 28),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ),
           Expanded(
             child: Center(
               child: landscape
@@ -1390,20 +1411,23 @@ class _TraditionalPlayerLayoutState
                     ),
             ),
           ),
-          PressableScale(pressScale: 0.88, child: IconButton(
-            icon: themeSlotIcon(
-              ref,
-              'action.share',
-              fallback: Icons.ios_share,
-              size: 20,
-              color: Colors.white,
+          PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: themeSlotIcon(
+                ref,
+                'action.share',
+                fallback: Icons.ios_share,
+                size: 20,
+                color: Colors.white,
+              ),
+              tooltip: tr('分享歌曲'),
+              onPressed: () {
+                final c = widget.current;
+                if (c != null) _shareCurrent(context, ref, c);
+              },
             ),
-            tooltip: tr('分享歌曲'),
-            onPressed: () {
-              final c = widget.current;
-              if (c != null) _shareCurrent(context, ref, c);
-            },
-          )),
+          ),
         ],
       ),
     );
@@ -1584,51 +1608,57 @@ class _TraditionalPlayerLayoutState
             ),
           ),
           if (fromDaily)
-            PressableScale(pressScale: 0.88, child: InkWell(
-              borderRadius: BorderRadius.circular(22),
-              onTap: () => _reportDailyDislike(context, c),
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: CustomPaint(
-                    painter: _DislikeStrokePainter(
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
-                    child: Icon(
-                      Icons.favorite_border,
-                      size: 26,
-                      color: Colors.white.withValues(alpha: 0.9),
+            PressableScale(
+              pressScale: 0.88,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(22),
+                onTap: () => _reportDailyDislike(context, c),
+                child: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CustomPaint(
+                      painter: _DislikeStrokePainter(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      child: Icon(
+                        Icons.favorite_border,
+                        size: 26,
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
                     ),
                   ),
                 ),
               ),
-            )),
+            ),
           if (fromDaily) const SizedBox(width: 8),
-          PressableScale(pressScale: 0.88, child: InkWell(
-            borderRadius: BorderRadius.circular(22),
-            onTap: () {
-              if (c != null) {
-                ref.read(favoritesProvider.notifier).toggle(c);
-              }
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(6),
-              child: _StateSwapIcon(
-                stateKey: isFav,
-                child: themeSlotIcon(
-                  ref,
-                  'action.favorite',
-                  fallback: isFav ? Icons.favorite : Icons.favorite_border,
-                  size: 28,
-                  color: isFav
-                      ? const Color(0xFFEC4141)
-                      : Colors.white.withValues(alpha: 0.9),
+          PressableScale(
+            pressScale: 0.88,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(22),
+              onTap: () {
+                if (c != null) {
+                  ref.read(favoritesProvider.notifier).toggle(c);
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: _StateSwapIcon(
+                  stateKey: isFav,
+                  child: themeSlotIcon(
+                    ref,
+                    'action.favorite',
+                    fallback: isFav ? Icons.favorite : Icons.favorite_border,
+                    size: 28,
+                    color: isFav
+                        ? const Color(0xFFEC4141)
+                        : Colors.white.withValues(alpha: 0.9),
+                  ),
                 ),
               ),
             ),
-          )),
+          ),
         ],
       ),
     );
@@ -1799,40 +1829,46 @@ class _TraditionalPlayerLayoutState
 
   Widget _lyricsActionItem(BuildContext context, bool lyricsEnabled) {
     if (_showLyrics) {
-      return PressableScale(pressScale: 0.88, child: IconButton(
-        iconSize: 28,
-        tooltip: tr('歌词调节'),
-        icon: _StateSwapIcon(
-          stateKey: _showLyrics,
-          child: Icon(
-            Icons.tune_rounded,
-            size: 22,
-            color: Colors.white.withValues(alpha: 0.9),
+      return PressableScale(
+        pressScale: 0.88,
+        child: IconButton(
+          iconSize: 28,
+          tooltip: tr('歌词调节'),
+          icon: _StateSwapIcon(
+            stateKey: _showLyrics,
+            child: Icon(
+              Icons.tune_rounded,
+              size: 22,
+              color: Colors.white.withValues(alpha: 0.9),
+            ),
+          ),
+          onPressed: () => _showLyricAdjustMenu(
+            context,
+            ref,
+            hasRomaji: _lyricsViewHasRomaji,
+            showAlign: true,
           ),
         ),
-        onPressed: () => _showLyricAdjustMenu(
-          context,
-          ref,
-          hasRomaji: _lyricsViewHasRomaji,
-          showAlign: true,
-        ),
-      ));
+      );
     }
-    return PressableScale(pressScale: 0.88, child: IconButton(
-      iconSize: 28,
-      tooltip: tr('更多'),
-      icon: _StateSwapIcon(
-        stateKey: _showLyrics,
-        child: themeSlotIcon(
-          ref,
-          'action.more',
-          fallback: Icons.more_horiz,
-          size: 24,
-          color: Colors.white.withValues(alpha: 0.85),
+    return PressableScale(
+      pressScale: 0.88,
+      child: IconButton(
+        iconSize: 28,
+        tooltip: tr('更多'),
+        icon: _StateSwapIcon(
+          stateKey: _showLyrics,
+          child: themeSlotIcon(
+            ref,
+            'action.more',
+            fallback: Icons.more_horiz,
+            size: 24,
+            color: Colors.white.withValues(alpha: 0.85),
+          ),
         ),
+        onPressed: () => _showCoverMoreSheet(context, lyricsEnabled),
       ),
-      onPressed: () => _showCoverMoreSheet(context, lyricsEnabled),
-    ));
+    );
   }
 
   Future<void> _showCoverMoreSheet(
@@ -1843,166 +1879,203 @@ class _TraditionalPlayerLayoutState
     if (c == null) return;
     await showSheetDialog<void>(context, (ctx) {
       final scheme = Theme.of(ctx).colorScheme;
+      // 横屏视口矮，内容超出弹窗可用高时滚动，避免 Column 直接溢出截断
       return SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
-              child: Text(
-                c.title,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Text(
+                  c.title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: Text(
-                c.artist.isEmpty ? tr('未知歌手') : c.artist,
-                style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: Text(
+                  c.artist.isEmpty ? tr('未知歌手') : c.artist,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-            StatefulBuilder(
-              builder: (ctx, setSheetState) => Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _sheetSegmentRow(
-                    ctx,
-                    label: tr('迷你歌词对齐'),
-                    current: _coverLyricAlign,
-                    options: [
-                      (value: 'left', label: tr('左对齐')),
-                      (value: 'center', label: tr('居中')),
-                      (value: 'right', label: tr('右对齐')),
-                    ],
-                    onSelected: (v) {
-                      setSheetState(() {});
-                      _setCoverLyricAlign(v);
-                    },
-                  ),
-                  _sheetSegmentRow(
-                    ctx,
-                    label: tr('封面大小'),
-                    current: _coverSizeTier,
-                    options: [
-                      (value: 'large', label: tr('大')),
-                      (value: 'medium', label: tr('中')),
-                      (value: 'small', label: tr('小')),
-                    ],
-                    onSelected: (v) {
-                      setSheetState(() {});
-                      _setCoverSizeTier(v);
-                    },
-                  ),
-                ],
+              StatefulBuilder(
+                builder: (ctx, setSheetState) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _sheetSegmentRow(
+                      ctx,
+                      label: tr('迷你歌词对齐'),
+                      current: _coverLyricAlign,
+                      options: [
+                        (value: 'left', label: tr('左对齐')),
+                        (value: 'center', label: tr('居中')),
+                        (value: 'right', label: tr('右对齐')),
+                      ],
+                      onSelected: (v) {
+                        setSheetState(() {});
+                        _setCoverLyricAlign(v);
+                      },
+                    ),
+                    _sheetSegmentRow(
+                      ctx,
+                      label: tr('封面大小'),
+                      current: _coverSizeTier,
+                      options: [
+                        (value: 'large', label: tr('大')),
+                        (value: 'medium', label: tr('中')),
+                        (value: 'small', label: tr('小')),
+                      ],
+                      onSelected: (v) {
+                        setSheetState(() {});
+                        _setCoverSizeTier(v);
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ),
-            // 睡眠定时入口（复用全局设置的 showSleepTimerSheet 弹窗）
-            Consumer(
-              builder: (context, sheetRef, _) {
-                final active = sheetRef.watch(sleepTimerProvider).active;
-                return PressableScale(child: ListTile(
-                  leading: Icon(
-                    Icons.bedtime_outlined,
-                    color: active ? scheme.primary : scheme.onSurfaceVariant,
-                    size: 22,
-                  ),
-                  title: Text(tr('睡眠定时')),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    showSleepTimerSheet(ctx);
-                  },
-                ));
-              },
-            ),
-            if (widget.mvSupported && widget.onToggleMv != null)
-              PressableScale(child: ListTile(
-                leading: widget.mvLoading
-                    ? SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.2,
-                          color: scheme.primary,
-                        ),
-                      )
-                    : Icon(
-                        widget.mvEnabled
-                            ? Icons.movie
-                            : Icons.movie_creation_outlined,
-                        color: widget.mvEnabled
+              // 睡眠定时入口（复用全局设置的 showSleepTimerSheet 弹窗）
+              Consumer(
+                builder: (context, sheetRef, _) {
+                  final active = sheetRef.watch(sleepTimerProvider).active;
+                  return PressableScale(
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.bedtime_outlined,
+                        color: active
                             ? scheme.primary
                             : scheme.onSurfaceVariant,
                         size: 22,
                       ),
-                title: Text(() {
-                  if (!widget.mvLoading) {
-                    return widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV');
-                  }
-                  if (widget.mvPhase == 'init') {
-                    return widget.mvBufferedSec > 0
-                        ? tr('MV 加载中（已缓冲 {sec} 秒）', {
-                            'sec': widget.mvBufferedSec,
-                          })
-                        : tr('MV 加载中（准备画面）');
-                  }
-                  return tr('MV 加载中（解析地址）');
-                }()),
-                onTap: widget.mvLoading
-                    ? null
-                    : () {
+                      title: Text(tr('睡眠定时')),
+                      onTap: () {
                         Navigator.pop(ctx);
-                        widget.onToggleMv?.call();
+                        showSleepTimerSheet(ctx);
                       },
-              )),
-            PressableScale(child: ListTile(
-              leading: Icon(
-                Icons.playlist_add,
-                color: scheme.primary,
-                size: 22,
+                    ),
+                  );
+                },
               ),
-              title: Text(tr('添加到歌单')),
-              onTap: () {
-                Navigator.pop(ctx);
-                showAddToPlaylistSheet(ctx, ref, [
-                  importedSongFromQueueItem(c),
-                ]);
-              },
-            )),
-            PressableScale(child: ListTile(
-              enabled: !widget.mvEnabled,
-              leading: Icon(
-                Icons.closed_caption_outlined,
-                color: widget.mvEnabled
-                    ? scheme.outline
-                    : (lyricsEnabled
-                          ? scheme.primary
-                          : scheme.onSurfaceVariant),
-                size: 22,
-              ),
-              title: Text(tr('桌面歌词')),
-              trailing: Text(
-                lyricsEnabled ? tr('已开启') : tr('已关闭'),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: widget.mvEnabled
-                      ? scheme.outline
-                      : scheme.onSurfaceVariant,
+              if (widget.mvSupported && widget.onToggleMv != null)
+                PressableScale(
+                  child: ListTile(
+                    leading: widget.mvLoading
+                        ? SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              color: scheme.primary,
+                            ),
+                          )
+                        : Icon(
+                            widget.mvEnabled
+                                ? Icons.movie
+                                : Icons.movie_creation_outlined,
+                            color: widget.mvEnabled
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                            size: 22,
+                          ),
+                    title: Text(() {
+                      if (!widget.mvLoading) {
+                        return widget.mvEnabled ? tr('关闭 MV') : tr('开启 MV');
+                      }
+                      if (widget.mvPhase == 'init') {
+                        return widget.mvBufferedSec > 0
+                            ? tr('MV 加载中（已缓冲 {sec} 秒）', {
+                                'sec': widget.mvBufferedSec,
+                              })
+                            : tr('MV 加载中（准备画面）');
+                      }
+                      return tr('MV 加载中（解析地址）');
+                    }()),
+                    onTap: widget.mvLoading
+                        ? null
+                        : () {
+                            Navigator.pop(ctx);
+                            widget.onToggleMv?.call();
+                          },
+                  ),
+                ),
+              PressableScale(
+                child: ListTile(
+                  leading: Icon(
+                    Icons.playlist_add,
+                    color: scheme.primary,
+                    size: 22,
+                  ),
+                  title: Text(tr('添加到歌单')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    showAddToPlaylistSheet(ctx, ref, [
+                      importedSongFromQueueItem(c),
+                    ]);
+                  },
                 ),
               ),
-              onTap: () {
-                Navigator.pop(ctx);
-                _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
-              },
-            )),
-          ],
+              // 横屏：行内已有桌面歌词快捷按钮（词），菜单里换成歌词调节入口
+              if (MediaQuery.orientationOf(context) == Orientation.landscape)
+                PressableScale(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.tune_rounded,
+                      color: scheme.primary,
+                      size: 22,
+                    ),
+                    title: Text(tr('歌词调节')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showLyricAdjustMenu(
+                        context,
+                        ref,
+                        hasRomaji: _lyricsViewHasRomaji,
+                      );
+                    },
+                  ),
+                )
+              else
+                PressableScale(
+                  child: ListTile(
+                    enabled: !widget.mvEnabled,
+                    leading: Icon(
+                      Icons.closed_caption_outlined,
+                      color: widget.mvEnabled
+                          ? scheme.outline
+                          : (lyricsEnabled
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant),
+                      size: 22,
+                    ),
+                    title: Text(tr('桌面歌词')),
+                    trailing: Text(
+                      lyricsEnabled ? tr('已开启') : tr('已关闭'),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: widget.mvEnabled
+                            ? scheme.outline
+                            : scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _toggleFloatingLyrics(ctx, ref, lyricsEnabled);
+                    },
+                  ),
+                ),
+            ],
+          ),
         ),
       );
     });
@@ -2052,33 +2125,36 @@ class _TraditionalPlayerLayoutState
     required bool dlDone,
     required VoidCallback onTap,
   }) {
-    return PressableScale(pressScale: 0.88, child: IconButton(
-      iconSize: 28,
-      tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
-      icon: _StateSwapIcon(
-        stateKey: (dlActive, dlDone),
-        child: dlActive
-            ? SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white.withValues(alpha: 0.8),
+    return PressableScale(
+      pressScale: 0.88,
+      child: IconButton(
+        iconSize: 28,
+        tooltip: dlDone ? tr('已下载') : (dlActive ? tr('下载中') : tr('下载')),
+        icon: _StateSwapIcon(
+          stateKey: (dlActive, dlDone),
+          child: dlActive
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                )
+              : themeSlotIcon(
+                  ref,
+                  'action.download',
+                  fallback: dlDone
+                      ? Icons.check_circle_outline
+                      : Icons.download_outlined,
+                  color: dlDone
+                      ? const Color(0xFF07C160)
+                      : Colors.white.withValues(alpha: 0.85),
                 ),
-              )
-            : themeSlotIcon(
-                ref,
-                'action.download',
-                fallback: dlDone
-                    ? Icons.check_circle_outline
-                    : Icons.download_outlined,
-                color: dlDone
-                    ? const Color(0xFF07C160)
-                    : Colors.white.withValues(alpha: 0.85),
-              ),
+        ),
+        onPressed: onTap,
       ),
-      onPressed: onTap,
-    ));
+    );
   }
 
   Widget _qualityActionItem(
@@ -2088,39 +2164,42 @@ class _TraditionalPlayerLayoutState
   }) {
     return Tooltip(
       message: tr('音质'),
-      child: PressableScale(pressScale: 0.88, child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          alignment: Alignment.center,
-          decoration: const BoxDecoration(shape: BoxShape.circle),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _qualityAbbr(quality),
-                maxLines: 1,
-                softWrap: false,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.85),
+      child: PressableScale(
+        pressScale: 0.88,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(shape: BoxShape.circle),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _qualityAbbr(quality),
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
                 ),
-              ),
-              // 主题提供倍速/音效图时才出现；未启用主题时是零尺寸，观感不变。
-              themeSlotWidget(
-                ref,
-                'player.speed',
-                size: 18,
-                fallback: const SizedBox.shrink(),
-              ),
-            ],
+                // 主题提供倍速/音效图时才出现；未启用主题时是零尺寸，观感不变。
+                themeSlotWidget(
+                  ref,
+                  'player.speed',
+                  size: 18,
+                  fallback: const SizedBox.shrink(),
+                ),
+              ],
+            ),
           ),
         ),
-      )),
+      ),
     );
   }
 
@@ -2135,19 +2214,24 @@ class _TraditionalPlayerLayoutState
     required VoidCallback onTap,
   }) {
     final accent = Theme.of(context).colorScheme.primary;
-    return PressableScale(pressScale: 0.88, child: IconButton(
-      iconSize: 28,
-      tooltip: tooltip,
-      icon:
-          iconWidget ??
-          Icon(
-            icon,
-            color: enabled
-                ? (iconColor ??
-                      (active ? accent : Colors.white.withValues(alpha: 0.85)))
-                : Colors.white.withValues(alpha: 0.32),
-          ),
-      onPressed: enabled ? onTap : null,
-    ));
+    return PressableScale(
+      pressScale: 0.88,
+      child: IconButton(
+        iconSize: 28,
+        tooltip: tooltip,
+        icon:
+            iconWidget ??
+            Icon(
+              icon,
+              color: enabled
+                  ? (iconColor ??
+                        (active
+                            ? accent
+                            : Colors.white.withValues(alpha: 0.85)))
+                  : Colors.white.withValues(alpha: 0.32),
+            ),
+        onPressed: enabled ? onTap : null,
+      ),
+    );
   }
 }

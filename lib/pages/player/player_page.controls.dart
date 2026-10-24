@@ -5,13 +5,13 @@ class _GlassControlCard extends ConsumerWidget {
     required this.notifier,
     required this.current,
     this.landscape = false,
-    this.onLyricAdjust,
+    this.onMore,
   });
   final PlayerNotifier notifier;
   final QueueItem? current;
   final bool landscape;
 
-  final VoidCallback? onLyricAdjust;
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -54,7 +54,7 @@ class _GlassControlCard extends ConsumerWidget {
                 _LandscapeControlsRow(
                   notifier: notifier,
                   current: current,
-                  onLyricAdjust: onLyricAdjust,
+                  onMore: onMore,
                 ),
               ],
             )
@@ -215,78 +215,85 @@ class _TitleRow extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               if (current.isOnline)
-                PressableScale(pressScale: 0.88, child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => _showQualitySheet(context, ref),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 4,
-                    ),
-                    child: Text(
-                      mvQualityShown
-                          ? mvQuality
-                          : _qualityLabel(currentQuality),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                        color:
-                            (mvQualityShown ||
-                                (currentQuality != null &&
-                                    isLosslessQuality(currentQuality)))
-                            ? scheme.primary
-                            : const Color(0xFFEC4141).withValues(alpha: 0.9),
-                      ),
-                    ),
-                  ),
-                )),
-              if (chain.known) ...[
-                const SizedBox(width: 6),
-                _AudioFormatBadge(chain: chain, dense: true),
-              ],
-              const SizedBox(width: 4),
-              PressableScale(pressScale: 0.88, child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: mvRequested
-                    ? null
-                    : () => _toggleFloatingLyrics(context, ref, lyricsEnabled),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  child: _StateSwapIcon(
-                    stateKey: lyricsEnabled,
-                    child: Container(
-                      width: 24,
-                      height: 24,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: !mvRequested && lyricsEnabled
-                            ? scheme.primary.withValues(alpha: 0.14)
-                            : Colors.transparent,
+                PressableScale(
+                  pressScale: 0.88,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => _showQualitySheet(context, ref),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
                       ),
                       child: Text(
-                        tr('词'),
+                        mvQualityShown
+                            ? mvQuality
+                            : _qualityLabel(currentQuality),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: mvRequested
-                              ? Colors.white.withValues(alpha: 0.32)
-                              : lyricsEnabled
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                          color:
+                              (mvQualityShown ||
+                                  (currentQuality != null &&
+                                      isLosslessQuality(currentQuality)))
                               ? scheme.primary
-                              : Colors.white.withValues(alpha: 0.72),
+                              : const Color(0xFFEC4141).withValues(alpha: 0.9),
                         ),
                       ),
                     ),
                   ),
                 ),
-              )),
+              if (chain.known) ...[
+                const SizedBox(width: 6),
+                _AudioFormatBadge(chain: chain, dense: true),
+              ],
+              const SizedBox(width: 4),
+              PressableScale(
+                pressScale: 0.88,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: mvRequested
+                      ? null
+                      : () =>
+                            _toggleFloatingLyrics(context, ref, lyricsEnabled),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    child: _StateSwapIcon(
+                      stateKey: lyricsEnabled,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: !mvRequested && lyricsEnabled
+                              ? scheme.primary.withValues(alpha: 0.14)
+                              : Colors.transparent,
+                        ),
+                        child: Text(
+                          tr('词'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: mvRequested
+                                ? Colors.white.withValues(alpha: 0.32)
+                                : lyricsEnabled
+                                ? scheme.primary
+                                : Colors.white.withValues(alpha: 0.72),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -295,58 +302,34 @@ class _TitleRow extends ConsumerWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              PressableScale(pressScale: 0.88, child: IconButton(
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-                padding: EdgeInsets.zero,
-                icon: _StateSwapIcon(
-                  stateKey: isFav,
-                  child: themeSlotIcon(
-                    ref,
-                    'action.favorite',
-                    fallback: isFav ? Icons.favorite : Icons.favorite_border,
-                    size: 22,
-                    color: isFav
-                        ? const Color(0xFFEC4141)
-                        : Colors.white.withValues(alpha: 0.85),
-                  ),
-                ),
-                tooltip: tr('收藏'),
-                onPressed: () =>
-                    ref.read(favoritesProvider.notifier).toggle(current),
-              )),
-              PressableScale(pressScale: 0.88, child: IconButton(
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 36),
-                padding: EdgeInsets.zero,
-                icon: themeSlotIcon(
-                  ref,
-                  'action.share',
-                  fallback: Icons.ios_share,
-                  size: 22,
-                  color: Colors.white.withValues(alpha: 0.85),
-                ),
-                tooltip: tr('分享歌曲'),
-                onPressed: () => _shareCurrent(context, ref, current),
-              )),
-              if (current.isOnline)
-                PressableScale(pressScale: 0.88, child: IconButton(
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
                   constraints: const BoxConstraints(
                     minWidth: 40,
                     minHeight: 36,
                   ),
                   padding: EdgeInsets.zero,
-                  icon: themeSlotIcon(
-                    ref,
-                    'action.download',
-                    fallback: Icons.download_outlined,
-                    size: 22,
-                    color: Colors.white.withValues(alpha: 0.85),
+                  icon: _StateSwapIcon(
+                    stateKey: isFav,
+                    child: themeSlotIcon(
+                      ref,
+                      'action.favorite',
+                      fallback: isFav ? Icons.favorite : Icons.favorite_border,
+                      size: 22,
+                      color: isFav
+                          ? const Color(0xFFEC4141)
+                          : Colors.white.withValues(alpha: 0.85),
+                    ),
                   ),
-                  tooltip: tr('下载歌曲'),
+                  tooltip: tr('收藏'),
                   onPressed: () =>
-                      _showDownloadQualitySheet(context, ref, current),
-                )),
-              if (current.isOnline)
-                PressableScale(pressScale: 0.88, child: IconButton(
+                      ref.read(favoritesProvider.notifier).toggle(current),
+                ),
+              ),
+              PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
                   constraints: const BoxConstraints(
                     minWidth: 40,
                     minHeight: 36,
@@ -354,17 +337,59 @@ class _TitleRow extends ConsumerWidget {
                   padding: EdgeInsets.zero,
                   icon: themeSlotIcon(
                     ref,
-                    'player.comment',
-                    fallback: Icons.mode_comment_outlined,
+                    'action.share',
+                    fallback: Icons.ios_share,
                     size: 22,
                     color: Colors.white.withValues(alpha: 0.85),
                   ),
-                  tooltip: tr('评论'),
-                  onPressed: () => showSheetDialog<void>(
-                    context,
-                    (_) => CommentSheet(songJson: current.onlineSongJson),
+                  tooltip: tr('分享歌曲'),
+                  onPressed: () => _shareCurrent(context, ref, current),
+                ),
+              ),
+              if (current.isOnline)
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 36,
+                    ),
+                    padding: EdgeInsets.zero,
+                    icon: themeSlotIcon(
+                      ref,
+                      'action.download',
+                      fallback: Icons.download_outlined,
+                      size: 22,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                    tooltip: tr('下载歌曲'),
+                    onPressed: () =>
+                        _showDownloadQualitySheet(context, ref, current),
                   ),
-                )),
+                ),
+              if (current.isOnline)
+                PressableScale(
+                  pressScale: 0.88,
+                  child: IconButton(
+                    constraints: const BoxConstraints(
+                      minWidth: 40,
+                      minHeight: 36,
+                    ),
+                    padding: EdgeInsets.zero,
+                    icon: themeSlotIcon(
+                      ref,
+                      'player.comment',
+                      fallback: Icons.mode_comment_outlined,
+                      size: 22,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                    tooltip: tr('评论'),
+                    onPressed: () => showSheetDialog<void>(
+                      context,
+                      (_) => CommentSheet(songJson: current.onlineSongJson),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -446,7 +471,6 @@ String _fmtKhz(int rate) {
       : (rate / 1000).toStringAsFixed(1);
   return '${k}kHz';
 }
-
 
 /// 当前播放链路的音频格式快照：源文件格式 + Rust 管线实际输出格式。
 ///
@@ -555,8 +579,7 @@ _AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
         // 取尾段扩展名会吐 URL 编码乱码，改从上下文里的原始文件名取；
         // 采样率/位深/码率来自起播后的直链头部探测（见 _probeCloudSourceFormat）。
         try {
-          final file =
-              (jsonDecode(item.cloudInfoJson!) as Map)['file'] as Map?;
+          final file = (jsonDecode(item.cloudInfoJson!) as Map)['file'] as Map?;
           final name = (file?['name'] ?? '').toString();
           final dot = name.lastIndexOf('.');
           if (dot >= 0 && dot < name.length - 1) {
@@ -589,7 +612,6 @@ _AudioChain _resolveAudioChain(WidgetRef ref, QueueItem? item) {
     dspActive: sel.$2,
   );
 }
-
 
 /// 紧凑的音频格式徽标：`FLAC 24bit/96kHz · 直出`。
 
@@ -630,7 +652,6 @@ class _AudioFormatBadge extends StatelessWidget {
     );
   }
 }
-
 
 /// 音质弹层里的「当前音频」只读区块：源 / 输出 / 引擎。
 
@@ -849,7 +870,9 @@ class _SeekAreaState extends State<_SeekArea> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasDuration = widget.dur > 0;
-    final v = hasDuration ? (_draft ?? widget.position).clamp(0.0, widget.dur) : 0.0;
+    final v = hasDuration
+        ? (_draft ?? widget.position).clamp(0.0, widget.dur)
+        : 0.0;
     final ratio = hasDuration ? (v / widget.dur).clamp(0.0, 1.0) : 0.0;
     return Column(
       children: [
@@ -865,14 +888,17 @@ class _SeekAreaState extends State<_SeekArea> {
                   data: SliderTheme.of(context).copyWith(
                     trackHeight: 3,
                     activeTrackColor: scheme.primary,
-                    inactiveTrackColor:
-                        scheme.onSurface.withValues(alpha: 0.12),
+                    inactiveTrackColor: scheme.onSurface.withValues(
+                      alpha: 0.12,
+                    ),
                     thumbColor: scheme.primary,
                     overlayColor: scheme.primary.withValues(alpha: 0.16),
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 5),
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 5,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
                   ),
                   child: CommittedSlider(
                     value: v,
@@ -962,29 +988,35 @@ class _Controls extends ConsumerWidget {
         children: [
           Expanded(
             child: Center(
-              child: PressableScale(pressScale: 0.88, child: IconButton(
-                iconSize: 28,
-                icon: themeSlotWidget(
-                  ref,
-                  'player.mode',
-                  size: 28,
-                  fallback: _PlayModeIcon(
-                    mode: playMode,
-                    color: scheme.onSurfaceVariant,
+              child: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  iconSize: 28,
+                  icon: themeSlotWidget(
+                    ref,
+                    'player.mode',
                     size: 28,
+                    fallback: _PlayModeIcon(
+                      mode: playMode,
+                      color: scheme.onSurfaceVariant,
+                      size: 28,
+                    ),
                   ),
+                  onPressed: notifier.cyclePlayMode,
                 ),
-                onPressed: notifier.cyclePlayMode,
-              )),
+              ),
             ),
           ),
           Expanded(
             child: Center(
-              child: PressableScale(pressScale: 0.88, child: IconButton(
-                iconSize: 28,
-                icon: const Icon(Icons.skip_previous),
-                onPressed: notifier.previous,
-              )),
+              child: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  iconSize: 28,
+                  icon: const Icon(Icons.skip_previous),
+                  onPressed: notifier.previous,
+                ),
+              ),
             ),
           ),
           Expanded(
@@ -1011,40 +1043,49 @@ class _Controls extends ConsumerWidget {
                           color: Colors.white,
                         ),
                       )
-                    : PressableScale(pressScale: 0.92, child: IconButton(
-                        icon: PlayPauseMorphIcon(
-                          playing: isPlaying,
-                          size: 34,
-                          color: Colors.white,
+                    : PressableScale(
+                        pressScale: 0.92,
+                        child: IconButton(
+                          icon: PlayPauseMorphIcon(
+                            playing: isPlaying,
+                            size: 34,
+                            color: Colors.white,
+                          ),
+                          iconSize: 34,
+                          onPressed: notifier.toggle,
                         ),
-                        iconSize: 34,
-                        onPressed: notifier.toggle,
-                      )),
+                      ),
               ),
             ),
           ),
           Expanded(
             child: Center(
-              child: PressableScale(pressScale: 0.88, child: IconButton(
-                iconSize: 28,
-                icon: const Icon(Icons.skip_next),
-                onPressed: notifier.next,
-              )),
+              child: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  iconSize: 28,
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: notifier.next,
+                ),
+              ),
             ),
           ),
           Expanded(
             child: Center(
-              child: PressableScale(pressScale: 0.88, child: IconButton(
-                iconSize: 28,
-                icon: themeSlotIcon(
-                  ref,
-                  'player.queue',
-                  fallback: Icons.queue_music,
-                  size: 28,
-                  color: scheme.onSurfaceVariant,
+              child: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  iconSize: 28,
+                  icon: themeSlotIcon(
+                    ref,
+                    'player.queue',
+                    fallback: Icons.queue_music,
+                    size: 28,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  onPressed: () => _showQueueSheet(context, ref),
                 ),
-                onPressed: () => _showQueueSheet(context, ref),
-              )),
+              ),
             ),
           ),
         ],
@@ -1093,7 +1134,6 @@ String _qualityAbbr(String? q) {
       return q.toUpperCase();
   }
 }
-
 
 /// 状态切换图标的统一形变动效，与播放顺序图标同款：
 /// 旧态反向旋转收缩淡出，新态四分之一圈回弹摆入。
