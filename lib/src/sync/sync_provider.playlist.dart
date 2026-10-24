@@ -235,6 +235,9 @@ class PlaylistSyncService {
     await PlaylistSongSyncState.removeDownloadSkipPlaylistIds(staleCloudIds);
 
     final rebuilt = <ImportedPlaylist>[];
+    // newId 会向集合写入去重 id，必须传可变集合；const {} 被推断为
+    // const Set，add 时抛 "Cannot change an unmodifiable set"
+    final usedIds = <String>{};
     var songCount = 0;
     final now = DateTime.now().millisecondsSinceEpoch;
     for (final pl in cloudPlaylists) {
@@ -255,7 +258,7 @@ class PlaylistSyncService {
           .toList();
       songCount += songs.length;
       rebuilt.add(ImportedPlaylist(
-        id: PlaylistStore.newId(const {}),
+        id: PlaylistStore.newId(usedIds),
         name: (pl['name'] as String?) ?? tr('未命名歌单'),
         songs: songs,
         importedAt: now,
