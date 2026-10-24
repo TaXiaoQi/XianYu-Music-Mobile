@@ -9,6 +9,7 @@ import '../../src/favorites/favorites_provider.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_host_fallback.dart';
@@ -51,9 +52,17 @@ class OnlineDetailArgs {
 }
 
 class OnlineDetailPage extends ConsumerStatefulWidget {
-  const OnlineDetailPage({super.key, required this.args});
+  const OnlineDetailPage({
+    super.key,
+    required this.args,
+    this.paneEmbedded = false,
+  });
 
   final OnlineDetailArgs args;
+
+  /// 横屏二级详情面板内嵌：外层 _LandscapeDetailPane 的 FlatTopBar 已承载
+  /// 返回与标题，本页去掉 GlassTopBar、内容铺满
+  final bool paneEmbedded;
 
   @override
   ConsumerState<OnlineDetailPage> createState() => _OnlineDetailPageState();
@@ -79,9 +88,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   int _activeTab = 0;
   final ScrollController _songScroll = ScrollController();
   int _coverFetchVersion = 0;
-  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
-    if (mounted) setState(() {});
-  });
+  late final StaggerWindow _stagger = StaggerWindow(
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   void initState() {
@@ -115,9 +126,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     // 缓存优先（不依赖引擎/网络）：收藏歌单先展示上次结果再后台刷新
     if (widget.args.type == OnlineDetailType.playlist) {
       _cacheKey = SheetCache.keyFor(
-          pluginId: widget.args.pluginId,
-          title: widget.args.title,
-          raw: widget.args.raw);
+        pluginId: widget.args.pluginId,
+        title: widget.args.title,
+        raw: widget.args.raw,
+      );
       final cached = await SheetCache.load(_cacheKey);
       if (cached != null && cached.isNotEmpty && mounted) {
         setState(() {
@@ -136,10 +148,12 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       final lxKey = widget.args.raw['_lxSource'];
       if (lxKey is String && lxKey.isNotEmpty) {
         source = sources
-            .where((s) =>
-                s.enabled &&
-                s.format == PluginFormat.lx &&
-                s.sources.contains(lxKey))
+            .where(
+              (s) =>
+                  s.enabled &&
+                  s.format == PluginFormat.lx &&
+                  s.sources.contains(lxKey),
+            )
             .toList();
       }
     }
@@ -166,21 +180,23 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
 
   /// reset+silent（缓存命中后的后台刷新）：以最新第一页覆盖头部，
   /// 保留缓存中已翻到的后续内容；非 silent 的 reset 直接用最新结果。
-  void _applySongs(List<PluginSearchResult> list,
-      {required int page,
-      required bool reset,
-      bool silent = false,
-      bool? pluginIsEnd}) {
+  void _applySongs(
+    List<PluginSearchResult> list, {
+    required int page,
+    required bool reset,
+    bool silent = false,
+    bool? pluginIsEnd,
+  }) {
     final before = _songs.length;
     final merged = reset
         ? (silent && _songs.isNotEmpty
-            ? [...list, ..._songs.skip(list.length)]
-            : list)
+              ? [...list, ..._songs.skip(list.length)]
+              : list)
         : () {
             final seen = _songs.map((s) => '${s.source}:${s.songmid}').toSet();
             return [
               ..._songs,
-              ...list.where((s) => seen.add('${s.source}:${s.songmid}'))
+              ...list.where((s) => seen.add('${s.source}:${s.songmid}')),
             ];
           }();
     setState(() {
@@ -243,15 +259,23 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
           list = r.songs;
           pluginIsEnd = r.isEnd;
         } else {
-          final r =
-              await catalog.getMusicSheetInfoWithEnd(source, raw, page: page);
+          final r = await catalog.getMusicSheetInfoWithEnd(
+            source,
+            raw,
+            page: page,
+          );
           list = r.songs;
           pluginIsEnd = r.isEnd;
         }
     }
     if (!mounted) return;
-    _applySongs(list,
-        page: page, reset: reset, silent: silent, pluginIsEnd: pluginIsEnd);
+    _applySongs(
+      list,
+      page: page,
+      reset: reset,
+      silent: silent,
+      pluginIsEnd: pluginIsEnd,
+    );
     _backfillCovers();
   }
 
@@ -264,12 +288,15 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     final lxKey = _lxSource!;
     switch (widget.args.type) {
       case OnlineDetailType.artist:
-        return lxHostSearchFallback(source, lxKey, widget.args.title,
-            limit: 60);
+        return lxHostSearchFallback(
+          source,
+          lxKey,
+          widget.args.title,
+          limit: 60,
+        );
       case OnlineDetailType.album:
         var results = <PluginSearchResult>[];
-        final albumId =
-            (raw['albumMid'] ?? raw['albumId'] ?? '').toString();
+        final albumId = (raw['albumMid'] ?? raw['albumId'] ?? '').toString();
         if (albumId.isNotEmpty) {
           try {
             final json = await frb.lxAlbumSongs(
@@ -283,19 +310,28 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
               results = list
                   .whereType<Map>()
                   .map((e) => e.cast<String, dynamic>())
-                  .where((m) =>
-                      (m['songmid'] ?? m['song_id'] ?? '').toString().isNotEmpty)
+                  .where(
+                    (m) => (m['songmid'] ?? m['song_id'] ?? '')
+                        .toString()
+                        .isNotEmpty,
+                  )
                   .map((m) => lxSearchItemToResult(lxKey, m))
                   .toList();
             }
           } catch (e, st) {
-            AppLog.warn('plugin',
-                '[lxAlbumSongs] $lxKey album=$albumId EXCEPTION: $e\n$st');
+            AppLog.warn(
+              'plugin',
+              '[lxAlbumSongs] $lxKey album=$albumId EXCEPTION: $e\n$st',
+            );
           }
         }
         if (results.isEmpty && reset) {
           final searchResult = await lxHostSearchFallback(
-              source, lxKey, widget.args.title, limit: 60);
+            source,
+            lxKey,
+            widget.args.title,
+            limit: 60,
+          );
           final nameNorm = widget.args.title.trim().toLowerCase();
           results = searchResult.where((s) {
             final albumNorm = s.albumName.trim().toLowerCase();
@@ -308,12 +344,19 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         return results;
       case OnlineDetailType.playlist:
         final playlistId = (raw['_lxPlaylistId'] ?? '').toString();
-        return lxHostPlaylistTracksFallback(source, lxKey, playlistId,
-            page: page);
+        return lxHostPlaylistTracksFallback(
+          source,
+          lxKey,
+          playlistId,
+          page: page,
+        );
       case OnlineDetailType.toplist:
         final boardId = (raw['id'] ?? '').toString();
-        final songs =
-            await lxToplistBoardSongsFallback(lxKey, boardId, page: page);
+        final songs = await lxToplistBoardSongsFallback(
+          lxKey,
+          boardId,
+          page: page,
+        );
         return songs.map((m) => lxSearchItemToResult(lxKey, m)).toList();
     }
   }
@@ -321,7 +364,11 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
   Future<List<MfAlbumItem>> _deriveLxAlbums() async {
     final source = _source!;
     final songs = await lxHostSearchFallback(
-        source, _lxSource!, widget.args.title, limit: 60);
+      source,
+      _lxSource!,
+      widget.args.title,
+      limit: 60,
+    );
     final map = <String, MfAlbumItem>{};
     for (final s in songs) {
       final name = s.albumName.trim();
@@ -458,12 +505,19 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     if (item == null) return;
     final wasFav = ref.read(favoritesProvider).contains(item.path);
     ref.read(favoritesProvider.notifier).toggle(item);
-    showXianYuToast(context, wasFav ? tr('已取消收藏：{t}', {'t': item.title}) : tr('已收藏：{t}', {'t': item.title}));
+    showXianYuToast(
+      context,
+      wasFav
+          ? tr('已取消收藏：{t}', {'t': item.title})
+          : tr('已收藏：{t}', {'t': item.title}),
+    );
   }
 
   void _toggleCollectionFavorite() {
     final a = widget.args;
-    ref.read(favoritesProvider.notifier).toggleCollection(
+    ref
+        .read(favoritesProvider.notifier)
+        .toggleCollection(
           kind: a.type.name,
           pluginId: a.pluginId,
           title: a.title,
@@ -498,7 +552,7 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
             indicatorColor: scheme.primary,
             indicatorSize: TabBarIndicatorSize.label,
             dividerColor: Colors.transparent,
-            tabs:   [
+            tabs: [
               Tab(text: tr('歌曲')),
               Tab(text: tr('专辑')),
               Tab(text: tr('简介')),
@@ -511,18 +565,22 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
       body: Stack(
         children: [
           Padding(
-            padding: EdgeInsets.only(top: GlassTopBar.height(context)),
+            padding: EdgeInsets.only(
+              top: widget.paneEmbedded ? 0 : GlassTopBar.height(context),
+            ),
             child: Column(
               children: [
                 _Header(
                   title: a.title,
                   subtitle: a.subtitle.isNotEmpty
                       ? a.subtitle
-                      : (isArtist ? tr('歌手') : switch (a.type) {
-                          OnlineDetailType.album => tr('专辑'),
-                          OnlineDetailType.toplist => tr('榜单'),
-                          _ => tr('歌单'),
-                        }),
+                      : (isArtist
+                            ? tr('歌手')
+                            : switch (a.type) {
+                                OnlineDetailType.album => tr('专辑'),
+                                OnlineDetailType.toplist => tr('榜单'),
+                                _ => tr('歌单'),
+                              }),
                   coverUrl: a.coverUrl,
                   circular: isArtist,
                   songCount: _songs.length,
@@ -531,12 +589,15 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                     OnlineDetailType.album => tr('收藏整张专辑'),
                     _ => tr('收藏整张歌单'),
                   },
-                  isFavorite: ref.watch(favoritesProvider).isCollectionFavorite(
-                      '${a.type.name}:${a.pluginId}:${a.title}'),
+                  isFavorite: ref
+                      .watch(favoritesProvider)
+                      .isCollectionFavorite(
+                        '${a.type.name}:${a.pluginId}:${a.title}',
+                      ),
                   onToggleFavorite:
                       isArtist || a.type == OnlineDetailType.toplist
-                          ? null
-                          : () => _toggleCollectionFavorite(),
+                      ? null
+                      : () => _toggleCollectionFavorite(),
                 ),
                 if (artistTab != null) ...[
                   const SizedBox(height: 2),
@@ -557,18 +618,23 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
               ],
             ),
           ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop(),
+          if (!widget.paneEmbedded)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => context.pop(),
+                ),
+                title: Text(
+                  a.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              title: Text(a.title, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
-          ),
         ],
       ),
     );
@@ -601,116 +667,142 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
           child: ListView.separated(
             controller: _songScroll,
             padding: EdgeInsets.only(
-                top: 6, bottom: MediaQuery.of(context).padding.bottom + 100),
+              top: 6,
+              bottom: MediaQuery.of(context).padding.bottom + 100,
+            ),
             itemCount: _songs.length + 1,
-        separatorBuilder: (_, _) => const SizedBox.shrink(),
-        itemBuilder: (context, i) {
-          if (i == _songs.length) {
-            if (_isEnd) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Center(
-                  child: Text(
-                    tr('已经到底啦'),
-                    style: TextStyle(
-                        fontSize: 12, color: scheme.onSurfaceVariant),
-                  ),
-                ),
-              );
-            }
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Center(
-                child: SizedBox(
-                    width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
-            );
-          }
-          final r = _songs[i];
-          final item = _queueItem(i);
-          final isFav = item != null && favorites.contains(item.path);
-          return _stagger.wrap(
-            i,
-            _rowShell(i, _queueItemOf(r).path,
-            Builder(
-              builder: (rowContext) {
-              BuildContext? coverCtx;
-              final q = _queueItemOf(r);
-              final g = songRowPlay(ref, onPlay: () async {
-                final ok = await launchFlyCover(
-                  rowContext,
-                  coverContext: coverCtx,
-                  coverSize: m.songCover,
-                  vPad: m.vPad,
-                  networkUrl: r.img,
-                  radius: m.songRadius,
-                );
-                if (ok) _play(i);
-              });
-              return g.wrap(
-                CoverRow(
-                  cover: Builder(
-                    builder: (c) {
-                      coverCtx = c;
-                      return OnlineCover(
-                          url: r.img, size: m.songCover, radius: m.songRadius);
-                    },
-                  ),
-                  onTap: g.onTap,
-                  onLongPress: () => _songActions(i),
-                  verticalPadding: m.vPad,
-                  title: Text(
-                    r.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: m.titleSize, fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    r.singer.isEmpty ? r.albumName : '${r.singer} · ${r.albumName}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: m.subtitleSize,
-                        color: scheme.onSurfaceVariant),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          isFav ? Icons.favorite : Icons.favorite_border,
-                          size: 20,
-                          color: isFav ? scheme.primary : scheme.onSurfaceVariant,
+            separatorBuilder: (_, _) => const SizedBox.shrink(),
+            itemBuilder: (context, i) {
+              if (i == _songs.length) {
+                if (_isEnd) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    child: Center(
+                      child: Text(
+                        tr('已经到底啦'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: scheme.onSurfaceVariant,
                         ),
-                        tooltip: tr('收藏'),
-                        onPressed: () => _toggleFavorite(i),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.more_horiz, size: 22),
-                        color: scheme.onSurfaceVariant,
-                        tooltip: tr('更多'),
-                        onPressed: () => _songActions(i),
-                      ),
-                      // 来源标与时长上下叠放（收藏页同款行尾）
-                      SongTrailingMeta(
-                        path: q.path,
-                        isOnline: true,
-                        source: r.source,
-                        pluginId: widget.args.pluginId,
-                        durationText: r.interval.isNotEmpty ? r.interval : null,
-                        fontSize: m.subtitleSize,
-                      ),
-                    ],
+                    ),
+                  );
+                }
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+              final r = _songs[i];
+              final item = _queueItem(i);
+              final isFav = item != null && favorites.contains(item.path);
+              return _stagger.wrap(
+                i,
+                _rowShell(
+                  i,
+                  _queueItemOf(r).path,
+                  Builder(
+                    builder: (rowContext) {
+                      BuildContext? coverCtx;
+                      final q = _queueItemOf(r);
+                      final g = songRowPlay(
+                        ref,
+                        onPlay: () async {
+                          final ok = await launchFlyCover(
+                            rowContext,
+                            coverContext: coverCtx,
+                            coverSize: m.songCover,
+                            vPad: m.vPad,
+                            networkUrl: r.img,
+                            radius: m.songRadius,
+                          );
+                          if (ok) _play(i);
+                        },
+                      );
+                      return g.wrap(
+                        CoverRow(
+                          cover: Builder(
+                            builder: (c) {
+                              coverCtx = c;
+                              return OnlineCover(
+                                url: r.img,
+                                size: m.songCover,
+                                radius: m.songRadius,
+                              );
+                            },
+                          ),
+                          onTap: g.onTap,
+                          onLongPress: () => _songActions(i),
+                          verticalPadding: m.vPad,
+                          title: Text(
+                            r.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: m.titleSize,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            r.singer.isEmpty
+                                ? r.albumName
+                                : '${r.singer} · ${r.albumName}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: m.subtitleSize,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  isFav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  size: 20,
+                                  color: isFav
+                                      ? scheme.primary
+                                      : scheme.onSurfaceVariant,
+                                ),
+                                tooltip: tr('收藏'),
+                                onPressed: () => _toggleFavorite(i),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.more_horiz, size: 22),
+                                color: scheme.onSurfaceVariant,
+                                tooltip: tr('更多'),
+                                onPressed: () => _songActions(i),
+                              ),
+                              // 来源标与时长上下叠放（收藏页同款行尾）
+                              SongTrailingMeta(
+                                path: q.path,
+                                isOnline: true,
+                                source: r.source,
+                                pluginId: widget.args.pluginId,
+                                durationText: r.interval.isNotEmpty
+                                    ? r.interval
+                                    : null,
+                                fontSize: m.subtitleSize,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               );
             },
           ),
-          ),
-        );
-        },
-        ),
         ),
         SongListScrollFabs(
           controller: _songScroll,
@@ -726,42 +818,53 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
 
   /// 行首槽位：序号/播放标识（桌面端同款），在线详情不可拖拽
   Widget _rowShell(int i, String songPath, Widget row) => Stack(
-        children: [
-          Padding(padding: const EdgeInsets.only(left: 34), child: row),
-          Positioned(
-            left: 8,
-            top: 0,
-            bottom: 0,
-            width: 36,
-            child: Center(
-              child: SongRowLeading(index: i, songPath: songPath),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Padding(padding: const EdgeInsets.only(left: 34), child: row),
+      Positioned(
+        left: 8,
+        top: 0,
+        bottom: 0,
+        width: 36,
+        child: Center(
+          child: SongRowLeading(index: i, songPath: songPath),
+        ),
+      ),
+    ],
+  );
 
   Widget _buildAlbumList(ColorScheme scheme) {
     if (_albums.isEmpty) {
       return Center(
-        child: Text(tr('暂无专辑'), style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(
+          tr('暂无专辑'),
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
       );
     }
     final m = ListMetrics.ofRef(ref);
     return ListView.separated(
       padding: EdgeInsets.only(
-          top: 6, bottom: MediaQuery.of(context).padding.bottom + 24),
+        top: 6,
+        bottom: MediaQuery.of(context).padding.bottom + 24,
+      ),
       itemCount: _albums.length,
       separatorBuilder: (_, _) => const SizedBox.shrink(),
       itemBuilder: (context, i) {
         final album = _albums[i];
         return CoverRow(
           cover: OnlineCover(
-              url: album.coverUrl, size: m.songCover, radius: m.songRadius),
+            url: album.coverUrl,
+            size: m.songCover,
+            radius: m.songRadius,
+          ),
           title: Text(
             album.name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: m.titleSize,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           subtitle: album.artist.isEmpty
               ? null
@@ -770,22 +873,33 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
+                    fontSize: m.subtitleSize,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
           verticalPadding: m.vPad,
-          trailing:
-              Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant),
-          onTap: () => context.push(
-            '/online-detail',
-            extra: OnlineDetailArgs(
+          trailing: Icon(
+            Icons.chevron_right,
+            size: 20,
+            color: scheme.onSurfaceVariant,
+          ),
+          onTap: () {
+            final args = OnlineDetailArgs(
               type: OnlineDetailType.album,
               pluginId: album.pluginId,
               title: album.name,
               subtitle: album.artist,
               coverUrl: album.coverUrl,
               raw: album.raw,
-            ),
-          ),
+            );
+            // 横屏：二级面板内替换当前详情（歌手→专辑）；竖屏走原路由
+            if (useLandscape(ref)) {
+              ref.read(landscapeDetailProvider.notifier).state =
+                  LandscapeOnlineDetail(args);
+              return;
+            }
+            context.push('/online-detail', extra: args);
+          },
         );
       },
     );
@@ -797,7 +911,10 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
     }
     if (_intro.isEmpty) {
       return Center(
-        child: Text(tr('暂无简介'), style: TextStyle(color: scheme.onSurfaceVariant)),
+        child: Text(
+          tr('暂无简介'),
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
       );
     }
     return ListView(
@@ -846,11 +963,7 @@ class _Header extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
-          OnlineCover(
-            url: coverUrl,
-            size: 76,
-            radius: circular ? 38 : 12,
-          ),
+          OnlineCover(url: coverUrl, size: 76, radius: circular ? 38 : 12),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
@@ -860,14 +973,22 @@ class _Header extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  songCount > 0 ? tr('{sub} · {n} 首', {'sub': subtitle, 'n': songCount}) : subtitle,
+                  songCount > 0
+                      ? tr('{sub} · {n} 首', {'sub': subtitle, 'n': songCount})
+                      : subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -875,7 +996,7 @@ class _Header extends StatelessWidget {
                     FilledButton.icon(
                       onPressed: onPlayAll,
                       icon: const Icon(Icons.play_arrow, size: 18),
-                      label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
+                      label: Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         minimumSize: const Size(0, 34),

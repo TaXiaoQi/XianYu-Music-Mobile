@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../src/cloud/cloud_registry.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/haptics.dart';
 import '../../src/core/settings.dart';
@@ -51,6 +52,8 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
             showPlugins:
                 ref.watch(settingsProvider).valueOrNull?.navShowPlugins ??
                 false,
+            landscape: false,
+            hasCloud: false,
             onReorder: (ids) =>
                 ref.read(settingsProvider.notifier).setNavOrderPortrait(ids),
           ),
@@ -59,10 +62,12 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
             context,
             order:
                 ref.watch(settingsProvider).valueOrNull?.navOrderLandscape ??
-                kDefaultNavOrder,
+                kDefaultNavOrderLandscape,
             showPlugins:
                 ref.watch(settingsProvider).valueOrNull?.navShowPlugins ??
                 false,
+            landscape: true,
+            hasCloud: _hasCloud(ref),
             onReorder: (ids) =>
                 ref.read(settingsProvider.notifier).setNavOrderLandscape(ids),
           ),
@@ -72,10 +77,9 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
               tr('长按拖动调整顺序，开关控制页签显隐'),
               style: TextStyle(
                 fontSize: 11.5,
-                color: Theme.of(context)
-                    .colorScheme
-                    .onSurfaceVariant
-                    .withValues(alpha: 0.7),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ),
@@ -106,6 +110,8 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
                 context,
                 order: settings?.navOrderPortrait ?? kDefaultNavOrder,
                 showPlugins: showPlugins,
+                landscape: false,
+                hasCloud: false,
                 onReorder: (ids) => ref
                     .read(settingsProvider.notifier)
                     .setNavOrderPortrait(ids),
@@ -113,8 +119,10 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
               _sectionHeader(context, tr('横屏导航')),
               _navGroup(
                 context,
-                order: settings?.navOrderLandscape ?? kDefaultNavOrder,
+                order: settings?.navOrderLandscape ?? kDefaultNavOrderLandscape,
                 showPlugins: showPlugins,
+                landscape: true,
+                hasCloud: _hasCloud(ref),
                 onReorder: (ids) => ref
                     .read(settingsProvider.notifier)
                     .setNavOrderLandscape(ids),
@@ -125,10 +133,9 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
                   tr('长按拖动调整顺序，开关控制页签显隐'),
                   style: TextStyle(
                     fontSize: 11.5,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withValues(alpha: 0.7),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                   ),
                 ),
               ),
@@ -161,16 +168,40 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
     ),
   );
 
+  /// 是否已绑定网盘：「网盘音乐」未绑定时横屏 rail 不出现，管理页同样隐藏
+  bool _hasCloud(WidgetRef ref) => ref.watch(
+    boundCloudProvidersProvider.select(
+      (a) => a.valueOrNull?.isNotEmpty ?? false,
+    ),
+  );
+
   Widget _navGroup(
     BuildContext context, {
     required List<String> order,
     required bool showPlugins,
+    required bool landscape,
+    required bool hasCloud,
     required ValueChanged<List<String>> onReorder,
   }) {
-    final items = [
-      for (final id in order)
-        if (navItemsById[id] != null) navItemsById[id]!,
-    ];
+    // 横屏表把音乐库项与导航页签合并展示（与 rail 一致）；竖屏表只含页签
+    final entries = <({String id, String title, IconData icon, bool optIn})>[];
+    for (final id in order) {
+      final nav = navItemsById[id];
+      if (nav != null) {
+        entries.add((
+          id: id,
+          title: navTitle(context, nav),
+          icon: nav.icon,
+          optIn: nav.optIn,
+        ));
+        continue;
+      }
+      if (!landscape) continue;
+      final lib = landscapeLibraryNavById[id];
+      if (lib == null) continue;
+      if (lib.requiresCloud && !hasCloud) continue;
+      entries.add((id: id, title: lib.title, icon: lib.icon, optIn: false));
+    }
     // 与设置分类页 _CardGroup 同款卡片容器；行间分隔线与 ReorderableListView
     // 冲突（子项必须全带 key），沿用原布局不出线
     return frostedCardSurface(
@@ -200,8 +231,7 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
                 color: scheme.surface,
                 clipBehavior: Clip.antiAlias,
                 borderRadius: BorderRadius.circular(16),
-                elevation:
-                    Curves.easeInOut.transform(animation.value) * 6,
+                elevation: Curves.easeInOut.transform(animation.value) * 6,
                 shadowColor: scheme.shadow.withValues(alpha: 0.25),
                 surfaceTintColor: Colors.transparent,
                 child: built,
@@ -210,22 +240,35 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
             child: child,
           ),
           onReorderItem: (oldIndex, newIndex) {
-            // onReorderItem 已校正移除项对 newIndex 的偏移
-            final ids = [...order];
-            final moved = ids.removeAt(oldIndex);
-            ids.insert(newIndex.clamp(0, ids.length), moved);
-            onReorder(normalizeNavOrder(ids));
+            // onReorderItem 已校正移除项对 newIndex 的偏移。先在可见项
+            // 序列内换位，再回填到 order 的对应槽位——隐藏项（未绑定
+            // 网盘）位置保持不动，避免显示序与存储序错位
+            final displayIds = [for (final e in entries) e.id];
+            final moved = displayIds.removeAt(oldIndex);
+            displayIds.insert(newIndex.clamp(0, displayIds.length), moved);
+            final visible = displayIds.toSet();
+            var k = 0;
+            final ids = [
+              for (final id in order)
+                visible.contains(id) ? displayIds[k++] : id,
+            ];
+            onReorder(
+              landscape
+                  ? normalizeNavOrderLandscape(ids)
+                  : normalizeNavOrder(ids),
+            );
             triggerHaptic(HapticStrength.light);
           },
           children: [
-            for (var i = 0; i < items.length; i++)
+            for (var i = 0; i < entries.length; i++)
               _row(
                 context,
-                key: ValueKey(items[i].location),
+                key: ValueKey(entries[i].id),
                 index: i,
-                item: items[i],
+                title: entries[i].title,
+                icon: entries[i].icon,
                 // optIn 页签出显隐开关（插件页签），固定页签只读展示
-                showSwitch: items[i].optIn,
+                showSwitch: entries[i].optIn,
                 switchValue: showPlugins,
                 onSwitch: (v) =>
                     ref.read(settingsProvider.notifier).setNavShowPlugins(v),
@@ -242,7 +285,8 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
     BuildContext context, {
     required Key key,
     required int index,
-    required BottomNavItem item,
+    required String title,
+    required IconData icon,
     required bool showSwitch,
     required bool switchValue,
     required ValueChanged<bool> onSwitch,
@@ -255,45 +299,47 @@ class _NavManagePageState extends ConsumerState<NavManagePage> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 48),
-          child: LayoutBuilder(builder: (context, cons) {
-            return Row(
-              children: [
-                // 行首拖拽握把：按住 300ms 起拖 + 震动反馈（对齐插件页）
-                _HandleDragListener(
-                  index: index,
-                  child: Icon(
-                    Icons.drag_indicator,
-                    color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+          child: LayoutBuilder(
+            builder: (context, cons) {
+              return Row(
+                children: [
+                  // 行首拖拽握把：按住 300ms 起拖 + 震动反馈（对齐插件页）
+                  _HandleDragListener(
+                    index: index,
+                    child: Icon(
+                      Icons.drag_indicator,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.55),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Icon(item.icon, color: scheme.onSurfaceVariant),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    navTitle(context, item),
-                    style: (textTheme.bodyLarge ?? const TextStyle())
-                        .copyWith(color: scheme.onSurface, fontSize: 15),
+                  const SizedBox(width: 12),
+                  Icon(icon, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: (textTheme.bodyLarge ?? const TextStyle())
+                          .copyWith(color: scheme.onSurface, fontSize: 15),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: cons.maxWidth * 0.5),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: showSwitch
-                        ? Switch(value: switchValue, onChanged: onSwitch)
-                        : Text(
-                            tr('固定显示'),
-                            style: (textTheme.bodySmall ?? const TextStyle())
-                                .copyWith(color: scheme.onSurfaceVariant),
-                          ),
+                  const SizedBox(width: 12),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: cons.maxWidth * 0.5),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: showSwitch
+                          ? Switch(value: switchValue, onChanged: onSwitch)
+                          : Text(
+                              tr('固定显示'),
+                              style: (textTheme.bodySmall ?? const TextStyle())
+                                  .copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                    ),
                   ),
-                ),
-              ],
-            );
-          }),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );

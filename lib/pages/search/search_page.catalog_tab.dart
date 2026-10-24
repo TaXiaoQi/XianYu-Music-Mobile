@@ -1,4 +1,5 @@
 part of 'search_page.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 // ==================== 歌手/专辑/歌单 tab ====================
@@ -76,18 +77,20 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
 
     if (q.isEmpty) {
       return _emptyHint(
-          tr('输入关键词搜索{name}', {'name': name}),
-          scheme,
-          source: widget.source.name);
+        tr('输入关键词搜索{name}', {'name': name}),
+        scheme,
+        source: widget.source.name,
+      );
     }
     if (_loading && _items.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_items.isEmpty) {
       return _emptyHint(
-          tr('没有找到相关{name}', {'name': name}),
-          scheme,
-          source: widget.source.name);
+        tr('没有找到相关{name}', {'name': name}),
+        scheme,
+        source: widget.source.name,
+      );
     }
 
     // 歌手/专辑/歌单统一网格（与桌面端搜索目录网格对齐）：歌手圆形头像居中，
@@ -120,8 +123,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
           // 竖屏固定 3 列；横屏列数动态（与榜单页嵌入模式同款 92 上限）
           final landscape =
               MediaQuery.of(context).orientation == Orientation.landscape;
-          final cols =
-              landscape ? (cons.maxWidth / 92).ceil().clamp(1, 8) : 3;
+          final cols = landscape ? (cons.maxWidth / 92).ceil().clamp(1, 8) : 3;
           return GridView.builder(
             // 水平 14 的页边距与音源榜单页一致，保证 3 列下卡片宽度和间距相同
             padding: EdgeInsets.fromLTRB(
@@ -132,31 +134,31 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
             ),
             gridDelegate: landscape
                 ? (isArtist
-                    ? const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 92,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 0.8,
-                      )
-                    : const SliverGridDelegateWithMaxCrossAxisExtent(
-                        maxCrossAxisExtent: 92,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: 0.7,
-                      ))
+                      ? const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 92,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 0.8,
+                        )
+                      : const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 92,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 0.7,
+                        ))
                 : (isArtist
-                    ? const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 0.8,
-                      )
-                    : const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 0.72,
-                      )),
+                      ? const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.8,
+                        )
+                      : const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                          childAspectRatio: 0.72,
+                        )),
             itemCount: _items.length + (showMore ? 1 : 0),
             itemBuilder: (context, i) {
               if (i >= _items.length) {
@@ -187,41 +189,42 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
 
   Widget _catalogGridCard(_CatalogItem item, {required bool compact}) {
     final scheme = Theme.of(context).colorScheme;
-    final subtitle = [item.subtitle, item.sourceTag]
-        .where((x) => x.isNotEmpty)
-        .join(' · ');
+    final subtitle = [
+      item.subtitle,
+      item.sourceTag,
+    ].where((x) => x.isNotEmpty).join(' · ');
     return PressableScale(
       child: InkWell(
-      borderRadius: BorderRadius.circular(compact ? 10 : 12),
-      onTap: () => _open(item),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(compact ? 10 : 12),
-              child: _catalogGridCover(item, compact: compact),
+        borderRadius: BorderRadius.circular(compact ? 10 : 12),
+        onTap: () => _open(item),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                child: _catalogGridCover(item, compact: compact),
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: compact ? 12 : 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (subtitle.isNotEmpty)
+            const SizedBox(height: 6),
             Text(
-              subtitle,
+              item.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: compact ? 12 : 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-        ],
-      ),
+            if (subtitle.isNotEmpty)
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -252,38 +255,39 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
   /// 歌手网格卡片：圆形头像 + 居中标题/副标题（桌面端搜索目录网格同款）
   Widget _artistGridCard(_CatalogItem item, {required bool compact}) {
     final scheme = Theme.of(context).colorScheme;
-    final subtitle = [item.subtitle, item.sourceTag]
-        .where((x) => x.isNotEmpty)
-        .join(' · ');
+    final subtitle = [
+      item.subtitle,
+      item.sourceTag,
+    ].where((x) => x.isNotEmpty).join(' · ');
     return PressableScale(
       child: InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: () => _open(item),
-      child: Column(
-        children: [
-          SizedBox(
-            width: compact ? 72 : 88,
-            height: compact ? 72 : 88,
-            child: _artistGridAvatar(item),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          if (subtitle.isNotEmpty)
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _open(item),
+        child: Column(
+          children: [
+            SizedBox(
+              width: compact ? 72 : 88,
+              height: compact ? 72 : 88,
+              child: _artistGridAvatar(item),
+            ),
+            const SizedBox(height: 6),
             Text(
-              subtitle,
+              item.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
-        ],
-      ),
+            if (subtitle.isNotEmpty)
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -311,10 +315,10 @@ extension _CatalogTabSearch on _CatalogTabState {
       widget.kind == _CatalogKind.playlist;
 
   String _kindName(_CatalogKind k) => switch (k) {
-        _CatalogKind.artist => tr('歌手'),
-        _CatalogKind.album => tr('专辑'),
-        _CatalogKind.playlist => tr('歌单'),
-      };
+    _CatalogKind.artist => tr('歌手'),
+    _CatalogKind.album => tr('专辑'),
+    _CatalogKind.playlist => tr('歌单'),
+  };
 
   List<PluginSource> _plugins() => ref.read(pluginManagerProvider).sources;
 
@@ -377,13 +381,15 @@ extension _CatalogTabSearch on _CatalogTabState {
           final artists = ref.read(libraryProvider).artists;
           for (final a in artists) {
             if (a.name.toLowerCase().contains(lower)) {
-              out.add(_CatalogItem(
-                kind: 'artist',
-                title: a.name,
-                subtitle: tr('{n} 首', {'n': a.count}),
-                sourceTag: tag,
-                localArtist: a,
-              ));
+              out.add(
+                _CatalogItem(
+                  kind: 'artist',
+                  title: a.name,
+                  subtitle: tr('{n} 首', {'n': a.count}),
+                  sourceTag: tag,
+                  localArtist: a,
+                ),
+              );
             }
           }
         case _CatalogKind.album:
@@ -391,30 +397,39 @@ extension _CatalogTabSearch on _CatalogTabState {
           for (final a in albums) {
             if (a.name.toLowerCase().contains(lower) ||
                 a.artist.toLowerCase().contains(lower)) {
-              out.add(_CatalogItem(
-                kind: 'album',
-                title: a.name,
-                subtitle: tr('{artist} · {n} 首', {'artist': a.artist, 'n': a.count}),
-                sourceTag: tag,
-                localAlbum: a,
-              ));
+              out.add(
+                _CatalogItem(
+                  kind: 'album',
+                  title: a.name,
+                  subtitle: tr('{artist} · {n} 首', {
+                    'artist': a.artist,
+                    'n': a.count,
+                  }),
+                  sourceTag: tag,
+                  localAlbum: a,
+                ),
+              );
             }
           }
         case _CatalogKind.playlist:
           final playlists = ref.read(playlistManagerProvider).playlists;
           for (final p in playlists) {
             if (p.name.toLowerCase().contains(lower)) {
-              out.add(_CatalogItem(
-                kind: 'playlist',
-                title: p.name,
-                subtitle: tr('{n} 首', {'n': p.songs.length}),
-                sourceTag: tag,
-                localPlaylist: p,
-              ));
+              out.add(
+                _CatalogItem(
+                  kind: 'playlist',
+                  title: p.name,
+                  subtitle: tr('{n} 首', {'n': p.songs.length}),
+                  sourceTag: tag,
+                  localPlaylist: p,
+                ),
+              );
             }
           }
       }
-    } catch (e) { AppLog.warn('search', '本地目录搜索失败: $e'); }
+    } catch (e) {
+      AppLog.warn('search', '本地目录搜索失败: $e');
+    }
     return out;
   }
 
@@ -429,51 +444,63 @@ extension _CatalogTabSearch on _CatalogTabState {
         case _CatalogKind.artist:
           final list = await catalog.searchArtists(source.plugin!, q);
           for (final a in list) {
-            out.add(_CatalogItem(
-              kind: 'artist',
-              title: a.name,
-              coverUrl: a.avatarUrl,
-              sourceTag: tag,
-              onlinePlugin: source.plugin,
-              onlineRaw: a.raw,
-            ));
+            out.add(
+              _CatalogItem(
+                kind: 'artist',
+                title: a.name,
+                coverUrl: a.avatarUrl,
+                sourceTag: tag,
+                onlinePlugin: source.plugin,
+                onlineRaw: a.raw,
+              ),
+            );
           }
         case _CatalogKind.album:
           final list = await catalog.searchAlbums(source.plugin!, q);
           for (final a in list) {
-            out.add(_CatalogItem(
-              kind: 'album',
-              title: a.name,
-              subtitle: a.artist,
-              coverUrl: a.coverUrl,
-              sourceTag: tag,
-              onlinePlugin: source.plugin,
-              onlineRaw: a.raw,
-            ));
+            out.add(
+              _CatalogItem(
+                kind: 'album',
+                title: a.name,
+                subtitle: a.artist,
+                coverUrl: a.coverUrl,
+                sourceTag: tag,
+                onlinePlugin: source.plugin,
+                onlineRaw: a.raw,
+              ),
+            );
           }
         case _CatalogKind.playlist:
           final list = await catalog.searchSheets(source.plugin!, q);
           for (final s in list) {
-            out.add(_CatalogItem(
-              kind: 'playlist',
-              title: s.title,
-              subtitle: s.subtitle,
-              coverUrl: s.coverUrl,
-              sourceTag: tag,
-              onlinePlugin: source.plugin,
-              onlineRaw: s.raw,
-            ));
+            out.add(
+              _CatalogItem(
+                kind: 'playlist',
+                title: s.title,
+                subtitle: s.subtitle,
+                coverUrl: s.coverUrl,
+                sourceTag: tag,
+                onlinePlugin: source.plugin,
+                onlineRaw: s.raw,
+              ),
+            );
           }
       }
-    } catch (e) { AppLog.warn('search', 'MusicFree 目录搜索失败: $e'); }
+    } catch (e) {
+      AppLog.warn('search', 'MusicFree 目录搜索失败: $e');
+    }
     return out;
   }
 
   Future<List<_CatalogItem>> _searchLxDerive(String q) async {
     final engine = await ref.read(pluginEngineProvider.future);
     final source = widget.source;
-    final songs = await engine
-        .searchInPlugin(source.plugin!, source.lxKey ?? '', q, limit: 60);
+    final songs = await engine.searchInPlugin(
+      source.plugin!,
+      source.lxKey ?? '',
+      q,
+      limit: 60,
+    );
     final isArtist = widget.kind == _CatalogKind.artist;
     final map = <String, _CatalogItem>{};
     for (final s in songs) {
@@ -520,15 +547,17 @@ extension _CatalogTabSearch on _CatalogTabState {
           tr('{n} 首', {'n': trackCount.toInt()}),
         if (playCount is num && playCount > 0) _formatPlayCount(playCount),
       ];
-      out.add(_CatalogItem(
-        kind: 'playlist',
-        title: s['title'] as String,
-        subtitle: parts.join(' · '),
-        coverUrl: s['coverUrl'] as String?,
-        sourceTag: source.name,
-        onlinePlugin: source.plugin,
-        onlineRaw: s,
-      ));
+      out.add(
+        _CatalogItem(
+          kind: 'playlist',
+          title: s['title'] as String,
+          subtitle: parts.join(' · '),
+          coverUrl: s['coverUrl'] as String?,
+          sourceTag: source.name,
+          onlinePlugin: source.plugin,
+          onlineRaw: s,
+        ),
+      );
     }
     return out;
   }
@@ -568,28 +597,40 @@ extension _CatalogTabSearch on _CatalogTabState {
 
   void _open(_CatalogItem item) {
     FocusScope.of(context).unfocus();
+    final landscape = useLandscape(ref);
     if (item.localArtist != null) {
       final a = item.localArtist!;
-      context.push('/song-list', extra: SongListArgs(
-        title: a.name,
-        loader: () =>
-            ref.read(libraryProvider.notifier).songsByArtist(a.name),
-      ));
+      final loader = () =>
+          ref.read(libraryProvider.notifier).songsByArtist(a.name);
+      // 横屏：下钻内嵌右容器二级面板；竖屏走原路由
+      if (landscape) {
+        ref.read(landscapeDetailProvider.notifier).state =
+            LandscapeSongListDetail(title: a.name, loader: loader);
+        return;
+      }
+      context.push(
+        '/song-list',
+        extra: SongListArgs(title: a.name, loader: loader),
+      );
       return;
     }
     if (item.localAlbum != null) {
       final a = item.localAlbum!;
-      context.push('/song-list', extra: SongListArgs(
-        title: a.name,
-        loader: () =>
-            ref.read(libraryProvider.notifier).songsByAlbum(a.key),
-      ));
+      final loader = () =>
+          ref.read(libraryProvider.notifier).songsByAlbum(a.key);
+      if (landscape) {
+        ref.read(landscapeDetailProvider.notifier).state =
+            LandscapeSongListDetail(title: a.name, loader: loader);
+        return;
+      }
+      context.push(
+        '/song-list',
+        extra: SongListArgs(title: a.name, loader: loader),
+      );
       return;
     }
     if (item.localPlaylist != null) {
-      ref
-          .read(playlistManagerProvider.notifier)
-          .play(item.localPlaylist!, 0);
+      ref.read(playlistManagerProvider.notifier).play(item.localPlaylist!, 0);
       return;
     }
     final engine = ref.read(pluginEngineProvider).valueOrNull;
@@ -608,33 +649,40 @@ extension _CatalogTabSearch on _CatalogTabState {
           'albumMid': first.albumMid,
         },
       };
-      context.push(
-        '/online-detail',
-        extra: OnlineDetailArgs(
-          type: isAlbum ? OnlineDetailType.album : OnlineDetailType.artist,
-          pluginId: source.id,
-          title: item.title,
-          subtitle: item.subtitle,
-          coverUrl: item.coverUrl,
-          raw: raw,
-        ),
-      );
-      return;
-    }
-    context.push(
-      '/online-detail',
-      extra: OnlineDetailArgs(
-        type: switch (item.kind) {
-          'artist' => OnlineDetailType.artist,
-          'album' => OnlineDetailType.album,
-          _ => OnlineDetailType.playlist,
-        },
-        pluginId: item.onlinePlugin?.id ?? '',
+      final args = OnlineDetailArgs(
+        type: isAlbum ? OnlineDetailType.album : OnlineDetailType.artist,
+        pluginId: source.id,
         title: item.title,
         subtitle: item.subtitle,
         coverUrl: item.coverUrl,
-        raw: item.onlineRaw ?? const {},
-      ),
+        raw: raw,
+      );
+      if (landscape) {
+        ref.read(landscapeDetailProvider.notifier).state =
+            LandscapeOnlineDetail(args);
+        return;
+      }
+      context.push('/online-detail', extra: args);
+      return;
+    }
+    final args = OnlineDetailArgs(
+      type: switch (item.kind) {
+        'artist' => OnlineDetailType.artist,
+        'album' => OnlineDetailType.album,
+        _ => OnlineDetailType.playlist,
+      },
+      pluginId: item.onlinePlugin?.id ?? '',
+      title: item.title,
+      subtitle: item.subtitle,
+      coverUrl: item.coverUrl,
+      raw: item.onlineRaw ?? const {},
     );
+    if (landscape) {
+      ref.read(landscapeDetailProvider.notifier).state = LandscapeOnlineDetail(
+        args,
+      );
+      return;
+    }
+    context.push('/online-detail', extra: args);
   }
 }

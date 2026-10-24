@@ -10,6 +10,7 @@ import '../../src/auth/server_models.dart';
 import 'leaderboard_prefetch.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -58,10 +59,14 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final portraitFloating = !widget.embedded &&
+    final portraitFloating =
+        !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
             true);
 
     return Scaffold(
@@ -89,8 +94,9 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
                             child: Text(
                               label,
                               style: TextStyle(
-                                  fontSize: 12,
-                                  color: scheme.onSurfaceVariant),
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -148,6 +154,7 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
       ),
     );
   }
+
   Widget _floatHost(bool floating, Widget child) {
     if (floating) {
       return Positioned.fill(
@@ -161,7 +168,8 @@ class _LeaderboardPageState extends ConsumerState<LeaderboardPage>
     }
     return Padding(
       padding: EdgeInsets.only(
-          top: widget.embedded ? 0 : GlassTopBar.height(context)),
+        top: widget.embedded ? 0 : GlassTopBar.height(context),
+      ),
       child: child,
     );
   }
@@ -193,9 +201,11 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
   // 拖拽中途为连续小数不会误判）
   bool _tabReady = false;
   int _requestId = 0;
-  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
-    if (mounted) setState(() {});
-  });
+  late final StaggerWindow _stagger = StaggerWindow(
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   void initState() {
@@ -247,7 +257,9 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
     // 否则会先闪一屏灰色占位卡。骨架只留给“什么都没有”的加载。
     final hadEntries = _entries.isNotEmpty;
     // 预热命中：先用缓存内容顶上，转场那几百毫秒里就不是一屏空骨架了
-    final cached = hadEntries ? null : readCachedLeaderboard(ref, widget.period);
+    final cached = hadEntries
+        ? null
+        : readCachedLeaderboard(ref, widget.period);
     setState(() {
       if (cached != null) _entries = cached;
       _loading = cached == null;
@@ -309,18 +321,22 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
           children: [
             Icon(Icons.cloud_off, size: 44, color: scheme.outline),
             const SizedBox(height: 12),
-            Text(tr('排行榜加载失败'),
-                style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+            Text(
+              tr('排行榜加载失败'),
+              style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+            ),
             const SizedBox(height: 8),
-            TextButton(onPressed: _load, child:   Text(tr('点击重试'))),
+            TextButton(onPressed: _load, child: Text(tr('点击重试'))),
           ],
         ),
       );
     }
     if (_entries.isEmpty) {
       return Center(
-        child: Text(tr('暂无排行榜数据'),
-            style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant)),
+        child: Text(
+          tr('暂无排行榜数据'),
+          style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+        ),
       );
     }
 
@@ -349,38 +365,62 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
             child: Center(
-              child: Text('···',
-                  style: TextStyle(
-                      fontSize: 12, letterSpacing: 2, color: Colors.grey)),
+              child: Text(
+                '···',
+                style: TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 2,
+                  color: Colors.grey,
+                ),
+              ),
             ),
           ),
           Padding(
             padding: EdgeInsets.fromLTRB(
-                16, 0, 16, 24 + MediaQuery.paddingOf(context).bottom),
+              16,
+              0,
+              16,
+              24 + MediaQuery.paddingOf(context).bottom,
+            ),
             child: _stagger.wrap(
               top.length,
-              _LeaderboardRow(
-                entry: me,
-                isMe: true,
-                highlight: me.rank <= 3,
-              ),
+              _LeaderboardRow(entry: me, isMe: true, highlight: me.rank <= 3),
             ),
           ),
         ] else if (!loggedIn) ...[
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 6),
             child: Center(
-              child: Text('···',
-                  style: TextStyle(
-                      fontSize: 12, letterSpacing: 2, color: Colors.grey)),
+              child: Text(
+                '···',
+                style: TextStyle(
+                  fontSize: 12,
+                  letterSpacing: 2,
+                  color: Colors.grey,
+                ),
+              ),
             ),
           ),
           Padding(
             padding: EdgeInsets.fromLTRB(
-                16, 0, 16, 24 + MediaQuery.paddingOf(context).bottom),
+              16,
+              0,
+              16,
+              24 + MediaQuery.paddingOf(context).bottom,
+            ),
             child: _stagger.wrap(
               top.length,
-              _LoginRow(onTap: () => context.push('/account')),
+              // 横屏：开右侧账号面板；竖屏走路由
+              _LoginRow(
+                onTap: () {
+                  if (useLandscape(ref)) {
+                    ref.read(landscapeAccountOpenProvider.notifier).state =
+                        true;
+                  } else {
+                    context.push('/account');
+                  }
+                },
+              ),
             ),
           ),
         ],
@@ -389,7 +429,6 @@ class _PeriodBoardState extends ConsumerState<_PeriodBoard> {
   }
 
   Widget _skeletonRow(ColorScheme scheme) {
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Row(
@@ -510,8 +549,8 @@ class _LeaderboardRow extends ConsumerWidget {
         color: isMe
             ? scheme.primary.withValues(alpha: 0.08)
             : (highlight
-                ? scheme.primary.withValues(alpha: 0.04)
-                : (appCardFill(context, ref))),
+                  ? scheme.primary.withValues(alpha: 0.04)
+                  : (appCardFill(context, ref))),
         borderRadius: BorderRadius.circular(12),
         border: isMe
             ? Border.all(color: scheme.primary.withValues(alpha: 0.3))
@@ -533,7 +572,9 @@ class _LeaderboardRow extends ConsumerWidget {
                       child: Text(
                         name,
                         style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -541,16 +582,21 @@ class _LeaderboardRow extends ConsumerWidget {
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
                         decoration: BoxDecoration(
                           color: scheme.primary,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: Text(tr('你'),
-                            style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: scheme.onPrimary)),
+                        child: Text(
+                          tr('你'),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: scheme.onPrimary,
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -559,7 +605,9 @@ class _LeaderboardRow extends ConsumerWidget {
                 Text(
                   '@$name',
                   style: TextStyle(
-                      fontSize: 11, color: scheme.onSurfaceVariant),
+                    fontSize: 11,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -568,8 +616,7 @@ class _LeaderboardRow extends ConsumerWidget {
           const SizedBox(width: 8),
           Text(
             _formatDuration(entry.duration),
-            style: const TextStyle(
-                fontSize: 13, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
         ],
       ),
@@ -581,7 +628,8 @@ class _LeaderboardRow extends ConsumerWidget {
   static String _formatDuration(int seconds) {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
-    if (h > 0) return m > 0 ? tr('{h}小时{m}分', {'h': h, 'm': m}) : tr('{h}小时', {'h': h});
+    if (h > 0)
+      return m > 0 ? tr('{h}小时{m}分', {'h': h, 'm': m}) : tr('{h}小时', {'h': h});
     return tr('{m}分钟', {'m': m});
   }
 }
@@ -610,16 +658,16 @@ class _RankBadge extends ConsumerWidget {
         boxShadow: rank <= 3
             ? [
                 BoxShadow(
-                    color: bg.withValues(alpha: 0.3),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2)),
+                  color: bg.withValues(alpha: 0.3),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
               ]
             : null,
       ),
       child: Text(
         '$rank',
-        style: TextStyle(
-            fontSize: 12, fontWeight: FontWeight.w700, color: fg),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }
@@ -653,14 +701,21 @@ class _Avatar extends ConsumerWidget {
   }
 
   Widget _fallback(
-      BuildContext context, WidgetRef ref, ColorScheme scheme, String char) {
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme scheme,
+    String char,
+  ) {
     return Container(
       color: appCardFill(context, ref),
       alignment: Alignment.center,
       child: Text(
         char,
         style: TextStyle(
-            fontSize: 15, fontWeight: FontWeight.w700, color: scheme.primary),
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: scheme.primary,
+        ),
       ),
     );
   }
@@ -696,11 +751,14 @@ class _LoginRow extends ConsumerWidget {
                   color: appCardFill(context, ref),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('—',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurfaceVariant)),
+                child: Text(
+                  '—',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ),
               const SizedBox(width: 12),
               ClipOval(
@@ -709,11 +767,14 @@ class _LoginRow extends ConsumerWidget {
                   height: 36,
                   color: appCardFill(context, ref),
                   alignment: Alignment.center,
-                  child: Text(tr('未'),
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: scheme.primary)),
+                  child: Text(
+                    tr('未'),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: scheme.primary,
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -721,22 +782,32 @@ class _LoginRow extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(tr('未登录'),
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w600)),
+                    Text(
+                      tr('未登录'),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    Text(tr('登录后查看个人排名'),
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.onSurfaceVariant)),
+                    Text(
+                      tr('登录后查看个人排名'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              Text(tr('去登录'),
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.primary)),
+              Text(
+                tr('去登录'),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.primary,
+                ),
+              ),
             ],
           ),
         ),

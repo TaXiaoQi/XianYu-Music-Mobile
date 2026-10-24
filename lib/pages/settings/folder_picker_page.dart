@@ -19,7 +19,11 @@ class _PathNode {
 }
 
 class FolderPickerPage extends ConsumerStatefulWidget {
-  const FolderPickerPage({super.key});
+  const FolderPickerPage({super.key, this.paneEmbedded = false});
+
+  /// 横屏文件夹页「添加目录」专用：内嵌右列容器，去掉自身顶栏
+  /// （返回/标题由壳层承载），保存后清 landscapeDetailProvider 而非 pop
+  final bool paneEmbedded;
 
   @override
   ConsumerState<FolderPickerPage> createState() => _FolderPickerPageState();
@@ -70,7 +74,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
       await SafChannel.persistPermission(treeUri);
       await ref.read(scanFoldersProvider.notifier).addFolder(treeUri);
       if (!mounted) return;
-      Navigator.of(context).pop(1);
+      _close(count: 1);
     } catch (e) {
       if (mounted) showXianYuToast(context, tr('添加失败：{e}', {'e': e}));
     } finally {
@@ -142,6 +146,16 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
     });
   }
 
+  /// 路由态 pop 回调用方；面板态 toast + 清详情面板（无路由可 pop）
+  void _close({int count = 0}) {
+    if (widget.paneEmbedded) {
+      if (count > 0) showXianYuToast(context, tr('已添加扫描目录'));
+      ref.read(landscapeDetailProvider.notifier).state = null;
+      return;
+    }
+    Navigator.of(context).pop(count);
+  }
+
   Future<void> _confirm() async {
     final kept = _keptSelection;
     if (kept.isEmpty || _adding) return;
@@ -152,7 +166,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
         await folders.addFolder(p);
       }
       if (!mounted) return;
-      Navigator.of(context).pop(kept.length);
+      _close(count: kept.length);
     } catch (e) {
       if (!mounted) return;
       setState(() => _adding = false);
@@ -164,96 +178,138 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final kept = _keptSelection;
+    final content = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+        ? Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  tr('读取音频目录失败：{e}', {'e': _error ?? ''}),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: _load,
+                  icon: const Icon(Icons.refresh),
+                  label: Text(tr('重试')),
+                ),
+              ],
+            ),
+          )
+        : _roots.isEmpty
+        ? Center(
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.library_music,
+                    size: 48,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    tr('未发现包含音频的文件夹'),
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    tr('空目录、SD 卡 / USB 等任意位置可用下方按钮浏览'),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton.tonalIcon(
+                    onPressed: _adding ? null : _browseAllViaSaf,
+                    icon: const Icon(Icons.folder_open),
+                    label: Text(tr('浏览全部目录…')),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : ListView(
+            padding: const EdgeInsets.only(bottom: 120),
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  tr('勾选要扫描的文件夹（已授予音乐权限，无需再次授权）'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              ListTile(
+                dense: true,
+                contentPadding: const EdgeInsets.only(left: 12, right: 12),
+                leading: Icon(Icons.folder_open, color: scheme.primary),
+                title: Text(
+                  tr('浏览全部目录…'),
+                  style: const TextStyle(fontSize: 14.5),
+                ),
+                subtitle: Text(
+                  tr('空目录、SD 卡 / USB 等任意位置（系统选择器）'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                onTap: _adding ? null : _browseAllViaSaf,
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              for (final node in _roots) _tile(node, 0),
+            ],
+          );
+    final bottomBar = _roots.isEmpty || _error != null
+        ? null
+        : SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: FilledButton.icon(
+                onPressed: kept.isEmpty || _adding ? null : _confirm,
+                icon: _adding
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.library_add_check),
+                label: Text(_adding ? tr('正在扫描…') : '添加 ${kept.length} 个目录并扫描'),
+              ),
+            ),
+          );
+    // 横屏右列容器：无自身顶栏（返回/标题/刷新由壳层承载），确认按钮
+    // 落在面板底部
+    if (widget.paneEmbedded) {
+      return Scaffold(
+        backgroundColor: appScaffoldBackground(context, ref),
+        body: content,
+        bottomNavigationBar: bottomBar,
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            child: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(tr('读取音频目录失败：{e}', {'e': _error ?? ''}),
-                          textAlign: TextAlign.center),
-                      const SizedBox(height: 12),
-                      FilledButton.icon(
-                        onPressed: _load,
-                        icon: const Icon(Icons.refresh),
-                        label:   Text(tr('重试')),
-                      ),
-                    ],
-                  ),
-                )
-              : _roots.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.library_music,
-                                size: 48, color: scheme.onSurfaceVariant),
-                            const SizedBox(height: 12),
-                              Text(tr('未发现包含音频的文件夹'),
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                            const SizedBox(height: 4),
-                            Text(
-                              tr('空目录、SD 卡 / USB 等任意位置可用下方按钮浏览'),
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: scheme.onSurfaceVariant),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.tonalIcon(
-                              onPressed: _adding ? null : _browseAllViaSaf,
-                              icon: const Icon(Icons.folder_open),
-                              label: Text(tr('浏览全部目录…')),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
-                  : ListView(
-                      padding: const EdgeInsets.only(bottom: 120),
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                          child: Text(
-                            tr('勾选要扫描的文件夹（已授予音乐权限，无需再次授权）'),
-                            style: TextStyle(
-                                fontSize: 12, color: scheme.onSurfaceVariant),
-                          ),
-                        ),
-                        ListTile(
-                          dense: true,
-                          contentPadding:
-                              const EdgeInsets.only(left: 12, right: 12),
-                          leading: Icon(Icons.folder_open,
-                              color: scheme.primary),
-                          title: Text(tr('浏览全部目录…'),
-                              style: const TextStyle(fontSize: 14.5)),
-                          subtitle: Text(
-                            tr('空目录、SD 卡 / USB 等任意位置（系统选择器）'),
-                            style: TextStyle(
-                                fontSize: 12, color: scheme.onSurfaceVariant),
-                          ),
-                          onTap: _adding ? null : _browseAllViaSaf,
-                        ),
-                        const Divider(height: 1, indent: 16, endIndent: 16),
-                        for (final node in _roots) _tile(node, 0),
-                      ],
-                    ),
+            child: content,
           ),
           Positioned(
-            top: 0, left: 0, right: 0,
+            top: 0,
+            left: 0,
+            right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title:   Text(tr('选择音乐文件夹')),
+              title: Text(tr('选择音乐文件夹')),
               actions: [
                 IconButton(
                   tooltip: tr('刷新'),
@@ -265,26 +321,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
           ),
         ],
       ),
-      bottomNavigationBar: _roots.isEmpty || _error != null
-          ? null
-          : SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: FilledButton.icon(
-                  onPressed:
-                      kept.isEmpty || _adding ? null : _confirm,
-                  icon: _adding
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.library_add_check),
-                  label: Text(
-                      _adding ? tr('正在扫描…') : '添加 ${kept.length} 个目录并扫描'),
-                ),
-              ),
-            ),
+      bottomNavigationBar: bottomBar,
     );
   }
 
@@ -296,8 +333,7 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
       children: [
         ListTile(
           dense: true,
-          contentPadding:
-              EdgeInsets.only(left: 8.0 + depth * 20, right: 12),
+          contentPadding: EdgeInsets.only(left: 8.0 + depth * 20, right: 12),
           leading: Checkbox(
             value: checked,
             onChanged: _adding ? null : (_) => _toggle(node.path),
@@ -314,7 +350,9 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
               Text(
                 tr('{n} 首', {'n': node.subtreeCount}),
                 style: TextStyle(
-                    fontSize: 12, color: Theme.of(context).colorScheme.outline),
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ),
               if (hasChildren)
                 IconButton(
@@ -327,19 +365,19 @@ class _FolderPickerPageState extends ConsumerState<FolderPickerPage>
                   onPressed: _adding
                       ? null
                       : () => setState(() {
-                            if (!_expanded.remove(node.path)) {
-                              _expanded.add(node.path);
-                            }
-                          }),
+                          if (!_expanded.remove(node.path)) {
+                            _expanded.add(node.path);
+                          }
+                        }),
                 ),
             ],
           ),
           onTap: hasChildren && !_adding
               ? () => setState(() {
-                    if (!_expanded.remove(node.path)) {
-                      _expanded.add(node.path);
-                    }
-                  })
+                  if (!_expanded.remove(node.path)) {
+                    _expanded.add(node.path);
+                  }
+                })
               : (!_adding ? () => _toggle(node.path) : null),
         ),
         if (hasChildren && expanded)

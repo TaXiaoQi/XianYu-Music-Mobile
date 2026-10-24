@@ -1,8 +1,8 @@
 part of 'shell.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 extension _ShellScaffoldLandscape on _ShellScaffoldState {
-
   void _deferLibPaneMount() {
     _libPaneMountable = false;
     _libPaneMountTimer?.cancel();
@@ -57,7 +57,6 @@ extension _ShellScaffoldLandscape on _ShellScaffoldState {
     }
     return LandscapePageFade(open: open, trigger: trigger, child: child);
   }
-
 }
 
 class _ShellRailDivider extends StatelessWidget {
@@ -104,34 +103,69 @@ class _LandscapeRail extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final collapsed = railWidth < kLandscapeRailCollapseAt;
 
-    final primary = navItemsFor(
-      ref.watch(settingsProvider.select(
-          (s) => s.valueOrNull?.navShowPlugins ?? false)),
-      ref.watch(settingsProvider.select(
-          (s) => s.valueOrNull?.navOrderLandscape ?? kDefaultNavOrder)),
+    final showPlugins = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.navShowPlugins ?? false),
     );
-    final library = [
-      (tr('本地音乐'), tr('本地'), Icons.library_music_outlined),
-      (tr('我的收藏'), tr('收藏'), Icons.favorite_outline),
-      (tr('最近播放'), tr('最近'), Icons.history_outlined),
-      (tr('我的歌单'), tr('歌单'), Icons.queue_music_outlined),
-    ];
-    final libSel = ref.watch(landscapeLibraryProvider);
-
-    Widget label(String t) => Padding(
-      padding: const EdgeInsets.fromLTRB(14, 10, 0, 4),
-      child: Text(
-        t,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-          color: scheme.primary,
-          letterSpacing: 0.5,
-        ),
+    final order = ref.watch(
+      settingsProvider.select(
+        (s) => s.valueOrNull?.navOrderLandscape ?? kDefaultNavOrderLandscape,
       ),
     );
+    // 已绑定网盘才显示「网盘音乐」
+    final hasCloud = ref.watch(
+      boundCloudProvidersProvider.select(
+        (a) => a.valueOrNull?.isNotEmpty ?? false,
+      ),
+    );
+    final libSel = ref.watch(landscapeLibraryProvider);
+
+    // 导航页签与音乐库项合并为一组（参考桌面端侧栏：一条连续列表，
+    // 不再分「导航/音乐库」两段），顺序取自导航栏管理
+    final rows = <Widget>[];
+    for (final id in order) {
+      final nav = navItemsById[id];
+      if (nav != null) {
+        if (nav.optIn && !showPlugins) continue;
+        rows.add(
+          _railItem(
+            context,
+            ref,
+            icon: nav.icon,
+            themeSlot: nav.themeSlot,
+            title: navTitle(context, nav),
+            collapsed: collapsed,
+            selected: libSel == null && nav.branchIndex == index,
+            onTap: () {
+              ref.read(landscapeDetailProvider.notifier).state = null;
+              ref.read(landscapeLibraryProvider.notifier).state = null;
+              onSelect(nav.branchIndex);
+            },
+          ),
+        );
+        continue;
+      }
+      final lib = landscapeLibraryNavById[id];
+      if (lib == null) continue;
+      if (lib.requiresCloud && !hasCloud) continue;
+      rows.add(
+        _railItem(
+          context,
+          ref,
+          icon: lib.icon,
+          title: lib.title,
+          shortTitle: lib.shortTitle,
+          collapsed: collapsed,
+          // 文件夹管理(5)归属「本地音乐」：右侧容器打开时保持其高亮
+          selected:
+              libSel == lib.paneIndex || (lib.paneIndex == 0 && libSel == 5),
+          onTap: () {
+            closeLandscapeSearch(ref);
+            ref.read(landscapeDetailProvider.notifier).state = null;
+            ref.read(landscapeLibraryProvider.notifier).state = lib.paneIndex;
+          },
+        ),
+      );
+    }
 
     // Stack 取代 Column：列表视口全高（Positioned.fill），rail 项滚上去
     // 从顶栏带下穿过被实时模糊——原 Expanded 视口从 logo 下起，滚到带
@@ -139,8 +173,7 @@ class _LandscapeRail extends ConsumerWidget {
     // 固定态品牌行改挂顶栏带 head 位（rail 在带下层，logo 留在 rail 里
     // 会被带玻璃盖住）；悬浮态 rail 顶部品牌玻璃卡（与其他 rail 卡同款
     // frostedCardSurface），rail 收窄三级联动（全称/弦予/隐藏）
-    final railBrand =
-        floating && railWidth >= kLandscapeBrandShortMinRail;
+    final railBrand = floating && railWidth >= kLandscapeBrandShortMinRail;
     final listTopPad = floating
         ? 14.0 + (railBrand ? 44.0 + 6 : 0) + 6
         : GlassTopBar.height(context, topInset: 8) + 6;
@@ -158,11 +191,9 @@ class _LandscapeRail extends ConsumerWidget {
               (floating ? 8 : 12) + (collapsed ? 0 : 76),
             ),
             children: [
-              if (!collapsed) ...[
-                // 分组独立玻璃卡，样式对齐设置页左列（frostedCardSurface
-                // 同款）；小标题在卡外（设置页同款），红色在 label() 内
-                label(tr('导航')),
-                const SizedBox(height: 2),
+              if (!collapsed)
+                // 合并后单张玻璃卡（不再分「导航/音乐库」两段），样式对齐
+                // 设置页左列（frostedCardSurface 同款）
                 frostedCardSurface(
                   context: context,
                   ref: ref,
@@ -170,88 +201,11 @@ class _LandscapeRail extends ConsumerWidget {
                   themeSlot: 'settings.group',
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < primary.length; i++)
-                        _railItem(
-                          context,
-                          ref,
-                          icon: primary[i].icon,
-                          themeSlot: primary[i].themeSlot,
-                          title: navTitle(context, primary[i]),
-                          collapsed: collapsed,
-                          selected:
-                              libSel == null && primary[i].branchIndex == index,
-                          onTap: () {
-                            ref
-                                .read(landscapeLibraryProvider.notifier)
-                                .state = null;
-                            onSelect(primary[i].branchIndex);
-                          },
-                        ),
-                    ],
+                    children: rows,
                   ),
-                ),
-                const SizedBox(height: 10),
-                label(tr('音乐库')),
-                const SizedBox(height: 2),
-                frostedCardSurface(
-                  context: context,
-                  ref: ref,
-                  radius: 16,
-                  themeSlot: 'settings.group',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var j = 0; j < library.length; j++)
-                        _railItem(
-                          context,
-                          ref,
-                          icon: library[j].$3,
-                          title: library[j].$1,
-                          shortTitle: library[j].$2,
-                          collapsed: collapsed,
-                          // 文件夹管理(4)归属「本地音乐」：右侧容器打开时
-                          // 保持其高亮
-                          selected: libSel == j || (j == 0 && libSel == 4),
-                          onTap: () {
-                            closeLandscapeSearch(ref);
-                            ref.read(landscapeLibraryProvider.notifier).state =
-                                j;
-                          },
-                        ),
-                    ],
-                  ),
-                ),
-              ] else ...[
-                for (var i = 0; i < primary.length; i++)
-                  _railItem(
-                    context,
-                    ref,
-                    icon: primary[i].icon,
-                    themeSlot: primary[i].themeSlot,
-                    title: navTitle(context, primary[i]),
-                    collapsed: collapsed,
-                    selected: libSel == null && i == index,
-                    onTap: () {
-                      ref.read(landscapeLibraryProvider.notifier).state = null;
-                      onSelect(i);
-                    },
-                  ),
-                for (var j = 0; j < library.length; j++)
-                  _railItem(
-                    context,
-                    ref,
-                    icon: library[j].$3,
-                    title: library[j].$1,
-                    shortTitle: library[j].$2,
-                    collapsed: collapsed,
-                    selected: libSel == j || (j == 0 && libSel == 4),
-                    onTap: () {
-                      closeLandscapeSearch(ref);
-                      ref.read(landscapeLibraryProvider.notifier).state = j;
-                    },
-                  ),
-              ],
+                )
+              else
+                ...rows,
             ],
           ),
         ),
@@ -336,17 +290,17 @@ class _LandscapeRail extends ConsumerWidget {
     // 弹性截断：侧栏宽可拖拽收窄（下限仅 icon 档），固定宽
     // 文本在窄列下会把 Row 挤溢出（RenderFlex overflow）
     Widget labelText(String t) => Expanded(
-          child: Text(
-            t,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-              color: color,
-            ),
-          ),
-        );
+      child: Text(
+        t,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 15,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+          color: color,
+        ),
+      ),
+    );
 
     // 全称放不下时换两字短档（本地音乐→本地），避免截成「本地…」；
     // rail 宽可拖拽，用 TextPainter 按实际可用宽实测比定宽阈值可靠
@@ -367,8 +321,10 @@ class _LandscapeRail extends ConsumerWidget {
     return PressableScale(
       pressScale: 0.92,
       child: Padding(
-        padding:
-            EdgeInsets.symmetric(horizontal: collapsed ? 0 : 4, vertical: 2),
+        padding: EdgeInsets.symmetric(
+          horizontal: collapsed ? 0 : 4,
+          vertical: 2,
+        ),
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: onTap,
@@ -431,6 +387,7 @@ class _MusicLibraryPane extends ConsumerWidget {
   /// 横屏音乐库面板的页面 id；文件夹面板不映射，回落全局壁纸。
   static const _panePageIds = <String?>[
     'ls-local',
+    'ls-cloud',
     'ls-fav',
     'ls-recent',
     'ls-sheets',
@@ -450,24 +407,22 @@ class _MusicLibraryPane extends ConsumerWidget {
         : 0.0;
     return PageWallpaperScope(
       pageId: _panePageIds[index],
-      child: ColoredBox(
-        color: Theme.of(context).scaffoldBackgroundColor,
-        child: Padding(
-          padding: EdgeInsets.only(top: topInset),
-          child: KeyedSubtree(
-            key: musicLibraryPageKeys[index],
-            child: switch (index) {
+      child: Padding(
+        padding: EdgeInsets.only(top: topInset),
+        child: KeyedSubtree(
+          key: musicLibraryPageKeys[index],
+          child: switch (index) {
             // paneEmbedded：面板态布局与 landscapeLibraryProvider 解耦——
             // 切导航分支时该状态先于退场动画清空，watch 它会让淡出中的
             // 面板当场重建成路由态头部（全宽 tab pill + 排序行）闪烁
             0 => const LibraryPage(paneEmbedded: true),
-            1 => const FavoritesPage(paneEmbedded: true),
-            2 => const RecentPage(paneEmbedded: true),
-            3 => const PlaylistsPage(paneEmbedded: true),
+            1 => const CloudDiskPage(paneEmbedded: true),
+            2 => const FavoritesPage(paneEmbedded: true),
+            3 => const RecentPage(paneEmbedded: true),
+            4 => const PlaylistsPage(paneEmbedded: true),
             // 横屏：文件夹管理接在「本地音乐」右侧容器内，不单独开路由页
             _ => const LibraryFolderPage(embedded: true),
           },
-          ),
         ),
       ),
     );
@@ -534,6 +489,60 @@ class _SearchPane extends ConsumerWidget {
       );
     }
     return const SearchResultPage(embedded: true);
+  }
+}
+
+/// 横屏右容器二级详情面板：歌手/专辑/歌单/网盘分组。与一级面板同口径垫
+/// 空白表头（固定态垫到 shell 固定带下、悬浮态垫出 chrome 行），返回与
+/// 标题由 shell 全局顶栏承载，页面以 paneEmbedded 形态内嵌。
+class _LandscapeDetailPane extends ConsumerWidget {
+  const _LandscapeDetailPane({required this.detail});
+
+  final LandscapeDetail detail;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final page = switch (detail) {
+      LandscapeSongListDetail d => SongListPage(
+        title: d.title,
+        loader: d.loader,
+        paneEmbedded: true,
+      ),
+      LandscapeOnlineDetail d => OnlineDetailPage(
+        args: d.args,
+        paneEmbedded: true,
+      ),
+      LandscapeCloudGroupDetail d => CloudGroupSongsPage(
+        title: d.title,
+        items: d.items,
+        paneEmbedded: true,
+      ),
+      LandscapeFolderPickerDetail _ => const FolderPickerPage(
+        paneEmbedded: true,
+      ),
+      LandscapeRemoteLibraryDetail _ => const RemoteLibraryPage(
+        paneEmbedded: true,
+      ),
+      LandscapeCloudManageDetail _ => const CloudBindPage(embedded: true),
+      LandscapeCloudPickerDetail d => CloudFolderPickerPage(
+        providerId: d.providerId,
+        accountId: d.accountId,
+        embedded: true,
+      ),
+    };
+    // 与 _MusicLibraryPane 一级面板同口径：固定态 shell 固定带盖住顶部，
+    // 面板整体垫到带下；悬浮态顶距由 chrome 行（8 顶距 + 44 搜索行 +
+    // 10 间距）自垫，内容不再顶到全局顶栏上
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
+    final topInset = floating
+        ? MediaQuery.paddingOf(context).top + 66
+        : GlassTopBar.height(context, topInset: 8);
+    return Padding(
+      padding: EdgeInsets.only(top: topInset),
+      child: page,
+    );
   }
 }
 

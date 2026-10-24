@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../src/cloud/cloud_credentials_store.dart';
+import '../../src/cloud/cloud_folder_selection_store.dart';
 import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
@@ -58,6 +59,23 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
 
   int _lastDuration = 60;
 
+  /// 横屏右列当前展示的网盘（null = 本地已扫描目录树）：
+  /// 点左列网盘项内嵌展示已选文件夹，对齐桌面端树形态，不跳全屏浏览器
+  MapEntry<CloudProvider, CloudAccount>? _cloudDrive;
+
+  /// 已选文件夹版本号：选择器保存/移除后 +1，左列计数与右列列表据此刷新
+  int _cloudRev = 0;
+
+  String? get _cloudDriveKey {
+    final d = _cloudDrive;
+    return d == null ? null : '${d.key.id}|${d.value.accountId}';
+  }
+
+  void _toggleCloudDrive(MapEntry<CloudProvider, CloudAccount>? e) =>
+      setState(() => _cloudDrive = e);
+
+  void _onCloudFoldersChanged() => setState(() => _cloudRev++);
+
   @override
   void initState() {
     super.initState();
@@ -70,20 +88,27 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
   }
 
   static const _audioExts = [
-    'mp3', 'flac', 'm4a', 'aac', 'wav', 'ogg', 'opus', 'ape', 'wma', 'aiff',
+    'mp3',
+    'flac',
+    'm4a',
+    'aac',
+    'wav',
+    'ogg',
+    'opus',
+    'ape',
+    'wma',
+    'aiff',
   ];
 
   @override
   Widget build(BuildContext context) {
     final root = ref.watch(libraryProvider.select((s) => s.folderRoot));
-    final lost =
-        ref.watch(libraryProvider.select((s) => s.unauthorizedFolders));
+    final lost = ref.watch(
+      libraryProvider.select((s) => s.unauthorizedFolders),
+    );
     final foldersAsync = ref.watch(scanFoldersProvider);
-    final minDuration = ref
-            .watch(settingsProvider)
-            .valueOrNull
-            ?.libraryMinDurationSeconds ??
-        0;
+    final minDuration =
+        ref.watch(settingsProvider).valueOrNull?.libraryMinDurationSeconds ?? 0;
 
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);

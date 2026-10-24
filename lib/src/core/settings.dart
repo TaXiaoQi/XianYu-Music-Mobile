@@ -97,12 +97,37 @@ List<String> _mergeScanFormats(List<String>? saved) {
 /// 指示器/排序/预测返回/管理页均自动跟随
 const kDefaultNavOrder = ['home', 'mine', 'plugin'];
 
+/// 横屏 rail 导航项 id：导航页签与音乐库项合并为一组（参考桌面端侧栏），
+/// 顺序可拖动；竖屏底栏仍用 [kDefaultNavOrder]，两套配置互相独立
+const kDefaultNavOrderLandscape = [
+  'home',
+  'mine',
+  'plugin',
+  'lib-local',
+  'lib-cloud',
+  'lib-favorites',
+  'lib-recent',
+  'lib-playlists',
+];
+
 /// 恢复持久化的页签顺序：过滤未知 id，缺失 id 按默认序补尾
 List<String> normalizeNavOrder(List<String>? saved) {
   if (saved == null) return kDefaultNavOrder;
   final known = kDefaultNavOrder.toSet();
   final out = saved.where(known.contains).toSet().toList();
   for (final id in kDefaultNavOrder) {
+    if (!out.contains(id)) out.add(id);
+  }
+  return out;
+}
+
+/// 横屏 rail 顺序恢复：音乐库项与导航页签同属一张表（老用户旧序只含
+/// home/mine/plugin，缺失的音乐库项按默认序自动补尾）
+List<String> normalizeNavOrderLandscape(List<String>? saved) {
+  if (saved == null) return kDefaultNavOrderLandscape;
+  final known = kDefaultNavOrderLandscape.toSet();
+  final out = saved.where(known.contains).toSet().toList();
+  for (final id in kDefaultNavOrderLandscape) {
     if (!out.contains(id)) out.add(id);
   }
   return out;
@@ -246,7 +271,7 @@ class AppSettings {
     this.floatingSearchBar = false,
     this.navShowPlugins = false,
     this.navOrderPortrait = kDefaultNavOrder,
-    this.navOrderLandscape = kDefaultNavOrder,
+    this.navOrderLandscape = kDefaultNavOrderLandscape,
     this.navBarPosition = NavBarPosition.bottom,
     this.pageTransitionStyle = PageTransitionStyle.cover,
     this.landscapeTransitionEnabled = true,
@@ -309,7 +334,7 @@ class AppSettings {
     this.floatingLyricsY = 96,
     this.watchLinkageEnabled = true,
     this.watchLinkTransferMode = 'ask',
-    
+
     this.watchLinkAutoTransfer = false,
     this.watchLinkAskDate = '',
     this.watchLinkAskGranted = false,
@@ -947,10 +972,12 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingNavBar: prefs.getBool('floatingNavBar') ?? false,
       floatingSearchBar: prefs.getBool('floatingSearchBar') ?? false,
       navShowPlugins: prefs.getBool('navShowPlugins') ?? false,
-      navOrderPortrait:
-          normalizeNavOrder(prefs.getStringList('navOrderPortrait')),
-      navOrderLandscape:
-          normalizeNavOrder(prefs.getStringList('navOrderLandscape')),
+      navOrderPortrait: normalizeNavOrder(
+        prefs.getStringList('navOrderPortrait'),
+      ),
+      navOrderLandscape: normalizeNavOrderLandscape(
+        prefs.getStringList('navOrderLandscape'),
+      ),
       navBarPosition:
           NavBarPosition.values.asNameMap()[prefs.getString(
             'navBarPosition',
@@ -1039,8 +1066,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsUseLyricFont:
           prefs.getBool('floatingLyricsUseLyricFont') ?? false,
       statusBarLyricsEnabled: prefs.getBool('statusBarLyricsEnabled') ?? false,
-      bluetoothLyricsEnabled:
-          prefs.getBool('bluetoothLyricsEnabled') ?? false,
+      bluetoothLyricsEnabled: prefs.getBool('bluetoothLyricsEnabled') ?? false,
       bluetoothLyricsAutoEnabled:
           prefs.getBool('bluetoothLyricsAutoEnabled') ?? false,
       bluetoothAutoResumeEnabled:
@@ -1089,4 +1115,3 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
 final settingsProvider = AsyncNotifierProvider<SettingsNotifier, AppSettings>(
   SettingsNotifier.new,
 );
-

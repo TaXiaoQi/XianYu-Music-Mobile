@@ -17,7 +17,16 @@ class SongListArgs {
 class SongListPage extends ConsumerStatefulWidget {
   final String title;
   final Future<List<Song>> Function() loader;
-  const SongListPage({super.key, required this.title, required this.loader});
+
+  /// 横屏二级详情面板内嵌：外层 _LandscapeDetailPane 的 FlatTopBar 已承载
+  /// 返回与标题，本页去掉 GlassTopBar、内容铺满
+  final bool paneEmbedded;
+  const SongListPage({
+    super.key,
+    required this.title,
+    required this.loader,
+    this.paneEmbedded = false,
+  });
 
   @override
   ConsumerState<SongListPage> createState() => _SongListPageState();
@@ -70,7 +79,9 @@ class _SongListPageState extends ConsumerState<SongListPage> {
         setState(() => _settled = true);
         return;
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) => _verifyRouteSettled());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _verifyRouteSettled(),
+      );
       return;
     }
     _routeChecking = false;
@@ -102,16 +113,28 @@ class _SongListPageState extends ConsumerState<SongListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final floating = MediaQuery.of(context).orientation != Orientation.landscape &&
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+    if (widget.paneEmbedded) {
+      return Scaffold(
+        backgroundColor: appScaffoldBackground(context, ref),
+        body: _body(),
+      );
+    }
+    final floating =
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
             true);
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       body: Stack(
         children: [
           if (floating)
-            Positioned.fill(child: _body(contentTop: GlassTopBar.height(context) + 6))
+            Positioned.fill(
+              child: _body(contentTop: GlassTopBar.height(context) + 6),
+            )
           else
             Padding(
               padding: EdgeInsets.only(top: GlassTopBar.height(context)),

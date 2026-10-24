@@ -12,10 +12,11 @@ final wallpaperActiveProvider = Provider<bool>((ref) {
   return ref.watch(pageWallpaperActiveProvider);
 }, dependencies: [pageWallpaperActiveProvider]);
 
+/// 页面脚手架恒透明：根层恒画的兜底红蓝光斑/用户壁纸同轨垫底，页面与
+/// 横屏面板内嵌页直接透出，不再按壁纸激活态切换白实底。覆盖路由转场
+/// 期间防透出下层的遮蔽由 RoutePageBackdrop 的实底垫负责，不经本函数。
 Color appScaffoldBackground(BuildContext context, WidgetRef ref) {
-  return ref.watch(wallpaperActiveProvider)
-      ? Colors.transparent
-      : appSurfaceBg(context);
+  return Colors.transparent;
 }
 
 Color appSurfaceBg(BuildContext context) {
@@ -30,8 +31,8 @@ Color appCardColor(BuildContext context) {
 
 Color appCardFill(BuildContext context, WidgetRef ref) =>
     ref.watch(wallpaperActiveProvider)
-        ? wallpaperBlockFill(context, ref)
-        : appCardColor(context);
+    ? wallpaperBlockFill(context, ref)
+    : appCardColor(context);
 
 /// 次要前景色（文字/图标）：以 onSurface 为基底降透明。
 /// onSurfaceVariant/outline 在壁纸文字颜色为「跟随主题」时不参与翻转，

@@ -1,12 +1,13 @@
 part of 'library_folder_page.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 extension _LibraryFolderPageViews on _LibraryFolderPageState {
   /// 列表底部留白：有迷你播放条时给足空间
   double _listBottomPad(BuildContext context) {
     return (ref.watch(playerProvider.select((s) => s.current != null))
-                ? 92.0
-                : 16.0) +
+            ? 92.0
+            : 16.0) +
         MediaQuery.of(context).padding.bottom;
   }
 
@@ -43,10 +44,9 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                       _ScanHero(
                         scanning: _scanning,
                         onScan: _startScan,
-                        onSafFallback:
-                            Platform.isAndroid && !_adding
-                                ? _addFolderViaSaf
-                                : null,
+                        onSafFallback: Platform.isAndroid && !_adding
+                            ? _addFolderViaSaf
+                            : null,
                       ),
                       if (lost.isNotEmpty) _UnauthorizedBanner(lost: lost),
                       const SizedBox(height: 16),
@@ -66,9 +66,10 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           padding: EdgeInsets.symmetric(vertical: 24),
                           child: Center(child: CircularProgressIndicator()),
                         ),
-                        error: (e, _) => Text(tr('扫描目录加载失败：{e}', {'e': e}),
-                            style: TextStyle(
-                                fontSize: 13, color: scheme.error)),
+                        error: (e, _) => Text(
+                          tr('扫描目录加载失败：{e}', {'e': e}),
+                          style: TextStyle(fontSize: 13, color: scheme.error),
+                        ),
                         data: (folders) => _ScanFoldersCard(
                           folders: folders,
                           lost: lost,
@@ -80,8 +81,8 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           onAdd: _adding
                               ? null
                               : (PlatformCaps.supportsSandboxLibrary
-                                  ? _importFiles
-                                  : _addFolder),
+                                    ? _importFiles
+                                    : _addFolder),
                           onRemove: _removeFolder,
                           onReauthorize: _reauthorize,
                         ),
@@ -151,8 +152,11 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
     final double topPad;
     final Widget topBar;
     if (embedded) {
-      final floating = ref.watch(settingsProvider.select(
-          (s) => s.valueOrNull?.floatingSearchBar ?? false));
+      final floating = ref.watch(
+        settingsProvider.select(
+          (s) => s.valueOrNull?.floatingSearchBar ?? false,
+        ),
+      );
       final statusBar = MediaQuery.paddingOf(context).top;
       final paneTop = floating ? statusBar + 66 : 0.0;
       final headerTop = paneTop + (floating ? 10 : 4);
@@ -169,10 +173,7 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
         top: 0,
         left: 0,
         right: 0,
-        child: GlassTopBar(
-          leading: const BackButton(),
-          title: Text(tr('文件夹')),
-        ),
+        child: GlassTopBar(leading: const BackButton(), title: Text(tr('文件夹'))),
       );
     }
 
@@ -191,16 +192,19 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                     // 左列：扫描入口与目录管理
                     Expanded(
                       child: ListView(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0)
-                            .copyWith(bottom: bottomPad),
+                        padding: const EdgeInsets.fromLTRB(
+                          16,
+                          8,
+                          8,
+                          0,
+                        ).copyWith(bottom: bottomPad),
                         children: [
                           _ScanHero(
                             scanning: _scanning,
                             onScan: _startScan,
-                            onSafFallback:
-                                Platform.isAndroid && !_adding
-                                    ? _addFolderViaSaf
-                                    : null,
+                            onSafFallback: Platform.isAndroid && !_adding
+                                ? _addFolderViaSaf
+                                : null,
                           ),
                           if (lost.isNotEmpty) _UnauthorizedBanner(lost: lost),
                           const SizedBox(height: 16),
@@ -218,28 +222,28 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           foldersAsync.when(
                             loading: () => const Padding(
                               padding: EdgeInsets.symmetric(vertical: 24),
-                              child: Center(
-                                  child: CircularProgressIndicator()),
+                              child: Center(child: CircularProgressIndicator()),
                             ),
                             error: (e, _) => Text(
-                                tr('扫描目录加载失败：{e}', {'e': e}),
-                                style: TextStyle(
-                                    fontSize: 13, color: scheme.error)),
+                              tr('扫描目录加载失败：{e}', {'e': e}),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: scheme.error,
+                              ),
+                            ),
                             data: (folders) => _ScanFoldersCard(
                               folders: folders,
                               lost: lost,
                               adding: _adding,
-                              importMode:
-                                  PlatformCaps.supportsSandboxLibrary,
-                              onAddFolder:
-                                  PlatformCaps.supportsSandboxLibrary
-                                      ? _importFolder
-                                      : null,
+                              importMode: PlatformCaps.supportsSandboxLibrary,
+                              onAddFolder: PlatformCaps.supportsSandboxLibrary
+                                  ? _importFolder
+                                  : null,
                               onAdd: _adding
                                   ? null
                                   : (PlatformCaps.supportsSandboxLibrary
-                                      ? _importFiles
-                                      : _addFolder),
+                                        ? _importFiles
+                                        : _addFolder),
                               onRemove: _removeFolder,
                               onReauthorize: _reauthorize,
                             ),
@@ -247,57 +251,80 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           const SizedBox(height: 16),
                           const _RemoteLibraryCard(),
                           const SizedBox(height: 16),
-                          const _CloudDrivesCard(),
+                          _CloudDrivesCard(
+                            selectedKey: _cloudDriveKey,
+                            rev: _cloudRev,
+                            onSelect: _toggleCloudDrive,
+                          ),
                         ],
                       ),
                     ),
-                    // 右列：已扫描文件夹树
+                    // 右列：本地已扫描目录树；点了左列网盘项时改为该盘
+                    // 已选文件夹面板（桌面端树形态），再点一次/收起还原
                     Expanded(
-                      child: RefreshIndicator(
-                        onRefresh: _onRefresh,
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(8, 8, 16, 0)
-                              .copyWith(bottom: bottomPad),
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          children: [
-                            if (root.isNotEmpty) ...[
-                              Padding(
-                                padding:
-                                    const EdgeInsets.fromLTRB(4, 0, 4, 8),
-                                child: Text(
-                                  tr('已扫描文件夹'),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: scheme.primary,
-                                  ),
-                                ),
+                      child: _cloudDrive != null
+                          ? _CloudSelectedFoldersPane(
+                              key: ValueKey(
+                                '${_cloudDrive!.key.id}|${_cloudDrive!.value.accountId}',
                               ),
-                              Material(
-                                color: appCardFill(context, ref),
-                                clipBehavior: Clip.antiAlias,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  side: BorderSide.none,
-                                ),
-                                child: Column(children: tiles),
-                              ),
-                            ] else
-                              Padding(
-                                padding: const EdgeInsets.only(top: 56),
-                                child: Center(
-                                  child: Text(
-                                    tr('暂无扫描结果，添加目录后开始扫描'),
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: scheme.onSurfaceVariant,
+                              drive: _cloudDrive!,
+                              rev: _cloudRev,
+                              onClose: () => _toggleCloudDrive(null),
+                              onChanged: _onCloudFoldersChanged,
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _onRefresh,
+                              child: ListView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  8,
+                                  8,
+                                  16,
+                                  0,
+                                ).copyWith(bottom: bottomPad),
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  if (root.isNotEmpty) ...[
+                                    Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        4,
+                                        0,
+                                        4,
+                                        8,
+                                      ),
+                                      child: Text(
+                                        tr('已扫描文件夹'),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: scheme.primary,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ),
+                                    Material(
+                                      color: appCardFill(context, ref),
+                                      clipBehavior: Clip.antiAlias,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                        side: BorderSide.none,
+                                      ),
+                                      child: Column(children: tiles),
+                                    ),
+                                  ] else
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 56),
+                                      child: Center(
+                                        child: Text(
+                                          tr('暂无扫描结果，添加目录后开始扫描'),
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: scheme.onSurfaceVariant,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
-                          ],
-                        ),
-                      ),
+                            ),
                     ),
                   ],
                 ),

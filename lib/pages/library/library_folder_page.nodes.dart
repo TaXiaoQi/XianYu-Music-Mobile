@@ -1,36 +1,57 @@
 part of 'library_folder_page.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 extension _LibraryFolderPageNodes on _LibraryFolderPageState {
   void _buildNodes(
-      BuildContext context, List<FolderNodeData> nodes, List<Widget> out) {
+    BuildContext context,
+    List<FolderNodeData> nodes,
+    List<Widget> out,
+  ) {
     for (final n in nodes) {
       final hasChildren = n.children.isNotEmpty || n.childCount > 0;
       final isExpanded = _expanded.contains(n.path);
-      out.add(_FolderTile(
-        node: n,
-        hasChildren: hasChildren,
-        isExpanded: isExpanded,
-        onToggle: () {
-          setState(() {
-            if (isExpanded) {
-              _expanded.remove(n.path);
-            } else {
-              _expanded.add(n.path);
+      out.add(
+        _FolderTile(
+          node: n,
+          hasChildren: hasChildren,
+          isExpanded: isExpanded,
+          onToggle: () {
+            setState(() {
+              if (isExpanded) {
+                _expanded.remove(n.path);
+              } else {
+                _expanded.add(n.path);
+              }
+            });
+          },
+          onOpen: () {
+            if (n.songCount > 0) {
+              // 横屏：内嵌右容器详情面板；竖屏走路由
+              if (useLandscape(ref)) {
+                ref
+                    .read(landscapeDetailProvider.notifier)
+                    .state = LandscapeSongListDetail(
+                  title: n.name,
+                  loader: () =>
+                      ref.read(libraryProvider.notifier).songsByFolder(n.path),
+                );
+              } else {
+                context.push(
+                  '/song-list',
+                  extra: SongListArgs(
+                    title: n.name,
+                    loader: () => ref
+                        .read(libraryProvider.notifier)
+                        .songsByFolder(n.path),
+                  ),
+                );
+              }
             }
-          });
-        },
-        onOpen: () {
-          if (n.songCount > 0) {
-            context.push('/song-list', extra: SongListArgs(
-              title: n.name,
-              loader: () =>
-                  ref.read(libraryProvider.notifier).songsByFolder(n.path),
-            ));
-          }
-        },
-        onImport: () => _importAsPlaylist(n),
-      ));
+          },
+          onImport: () => _importAsPlaylist(n),
+        ),
+      );
       if (isExpanded && n.children.isNotEmpty) {
         _buildNodes(context, n.children, out);
       }
@@ -92,7 +113,7 @@ class _FolderTile extends StatelessWidget {
               PopupMenuItem(
                 value: 'import',
                 enabled: node.songCount > 0,
-                child:   Text(tr('导入为歌单')),
+                child: Text(tr('导入为歌单')),
               ),
             ],
           ),

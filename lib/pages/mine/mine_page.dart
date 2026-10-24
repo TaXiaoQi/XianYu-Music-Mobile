@@ -6,9 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/auth_provider.dart';
+import '../../src/cloud/cloud_registry.dart';
 import '../../src/core/settings.dart';
 import '../../src/theme/theme_icon.dart';
-import '../../src/download/download_provider.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
@@ -38,8 +38,9 @@ class MinePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final floating = ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     final searchBar = PageSearchBarBottom(
       onTap: () {
         ref.read(searchSessionProvider.notifier).setSource('local');
@@ -53,32 +54,33 @@ class MinePage extends ConsumerWidget {
         : GlassTopBar.height(context, bottom: searchBar);
     final portrait = Scaffold(
       resizeToAvoidBottomInset: false,
-      body: RepaintBoundary(child: Stack(
-        children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              topInset,
-              16,
-              ref.watch(navBarInsetProvider) + 24,
-            ),
-            children:   [
-              SizedBox(height: 18),
-              _AccountArea(),
-              SizedBox(height: 22),
-              if (ref.watch(authProvider.select((a) => a.isLoggedIn))) ...[
-                StatsSummaryCard(),
+      body: RepaintBoundary(
+        child: Stack(
+          children: [
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                topInset,
+                16,
+                ref.watch(navBarInsetProvider) + 24,
+              ),
+              children: [
+                SizedBox(height: 18),
+                _AccountArea(),
                 SizedBox(height: 22),
+                if (ref.watch(authProvider.select((a) => a.isLoggedIn))) ...[
+                  StatsSummaryCard(),
+                  SizedBox(height: 22),
+                ],
+                _QuickEntries(),
+                SizedBox(height: 24),
+                _MyPlaylistsSection(),
+                // 收藏歌单已收纳进「我的收藏」页，本页只保留自建歌单；
+                // 收藏专辑仍在此展示
+                _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
               ],
-              _QuickEntries(),
-              SizedBox(height: 24),
-              _MyPlaylistsSection(),
-              // 收藏歌单已收纳进「我的收藏」页，本页只保留自建歌单；
-              // 收藏专辑仍在此展示
-              _FavoriteCollectionsSection(kind: 'album', title: tr('收藏专辑')),
-            ],
-          ),
-        ],
+            ),
+          ],
         ),
       ),
     );
@@ -91,7 +93,8 @@ class MinePage extends ConsumerWidget {
 
   Widget _buildLandscapeProfile(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(
-        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     // 固定态自垫带高+12：壳层不再垫 top，列表视口全高，内容从带下穿过
     // 被顶栏实时模糊（+12 与原壳垫时代的带下呼吸距一致，初屏位置不变）
     final topInset = floating
@@ -107,10 +110,7 @@ class MinePage extends ConsumerWidget {
             children: [
               const SizedBox(height: 18),
               const _AccountArea(),
-              if (loggedIn) ...[
-                const SizedBox(height: 16),
-                StatsSummaryCard(),
-              ],
+              if (loggedIn) ...[const SizedBox(height: 16), StatsSummaryCard()],
               const SizedBox(height: 16),
               const _StatsRow(),
               const SizedBox(height: 24),
@@ -130,10 +130,12 @@ class _StatsRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final favCount =
-        ref.watch(favoritesProvider.select((s) => s.entries.length));
-    final recentCount =
-        ref.watch(recentProvider.select((s) => s.entries.length));
+    final favCount = ref.watch(
+      favoritesProvider.select((s) => s.entries.length),
+    );
+    final recentCount = ref.watch(
+      recentProvider.select((s) => s.entries.length),
+    );
     final playlistCount = ref.watch(playlistManagerProvider).playlists.length;
     final card = Material(
       color: Colors.transparent,
@@ -193,23 +195,38 @@ class _QuickCards extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final hasPlugin = ref.watch(
-        pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)));
+      pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
+    );
+    final hasCloud = ref.watch(
+      boundCloudProvidersProvider.select(
+        (a) => a.valueOrNull?.isNotEmpty ?? false,
+      ),
+    );
     final cards = [
       (tr('我的收藏'), tr('喜欢的音乐、歌单与专辑'), Icons.favorite_outline, 'lib-fav'),
       (tr('最近播放'), tr('最近听过的歌曲'), Icons.history_outlined, 'lib-recent'),
       (tr('本地音乐'), tr('管理本地曲库'), Icons.library_music_outlined, '/library'),
       if (hasPlugin)
         (tr('歌曲下载'), tr('管理下载任务'), Icons.download_outlined, '/download'),
+      if (hasCloud)
+        (tr('网盘'), tr('浏览网盘音频'), Icons.cloud_outlined, '/cloud-disk'),
     ];
 
     void open((String, String, IconData, String) c) {
       switch (c.$4) {
         case 'lib-fav':
-          ref.read(landscapeLibraryProvider.notifier).state = 1;
-        case 'lib-recent':
           ref.read(landscapeLibraryProvider.notifier).state = 2;
+        case 'lib-recent':
+          ref.read(landscapeLibraryProvider.notifier).state = 3;
         case '/library':
           ref.read(landscapeLibraryProvider.notifier).state = 0;
+        case '/cloud-disk':
+          // 横屏切到侧边栏音乐库的网盘入口（1=网盘音乐）；竖屏走路由
+          if (useLandscape(ref)) {
+            ref.read(landscapeLibraryProvider.notifier).state = 1;
+          } else {
+            context.push(c.$4);
+          }
         case '/download':
           ref.read(landscapeDownloadOpenProvider.notifier).state = true;
         default:
@@ -283,9 +300,7 @@ class _QuickCards extends ConsumerWidget {
     return Row(
       children: [
         for (var i = 0; i < cards.length; i++) ...[
-          Expanded(
-            child: SizedBox(height: 88, child: card(cards[i])),
-          ),
+          Expanded(child: SizedBox(height: 88, child: card(cards[i]))),
           if (i != cards.length - 1) const SizedBox(width: 12),
         ],
       ],
@@ -312,7 +327,15 @@ class _AccountArea extends ConsumerWidget {
             child: Material(
               borderRadius: BorderRadius.circular(999),
               child: InkWell(
-                onTap: () => context.push('/account'),
+                onTap: () {
+                  // 横屏：开右侧账号面板；竖屏走路由
+                  if (isLandscape) {
+                    ref.read(landscapeAccountOpenProvider.notifier).state =
+                        true;
+                  } else {
+                    context.push('/account');
+                  }
+                },
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
                   height: 52,
@@ -418,10 +441,7 @@ class _AccountArea extends ConsumerWidget {
               ),
               IconButton(
                 onPressed: () => context.push('/scan'),
-                icon: Icon(
-                  Icons.qr_code_scanner,
-                  color: scheme.outline,
-                ),
+                icon: Icon(Icons.qr_code_scanner, color: scheme.outline),
                 tooltip: tr('扫码'),
                 splashRadius: 20,
               ),
@@ -431,11 +451,12 @@ class _AccountArea extends ConsumerWidget {
       ),
     );
     return frostedCardSurface(
-        context: context,
-        ref: ref,
-        radius: 16,
-        child: PressableScale(child: accountCard),
-        themeSlot: 'mine.user');
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: PressableScale(child: accountCard),
+      themeSlot: 'mine.user',
+    );
   }
 
   Widget _fallback(ColorScheme scheme, String nickname) {
@@ -468,16 +489,11 @@ class _QuickEntries extends ConsumerWidget {
       recentProvider.select((s) => s.entries.length),
     );
     final localCount = ref.watch(libraryProvider.select((s) => s.songs.length));
-    final dl = ref.watch(downloadProvider);
-    final dlCount =
-        dl.tasks
-            .where(
-              (t) =>
-                  t.status == DownloadStatus.waiting ||
-                  t.status == DownloadStatus.downloading,
-            )
-            .length +
-        dl.history.length;
+    // 「我的」四宫格末位：原下载入口改为网盘入口（下载管理收进本地页
+    // 顶栏切换）；已绑定网盘才展示
+    final cloudCount = ref.watch(
+      boundCloudProvidersProvider.select((a) => a.valueOrNull?.length ?? 0),
+    );
 
     Widget entry({
       required IconData icon,
@@ -500,8 +516,13 @@ class _QuickEntries extends ConsumerWidget {
                   color: scheme.primary.withValues(alpha: 0.10),
                   shape: BoxShape.circle,
                 ),
-                child: themeSlotIcon(ref, themeSlot,
-                    fallback: icon, color: scheme.primary, size: 24),
+                child: themeSlotIcon(
+                  ref,
+                  themeSlot,
+                  fallback: icon,
+                  color: scheme.primary,
+                  size: 24,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -558,25 +579,25 @@ class _QuickEntries extends ConsumerWidget {
               count: '$localCount',
               onTap: () => context.push('/library?tab=0'),
             ),
-            if (ref.watch(pluginManagerProvider
-                .select((s) => s.sources.any((p) => p.enabled))))
+            if (cloudCount > 0)
               entry(
-                icon: Icons.download_rounded,
-                themeSlot: 'mine.grid_download',
-                label: tr('下载'),
-                count: '$dlCount',
-                onTap: () => context.push('/download'),
+                icon: Icons.cloud_outlined,
+                themeSlot: 'mine.grid_cloud',
+                label: tr('网盘'),
+                count: '$cloudCount',
+                onTap: () => context.push('/cloud-disk'),
               ),
           ],
         ),
       ),
     );
     return frostedCardSurface(
-        context: context,
-        ref: ref,
-        radius: 16,
-        child: entriesCard,
-        themeSlot: 'mine.grid');
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: entriesCard,
+      themeSlot: 'mine.grid',
+    );
   }
 }
 
@@ -670,11 +691,12 @@ class _ReorderCard extends ConsumerWidget {
       ),
     );
     return frostedCardSurface(
-        context: context,
-        ref: ref,
-        radius: 16,
-        child: reorderCard,
-        themeSlot: 'mine.sheet');
+      context: context,
+      ref: ref,
+      radius: 16,
+      child: reorderCard,
+      themeSlot: 'mine.sheet',
+    );
   }
 }
 
@@ -689,7 +711,9 @@ class _MyPlaylistsSection extends ConsumerWidget {
     final playlists = state.playlists;
 
     void onReorder(int oldIndex, int newIndex) {
-      if (newIndex < 0 || newIndex >= playlists.length || newIndex == oldIndex) {
+      if (newIndex < 0 ||
+          newIndex >= playlists.length ||
+          newIndex == oldIndex) {
         return;
       }
       final ids = playlists.map((p) => p.id).toList();
@@ -707,12 +731,24 @@ class _MyPlaylistsSection extends ConsumerWidget {
           action: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _pillButton(context, ref, scheme, Icons.add, '新建',
-                  () => _promptCreate(context, manager)),
+              _pillButton(
+                context,
+                ref,
+                scheme,
+                Icons.add,
+                '新建',
+                () => _promptCreate(context, manager),
+              ),
               const SizedBox(width: 8),
-              _pillButton(context, ref, scheme, Icons.file_download_outlined, '导入',
-                  () => context.push('/playlist-import'),
-                  themeSlot: 'entry.import'),
+              _pillButton(
+                context,
+                ref,
+                scheme,
+                Icons.file_download_outlined,
+                '导入',
+                () => context.push('/playlist-import'),
+                themeSlot: 'entry.import',
+              ),
             ],
           ),
         ),
@@ -734,9 +770,15 @@ class _MyPlaylistsSection extends ConsumerWidget {
     );
   }
 
-  Widget _pillButton(BuildContext context, WidgetRef ref, ColorScheme scheme,
-      IconData icon, String label, VoidCallback onTap,
-      {String? themeSlot}) {
+  Widget _pillButton(
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme scheme,
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    String? themeSlot,
+  }) {
     return OutlinedButton.icon(
       onPressed: onTap,
       icon: themeSlotIcon(ref, themeSlot, fallback: icon, size: 15),
@@ -745,12 +787,8 @@ class _MyPlaylistsSection extends ConsumerWidget {
         visualDensity: VisualDensity.compact,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
         minimumSize: const Size(0, 32),
-        side: BorderSide(
-          color: scheme.outlineVariant.withValues(alpha: 0.6),
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
     );
   }
@@ -777,17 +815,14 @@ Future<String?> _promptPlaylistName(BuildContext context, String title) {
         controller: controller,
         autofocus: true,
         maxLength: 40,
-        decoration:   InputDecoration(hintText: tr('歌单名称')),
+        decoration: InputDecoration(hintText: tr('歌单名称')),
         onSubmitted: (v) => Navigator.pop(ctx, v),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child:   Text(tr('取消')),
-        ),
+        TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('取消'))),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, controller.text),
-          child:   Text(tr('确定')),
+          child: Text(tr('确定')),
         ),
       ],
     ),
@@ -824,8 +859,11 @@ class _PlaylistRow extends ConsumerWidget {
                       color: scheme.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(Icons.queue_music,
-                        color: scheme.primary, size: 24),
+                    child: Icon(
+                      Icons.queue_music,
+                      color: scheme.primary,
+                      size: 24,
+                    ),
                   )
                 : CoverImage(
                     songPath: first.path,
@@ -892,7 +930,7 @@ class _PlaylistRow extends ConsumerWidget {
                   color: scheme.primary,
                   size: 22,
                 ),
-                title:   Text(tr('重命名歌单')),
+                title: Text(tr('重命名歌单')),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final name = await _promptPlaylistName(context, tr('重命名歌单'));
@@ -906,7 +944,7 @@ class _PlaylistRow extends ConsumerWidget {
                   color: const Color(0xFFEC4141),
                   size: 22,
                 ),
-                title:   Text(tr('删除歌单')),
+                title: Text(tr('删除歌单')),
                 onTap: () {
                   Navigator.pop(ctx);
                   confirmRemovePlaylist(context, ref, playlist);
@@ -934,7 +972,8 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
     final manager = ref.read(favoritesProvider.notifier);
 
     void onReorder(int oldIndex, int newIndex) {
-      if (newIndex < 0 || newIndex >= items.length || newIndex == oldIndex) return;
+      if (newIndex < 0 || newIndex >= items.length || newIndex == oldIndex)
+        return;
       final moved = items[oldIndex];
       final next = List.of(items)..removeAt(oldIndex);
       next.insert(newIndex.clamp(0, next.length), moved);
@@ -949,10 +988,8 @@ class _FavoriteCollectionsSection extends ConsumerWidget {
           itemCount: items.length,
           onReorder: onReorder,
           itemKey: (i) => ValueKey(items[i].key),
-          itemBuilder: (ctx, i) => _CollectionRow(
-            collection: items[i],
-            index: i,
-          ),
+          itemBuilder: (ctx, i) =>
+              _CollectionRow(collection: items[i], index: i),
         ),
         const SizedBox(height: 24),
       ],

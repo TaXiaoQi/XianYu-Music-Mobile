@@ -12,57 +12,76 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/i18n/i18n.dart';
 
 class RemoteLibraryPage extends ConsumerWidget {
-  const RemoteLibraryPage({super.key});
+  const RemoteLibraryPage({super.key, this.paneEmbedded = false});
+
+  /// 横屏右容器详情面板专用：无自带顶栏，返回与标题交给壳层顶栏
+  final bool paneEmbedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final state = ref.watch(remoteLibraryProvider);
 
+    final fab = PressableScale(
+      pressScale: 0.92,
+      child: FloatingActionButton.extended(
+        onPressed: () => _showSourceEditor(context, ref),
+        icon: const Icon(Icons.add),
+        label: Text(tr('添加 WebDAV 音乐库')),
+      ),
+    );
+    final content = RepaintBoundary(
+      child: Stack(
+        children: [
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 10),
+                child: Text(
+                  tr('挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              if (state.sources.isEmpty && !state.loading)
+                _buildEmptyHint(context, ref, scheme)
+              else
+                for (final source in state.sources) _SourceCard(source: source),
+              const SizedBox(height: 20),
+              _buildCacheCard(context, ref, state),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (paneEmbedded) {
+      return Scaffold(
+        backgroundColor: appScaffoldBackground(context, ref),
+        resizeToAvoidBottomInset: false,
+        floatingActionButton: fab,
+        body: content,
+      );
+    }
     return Scaffold(
       backgroundColor: appScaffoldBackground(context, ref),
       resizeToAvoidBottomInset: false,
-      floatingActionButton: PressableScale(
-        pressScale: 0.92,
-        child: FloatingActionButton.extended(
-          onPressed: () => _showSourceEditor(context, ref),
-          icon: const Icon(Icons.add),
-          label:   Text(tr('添加 WebDAV 音乐库')),
-        ),
-      ),
+      floatingActionButton: fab,
       body: Stack(
         children: [
           Padding(
             padding: EdgeInsets.only(top: GlassTopBar.height(context)),
-            child: RepaintBoundary(child: Stack(
-              children: [
-                ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 10),
-                      child: Text(
-                        tr('挂载 WebDAV 服务器上的音乐，同步后远程歌曲会加入本地曲库；播放时优先使用缓存，未缓存则在线流式播放'),
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                      ),
-                    ),
-                    if (state.sources.isEmpty && !state.loading)
-                      _buildEmptyHint(context, ref, scheme)
-                    else
-                      for (final source in state.sources)
-                        _SourceCard(source: source),
-                    const SizedBox(height: 20),
-                    _buildCacheCard(context, ref, state),
-                  ],
-                ),
-              ],
-            )),
+            child: content,
           ),
           Positioned(
-            top: 0, left: 0, right: 0,
+            top: 0,
+            left: 0,
+            right: 0,
             child: GlassTopBar(
               leading: const BackButton(),
-              title:   Text(tr('远程音乐库 (WebDAV)')),
+              title: Text(tr('远程音乐库 (WebDAV)')),
             ),
           ),
         ],
@@ -71,31 +90,45 @@ class RemoteLibraryPage extends ConsumerWidget {
   }
 
   Widget _buildEmptyHint(
-      BuildContext context, WidgetRef ref, ColorScheme scheme) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 36),
-        decoration: BoxDecoration(
-          color: appCardFill(context, ref),
-          borderRadius: BorderRadius.circular(16),
+    BuildContext context,
+    WidgetRef ref,
+    ColorScheme scheme,
+  ) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 36),
+    decoration: BoxDecoration(
+      color: appCardFill(context, ref),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      children: [
+        Icon(
+          Icons.cloud_off_outlined,
+          size: 44,
+          color: scheme.outline.withValues(alpha: 0.6),
         ),
-        child: Column(
-          children: [
-            Icon(Icons.cloud_off_outlined,
-                size: 44, color: scheme.outline.withValues(alpha: 0.6)),
-            const SizedBox(height: 12),
-            Text(tr('还没有远程音乐库'),
-                style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurfaceVariant)),
-            const SizedBox(height: 4),
-            Text(tr('点击下方按钮添加 WebDAV 服务器'),
-                style: TextStyle(fontSize: 12, color: scheme.outline)),
-          ],
+        const SizedBox(height: 12),
+        Text(
+          tr('还没有远程音乐库'),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: scheme.onSurfaceVariant,
+          ),
         ),
-      );
+        const SizedBox(height: 4),
+        Text(
+          tr('点击下方按钮添加 WebDAV 服务器'),
+          style: TextStyle(fontSize: 12, color: scheme.outline),
+        ),
+      ],
+    ),
+  );
 
   Widget _buildCacheCard(
-      BuildContext context, WidgetRef ref, RemoteLibraryState state) {
+    BuildContext context,
+    WidgetRef ref,
+    RemoteLibraryState state,
+  ) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
       decoration: BoxDecoration(
@@ -107,8 +140,10 @@ class RemoteLibraryPage extends ConsumerWidget {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.cached_outlined),
-            title:   Text(tr('远程音频缓存'),
-                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+            title: Text(
+              tr('远程音频缓存'),
+              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
+            ),
             subtitle: Text(
               '${state.cacheUsage.bytesText} · ${state.cacheUsage.files} 个文件（上限 2GB，超出自动淘汰）',
               style: const TextStyle(fontSize: 12),
@@ -126,7 +161,9 @@ class RemoteLibraryPage extends ConsumerWidget {
                           final ok = await _confirm(
                             context,
                             title: tr('清理远程缓存'),
-                            message: tr('将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。'),
+                            message: tr(
+                              '将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。',
+                            ),
                           );
                           if (ok != true) return;
                           try {
@@ -138,12 +175,15 @@ class RemoteLibraryPage extends ConsumerWidget {
                             }
                           } catch (e) {
                             if (context.mounted) {
-                              showXianYuToast(context, tr('清理失败：{e}', {'e': e}));
+                              showXianYuToast(
+                                context,
+                                tr('清理失败：{e}', {'e': e}),
+                              );
                             }
                           }
                         },
                   icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  label:   Text(tr('清理缓存')),
+                  label: Text(tr('清理缓存')),
                 ),
               ),
             ],
@@ -153,16 +193,22 @@ class RemoteLibraryPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _showSourceEditor(BuildContext context, WidgetRef ref,
-      {RemoteSourceInfo? editing}) {
+  Future<void> _showSourceEditor(
+    BuildContext context,
+    WidgetRef ref, {
+    RemoteSourceInfo? editing,
+  }) {
     return showSheetDialog<void>(
       context,
       (_) => _SourceEditorSheet(editing: editing),
     );
   }
 
-  Future<bool?> _confirm(BuildContext context,
-      {required String title, required String message}) {
+  Future<bool?> _confirm(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) {
     return showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -173,14 +219,14 @@ class RemoteLibraryPage extends ConsumerWidget {
             pressScale: 0.92,
             child: TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child:   Text(tr('取消')),
+              child: Text(tr('取消')),
             ),
           ),
           PressableScale(
             pressScale: 0.92,
             child: FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child:   Text(tr('确定')),
+              child: Text(tr('确定')),
             ),
           ),
         ],
@@ -218,63 +264,86 @@ class _SourceCard extends ConsumerWidget {
                   color: scheme.primary.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.cloud_outlined,
-                    size: 22, color: scheme.primary),
+                child: Icon(
+                  Icons.cloud_outlined,
+                  size: 22,
+                  color: scheme.primary,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(source.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w700)),
+                    Text(
+                      source.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       '${source.baseUrl}${source.rootPath == '/' ? '' : source.rootPath}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style:
-                          TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
               ),
               if (source.enabled)
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.primary.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(tr('已启用'),
-                      style: TextStyle(
-                          fontSize: 10.5,
-                          color: scheme.primary,
-                          fontWeight: FontWeight.w600)),
+                  child: Text(
+                    tr('已启用'),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 )
               else
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.outline.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(tr('已停用'),
-                      style: TextStyle(
-                          fontSize: 10.5, color: scheme.onSurfaceVariant)),
+                  child: Text(
+                    tr('已停用'),
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               PressableScale(
                 pressScale: 0.88,
                 child: PopupMenuButton<String>(
-                  icon: Icon(Icons.more_vert,
-                      size: 20, color: scheme.onSurfaceVariant),
+                  icon: Icon(
+                    Icons.more_vert,
+                    size: 20,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   onSelected: (v) => _onMenu(context, ref, v),
-                  itemBuilder: (_) =>   [
+                  itemBuilder: (_) => [
                     PopupMenuItem(value: 'edit', child: Text(tr('编辑'))),
                     PopupMenuItem(value: 'remove', child: Text(tr('删除'))),
                   ],
@@ -309,7 +378,8 @@ class _SourceCard extends ConsumerWidget {
                       ? const SizedBox(
                           width: 14,
                           height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.sync_outlined, size: 18),
                   label: Text(syncing ? tr('同步中…') : tr('同步')),
                 ),
@@ -321,7 +391,11 @@ class _SourceCard extends ConsumerWidget {
     );
   }
 
-  Future<void> _onMenu(BuildContext context, WidgetRef ref, String action) async {
+  Future<void> _onMenu(
+    BuildContext context,
+    WidgetRef ref,
+    String action,
+  ) async {
     if (action == 'edit') {
       await showSheetDialog<void>(
         context,
@@ -331,24 +405,24 @@ class _SourceCard extends ConsumerWidget {
       final ok = await showPredictiveDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title:   Text(tr('删除远程源')),
-          content: Text(
-              '将删除「${source.name}」及其在曲库中的全部远程歌曲（不删除服务器上的文件）。'),
+          title: Text(tr('删除远程源')),
+          content: Text('将删除「${source.name}」及其在曲库中的全部远程歌曲（不删除服务器上的文件）。'),
           actions: [
             PressableScale(
               pressScale: 0.92,
               child: TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child:   Text(tr('取消')),
+                child: Text(tr('取消')),
               ),
             ),
             PressableScale(
               pressScale: 0.92,
               child: FilledButton(
                 style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(ctx).colorScheme.error),
+                  backgroundColor: Theme.of(ctx).colorScheme.error,
+                ),
                 onPressed: () => Navigator.pop(ctx, true),
-                child:   Text(tr('删除')),
+                child: Text(tr('删除')),
               ),
             ),
           ],
@@ -371,8 +445,9 @@ class _SourceCard extends ConsumerWidget {
 
   Future<void> _sync(BuildContext context, WidgetRef ref) async {
     try {
-      final message =
-          await ref.read(remoteLibraryProvider.notifier).sync(source.id);
+      final message = await ref
+          .read(remoteLibraryProvider.notifier)
+          .sync(source.id);
       ref.read(libraryProvider.notifier).load();
       if (context.mounted) showXianYuToast(context, message);
     } catch (e) {
@@ -391,15 +466,19 @@ class _SourceEditorSheet extends ConsumerStatefulWidget {
 }
 
 class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.editing?.name ?? '');
-  late final TextEditingController _baseUrl =
-      TextEditingController(text: widget.editing?.baseUrl ?? '');
-  late final TextEditingController _username =
-      TextEditingController(text: widget.editing?.username ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.editing?.name ?? '',
+  );
+  late final TextEditingController _baseUrl = TextEditingController(
+    text: widget.editing?.baseUrl ?? '',
+  );
+  late final TextEditingController _username = TextEditingController(
+    text: widget.editing?.username ?? '',
+  );
   final TextEditingController _password = TextEditingController();
-  late final TextEditingController _rootPath =
-      TextEditingController(text: widget.editing?.rootPath ?? '/');
+  late final TextEditingController _rootPath = TextEditingController(
+    text: widget.editing?.rootPath ?? '/',
+  );
   bool _obscurePassword = true;
   bool _testing = false;
   bool _saving = false;
@@ -427,7 +506,9 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
     });
     try {
       final service = ref.read(remoteLibraryServiceProvider);
-      final rootPath = _rootPath.text.trim().isEmpty ? '/' : _rootPath.text.trim();
+      final rootPath = _rootPath.text.trim().isEmpty
+          ? '/'
+          : _rootPath.text.trim();
       if (_isEditing && _password.text.isEmpty) {
         await service.testSavedSource(
           widget.editing!.id,
@@ -477,7 +558,9 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
       context,
       (_) => _RemoteDirBrowserSheet(
         fetcher: fetcher,
-        initialPath: _rootPath.text.trim().isEmpty ? '/' : _rootPath.text.trim(),
+        initialPath: _rootPath.text.trim().isEmpty
+            ? '/'
+            : _rootPath.text.trim(),
       ),
       barrierDismissible: false,
     );
@@ -542,18 +625,25 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
               ),
             ),
             const SizedBox(height: 14),
-            Text(_isEditing ? tr('编辑远程音乐库') : tr('添加 WebDAV 音乐库'),
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(
+              _isEditing ? tr('编辑远程音乐库') : tr('添加 WebDAV 音乐库'),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 16),
             _field(controller: _name, label: tr('名称'), hint: tr('如：我的 NAS 音乐')),
             const SizedBox(height: 12),
             _field(
-                controller: _baseUrl,
-                label: tr('服务器地址'),
-                hint: 'https://dav.example.com/dav',
-                keyboard: TextInputType.url),
+              controller: _baseUrl,
+              label: tr('服务器地址'),
+              hint: 'https://dav.example.com/dav',
+              keyboard: TextInputType.url,
+            ),
             const SizedBox(height: 12),
-            _field(controller: _username, label: tr('用户名（可选）'), hint: 'username'),
+            _field(
+              controller: _username,
+              label: tr('用户名（可选）'),
+              hint: 'username',
+            ),
             const SizedBox(height: 12),
             _field(
               controller: _password,
@@ -565,18 +655,19 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
             ),
             const SizedBox(height: 12),
             _field(
-                controller: _rootPath,
-                label: tr('根目录'),
-                hint: '/',
-                keyboard: TextInputType.text,
-                suffix: PressableScale(
-                  pressScale: 0.88,
-                  child: IconButton(
-                    icon: const Icon(Icons.folder_open_outlined, size: 20),
-                    tooltip: tr('浏览目录'),
-                    onPressed: _browseRoot,
-                  ),
-                )),
+              controller: _rootPath,
+              label: tr('根目录'),
+              hint: '/',
+              keyboard: TextInputType.text,
+              suffix: PressableScale(
+                pressScale: 0.88,
+                child: IconButton(
+                  icon: const Icon(Icons.folder_open_outlined, size: 20),
+                  tooltip: tr('浏览目录'),
+                  onPressed: _browseRoot,
+                ),
+              ),
+            ),
             const SizedBox(height: 6),
             Text(
               tr('从根目录开始递归扫描音频文件（含 ape/wv/dsf/dff，远程 DSD 需 USB 独占直通）'),
@@ -584,8 +675,10 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
-              Text(_error!,
-                  style: TextStyle(fontSize: 12.5, color: scheme.error)),
+              Text(
+                _error!,
+                style: TextStyle(fontSize: 12.5, color: scheme.error),
+              ),
             ],
             const SizedBox(height: 16),
             Row(
@@ -599,7 +692,8 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.wifi_tethering, size: 18),
                       label: Text(_testing ? tr('测试中…') : tr('测试连接')),
                     ),
@@ -615,7 +709,8 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
                           : const Icon(Icons.check, size: 18),
                       label: Text(_saving ? tr('保存中…') : tr('保存')),
                     ),
@@ -659,8 +754,10 @@ class _SourceEditorSheetState extends ConsumerState<_SourceEditorSheet> {
             ? PressableScale(
                 pressScale: 0.88,
                 child: IconButton(
-                  icon: Icon(obscure ? Icons.visibility_off : Icons.visibility,
-                      size: 19),
+                  icon: Icon(
+                    obscure ? Icons.visibility_off : Icons.visibility,
+                    size: 19,
+                  ),
                   onPressed: onToggleObscure,
                 ),
               )
@@ -704,8 +801,7 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
       final entries = await widget.fetcher(_path);
       if (!mounted) return;
       final dirs = entries.where((e) => e.isDir).toList()
-        ..sort((a, b) =>
-            a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       setState(() => _dirs = dirs);
     } catch (e) {
       if (!mounted) return;
@@ -735,9 +831,13 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(tr('选择根目录'),
-                  style:
-                      const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              Text(
+                tr('选择根目录'),
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -748,10 +848,12 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
                         visualDensity: VisualDensity.compact,
                         icon: const Icon(Icons.arrow_upward, size: 20),
                         tooltip: tr('上级目录'),
-                        onPressed: _loading ? null : () {
-                          setState(() => _path = _parentPath);
-                          _load();
-                        },
+                        onPressed: _loading
+                            ? null
+                            : () {
+                                setState(() => _path = _parentPath);
+                                _load();
+                              },
                       ),
                     ),
                   Expanded(
@@ -760,7 +862,9 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 12.5, color: scheme.onSurfaceVariant),
+                        fontSize: 12.5,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
@@ -768,59 +872,68 @@ class _RemoteDirBrowserSheetState extends State<_RemoteDirBrowserSheet> {
             ],
           ),
         ),
-        Flexible(
-          child: SizedBox(
-            width: double.maxFinite,
-            height: 320,
-            child: _loading
-                ? const Center(
-                    child: SizedBox(
-                        width: 26,
-                        height: 26,
-                        child: CircularProgressIndicator(strokeWidth: 2.4)))
-                : _error != null
-                    ? Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Center(
-                          child: Text(_error!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 12.5, color: scheme.error)),
+        // 固定高列表区：外层统一滚动后无需 Flexible 包裹（无界 Column 下
+        // flex 会抛异常），SizedBox 直接给出 320 高视口
+        SizedBox(
+          width: double.maxFinite,
+          height: 320,
+          child: _loading
+              ? const Center(
+                  child: SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                )
+              : _error != null
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Center(
+                    child: Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 12.5, color: scheme.error),
+                    ),
+                  ),
+                )
+              : _dirs.isEmpty
+              ? Center(
+                  child: Text(
+                    tr('此目录下没有子目录'),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  itemCount: _dirs.length,
+                  itemBuilder: (_, i) {
+                    final dir = _dirs[i];
+                    return PressableScale(
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(
+                          Icons.folder_outlined,
+                          size: 22,
+                          color: scheme.primary,
                         ),
-                      )
-                    : _dirs.isEmpty
-                        ? Center(
-                            child: Text(tr('此目录下没有子目录'),
-                                style: TextStyle(
-                                    fontSize: 12.5,
-                                    color: scheme.onSurfaceVariant)),
-                          )
-                        : ListView.builder(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 8),
-                            itemCount: _dirs.length,
-                            itemBuilder: (_, i) {
-                              final dir = _dirs[i];
-                              return PressableScale(
-                                child: ListTile(
-                                  dense: true,
-                                  leading: Icon(Icons.folder_outlined,
-                                      size: 22, color: scheme.primary),
-                                  title: Text(dir.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 14)),
-                                  trailing: const Icon(Icons.chevron_right,
-                                      size: 20),
-                                  onTap: () {
-                                    setState(() => _path = dir.remotePath);
-                                    _load();
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-          ),
+                        title: Text(
+                          dir.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        trailing: const Icon(Icons.chevron_right, size: 20),
+                        onTap: () {
+                          setState(() => _path = dir.remotePath);
+                          _load();
+                        },
+                      ),
+                    );
+                  },
+                ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),

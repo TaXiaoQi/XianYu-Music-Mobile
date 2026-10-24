@@ -11,6 +11,7 @@ import '../theme/theme_icon.dart';
 import '../navigation/shell.dart'
     show
         kLandscapeBrandShortMinRail,
+        landscapeDetailProvider,
         landscapeDownloadOpenProvider,
         landscapeLibraryProvider,
         landscapeLibraryQueryProvider,
@@ -88,7 +89,11 @@ Widget landscapeRailLogo(
 
 /// 固定带裸品牌：直接画在带上（无胶囊底），rail 宽两级联动（全称/
 /// 隐藏，阈值取短版下限）。左缘在 safe + 34，视觉靠带内
-Widget? landscapeBrandLabel(WidgetRef ref, BuildContext context, double railWidth) {
+Widget? landscapeBrandLabel(
+  WidgetRef ref,
+  BuildContext context,
+  double railWidth,
+) {
   // 固定带裸品牌无玻璃卡内边距，rail ≥ 短版阈值即容全称；
   // 浮动卡的全称阈值(190)在此过保守，150-190 区间也应显示全称
   if (railWidth < kLandscapeBrandShortMinRail) return null;
@@ -121,12 +126,14 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
     final playlistOpenId = ref.watch(landscapePlaylistOpenProvider);
     final libSel = ref.watch(landscapeLibraryProvider);
     final isLibPane = libSel != null;
-    final localSearchActive =
-        ref.watch(landscapeLibrarySearchActiveProvider);
+    final detailOpen = ref.watch(landscapeDetailProvider) != null;
+    final localSearchActive = ref.watch(landscapeLibrarySearchActiveProvider);
     final searchOpen = ref.watch(landscapeSearchOpenProvider);
-    final canBack = searchOpen ||
+    final canBack =
+        searchOpen ||
         playlistOpenId != null ||
         downloadOpen ||
+        detailOpen ||
         libSel != null ||
         currentIndex != 0;
 
@@ -154,6 +161,12 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
       final dl = ref.read(landscapeDownloadOpenProvider.notifier);
       if (dl.state) {
         dl.state = false;
+        return;
+      }
+      // 二级详情先退到一级面板，再退导航分支
+      final detail = ref.read(landscapeDetailProvider.notifier);
+      if (detail.state != null) {
+        detail.state = null;
         return;
       }
       final lib = ref.read(landscapeLibraryProvider.notifier);
@@ -188,40 +201,38 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
         title: (isLibPane && localSearchActive)
             ? const _LandscapeLibrarySearchField(floating: true)
             : searchOpen
-                  ? const _LandscapeSearchField(floating: true)
-                  : FloatingSearchBar(
-                      onTap: () {
-                        final inLibPane =
-                            ref.read(landscapeLibraryProvider) != null;
-                        if (inLibPane) {
-                          ref
-                                  .read(landscapeLibraryQueryProvider.notifier)
-                                  .state =
-                              '';
-                          ref
-                                  .read(
-                                    landscapeLibrarySearchActiveProvider
-                                        .notifier,
-                                  )
-                                  .state =
-                              true;
-                        } else {
-                          ref.read(landscapeSearchOpenProvider.notifier).state =
-                              true;
-                        }
-                      },
-                      onRecognize: () => context.push('/recognize'),
-                    ),
+            ? const _LandscapeSearchField(floating: true)
+            : FloatingSearchBar(
+                onTap: () {
+                  final inLibPane = ref.read(landscapeLibraryProvider) != null;
+                  if (inLibPane) {
+                    ref.read(landscapeLibraryQueryProvider.notifier).state = '';
+                    ref
+                            .read(landscapeLibrarySearchActiveProvider.notifier)
+                            .state =
+                        true;
+                  } else {
+                    ref.read(landscapeSearchOpenProvider.notifier).state = true;
+                  }
+                },
+                onRecognize: () => context.push('/recognize'),
+              ),
         actions: [
           IconButton(
-            icon: themeSlotWidget(ref, 'landscape.wallpaper',
-                fallback: const SkinIcon()),
+            icon: themeSlotWidget(
+              ref,
+              'landscape.wallpaper',
+              fallback: const SkinIcon(),
+            ),
             tooltip: tr('皮肤'),
             onPressed: () => context.push('/wallpaper'),
           ),
           IconButton(
-            icon: themeSlotIcon(ref, 'landscape.settings',
-                fallback: Icons.settings_outlined),
+            icon: themeSlotIcon(
+              ref,
+              'landscape.settings',
+              fallback: Icons.settings_outlined,
+            ),
             tooltip: tr('设置'),
             onPressed: () => context.push('/settings'),
           ),
@@ -254,22 +265,28 @@ class LandscapeGlobalTopBar extends ConsumerWidget {
             child: (isLibPane && localSearchActive)
                 ? const _LandscapeLibrarySearchField()
                 : searchOpen
-                    ? const _LandscapeSearchField()
-                    : const LandscapeSearchBar(),
+                ? const _LandscapeSearchField()
+                : const LandscapeSearchBar(),
           ),
         ),
       ),
       actions: [
         IconButton(
-          icon: themeSlotWidget(ref, 'landscape.wallpaper',
-              fallback: const SkinIcon()),
+          icon: themeSlotWidget(
+            ref,
+            'landscape.wallpaper',
+            fallback: const SkinIcon(),
+          ),
           tooltip: tr('皮肤'),
           onPressed: () => context.push('/wallpaper'),
         ),
         const SizedBox(width: 8),
         IconButton(
-          icon: themeSlotIcon(ref, 'landscape.settings',
-              fallback: Icons.settings_outlined),
+          icon: themeSlotIcon(
+            ref,
+            'landscape.settings',
+            fallback: Icons.settings_outlined,
+          ),
           tooltip: tr('设置'),
           onPressed: () => context.push('/settings'),
         ),
@@ -290,8 +307,9 @@ class _LandscapeSearchField extends ConsumerStatefulWidget {
 }
 
 class _LandscapeSearchFieldState extends ConsumerState<_LandscapeSearchField> {
-  late final TextEditingController _ctrl =
-      ref.read(landscapeSearchCtrlProvider);
+  late final TextEditingController _ctrl = ref.read(
+    landscapeSearchCtrlProvider,
+  );
 
   int _pendingCharCount = 0;
   int _lastQueryLength = 0;
@@ -394,8 +412,10 @@ class _LandscapeSearchFieldState extends ConsumerState<_LandscapeSearchField> {
                 onTap: () => context.push('/recognize'),
                 behavior: HitTestBehavior.opaque,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 7,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEC4141).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
@@ -436,8 +456,9 @@ class _LandscapeLibrarySearchField extends ConsumerStatefulWidget {
 
 class _LandscapeLibrarySearchFieldState
     extends ConsumerState<_LandscapeLibrarySearchField> {
-  late final TextEditingController _ctrl =
-      ref.read(landscapeLibrarySearchCtrlProvider);
+  late final TextEditingController _ctrl = ref.read(
+    landscapeLibrarySearchCtrlProvider,
+  );
 
   @override
   void initState() {
@@ -491,7 +512,12 @@ class _LandscapeLibrarySearchFieldState
                 onSubmitted: (_) =>
                     FocusManager.instance.primaryFocus?.unfocus(),
                 decoration: InputDecoration(
-                  hintText: tr('搜索本地歌曲、歌手、专辑'),
+                  // 网盘面板（1）提示语与本地曲库区分
+                  hintText: tr(
+                    ref.watch(landscapeLibraryProvider) == 1
+                        ? '搜索网盘歌曲、歌手、专辑'
+                        : '搜索本地歌曲、歌手、专辑',
+                  ),
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                   border: InputBorder.none,

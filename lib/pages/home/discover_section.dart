@@ -92,7 +92,9 @@ class StatsSummaryCard extends ConsumerWidget {
               icon: Icons.audiotrack_outlined,
               themeSlot: 'mine.stat_count',
               label: tr('今日首数'),
-              value: data == null ? '—' : tr('{n} 首', {'n': data.todayPlayCount}),
+              value: data == null
+                  ? '—'
+                  : tr('{n} 首', {'n': data.todayPlayCount}),
             ),
           ),
         ],
@@ -101,10 +103,10 @@ class StatsSummaryCard extends ConsumerWidget {
   }
 
   Widget _divider(ColorScheme scheme) => Container(
-        width: 1,
-        height: 34,
-        color: scheme.onSurface.withValues(alpha: 0.06),
-      );
+    width: 1,
+    height: 34,
+    color: scheme.onSurface.withValues(alpha: 0.06),
+  );
 
   Widget _statCell(
     ColorScheme scheme,
@@ -116,8 +118,13 @@ class StatsSummaryCard extends ConsumerWidget {
   }) {
     return Column(
       children: [
-        themeSlotIcon(ref, themeSlot,
-            fallback: icon, size: 19, color: scheme.primary),
+        themeSlotIcon(
+          ref,
+          themeSlot,
+          fallback: icon,
+          size: 19,
+          color: scheme.primary,
+        ),
         const SizedBox(height: 6),
         Text(
           value,
@@ -130,8 +137,7 @@ class StatsSummaryCard extends ConsumerWidget {
           label,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-              fontSize: 11, color: scheme.onSurfaceVariant),
+          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
         ),
       ],
     );
@@ -153,21 +159,35 @@ class _DailyCard extends ConsumerWidget {
       return _CardContainer(
         onTap: hasError
             ? () => ref.invalidate(dailyRecommendProvider)
-            : () => context.push(notLoggedIn ? '/account' : '/plugin-manage'),
+            : () {
+                // 横屏：登录开账号面板，插件走设置面板音源分类；竖屏走路由
+                if (notLoggedIn) {
+                  if (useLandscape(ref)) {
+                    ref.read(landscapeAccountOpenProvider.notifier).state =
+                        true;
+                  } else {
+                    context.push('/account');
+                  }
+                } else if (useLandscape(ref)) {
+                  ref.read(landscapeSettingsCategoryProvider.notifier).state =
+                      '/plugin-manage';
+                  context.push('/settings');
+                } else {
+                  context.push('/plugin-manage');
+                }
+              },
         child: Row(
           children: [
-            Icon(Icons.auto_awesome_outlined,
-                size: 22, color: scheme.primary),
+            Icon(Icons.auto_awesome_outlined, size: 22, color: scheme.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
                 hasError
                     ? tr('每日推荐获取失败，点击重试')
                     : notLoggedIn
-                        ? tr('登录后解锁每日推荐')
-                        : tr('添加本地音乐或安装音源插件后再试'),
-                style: TextStyle(
-                    fontSize: 13, color: scheme.onSurfaceVariant),
+                    ? tr('登录后解锁每日推荐')
+                    : tr('添加本地音乐或安装音源插件后再试'),
+                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
               ),
             ),
             Icon(
@@ -205,11 +225,16 @@ class _DailyCard extends ConsumerWidget {
     );
   }
 
-  Widget _dailyRows(ColorScheme scheme, List<DailyRecommendItem> items,
-      bool landscape, double maxWidth) {
+  Widget _dailyRows(
+    ColorScheme scheme,
+    List<DailyRecommendItem> items,
+    bool landscape,
+    double maxWidth,
+  ) {
     // 列宽自适应（约 200 逻辑像素一列，1~3 列封顶），按列填充各列高度均衡
-    final columns =
-        landscape ? (maxWidth / 200).floor().clamp(1, 3).toInt() : 1;
+    final columns = landscape
+        ? (maxWidth / 200).floor().clamp(1, 3).toInt()
+        : 1;
     if (columns <= 1) {
       return Column(
         children: [
@@ -229,9 +254,11 @@ class _DailyCard extends ConsumerWidget {
           Expanded(
             child: Column(
               children: [
-                for (var i = c * per;
-                    i < (c + 1) * per && i < items.length;
-                    i++)
+                for (
+                  var i = c * per;
+                  i < (c + 1) * per && i < items.length;
+                  i++
+                )
                   Padding(
                     padding: EdgeInsets.only(
                       bottom: i == items.length - 1 ? 0 : 8,
@@ -259,16 +286,17 @@ class _DailyCard extends ConsumerWidget {
                 item.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 1),
               Text(
                 item.reason.isNotEmpty ? item.reason : item.artist,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    fontSize: 11, color: scheme.onSurfaceVariant),
+                style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
               ),
             ],
           ),
@@ -302,7 +330,16 @@ class _TopListsBody extends ConsumerWidget {
     }
     if (state.noSources) {
       return _CardContainer(
-        onTap: () => context.push('/plugin-manage'),
+        onTap: () {
+          // 横屏：走设置面板音源分类；竖屏走路由
+          if (useLandscape(ref)) {
+            ref.read(landscapeSettingsCategoryProvider.notifier).state =
+                '/plugin-manage';
+            context.push('/settings');
+          } else {
+            context.push('/plugin-manage');
+          }
+        },
         child: Row(
           children: [
             Icon(Icons.extension_outlined, size: 22, color: scheme.primary),
@@ -508,10 +545,7 @@ class _CardContainer extends ConsumerWidget {
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(13),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            child: child,
-          ),
+          child: Container(padding: const EdgeInsets.all(14), child: child),
         ),
       ),
     );

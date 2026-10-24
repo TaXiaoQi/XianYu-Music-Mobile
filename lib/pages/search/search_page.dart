@@ -20,6 +20,7 @@ import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_host_fallback.dart';
@@ -319,6 +320,13 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
           );
 
     if (widget.embedded) {
+      // 横屏搜索面板：悬浮态 tab 行套气泡胶囊（与竖屏悬浮/收藏面板同款），
+      // 固定态保持裸排贴玻璃带下
+      final floating = ref.watch(
+        settingsProvider.select(
+          (s) => s.valueOrNull?.floatingSearchBar ?? false,
+        ),
+      );
       return Scaffold(
         backgroundColor: appScaffoldBackground(context, ref),
         resizeToAvoidBottomInset: false,
@@ -326,8 +334,18 @@ class _SearchResultPageState extends ConsumerState<SearchResultPage>
           padding: EdgeInsets.only(top: GlassTopBar.height(context)),
           child: Column(
             children: [
-              tabBar,
-              _buildSourceBar(),
+              if (floating) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: FloatingTabPill(child: tabBar),
+                ),
+                const SizedBox(height: 10),
+                _buildSourceBar(floating: true),
+              ] else ...[
+                tabBar,
+                _buildSourceBar(),
+              ],
               Expanded(child: contentArea),
             ],
           ),

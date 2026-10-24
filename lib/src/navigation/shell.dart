@@ -35,6 +35,12 @@ import '../widgets/chrome_glass_frame.dart';
 import '../widgets/custom_background.dart' show PageWallpaperScope;
 import '../../pages/library/library_page.dart';
 import '../../pages/library/library_folder_page.dart';
+import '../../pages/library/song_list_page.dart';
+import '../../pages/home/online_detail_page.dart';
+import '../library/library_provider.dart' show Song;
+import '../player/player_provider.dart' show QueueItem;
+import '../../pages/cloud/cloud_disk_page.dart';
+import '../cloud/cloud_registry.dart';
 import '../../pages/favorites/favorites_page.dart';
 import '../../pages/recent/recent_page.dart';
 import '../../pages/playlist/playlists_page.dart';
@@ -45,6 +51,10 @@ import '../widgets/glass_appbar.dart' show GlassTopBar;
 import '../widgets/landscape_top_bar.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/download/download_page.dart';
+import '../../pages/settings/folder_picker_page.dart';
+import '../../pages/remote/remote_library_page.dart';
+import '../../pages/cloud/cloud_bind_page.dart';
+import '../../pages/cloud/cloud_folder_picker_page.dart';
 import '../../pages/home/daily_recommend_page.dart';
 import '../../pages/home/top_lists_page.dart';
 import '../../pages/home/recommend_sheets_page.dart';
@@ -104,11 +114,70 @@ final landscapePlaylistOpenProvider = StateProvider<String?>((ref) => null);
 
 final landscapeContentPathProvider = StateProvider<String?>((ref) => null);
 
-final musicLibraryPageKeys = List<GlobalKey>.generate(5, (_) => GlobalKey());
+/// 横屏右容器二级详情载荷：从一级面板（本地/网盘/搜索等）下钻的
+/// 歌手/专辑/歌单详情内嵌右容器展示（替换当前面板内容，返回即清空
+/// 回到一级面板）；竖屏仍走原路由全屏页，不受影响。
+sealed class LandscapeDetail {
+  const LandscapeDetail();
+}
+
+/// 本地歌曲列表（本地库歌手/专辑下钻、搜索页本地命中下钻）
+class LandscapeSongListDetail extends LandscapeDetail {
+  const LandscapeSongListDetail({required this.title, required this.loader});
+
+  final String title;
+  final Future<List<Song>> Function() loader;
+}
+
+/// 在线歌手/专辑/歌单/榜单详情
+class LandscapeOnlineDetail extends LandscapeDetail {
+  const LandscapeOnlineDetail(this.args);
+
+  final OnlineDetailArgs args;
+}
+
+/// 网盘歌手/专辑分组下钻
+class LandscapeCloudGroupDetail extends LandscapeDetail {
+  const LandscapeCloudGroupDetail({required this.title, required this.items});
+
+  final String title;
+  final List<QueueItem> items;
+}
+
+/// 本地扫描目录勾选（文件夹页「添加目录」下钻）
+class LandscapeFolderPickerDetail extends LandscapeDetail {
+  const LandscapeFolderPickerDetail();
+}
+
+/// 远程音乐库管理（文件夹页左列入口下钻）
+class LandscapeRemoteLibraryDetail extends LandscapeDetail {
+  const LandscapeRemoteLibraryDetail();
+}
+
+/// 音源管理（文件夹页/网盘页/网盘浏览器入口下钻）
+class LandscapeCloudManageDetail extends LandscapeDetail {
+  const LandscapeCloudManageDetail();
+}
+
+/// 网盘已选文件夹管理（文件夹页网盘树「选择文件夹」下钻）
+class LandscapeCloudPickerDetail extends LandscapeDetail {
+  const LandscapeCloudPickerDetail({
+    required this.providerId,
+    required this.accountId,
+  });
+
+  final String providerId;
+  final String accountId;
+}
+
+final landscapeDetailProvider = StateProvider<LandscapeDetail?>((ref) => null);
+
+final musicLibraryPageKeys = List<GlobalKey>.generate(6, (_) => GlobalKey());
 
 final landscapePaneOpenProvider = Provider<bool>((ref) {
   return ref.watch(landscapeAccountOpenProvider) ||
       ref.watch(landscapeDownloadOpenProvider) ||
+      ref.watch(landscapeDetailProvider) != null ||
       ref.watch(landscapePlaylistOpenProvider) != null ||
       ref.watch(landscapeSearchOpenProvider) ||
       ref.watch(landscapeContentPathProvider) != null;
@@ -174,8 +243,9 @@ class ShellTopBarOverride {
   final List<ShellTopBarAction> actions;
 }
 
-final shellTopBarOverrideProvider =
-    StateProvider<ShellTopBarOverride?>((ref) => null);
+final shellTopBarOverrideProvider = StateProvider<ShellTopBarOverride?>(
+  (ref) => null,
+);
 
 /// mini 播放条页面黑名单计数：混入 HideMiniBar 的页面（设置、搜索等）
 /// 持有期间 >0，全局播放条在该页面落定后隐藏、离开后恢复
@@ -220,14 +290,14 @@ class _AppShellState extends ConsumerState<AppShell> {
       // 避免每次打开 app 都对服务端做一轮推拉（防污染 + 省流量）
       await ref.read(authProvider.notifier).whenRestored;
       if (!mounted) return;
-      ref.listenManual<bool>(
-        authProvider.select((s) => s.user != null),
-        (prev, next) {
-          if (prev == false && next == true && mounted) {
-            ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
-          }
-        },
-      );
+      ref.listenManual<bool>(authProvider.select((s) => s.user != null), (
+        prev,
+        next,
+      ) {
+        if (prev == false && next == true && mounted) {
+          ref.read(syncProvider.notifier).syncOnLoginSuccess(context);
+        }
+      });
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_notificationsChecked) return;
@@ -567,6 +637,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       final download = ref.read(landscapeDownloadOpenProvider);
       final account = ref.read(landscapeAccountOpenProvider);
       final content = ref.read(landscapeContentPathProvider);
+      final detail = ref.read(landscapeDetailProvider);
       void closeAll() {
         ref.read(landscapeLibraryProvider.notifier).state = null;
         ref.read(landscapeSearchOpenProvider.notifier).state = false;
@@ -575,6 +646,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         ref.read(landscapeAccountOpenProvider.notifier).state = false;
         ref.read(landscapePlaylistOpenProvider.notifier).state = null;
         ref.read(landscapeContentPathProvider.notifier).state = null;
+        ref.read(landscapeDetailProvider.notifier).state = null;
       }
 
       final back = _rotateBackPath;
@@ -590,6 +662,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         if (lib != null) {
           const libRoutes = [
             '/library',
+            '/cloud-disk',
             '/favorites',
             '/recent',
             '/playlists',
@@ -600,6 +673,29 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
           context.push(searchResults ? '/search/result' : '/search');
         } else if (content != null) {
           context.push(content);
+        } else if (detail != null) {
+          // 二级详情恢复为竖屏路由页（网盘分组无对应路由，退回网盘页）
+          switch (detail) {
+            case LandscapeSongListDetail d:
+              context.push(
+                '/song-list',
+                extra: SongListArgs(title: d.title, loader: d.loader),
+              );
+            case LandscapeOnlineDetail d:
+              context.push('/online-detail', extra: d.args);
+            case LandscapeCloudGroupDetail _:
+              context.push('/cloud-disk');
+            case LandscapeFolderPickerDetail _:
+              context.push('/library/folders');
+            case LandscapeRemoteLibraryDetail _:
+              context.push('/remote-library');
+            case LandscapeCloudManageDetail _:
+              context.push('/cloud');
+            case LandscapeCloudPickerDetail d:
+              context.push(
+                '/cloud/folder-picker/${d.providerId}?account=${d.accountId}',
+              );
+          }
         } else if (playlist != null) {
           context.push('/playlist/$playlist');
         } else if (download) {
@@ -613,6 +709,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     final path = _routerTopPath(_router.routerDelegate.currentConfiguration);
     const libRoutes = [
       '/library',
+      '/cloud-disk',
       '/favorites',
       '/recent',
       '/playlists',
@@ -677,6 +774,50 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       while (context.canPop()) {
         context.pop();
       }
+    } else if (path == '/song-list' || path == '/online-detail') {
+      // 竖屏打开的二级详情旋进横屏：转二级面板（载荷从路由 extra 取）
+      final extra = _router.routerDelegate.currentConfiguration.extra;
+      if (extra is SongListArgs) {
+        ref.read(landscapeDetailProvider.notifier).state =
+            LandscapeSongListDetail(title: extra.title, loader: extra.loader);
+      } else if (extra is OnlineDetailArgs) {
+        ref.read(landscapeDetailProvider.notifier).state =
+            LandscapeOnlineDetail(extra);
+      }
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/remote-library') {
+      _rotateBackPath = path;
+      ref.read(landscapeDetailProvider.notifier).state =
+          const LandscapeRemoteLibraryDetail();
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path == '/cloud') {
+      _rotateBackPath = path;
+      ref.read(landscapeDetailProvider.notifier).state =
+          const LandscapeCloudManageDetail();
+      while (context.canPop()) {
+        context.pop();
+      }
+    } else if (path.startsWith('/cloud/folder-picker/')) {
+      _rotateBackPath = path;
+      // _routerTopPath 只含 path 无 query，account 从完整 uri 取
+      final account = _router
+          .routerDelegate
+          .currentConfiguration
+          .uri
+          .queryParameters['account'];
+      ref
+          .read(landscapeDetailProvider.notifier)
+          .state = LandscapeCloudPickerDetail(
+        providerId: path.split('/').last,
+        accountId: account ?? '',
+      );
+      while (context.canPop()) {
+        context.pop();
+      }
     } else if (!_noRotateRedirectPaths.contains(path) && path != '/settings') {
       _rotateBackPath = path;
       while (context.canPop()) {
@@ -724,11 +865,12 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         true;
 
     // 顶部导航模式：不出底栏/侧栏，页面切换由顶栏右侧导航球承担
-    final navTop = !landscape &&
-        ref.watch(settingsProvider.select(
-          (s) => s.valueOrNull?.navBarPosition,
-        )) ==
-        NavBarPosition.top;
+    final navTop =
+        !landscape &&
+        ref.watch(
+              settingsProvider.select((s) => s.valueOrNull?.navBarPosition),
+            ) ==
+            NavBarPosition.top;
 
     final libSel = ref.watch(landscapeLibraryProvider);
 
@@ -748,9 +890,20 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
         ? ref.watch(landscapeContentPathProvider)
         : null;
 
+    final landscapeDetail = landscape
+        ? ref.watch(landscapeDetailProvider)
+        : null;
+
     final Widget? landPane;
     final Object? landPaneTrigger;
-    if (accountOpen) {
+    // 二级详情（歌手/专辑/歌单/网盘分组）从一级面板内下钻，优先级最高：
+    // 覆盖当前面板展示，返回即清空回到一级面板
+    if (landscapeDetail != null) {
+      landPaneTrigger = 'detail:${identityHashCode(landscapeDetail)}';
+      landPane = EmbeddedShellScope(
+        child: _LandscapeDetailPane(detail: landscapeDetail),
+      );
+    } else if (accountOpen) {
       landPaneTrigger = 'account';
       landPane = EmbeddedShellScope(
         child: _AccountPane(
@@ -825,6 +978,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
               const _MusicLibraryPane(index: 2),
               const _MusicLibraryPane(index: 3),
               const _MusicLibraryPane(index: 4),
+              const _MusicLibraryPane(index: 5),
             ],
           ],
         ),
@@ -1216,9 +1370,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                 curve: Curves.easeOutCubic,
                 // 液态 shader 0.01 保温防重显黑闪；毛玻璃归零停绘，
                 // 淡入首绘在极低 alpha 下防 saveLayer 内重采样闪白
-                opacity: (floatingSearchBar &&
-                        !hidden &&
-                        !_chromeRecovering)
+                opacity: (floatingSearchBar && !hidden && !_chromeRecovering)
                     ? 1.0
                     : glassHiddenOpacityFloor(ref),
                 child: AnimatedScale(

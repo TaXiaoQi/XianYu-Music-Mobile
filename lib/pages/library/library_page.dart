@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart'
-    show compute;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,10 +8,13 @@ import 'package:go_router/go_router.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
+import '../../src/cloud/cloud_registry.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/player/player_provider.dart';
+import '../../src/plugin/plugin_provider.dart';
 import '../../src/widgets/cover_image.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/glass_appbar.dart';
@@ -24,11 +26,16 @@ import '../../src/widgets/batch_action_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/letter_index_song_list.dart';
+import '../download/download_page.dart';
 import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
 
 class LibraryPage extends ConsumerStatefulWidget {
-  const LibraryPage({super.key, this.initialTab = 0, this.paneEmbedded = false});
+  const LibraryPage({
+    super.key,
+    this.initialTab = 0,
+    this.paneEmbedded = false,
+  });
 
   final int initialTab;
 
@@ -43,7 +50,7 @@ class LibraryPage extends ConsumerStatefulWidget {
 }
 
 class _LibraryPageState extends ConsumerState<LibraryPage>
-    with SingleTickerProviderStateMixin, HidesShellChrome {
+    with TickerProviderStateMixin, HidesShellChrome {
   late final TabController _tab;
 
   final TextEditingController _searchCtrl = TextEditingController();
@@ -55,6 +62,31 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
   _SongSort _sort = _SongSort.none;
   bool _hideDuplicates = false;
+
+  // 顶栏「本地/下载」主切换：0=本地曲库，1=下载（下载管理内容内嵌本页）。
+  // 显隐规则：有启用插件或已绑定网盘才展示该行（两者皆无时不占顶栏）。
+  // 样式与下方「全部/歌手/专辑」同款：等宽分段 TabBar，二等分铺满整行。
+  int _mainTab = 0;
+  late final TabController _mainTabCtrl;
+
+  void _setMainTab(int i) {
+    if (_mainTab == i) return;
+    setState(() => _mainTab = i);
+    // 批量模式是本地曲库专属，切到下载时退出
+    if (i == 1 && _batch.batchMode) _batch.exit();
+  }
+
+  Widget _buildMainSwitchTabBar() {
+    return TabBar(
+      controller: _mainTabCtrl,
+      onTap: _setMainTab,
+      isScrollable: false,
+      tabs: [
+        Tab(text: tr('本地')),
+        Tab(text: tr('下载')),
+      ],
+    );
+  }
 
   List<Song>? _result;
   Timer? _debounce;
@@ -68,6 +100,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     _tab = TabController(length: 3, vsync: this);
     _tab.index = widget.initialTab.clamp(0, 2);
     _tab.addListener(_onTabChanged);
+    _mainTabCtrl = TabController(length: 2, vsync: this);
     _batch.addListener(_onBatchChanged);
   }
 
@@ -87,6 +120,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   void dispose() {
     _tab.removeListener(_onTabChanged);
     _tab.dispose();
+    _mainTabCtrl.dispose();
     _searchDebounce?.cancel();
     _searchCtrl.dispose();
     _debounce?.cancel();
@@ -104,10 +138,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   Future<void> _runFilter() async {
     final gen = ++_req;
     final songs = ref.read(libraryProvider).songs;
-    final out = await compute(
-      _filterSortSongs,
-      (songs, '', _sort.index, _hideDuplicates),
-    );
+    final out = await compute(_filterSortSongs, (
+      songs,
+      '',
+      _sort.index,
+      _hideDuplicates,
+    ));
     if (!mounted || gen != _req) return;
     setState(() => _result = out);
   }
@@ -151,8 +187,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
   void _showStats(BuildContext context, LibraryState lib) {
     final total = lib.songs.length;
-    final durationMs =
-        lib.songs.fold<int>(0, (sum, s) => sum + s.duration * 1000);
+    final durationMs = lib.songs.fold<int>(
+      0,
+      (sum, s) => sum + s.duration * 1000,
+    );
     final formatMap = <String, int>{};
     for (final s in lib.songs) {
       final f = s.format.isEmpty ? tr('未知') : s.format.toUpperCase();
@@ -169,8 +207,10 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-              Text(tr('曲库统计'),
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            Text(
+              tr('曲库统计'),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
             const SizedBox(height: 14),
             _StatRow(label: tr('歌曲总数'), value: '$total 首'),
             _StatRow(label: tr('总时长'), value: _fmtDuration(durationMs)),
@@ -183,10 +223,19 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 _StatRow(label: f.key, value: '${f.value} 首'),
             ],
             const SizedBox(height: 8),
-            Icon(Icons.info_outline,
-              size: 14, color: Theme.of(ctx).colorScheme.outline),
+            Icon(
+              Icons.info_outline,
+              size: 14,
+              color: Theme.of(ctx).colorScheme.outline,
+            ),
             const SizedBox(height: 4),
-            Text(tr('统计基于本地曲库'), style: TextStyle(fontSize: 11, color: Theme.of(ctx).colorScheme.outline)),
+            Text(
+              tr('统计基于本地曲库'),
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(ctx).colorScheme.outline,
+              ),
+            ),
           ],
         ),
       ),
@@ -212,9 +261,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             tooltip: tr('文件夹'),
             // 横屏音乐库容器内：切换右侧容器到文件夹管理页；竖屏走路由
             onPressed: ref.watch(landscapeLibraryProvider) != null
-                ? () => ref
-                    .read(landscapeLibraryProvider.notifier)
-                    .state = 4
+                ? () => ref.read(landscapeLibraryProvider.notifier).state = 5
                 : () => context.push('/library/folders'),
             icon: const Icon(Icons.add, size: 22),
           ),
@@ -259,8 +306,11 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                 Icon(Icons.sort, size: 18, color: scheme.onSurfaceVariant),
                 const SizedBox(width: 2),
                 if (_sort != _SongSort.none)
-                  Icon(Icons.arrow_drop_down,
-                      size: 18, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
               ],
             ),
           ),
@@ -283,10 +333,12 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       if (mounted) setState(() => _searchResult = null);
       return;
     }
-    final out = await compute(
-      _filterSortSongs,
-      (songs, q, _SongSort.none.index, false),
-    );
+    final out = await compute(_filterSortSongs, (
+      songs,
+      q,
+      _SongSort.none.index,
+      false,
+    ));
     if (!mounted || gen != _searchReq) return;
     setState(() => _searchResult = out);
   }
@@ -312,27 +364,37 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         style: TextStyle(fontSize: 14.5, color: scheme.onSurface),
         decoration: InputDecoration(
           hintText: tr('搜索歌曲、歌手、专辑'),
-          hintStyle:
-              TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
-          prefixIcon: Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 40, minHeight: 40),
+          hintStyle: TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
+          prefixIcon: Icon(
+            Icons.search,
+            size: 20,
+            color: scheme.onSurfaceVariant,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 40,
+            minHeight: 40,
+          ),
           suffixIcon: _query.isNotEmpty
               ? InkWell(
                   onTap: _clearSearch,
-                  child: Icon(Icons.close,
-                      size: 18, color: scheme.onSurfaceVariant),
+                  child: Icon(
+                    Icons.close,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 )
               : null,
-          suffixIconConstraints:
-              const BoxConstraints(minWidth: 40, minHeight: 40),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 40,
+            minHeight: 40,
+          ),
           isDense: true,
           filled: true,
-          fillColor: isDark
-              ? const Color(0x14FFFFFF)
-              : const Color(0x14000000),
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+          fillColor: isDark ? const Color(0x14FFFFFF) : const Color(0x14000000),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 0,
+            horizontal: 8,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(20),
             borderSide: BorderSide.none,
@@ -348,7 +410,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       return const Center(child: CircularProgressIndicator());
     }
     if (result.isEmpty) {
-      return   Center(child: Text(tr('没有找到相关歌曲')));
+      return Center(child: Text(tr('没有找到相关歌曲')));
     }
     return SongsListView(
       songs: result,
@@ -356,19 +418,22 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       enableScrollFabs: true,
       padding: EdgeInsets.only(
         top: topInset,
-        bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
+        bottom:
+            (ref.watch(playerProvider.select((s) => s.current != null))
+                ? 92.0
+                : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
-      onPlay: (list, i) =>
-          ref.read(libraryProvider.notifier).playList(list, i),
+      onPlay: (list, i) => ref.read(libraryProvider.notifier).playList(list, i),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
-    final floating = ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     final statusBar = MediaQuery.paddingOf(context).top;
     final landscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
@@ -376,6 +441,20 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     // 该状态解耦（见 paneEmbedded 注释）
     final inMusicPane =
         widget.paneEmbedded || ref.watch(landscapeLibraryProvider) != null;
+    // 顶栏「本地/下载」切换行显隐：有启用插件或已绑定网盘才展示（隐藏规则
+    // 延续原「我的」下载入口逻辑，两者皆无时不占顶栏）；横屏面板态同样
+    // 展示——切换行垫在面板 tab 行上方，切到下载时 tab 行整行隐藏、右容器
+    // 内嵌下载管理内容
+    final hasPlugin = ref.watch(
+      pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
+    );
+    final hasCloud = ref.watch(
+      boundCloudProvidersProvider.select(
+        (a) => a.valueOrNull?.isNotEmpty ?? false,
+      ),
+    );
+    final showSwitch = hasPlugin || hasCloud;
+    final inDownloadTab = showSwitch && _mainTab == 1;
 
     if (inMusicPane) {
       ref.listen(landscapeLibraryQueryProvider, (prev, next) {
@@ -416,7 +495,13 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     final double headerTop;
     if (inMusicPane) {
       headerTop = paneTop;
-      header = _buildPaneHeader(context, paneTabBar, floating);
+      header = _buildPaneHeader(
+        context,
+        paneTabBar,
+        floating,
+        showSwitch: showSwitch,
+        inDownloadTab: inDownloadTab,
+      );
     } else if (floating || landscape) {
       // 悬浮态：贴顶悬浮 chrome。横屏固定态：shell 固定带（带内全局
       // chrome）盖住顶部，页面 header 整体下移到带下，沿用同款玻璃
@@ -436,13 +521,38 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
             ? BiliPaiIconButton(
                 icon: Icons.add,
                 tooltip: tr('文件夹'),
-                onTap: () => context.push('/library/folders'),
+                // 横屏音乐库容器内：切换右侧容器到文件夹管理页；竖屏走路由
+                onTap: ref.watch(landscapeLibraryProvider) != null
+                    ? () =>
+                          ref.read(landscapeLibraryProvider.notifier).state = 5
+                    : () => context.push('/library/folders'),
               )
             : const SizedBox.shrink(),
-        tabPill: FloatingTabPill(child: tabBar),
+        // 有插件/网盘时 tabPill 位放「本地/下载」切换（同款胶囊分段）；
+        // 选中本地时 tab 行退到 bottomPill，选中下载时 tab 行整行隐藏
+        tabPill: showSwitch
+            ? FloatingTabPill(child: _buildMainSwitchTabBar())
+            : FloatingTabPill(child: tabBar),
+        bottomPill: showSwitch && !inDownloadTab
+            ? FloatingTabPill(child: tabBar)
+            : null,
       );
     } else {
       headerTop = 0;
+      // 固定态：有插件/网盘时把切换行垫在 tab 行上方（选中下载时 tab
+      // 行整行隐藏），无则维持原样
+      final fixedBottom = showSwitch
+          ? PreferredSizeProxy(
+              height: 48 + (inDownloadTab ? 0.0 : tabBar.preferredSize.height),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildMainSwitchTabBar(),
+                  if (!inDownloadTab) tabBar,
+                ],
+              ),
+            )
+          : tabBar;
       header = GlassTopBar(
         leading: const BackButton(),
         titleSpacing: 4,
@@ -451,26 +561,43 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           if (PlatformCaps.showsLibraryAddEntry)
             IconButton(
               tooltip: tr('文件夹'),
-              onPressed: () => context.push('/library/folders'),
+              // 横屏音乐库容器内：切换右侧容器到文件夹管理页；竖屏走路由
+              onPressed: ref.watch(landscapeLibraryProvider) != null
+                  ? () => ref.read(landscapeLibraryProvider.notifier).state = 5
+                  : () => context.push('/library/folders'),
               icon: const Icon(Icons.add, size: 24),
             ),
         ],
-        bottom: tabBar,
+        bottom: fixedBottom,
       );
     }
 
+    // 悬浮 chrome 行高：搜索行 44；切换行 +58（含 10 间距）；tab 行在
+    // 切到下载时整行隐藏，不再计入占位
+    final chromeH =
+        44.0 + (showSwitch ? 58 : 0) + (showSwitch && !inDownloadTab ? 58 : 0);
+    // 面板头部高：切换行（有插件/网盘时）+ tab 行（切到下载时整行隐藏）；
+    // 悬浮态两行气泡拆独立，中间再留 10 间距
+    final paneHeaderH =
+        (showSwitch ? _kPaneHeaderHeight : 0.0) +
+        (inDownloadTab ? 0.0 : _kPaneHeaderHeight) +
+        (floating && showSwitch && !inDownloadTab ? 10.0 : 0.0);
     final topInset = inMusicPane
-        ? paneTop + (floating ? 10 : 4) + _kPaneHeaderHeight + 8
+        ? paneTop + (floating ? 10 : 4) + paneHeaderH + 8
         : (floating || landscape
-            ? (floating
-                      ? statusBar
-                      : GlassTopBar.height(context, topInset: 8)) +
-                  8 +
-                  44 +
-                  10 +
-                  48 +
-                  14
-            : GlassTopBar.height(context, bottom: tabBar));
+              ? (floating
+                        ? statusBar
+                        : GlassTopBar.height(context, topInset: 8)) +
+                    8 +
+                    chromeH +
+                    14
+              : GlassTopBar.height(context) +
+                    (showSwitch
+                        ? 48 +
+                              (inDownloadTab
+                                  ? 0.0
+                                  : tabBar.preferredSize.height)
+                        : tabBar.preferredSize.height));
 
     return HideShellChrome(
       child: PopScope(
@@ -479,67 +606,75 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           if (!didPop) _batch.exit();
         },
         child: Scaffold(
-        backgroundColor: appScaffoldBackground(context, ref),
-        resizeToAvoidBottomInset: false,
-        body: RepaintBoundary(child: Stack(
-          children: [
-            if (lib.loading)
-              const Center(child: CircularProgressIndicator())
-            else if (lib.error != null)
-              _ErrorView(
-                message: lib.error!,
-                onRetry: () => ref.read(libraryProvider.notifier).load(),
-              )
-            else if (_query.isNotEmpty)
-              _buildSearchResults(topInset)
-            else
-              TabBarView(
-                controller: _tab,
-                children: [
-                  _AllSongsTab(
-                    topInset: topInset,
-                    sort: _sort,
-                    hideDuplicates: _hideDuplicates,
-                    result: _result,
-                    batch: _batch,
-                    inPane: inMusicPane,
-                    onToggleDedup: () {
-                      _hideDuplicates = !_hideDuplicates;
-                      _onCriteriaChanged();
-                    },
-                    onOpenSort: () => _openSortMenu(context),
-                    onShowStats: _showStats,
+          backgroundColor: appScaffoldBackground(context, ref),
+          resizeToAvoidBottomInset: false,
+          body: RepaintBoundary(
+            child: Stack(
+              children: [
+                // 下载 tab 优先于曲库 loading：下载管理与曲库加载互不阻塞
+                if (inDownloadTab)
+                  DownloadContent(topInset: topInset)
+                else if (lib.loading)
+                  const Center(child: CircularProgressIndicator())
+                else if (lib.error != null)
+                  _ErrorView(
+                    message: lib.error!,
+                    onRetry: () => ref.read(libraryProvider.notifier).load(),
+                  )
+                else if (_query.isNotEmpty)
+                  _buildSearchResults(topInset)
+                else
+                  TabBarView(
+                    controller: _tab,
+                    children: [
+                      _AllSongsTab(
+                        topInset: topInset,
+                        sort: _sort,
+                        hideDuplicates: _hideDuplicates,
+                        result: _result,
+                        batch: _batch,
+                        inPane: inMusicPane,
+                        onToggleDedup: () {
+                          _hideDuplicates = !_hideDuplicates;
+                          _onCriteriaChanged();
+                        },
+                        onOpenSort: () => _openSortMenu(context),
+                        onShowStats: _showStats,
+                      ),
+                      _ArtistsTab(topInset: topInset),
+                      _AlbumsTab(topInset: topInset),
+                    ],
                   ),
-                  _ArtistsTab(topInset: topInset),
-                  _AlbumsTab(topInset: topInset),
-                ],
-              ),
-            Positioned(
-              top: headerTop,
-              left: (inMusicPane || floating) && floating ? 12 : 0,
-              right: (inMusicPane || floating) && floating ? 12 : 0,
-              child: header,
+                Positioned(
+                  top: headerTop,
+                  left: (inMusicPane || floating) && floating ? 12 : 0,
+                  right: (inMusicPane || floating) && floating ? 12 : 0,
+                  child: header,
+                ),
+              ],
             ),
-          ],
-        ),
-        ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildPaneHeader(BuildContext context, Widget tabBar, bool floating) {
+  Widget _buildPaneHeader(
+    BuildContext context,
+    Widget tabBar,
+    bool floating, {
+    required bool showSwitch,
+    required bool inDownloadTab,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    final content = SizedBox(
+    final tabRow = SizedBox(
       height: _kPaneHeaderHeight,
       child: Row(
         children: [
           Expanded(
             child: Theme(
               data: Theme.of(context).copyWith(
-                tabBarTheme: TabBarThemeData(
-                  dividerColor: Colors.transparent,
-                ),
+                tabBarTheme: TabBarThemeData(dividerColor: Colors.transparent),
               ),
               child: Padding(
                 padding: const EdgeInsets.only(left: 4, right: 8),
@@ -552,7 +687,41 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         ],
       ),
     );
+    // 有插件/网盘时切换行垫在 tab 行上方（与竖屏固定态同序）；切到下载时
+    // tab 行（含曲库动作）整行隐藏，右容器内嵌下载管理
+    final switchRow = SizedBox(
+      height: _kPaneHeaderHeight,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          tabBarTheme: TabBarThemeData(dividerColor: Colors.transparent),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 4, right: 8),
+          child: _buildMainSwitchTabBar(),
+        ),
+      ),
+    );
+    final Widget content = showSwitch
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [switchRow, if (!inDownloadTab) tabRow],
+          )
+        : tabRow;
     if (floating) {
+      // 悬浮态两行各套独立气泡（与竖屏悬浮的分段 pill/tab pill 同款），
+      // 行间留 10 间距；单行时直接套一层
+      if (showSwitch) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingGlassSurface(child: switchRow),
+            if (!inDownloadTab) ...[
+              const SizedBox(height: 10),
+              FloatingGlassSurface(child: tabRow),
+            ],
+          ],
+        );
+      }
       return FloatingGlassSurface(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 0),
@@ -589,7 +758,7 @@ class _ErrorView extends StatelessWidget {
           FilledButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh),
-            label:   Text(tr('重试')),
+            label: Text(tr('重试')),
           ),
         ],
       ),
@@ -602,10 +771,12 @@ List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
   List<Song> result = songs;
   if (query.isNotEmpty) {
     result = result
-        .where((s) =>
-            s.title.toLowerCase().contains(query) ||
-            s.artist.toLowerCase().contains(query) ||
-            s.album.toLowerCase().contains(query))
+        .where(
+          (s) =>
+              s.title.toLowerCase().contains(query) ||
+              s.artist.toLowerCase().contains(query) ||
+              s.album.toLowerCase().contains(query),
+        )
         .toList();
   }
   if (hideDuplicates) {
@@ -639,12 +810,12 @@ List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
 }
 
 String _songSortLabel(_SongSort s) => switch (s) {
-      _SongSort.none => tr('默认排序'),
-      _SongSort.title => tr('按标题'),
-      _SongSort.artist => tr('按歌手'),
-      _SongSort.album => tr('按专辑'),
-      _SongSort.addedAt => tr('按添加时间'),
-    };
+  _SongSort.none => tr('默认排序'),
+  _SongSort.title => tr('按标题'),
+  _SongSort.artist => tr('按歌手'),
+  _SongSort.album => tr('按专辑'),
+  _SongSort.addedAt => tr('按添加时间'),
+};
 
 class _AllSongsTab extends ConsumerStatefulWidget {
   const _AllSongsTab({
@@ -680,8 +851,9 @@ class _AllSongsTab extends ConsumerStatefulWidget {
 
 class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   Future<void> _batchPlay(List<Song> songs) async {
-    final sel =
-        songs.where((s) => widget.batch.selected.contains(s.path)).toList();
+    final sel = songs
+        .where((s) => widget.batch.selected.contains(s.path))
+        .toList();
     if (sel.isEmpty) return;
     final items = sel.map((s) => s.toQueueItem()).toList();
     await ref.read(playerProvider.notifier).playQueue(items, startIndex: 0);
@@ -689,8 +861,9 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   }
 
   Future<void> _batchAddToFavorites(List<Song> songs) async {
-    final sel =
-        songs.where((s) => widget.batch.selected.contains(s.path)).toList();
+    final sel = songs
+        .where((s) => widget.batch.selected.contains(s.path))
+        .toList();
     if (sel.isEmpty) return;
     final fav = ref.read(favoritesProvider.notifier);
     await fav.addAll(sel.map((s) => s.toQueueItem()).toList());
@@ -700,8 +873,9 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   }
 
   Future<void> _batchAddToPlaylist(List<Song> songs) async {
-    final sel =
-        songs.where((s) => widget.batch.selected.contains(s.path)).toList();
+    final sel = songs
+        .where((s) => widget.batch.selected.contains(s.path))
+        .toList();
     if (sel.isEmpty) return;
     final imported = sel.map(importedSongFromLocal).toList();
     await showAddToPlaylistSheet(context, ref, imported);
@@ -718,7 +892,8 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
       listenable: widget.batch,
       builder: (context, _) {
         final inBatch = widget.batch.batchMode;
-        final bottomPad = (ref.watch(playerProvider.select((s) => s.current != null))
+        final bottomPad =
+            (ref.watch(playerProvider.select((s) => s.current != null))
                 ? 92.0
                 : 16.0) +
             MediaQuery.of(context).padding.bottom +
@@ -729,44 +904,42 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
         final list = songs.isEmpty
             ? Center(child: Text(tr('没有匹配的歌曲')))
             : widget.sort == _SongSort.none
-                ? SongsListView(
-                    themeSlot: 'ls-lib.row',
-                    songs: songs,
-                    staggerEnter: true,
-                    enableScrollFabs: true,
-                    batch: widget.batch,
-                    padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
-                    onPlay: (list, i) =>
-                        ref.read(libraryProvider.notifier).playList(list, i),
-                    onReorder: (oldIndex, newIndex) {
-                      if (newIndex < 0 ||
-                          newIndex >= songs.length ||
-                          newIndex == oldIndex) {
-                        return;
-                      }
-                      final paths = [for (final s in songs) s.path];
-                      final moved = paths.removeAt(oldIndex);
-                      paths.insert(newIndex.clamp(0, paths.length), moved);
-                      ref
-                          .read(libraryProvider.notifier)
-                          .reorderLocalSongs(paths);
-                    },
-                  )
-                : LetterIndexSongList(
-                    songs: songs,
-                    staggerEnter: true,
-                    indexField: switch (widget.sort) {
-                      _SongSort.title => (Song s) => s.title,
-                      _SongSort.artist => (Song s) => s.artist,
-                      _SongSort.album => (Song s) => s.album,
-                      _SongSort.none || _SongSort.addedAt => null,
-                    },
-                    enableScrollFabs: true,
-                    batch: widget.batch,
-                    padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
-                    onPlay: (list, i) =>
-                        ref.read(libraryProvider.notifier).playList(list, i),
-                  );
+            ? SongsListView(
+                themeSlot: 'ls-lib.row',
+                songs: songs,
+                staggerEnter: true,
+                enableScrollFabs: true,
+                batch: widget.batch,
+                padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
+                onPlay: (list, i) =>
+                    ref.read(libraryProvider.notifier).playList(list, i),
+                onReorder: (oldIndex, newIndex) {
+                  if (newIndex < 0 ||
+                      newIndex >= songs.length ||
+                      newIndex == oldIndex) {
+                    return;
+                  }
+                  final paths = [for (final s in songs) s.path];
+                  final moved = paths.removeAt(oldIndex);
+                  paths.insert(newIndex.clamp(0, paths.length), moved);
+                  ref.read(libraryProvider.notifier).reorderLocalSongs(paths);
+                },
+              )
+            : LetterIndexSongList(
+                songs: songs,
+                staggerEnter: true,
+                indexField: switch (widget.sort) {
+                  _SongSort.title => (Song s) => s.title,
+                  _SongSort.artist => (Song s) => s.artist,
+                  _SongSort.album => (Song s) => s.album,
+                  _SongSort.none || _SongSort.addedAt => null,
+                },
+                enableScrollFabs: true,
+                batch: widget.batch,
+                padding: EdgeInsets.only(top: topPad, bottom: bottomPad),
+                onPlay: (list, i) =>
+                    ref.read(libraryProvider.notifier).playList(list, i),
+              );
 
         return Stack(
           children: [
@@ -788,12 +961,17 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                             borderRadius: BorderRadius.circular(8),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 11),
+                                horizontal: 10,
+                                vertical: 11,
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.sort,
-                                      size: 18, color: scheme.onSurfaceVariant),
+                                  Icon(
+                                    Icons.sort,
+                                    size: 18,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                   const SizedBox(width: 6),
                                   Flexible(
                                     child: Text(
@@ -806,8 +984,11 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                                       ),
                                     ),
                                   ),
-                                  Icon(Icons.arrow_drop_down,
-                                      size: 18, color: scheme.onSurfaceVariant),
+                                  Icon(
+                                    Icons.arrow_drop_down,
+                                    size: 18,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
                                 ],
                               ),
                             ),
@@ -866,8 +1047,9 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                   showPlaylist: true,
                   showDownload: false,
                   showRemove: false,
-                  onSelectAll: () => widget.batch
-                      .toggleSelectAll({for (final s in songs) s.path}),
+                  onSelectAll: () => widget.batch.toggleSelectAll({
+                    for (final s in songs) s.path,
+                  }),
                   onPlay: () => _batchPlay(songs),
                   onFavorite: () => _batchAddToFavorites(songs),
                   onPlaylist: () => _batchAddToPlaylist(songs),
@@ -911,8 +1093,7 @@ class _SortItem extends StatelessWidget {
                 ),
               ),
             ),
-            if (selected)
-              Icon(Icons.check, size: 18, color: scheme.primary),
+            if (selected) Icon(Icons.check, size: 18, color: scheme.primary),
           ],
         ),
       ),
@@ -939,9 +1120,10 @@ class _StatRow extends StatelessWidget {
           Text(
             value,
             style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                color: scheme.primary),
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: scheme.primary,
+            ),
           ),
         ],
       ),
@@ -957,12 +1139,15 @@ class _ArtistsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final artists = ref.watch(libraryProvider.select((s) => s.artists));
-    if (artists.isEmpty) return   Center(child: Text(tr('暂无歌手')));
+    if (artists.isEmpty) return Center(child: Text(tr('暂无歌手')));
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
         top: topInset,
-        bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
+        bottom:
+            (ref.watch(playerProvider.select((s) => s.current != null))
+                ? 92.0
+                : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       itemExtent: m.artistCover + 2 * m.vPad,
@@ -974,33 +1159,46 @@ class _ArtistsTab extends ConsumerWidget {
         return RepaintBoundary(
           key: ValueKey('artist_${a.name}'),
           child: CoverRow(
-          cover: CoverImage(
-            songPath: a.firstSongPath,
-            width: m.artistCover,
-            height: m.artistCover,
-            radius: m.artistCover / 2,
-            icon: Icons.person,
-            placeholder: _letterAvatar(context, a.name, scheme),
-          ),
-          title: Text(
-            a.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: m.titleSize, fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(
-            '${a.count} 首',
-            style:
-                TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-          ),
-          verticalPadding: m.vPad,
-          trailing: Icon(Icons.chevron_right, color: scheme.outline),
-          onTap: () => context.push('/song-list', extra: SongListArgs(
-            title: a.name,
-            loader: () =>
-                ref.read(libraryProvider.notifier).songsByArtist(a.name),
-          )),
+            cover: CoverImage(
+              songPath: a.firstSongPath,
+              width: m.artistCover,
+              height: m.artistCover,
+              radius: m.artistCover / 2,
+              icon: Icons.person,
+              placeholder: _letterAvatar(context, a.name, scheme),
+            ),
+            title: Text(
+              a.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: m.titleSize,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              '${a.count} 首',
+              style: TextStyle(
+                fontSize: m.subtitleSize,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            verticalPadding: m.vPad,
+            trailing: Icon(Icons.chevron_right, color: scheme.outline),
+            onTap: () {
+              loader() =>
+                  ref.read(libraryProvider.notifier).songsByArtist(a.name);
+              // 横屏：下钻内嵌右容器二级面板；竖屏走原路由
+              if (useLandscape(ref)) {
+                ref.read(landscapeDetailProvider.notifier).state =
+                    LandscapeSongListDetail(title: a.name, loader: loader);
+                return;
+              }
+              context.push(
+                '/song-list',
+                extra: SongListArgs(title: a.name, loader: loader),
+              );
+            },
           ),
         );
       },
@@ -1031,12 +1229,15 @@ class _AlbumsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(libraryProvider.select((s) => s.albums));
-    if (albums.isEmpty) return   Center(child: Text(tr('暂无专辑')));
+    if (albums.isEmpty) return Center(child: Text(tr('暂无专辑')));
     final m = ListMetrics.ofRef(ref);
     return ListView.builder(
       padding: EdgeInsets.only(
         top: topInset,
-        bottom: (ref.watch(playerProvider.select((s) => s.current != null)) ? 92.0 : 16.0) +
+        bottom:
+            (ref.watch(playerProvider.select((s) => s.current != null))
+                ? 92.0
+                : 16.0) +
             MediaQuery.of(context).padding.bottom,
       ),
       itemExtent: m.songCover + 2 * m.vPad,
@@ -1048,34 +1249,47 @@ class _AlbumsTab extends ConsumerWidget {
         return RepaintBoundary(
           key: ValueKey('album_${a.key}'),
           child: CoverRow(
-          cover: CoverImage(
-            songPath: a.firstSongPath,
-            width: m.songCover,
-            height: m.songCover,
-            radius: m.songRadius,
-            icon: Icons.album,
-          ),
-          title: Text(
-            a.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: m.titleSize, fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(
-            '${a.artist} · ${a.count} 首',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style:
-                TextStyle(fontSize: m.subtitleSize, color: scheme.onSurfaceVariant),
-          ),
-          verticalPadding: m.vPad,
-          trailing: Icon(Icons.chevron_right, color: scheme.outline),
-          onTap: () => context.push('/song-list', extra: SongListArgs(
-            title: a.name,
-            loader: () =>
-                ref.read(libraryProvider.notifier).songsByAlbum(a.key),
-          )),
+            cover: CoverImage(
+              songPath: a.firstSongPath,
+              width: m.songCover,
+              height: m.songCover,
+              radius: m.songRadius,
+              icon: Icons.album,
+            ),
+            title: Text(
+              a.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: m.titleSize,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: Text(
+              '${a.artist} · ${a.count} 首',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: m.subtitleSize,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            verticalPadding: m.vPad,
+            trailing: Icon(Icons.chevron_right, color: scheme.outline),
+            onTap: () {
+              loader() =>
+                  ref.read(libraryProvider.notifier).songsByAlbum(a.key);
+              // 横屏：下钻内嵌右容器二级面板；竖屏走原路由
+              if (useLandscape(ref)) {
+                ref.read(landscapeDetailProvider.notifier).state =
+                    LandscapeSongListDetail(title: a.name, loader: loader);
+                return;
+              }
+              context.push(
+                '/song-list',
+                extra: SongListArgs(title: a.name, loader: loader),
+              );
+            },
           ),
         );
       },

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -7,6 +7,7 @@ import '../../src/core/settings.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/home/daily_recommend.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/responsive/landscape.dart';
 import '../../src/player/player_provider.dart';
 import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/drag_handle.dart';
@@ -27,8 +28,7 @@ class DailyRecommendPage extends ConsumerStatefulWidget {
   final bool embedded;
 
   @override
-  ConsumerState<DailyRecommendPage> createState() =>
-      _DailyRecommendPageState();
+  ConsumerState<DailyRecommendPage> createState() => _DailyRecommendPageState();
 }
 
 class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
@@ -37,10 +37,14 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final async = ref.watch(dailyRecommendProvider);
-    final portraitFloating = !widget.embedded &&
+    final portraitFloating =
+        !widget.embedded &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
-        (ref.watch(settingsProvider
-                .select((s) => s.valueOrNull?.floatingSearchBar ?? false)) ==
+        (ref.watch(
+              settingsProvider.select(
+                (s) => s.valueOrNull?.floatingSearchBar ?? false,
+              ),
+            ) ==
             true);
 
     return Scaffold(
@@ -50,14 +54,16 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
           _floatHost(
             portraitFloating,
             async.when(
-              loading: () =>   Center(
+              loading: () => Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircularProgressIndicator(strokeWidth: 2),
                     SizedBox(height: 14),
-                    Text(tr('正在为你生成今日推荐…'),
-                        style: TextStyle(fontSize: 13, color: Colors.grey)),
+                    Text(
+                      tr('正在为你生成今日推荐…'),
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
                   ],
                 ),
               ),
@@ -73,7 +79,15 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.person_outline,
                     message: tr('登录后解锁每日推荐\n基于你的听歌记录，每天为你量身定制'),
                     action: tr('去登录'),
-                    onTap: () => context.push('/account'),
+                    // 横屏：开右侧账号面板；竖屏走路由
+                    onTap: () {
+                      if (useLandscape(ref)) {
+                        ref.read(landscapeAccountOpenProvider.notifier).state =
+                            true;
+                      } else {
+                        context.push('/account');
+                      }
+                    },
                   );
                 }
                 if (state.items.isEmpty) {
@@ -81,15 +95,29 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
                     icon: Icons.music_off_outlined,
                     message: tr('今天还没有推荐\n添加本地音乐或安装音源插件后再试'),
                     action: tr('去安装插件'),
-                    onTap: () => context.push('/plugin-manage'),
+                    // 横屏：走设置面板音源分类；竖屏走路由
+                    onTap: () {
+                      if (useLandscape(ref)) {
+                        ref
+                                .read(
+                                  landscapeSettingsCategoryProvider.notifier,
+                                )
+                                .state =
+                            '/plugin-manage';
+                        context.push('/settings');
+                      } else {
+                        context.push('/plugin-manage');
+                      }
+                    },
                   );
                 }
                 return Column(
                   children: [
                     _Header(state: state),
                     Divider(
-                        height: 1,
-                        color: scheme.onSurface.withValues(alpha: 0.06)),
+                      height: 1,
+                      color: scheme.onSurface.withValues(alpha: 0.06),
+                    ),
                     Expanded(child: _RecommendList(state: state)),
                   ],
                 );
@@ -103,13 +131,14 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
               right: 0,
               child: GlassTopBar(
                 leading: const BackButton(),
-                title:   Text(tr('每日推荐')),
+                title: Text(tr('每日推荐')),
               ),
             ),
-          ],
-        ),
+        ],
+      ),
     );
   }
+
   Widget _floatHost(bool floating, Widget child) {
     if (floating) {
       return SizedBox.expand(
@@ -123,7 +152,8 @@ class _DailyRecommendPageState extends ConsumerState<DailyRecommendPage>
     }
     return Padding(
       padding: EdgeInsets.only(
-          top: widget.embedded ? 0 : GlassTopBar.height(context)),
+        top: widget.embedded ? 0 : GlassTopBar.height(context),
+      ),
       child: child,
     );
   }
@@ -136,7 +166,15 @@ class _Header extends ConsumerWidget {
 
   String get _dateLabel {
     final now = DateTime.now();
-    final week = [tr('一'), tr('二'), tr('三'), tr('四'), tr('五'), tr('六'), tr('日')][now.weekday - 1];
+    final week = [
+      tr('一'),
+      tr('二'),
+      tr('三'),
+      tr('四'),
+      tr('五'),
+      tr('六'),
+      tr('日'),
+    ][now.weekday - 1];
     return tr('{m}月{d}日 · 周{w}', {'m': now.month, 'd': now.day, 'w': week});
   }
 
@@ -144,7 +182,9 @@ class _Header extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final reason = state.algorithm?.topArtistNames.isNotEmpty == true
-        ? tr('根据你常听的 {artists} 生成', {'artists': state.algorithm!.topArtistNames.join('、')})
+        ? tr('根据你常听的 {artists} 生成', {
+            'artists': state.algorithm!.topArtistNames.join('、'),
+          })
         : tr('根据你的听歌记录生成');
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
@@ -158,7 +198,9 @@ class _Header extends ConsumerWidget {
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 3),
+                        horizontal: 10,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         color: scheme.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(999),
@@ -191,7 +233,7 @@ class _Header extends ConsumerWidget {
           FilledButton.icon(
             onPressed: () => ref.read(dailyRecommendProvider.notifier).play(0),
             icon: const Icon(Icons.play_arrow, size: 18),
-            label:   Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
+            label: Text(tr('播放全部'), style: TextStyle(fontSize: 13)),
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               minimumSize: const Size(0, 36),
@@ -202,7 +244,7 @@ class _Header extends ConsumerWidget {
             onPressed: () =>
                 ref.read(dailyRecommendProvider.notifier).refresh(),
             icon: const Icon(Icons.refresh, size: 16),
-            label:   Text(tr('换一批'), style: TextStyle(fontSize: 13)),
+            label: Text(tr('换一批'), style: TextStyle(fontSize: 13)),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               minimumSize: const Size(0, 36),
@@ -225,9 +267,11 @@ class _RecommendList extends ConsumerStatefulWidget {
 
 class _RecommendListState extends ConsumerState<_RecommendList> {
   final ScrollController _scroll = ScrollController();
-  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
-    if (mounted) setState(() {});
-  });
+  late final StaggerWindow _stagger = StaggerWindow(
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   void initState() {
@@ -255,27 +299,28 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
   void _toggleFavorite(DailyRecommendItem item, QueueItem q, bool wasFav) {
     ref.read(favoritesProvider.notifier).toggle(q);
     showXianYuToast(
-        context,
-        wasFav
-            ? tr('已取消收藏：{t}', {'t': item.title})
-            : tr('已收藏：{t}', {'t': item.title}));
+      context,
+      wasFav
+          ? tr('已取消收藏：{t}', {'t': item.title})
+          : tr('已收藏：{t}', {'t': item.title}),
+    );
   }
 
   /// 行首槽位：序号/播放标识（与其他在线歌曲列表同款），不可拖拽
   Widget _rowShell(int i, String songPath, Widget row) => Stack(
-        children: [
-          Padding(padding: const EdgeInsets.only(left: 34), child: row),
-          Positioned(
-            left: 8,
-            top: 0,
-            bottom: 0,
-            width: 36,
-            child: Center(
-              child: SongRowLeading(index: i, songPath: songPath),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Padding(padding: const EdgeInsets.only(left: 34), child: row),
+      Positioned(
+        left: 8,
+        top: 0,
+        bottom: 0,
+        width: 36,
+        child: Center(
+          child: SongRowLeading(index: i, songPath: songPath),
+        ),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -291,11 +336,13 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
     // 行顶坐标前缀和（带 reason 的行加高一行），供悬浮定位按钮估算
     final rowTops = <double>[6];
     for (final it in state.items) {
-      rowTops.add(rowTops.last +
-          m.songCover +
-          2 * m.vPad +
-          (it.reason.isNotEmpty ? 18.0 : 0.0) +
-          4);
+      rowTops.add(
+        rowTops.last +
+            m.songCover +
+            2 * m.vPad +
+            (it.reason.isNotEmpty ? 18.0 : 0.0) +
+            4,
+      );
     }
     return Stack(
       children: [
@@ -362,8 +409,9 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              fontSize: m.titleSize,
-                              fontWeight: FontWeight.w600),
+                            fontSize: m.titleSize,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         subtitle: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -378,8 +426,9 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                        fontSize: m.subtitleSize,
-                                        color: scheme.onSurfaceVariant),
+                                      fontSize: m.subtitleSize,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 6),
@@ -393,7 +442,9 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                      fontSize: 10.5, color: scheme.primary),
+                                    fontSize: 10.5,
+                                    color: scheme.primary,
+                                  ),
                                 ),
                               ),
                           ],
@@ -442,9 +493,7 @@ class _RecommendListState extends ConsumerState<_RecommendList> {
         ),
         SongListScrollFabs(
           controller: _scroll,
-          paths: [
-            for (final it in state.items) it.toQueueItem(quality).path,
-          ],
+          paths: [for (final it in state.items) it.toQueueItem(quality).path],
           rowTopOf: (i) => i < rowTops.length ? rowTops[i] : rowTops.last,
           itemExtent: m.songCover + 2 * m.vPad,
           bottom: bottomPad + 8,
@@ -475,7 +524,11 @@ class _CenterAction extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 56, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+          Icon(
+            icon,
+            size: 56,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.4),
+          ),
           const SizedBox(height: 14),
           Text(
             message,

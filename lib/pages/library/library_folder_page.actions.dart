@@ -1,4 +1,5 @@
 part of 'library_folder_page.dart';
+
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 extension _LibraryFolderPageActions on _LibraryFolderPageState {
@@ -74,7 +75,9 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
       final destDir = Directory(p.join(docs.path, 'Music', folderName));
       await destDir.create(recursive: true);
       final files = await OhosFolderChannel.listAudioFiles(
-          uri, _LibraryFolderPageState._audioExts);
+        uri,
+        _LibraryFolderPageState._audioExts,
+      );
       if (!mounted) return;
       if (files.isEmpty) {
         _toast(tr('该文件夹内没有受支持的音频文件'));
@@ -122,6 +125,13 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
       _toast(tr('当前平台不支持扫描本地文件夹'));
       return;
     }
+    // 横屏：下钻到右列容器内嵌的目录勾选面板（与二级详情同机制），
+    // 保存后面板自行 toast 并清 landscapeDetailProvider 回到本页
+    if (ref.watch(landscapeLibraryProvider) != null) {
+      ref.read(landscapeDetailProvider.notifier).state =
+          const LandscapeFolderPickerDetail();
+      return;
+    }
     setState(() => _adding = true);
     try {
       if (Platform.isAndroid) {
@@ -129,8 +139,9 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
         if (!mounted) return;
         if (granted) {
           final count = await Navigator.of(context, rootNavigator: true)
-              .push<int>(coverPageRoute<int>(
-                  context, (_) => const FolderPickerPage()));
+              .push<int>(
+                coverPageRoute<int>(context, (_) => const FolderPickerPage()),
+              );
           if (count != null && count > 0 && mounted) {
             _toast(count > 1 ? '已添加 $count 个扫描目录' : tr('已添加扫描目录'));
           }
@@ -199,16 +210,16 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('移除扫描目录')),
+        title: Text(tr('移除扫描目录')),
         content: Text(tr('确定移除该目录吗？\n{name}', {'name': name})),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
+            child: Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('移除')),
+            child: Text(tr('移除')),
           ),
         ],
       ),
@@ -255,8 +266,11 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
     try {
       final count = await ref.read(libraryProvider.notifier).scanAllFolders();
       if (!mounted) return;
-      showXianYuToast(context, tr('扫描完成，共 {n} 首', {'n': count}),
-          duration: const Duration(seconds: 2));
+      showXianYuToast(
+        context,
+        tr('扫描完成，共 {n} 首', {'n': count}),
+        duration: const Duration(seconds: 2),
+      );
     } catch (e) {
       if (!mounted) return;
       showXianYuToast(context, tr('扫描失败：{e}', {'e': e}));
@@ -275,14 +289,14 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-                Text(tr('按时长过滤'),
-                  style: TextStyle(fontWeight: FontWeight.w600)),
+              Text(tr('按时长过滤'), style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(
                 tr('过滤掉时长小于阈值的音频文件，重新扫描后生效'),
                 style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(ctx).colorScheme.outline),
+                  fontSize: 12,
+                  color: Theme.of(ctx).colorScheme.outline,
+                ),
               ),
               const SizedBox(height: 12),
               for (final v in const [0, 10, 30, 60])
@@ -292,8 +306,10 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
                     _ => tr('{v} 秒', {'v': v}),
                   }),
                   trailing: cur == v
-                      ? Icon(Icons.check,
-                          color: Theme.of(ctx).colorScheme.primary)
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(ctx).colorScheme.primary,
+                        )
                       : null,
                   contentPadding: EdgeInsets.zero,
                   onTap: () => Navigator.pop(ctx, v),
