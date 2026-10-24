@@ -30,6 +30,8 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     super.dispose();
   }
 
+  // LX 系兜底：链接/歌单 ID 导入走宿主兜底（importSheetExact），不依赖
+  // 插件协议方法，仅装 LX 音源也应可用云端导入
   List<PluginSource> get _plugins => ref
       .watch(pluginManagerProvider)
       .sources
@@ -37,7 +39,8 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         (s) =>
             s.enabled &&
             (s.format == PluginFormat.musicfree ||
-                s.format == PluginFormat.anime),
+                s.format == PluginFormat.anime ||
+                s.format == PluginFormat.lx),
       )
       .toList();
 
@@ -53,6 +56,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     'kuwo': ['kuwo', tr('酷我'), 'kw'],
     'kugou': ['kugou', tr('酷狗'), 'kg'],
     'qishui': [tr('汽水'), 'qishui', 'douyin'],
+    'migu': [tr('咪咕'), 'migu', 'mg'],
   };
 
   String? _detectPlatformFromUrl(String input) {
@@ -68,6 +72,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       return 'kugou';
     }
     if (t.contains('qishui') || t.contains('汽水')) return 'qishui';
+    if (t.contains('migu.cn')) return 'migu';
     return null;
   }
 
@@ -104,18 +109,23 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
       final canonical = _detectPlatformFromUrl(keyword);
       if (canonical != null) {
         source = _matchPluginByPlatform(canonical, plugins);
-        if (source == null) {
-          setState(() {
-            _error = tr('未找到支持该平台的音源插件，请先安装对应插件');
-          });
-          return;
-        }
-        autoResolved = true;
+        if (source != null) autoResolved = true;
+        // 无插件声明该平台时不拦截：链接仍交给下方遍历音源精确导入，
+        // 宿主兜底（kg/qs/wy/tx/kw/mg）不依赖插件平台声明
       } else if (plugins.length == 1) {
         source = plugins.first;
         autoResolved = true;
       }
       // 仍无法锁定音源：链接/纯数字歌单 ID 在下方遍历音源精确导入
+    }
+    // LX 系音源无歌单搜索协议：关键词输入注定空结果，直接给明确提示
+    if (source != null &&
+        source.format == PluginFormat.lx &&
+        !PluginCatalogService.looksLikeSheetLinkOrId(keyword)) {
+      setState(() {
+        _error = tr('LX 音源不支持关键词搜索，请粘贴歌单分享链接或歌单 ID');
+      });
+      return;
     }
 
     setState(() {
@@ -392,7 +402,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         const SizedBox(height: 10),
         Text(
           tr(
-            '选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗/汽水的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。关键词搜索只能搜公开歌单，导入自己的歌单请粘贴分享链接或歌单 ID。',
+            '选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗/汽水/咪咕的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。关键词搜索只能搜公开歌单，导入自己的歌单请粘贴分享链接或歌单 ID。LX 系音源不支持关键词搜索，请直接粘贴分享链接或歌单 ID。',
           ),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),

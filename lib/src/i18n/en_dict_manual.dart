@@ -972,8 +972,10 @@ const Map<String, String> enDictManual = {
   '选项二': 'Option 2',
   '选项三': 'Option 3',
   '选项一': 'Option 1',
-  '选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。':
-      'With "Auto detect", paste a share link from NetEase / QQ Music / Kuwo / Kugou. Or pick the source, enter the playlist ID and tap search to import everything.',
+  '选择「自动识别」直接粘贴网易云/QQ音乐/酷我/酷狗/汽水/咪咕的分享链接，或选择对应音源后输入歌单 ID，点击搜索即可导入全部曲目。关键词搜索只能搜公开歌单，导入自己的歌单请粘贴分享链接或歌单 ID。LX 系音源不支持关键词搜索，请直接粘贴分享链接或歌单 ID。':
+      'With "Auto detect", paste a share link from NetEase / QQ Music / Kuwo / Kugou / Qishui / Migu. Or pick the source, enter the playlist ID and tap search to import everything. Keyword search only finds public playlists; for your own playlists, paste the share link or playlist ID. LX sources do not support keyword search — paste the share link or playlist ID directly.',
+  'LX 音源不支持关键词搜索，请粘贴歌单分享链接或歌单 ID':
+      'LX sources do not support keyword search. Paste the playlist share link or playlist ID instead.',
   '选择本地备份文件': 'Choose a local backup file',
   '选择本地的插件脚本（.js / .txt）': 'Choose a local plugin script (.js / .txt)',
   '插件已导入': 'Plugin imported',
