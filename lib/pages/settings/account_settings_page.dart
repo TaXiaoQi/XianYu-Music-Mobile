@@ -22,8 +22,7 @@ import '../../src/widgets/glass_settings.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/user_avatar.dart';
 import '../../src/i18n/i18n.dart';
-import '../../src/navigation/shell.dart'
-    show landscapeSettingsCategoryProvider;
+import '../../src/navigation/shell.dart' show landscapeSettingsCategoryProvider;
 
 /// 子页入口：横屏改挂设置右面板容器（/cloud、/account 已注册为嵌入
 /// 面板，导航栏管理同款），竖屏维持全屏路由推送
@@ -50,16 +49,16 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
     final ok = await showPredictiveDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('退出登录')),
-        content:   Text(tr('确定要退出当前账号吗？')),
+        title: Text(tr('退出登录')),
+        content: Text(tr('确定要退出当前账号吗？')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:   Text(tr('取消')),
+            child: Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child:   Text(tr('退出')),
+            child: Text(tr('退出')),
           ),
         ],
       ),
@@ -113,27 +112,27 @@ class _AccountSettingsPageState extends ConsumerState<AccountSettingsPage> {
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
         child: Stack(
-        children: [
-          ListView(
-            padding: EdgeInsets.fromLTRB(
-              16,
-              GlassTopBar.height(context),
-              16,
-              40 + MediaQuery.of(context).padding.bottom,
+          children: [
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                GlassTopBar.height(context),
+                16,
+                40 + MediaQuery.of(context).padding.bottom,
+              ),
+              children: items,
             ),
-            children: items,
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              leading: const BackButton(),
-              title:   Text(tr('账号')),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: GlassTopBar(
+                leading: const BackButton(),
+                title: Text(tr('账号')),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -232,9 +231,11 @@ class _AccountStatusCard extends ConsumerWidget {
                   Text(
                     isLoggedIn
                         ? (user!.ciyuanxiId != null &&
-                                user!.ciyuanxiId!.isNotEmpty
-                            ? tr('弦予号：{id}', {'id': user!.ciyuanxiId ?? ''})
-                            : (user!.email.isNotEmpty ? user!.email : tr('已登录')))
+                                  user!.ciyuanxiId!.isNotEmpty
+                              ? tr('弦予号：{id}', {'id': user!.ciyuanxiId ?? ''})
+                              : (user!.email.isNotEmpty
+                                    ? user!.email
+                                    : tr('已登录')))
                         : tr('登录后可同步个人资料到云端服务器'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -250,14 +251,16 @@ class _AccountStatusCard extends ConsumerWidget {
             if (isLoggedIn && onLogout != null)
               IconButton(
                 onPressed: onLogout,
-                icon: Icon(Icons.logout_rounded,
-                    size: 20, color: scheme.error),
+                icon: Icon(Icons.logout_rounded, size: 20, color: scheme.error),
                 tooltip: tr('退出登录'),
               ),
             IconButton(
               onPressed: onManage,
-              icon: Icon(Icons.chevron_right_rounded,
-                  size: 22, color: scheme.onSurfaceVariant),
+              icon: Icon(
+                Icons.chevron_right_rounded,
+                size: 22,
+                color: scheme.onSurfaceVariant,
+              ),
               tooltip: tr('账号与安全'),
             ),
           ],
@@ -464,26 +467,29 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          _label(context, tr('服务器 API')),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _baseUrlCtrl,
-            autocorrect: false,
-            keyboardType: TextInputType.url,
-            decoration: _inputDecoration(context,
-                hint: 'https://example.com/api'),
-          ),
-          const SizedBox(height: 14),
-          _label(context, tr('服务器密钥')),
-          const SizedBox(height: 6),
-          Focus(
-            onFocusChange: (v) => setState(() => _secretFocused = v),
-            child: TextField(
-              controller: _secretCtrl,
-              obscureText: !_secretVisible,
+            _label(context, tr('服务器 API')),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _baseUrlCtrl,
               autocorrect: false,
-              enableSuggestions: false,
-              decoration: _inputDecoration(context,
+              keyboardType: TextInputType.url,
+              decoration: _inputDecoration(
+                context,
+                hint: 'https://example.com/api',
+              ),
+            ),
+            const SizedBox(height: 14),
+            _label(context, tr('服务器密钥')),
+            const SizedBox(height: 6),
+            Focus(
+              onFocusChange: (v) => setState(() => _secretFocused = v),
+              child: TextField(
+                controller: _secretCtrl,
+                obscureText: !_secretVisible,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: _inputDecoration(
+                  context,
                   hint: tr('API 签名密钥'),
                   suffixIcon: (_secretFocused && _secretCtrl.text.isNotEmpty)
                       ? IconButton(
@@ -497,41 +503,45 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
                           onPressed: () =>
                               setState(() => _secretVisible = !_secretVisible),
                         )
-                      : null),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              FilledButton(
-                onPressed: _dirty ? _saveServerConfig : null,
-                style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                      : null,
                 ),
-                child:   Text(tr('保存'), style: TextStyle(fontSize: 13)),
               ),
-              const SizedBox(width: 10),
-              OutlinedButton(
-                onPressed: _resetServerConfig,
-                style: OutlinedButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                ),
-                child:   Text(tr('恢复默认'), style: TextStyle(fontSize: 13)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            tr('登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：{url}', {'url': defaultAuthBaseUrl}),
-            style: TextStyle(
-              fontSize: 11,
-              height: 1.5,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                FilledButton(
+                  onPressed: _dirty ? _saveServerConfig : null,
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  ),
+                  child: Text(tr('保存'), style: TextStyle(fontSize: 13)),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton(
+                  onPressed: _resetServerConfig,
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  ),
+                  child: Text(tr('恢复默认'), style: TextStyle(fontSize: 13)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              tr(
+                '登录、注册、找回密码等接口的根地址和签名密钥。自建后端时，请在服务端后台仪表盘复制服务器 API 与 API 签名密钥后填入。默认地址：{url}',
+                {'url': defaultAuthBaseUrl},
+              ),
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.5,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -549,16 +559,18 @@ class _ServerConfigCardState extends ConsumerState<_ServerConfigCard> {
     );
   }
 
-  InputDecoration _inputDecoration(BuildContext context,
-      {required String hint, Widget? suffixIcon}) {
+  InputDecoration _inputDecoration(
+    BuildContext context, {
+    required String hint,
+    Widget? suffixIcon,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return InputDecoration(
       hintText: hint,
       isDense: true,
       filled: true,
       fillColor: scheme.onSurface.withValues(alpha: 0.05),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       suffixIcon: suffixIcon,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -599,7 +611,10 @@ Future<void> _confirmOverwriteSync(
       content: SingleChildScrollView(
         child: _OverwriteConfirmBody(
           message: message,
-          compare: compare,
+          // Future 只在这里取一次：弹窗内任何重建都复用同一 Future，
+          // 否则 FutureBuilder 每次重建清零回「获取中」造成反复抽搐，
+          // 还会反复打云端接口触发限流
+          compareFuture: compare?.call(),
           sourceIsCloud: sourceIsCloud,
         ),
       ),
@@ -632,7 +647,8 @@ Future<void> _runManualSync(
   // 并发会互踩行内状态且进度消息串门
   final container = ProviderScope.containerOf(context, listen: false);
   final st0 = container.read(syncProvider);
-  final busy = st0.playlistSync.syncing ||
+  final busy =
+      st0.playlistSync.syncing ||
       st0.favoritesSync.syncing ||
       st0.pluginSync.syncing ||
       st0.settingsSync.syncing;
@@ -642,16 +658,18 @@ Future<void> _runManualSync(
   }
   XianYuProgressToastHandle? toastRef;
   final manual = cancellable
-      ? SyncManualCtx(onStep: (done, total, name) {
-          toastRef?.update(
-            tr('正在同步插件 "{name}" ({done}/{total})...', {
-              'name': name,
-              'done': done,
-              'total': total,
-            }),
-            progress: done / total,
-          );
-        })
+      ? SyncManualCtx(
+          onStep: (done, total, name) {
+            toastRef?.update(
+              tr('正在同步插件 "{name}" ({done}/{total})...', {
+                'name': name,
+                'done': done,
+                'total': total,
+              }),
+              progress: done / total,
+            );
+          },
+        )
       : null;
   final handle = showXianYuProgressToast(
     context,
@@ -675,37 +693,40 @@ Future<void> _runManualSync(
   }
 }
 
-/// 弹窗正文：无对比取数时直接显示静态文案；有取数时先显示加载中，
+/// 弹窗正文：无取数 Future 时显示静态文案；有取数时先显示加载中，
 /// 成功后将文案替换为「将用云端 N …覆盖本地 M …」带数量的对比描述，
 /// 失败则保留静态文案并附错误提示（不阻断覆盖）。
+/// [compareFuture] 必须由调用方构造一次传入——在 build 内调用 compare
+/// 会让每次重建生成新 Future，FutureBuilder 清零回加载态（窗口抽搐）。
 class _OverwriteConfirmBody extends StatelessWidget {
   const _OverwriteConfirmBody({
     required this.message,
-    required this.compare,
+    required this.compareFuture,
     required this.sourceIsCloud,
   });
 
   final String message;
-  final Future<List<OverwriteStatRow>> Function()? compare;
+  final Future<List<OverwriteStatRow>>? compareFuture;
   final bool sourceIsCloud;
 
-  static String _detail(List<OverwriteStatRow> rows, bool cloudSide) =>
-      rows.map((r) => '${cloudSide ? r.cloud : r.local} ${r.unit}${r.label}').join('、');
+  static String _detail(List<OverwriteStatRow> rows, bool cloudSide) => rows
+      .map((r) => '${cloudSide ? r.cloud : r.local} ${r.unit}${r.label}')
+      .join('、');
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    if (compare == null) return Text(tr(message));
+    final future = compareFuture;
+    if (future == null) return Text(tr(message));
     return FutureBuilder<List<OverwriteStatRow>>(
-      future: compare!(),
+      future: future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
           return Text(
             tr('正在获取云端与本地数据…'),
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           );
         }
         final rows = snap.data;
@@ -716,8 +737,8 @@ class _OverwriteConfirmBody extends StatelessWidget {
         final text = failed
             ? tr(message)
             : tr(pattern)
-                .replaceAll('{a}', _detail(rows, true))
-                .replaceAll('{b}', _detail(rows, false));
+                  .replaceAll('{a}', _detail(rows, true))
+                  .replaceAll('{b}', _detail(rows, false));
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -728,10 +749,9 @@ class _OverwriteConfirmBody extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   tr('云端与本地数据获取失败'),
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: scheme.error),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: scheme.error),
                 ),
               ),
           ],
@@ -746,10 +766,13 @@ Future<List<OverwriteStatRow>> _playlistCompareStats(WidgetRef ref) async {
   final local = await PlaylistStore().loadAll();
   final localSongs = local.fold<int>(0, (n, p) => n + p.songs.length);
   final data = await ref.read(accountApiProvider).fileSyncDownload();
-  final cloudPls =
-      ((data?['playlists'] as List?) ?? const []).whereType<Map>().toList();
+  final cloudPls = ((data?['playlists'] as List?) ?? const [])
+      .whereType<Map>()
+      .toList();
   final cloudSongs = cloudPls.fold<int>(
-      0, (n, pl) => n + ((pl['songs'] as List?) ?? const []).length);
+    0,
+    (n, pl) => n + ((pl['songs'] as List?) ?? const []).length,
+  );
   return [
     (label: '歌单', unit: '个', cloud: cloudPls.length, local: local.length),
     (label: '歌曲', unit: '首', cloud: cloudSongs, local: localSongs),
@@ -795,12 +818,11 @@ class _ManualSyncCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sync = ref.watch(syncProvider.select((s) => (
-          s.playlistSync,
-          s.favoritesSync,
-          s.pluginSync,
-          s.settingsSync,
-        )));
+    final sync = ref.watch(
+      syncProvider.select(
+        (s) => (s.playlistSync, s.favoritesSync, s.pluginSync, s.settingsSync),
+      ),
+    );
     final notifier = ref.read(syncProvider.notifier);
 
     return _GlassCard(
@@ -880,7 +902,8 @@ class _ManualSyncCard extends ConsumerWidget {
               label: tr('正在上传插件...'),
               cancellable: true,
               pick: (s) => s.pluginSync,
-              action: (m) => notifier.syncPluginsUpload(overwrite: true, manual: m),
+              action: (m) =>
+                  notifier.syncPluginsUpload(overwrite: true, manual: m),
             ),
           ),
           onDownload: () => _confirmOverwriteSync(
@@ -894,7 +917,8 @@ class _ManualSyncCard extends ConsumerWidget {
               label: tr('正在恢复插件...'),
               cancellable: true,
               pick: (s) => s.pluginSync,
-              action: (m) => notifier.syncPluginsDownload(overwrite: true, manual: m),
+              action: (m) =>
+                  notifier.syncPluginsDownload(overwrite: true, manual: m),
             ),
           ),
         ),
@@ -984,7 +1008,7 @@ class _AutoSyncCard extends ConsumerWidget {
             title: tr('同步间隔'),
             value: config.syncIntervalSeconds,
             values: const [1800, 3600, 7200, 21600],
-            labels:   [tr('30 分钟'), tr('1 小时'), tr('2 小时'), tr('6 小时')],
+            labels: [tr('30 分钟'), tr('1 小时'), tr('2 小时'), tr('6 小时')],
             onChanged: (v) => notifier.updateAutoSyncConfig(
               config.copyWith(syncIntervalSeconds: v),
             ),
@@ -993,7 +1017,7 @@ class _AutoSyncCard extends ConsumerWidget {
             title: tr('繁忙延后上限'),
             value: config.maxDelayMinutes,
             values: const [15, 30, 60],
-            labels:   [tr('15 分钟'), tr('30 分钟'), tr('1 小时')],
+            labels: [tr('15 分钟'), tr('30 分钟'), tr('1 小时')],
             onChanged: (v) => notifier.updateAutoSyncConfig(
               config.copyWith(maxDelayMinutes: v),
             ),
@@ -1068,7 +1092,10 @@ class _SyncActionTile extends ConsumerWidget {
             children: [
               Text(
                 title,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
               Row(
                 children: [
@@ -1078,7 +1105,7 @@ class _SyncActionTile extends ConsumerWidget {
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
-                    child:   Text(tr('上传'), style: TextStyle(fontSize: 12)),
+                    child: Text(tr('上传'), style: TextStyle(fontSize: 12)),
                   ),
                   const SizedBox(width: 8),
                   OutlinedButton(
@@ -1087,30 +1114,30 @@ class _SyncActionTile extends ConsumerWidget {
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                     ),
-                    child:   Text(tr('下载'), style: TextStyle(fontSize: 12)),
+                    child: Text(tr('下载'), style: TextStyle(fontSize: 12)),
                   ),
                 ],
               ),
             ],
           ),
           if (state.syncing)
-              Padding(
+            Padding(
               padding: EdgeInsets.only(top: 4),
               // 后台同步（登录同步/自动同步）与手动同步共用 syncing 标志，
               // 有来源标注时区分显示，避免误以为手动同步被自动调用
-              child: Text(
-                () {
-                  final bg = ref.watch(bgSyncSourceProvider);
-                  return bg != null ? '$bg中...' : tr('正在同步...');
-                }(),
-                style: TextStyle(fontSize: 12, color: Colors.blue),
-              ),
+              child: Text(() {
+                final bg = ref.watch(bgSyncSourceProvider);
+                return bg != null ? '$bg中...' : tr('正在同步...');
+              }(), style: TextStyle(fontSize: 12, color: Colors.blue)),
             )
           else if (state.lastSummary != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                tr('上次：{summary}{time}', {'summary': state.lastSummary ?? '', 'time': lastTimeStr != null ? ' · $lastTimeStr' : ''}),
+                tr('上次：{summary}{time}', {
+                  'summary': state.lastSummary ?? '',
+                  'time': lastTimeStr != null ? ' · $lastTimeStr' : '',
+                }),
                 style: TextStyle(
                   fontSize: 12,
                   color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
@@ -1147,7 +1174,10 @@ class _SwitchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SwitchListTile(
-      title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+      ),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
       value: value,
       onChanged: onChanged,
