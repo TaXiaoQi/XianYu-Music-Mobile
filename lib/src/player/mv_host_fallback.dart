@@ -26,12 +26,7 @@ Iterable<String> _identityStrings(Map<String, dynamic> song) sync* {
   final rawMap = raw is Map ? raw : null;
   for (final m in [song, rawMap]) {
     if (m == null) continue;
-    for (final k in const [
-      'source',
-      'platform',
-      'pluginId',
-      'platformId',
-    ]) {
+    for (final k in const ['source', 'platform', 'pluginId', 'platformId']) {
       final v = m[k];
       if (v is String && v.trim().isNotEmpty) yield v.trim();
     }
@@ -58,8 +53,10 @@ Future<Map<String, dynamic>?> _httpGetJson(
   Map<String, String> headers,
 ) async {
   try {
-    final resp = await appGet(Uri.parse(url), headers: headers)
-        .timeout(const Duration(seconds: 20));
+    final resp = await appGet(
+      Uri.parse(url),
+      headers: headers,
+    ).timeout(const Duration(seconds: 20));
     if (resp.statusCode < 200 || resp.statusCode >= 300) return null;
     final text = await resp.transform(utf8.decoder).join();
     return _strMap(jsonDecode(text));
@@ -75,7 +72,8 @@ bool isKugouSong(Map<String, dynamic> song) {
 }
 
 String? extractKugouMvHash(Map<String, dynamic> song) {
-  final mvValue = _nestedValue(song, 'mvHash') ??
+  final mvValue =
+      _nestedValue(song, 'mvHash') ??
       _nestedValue(song, 'mv') ??
       _nestedValue(song, 'mvdata');
   String hash = '';
@@ -90,7 +88,8 @@ String? extractKugouMvHash(Map<String, dynamic> song) {
     hash = (mvValue['hash'] ?? mvValue['mvHash'] ?? '').toString();
   }
   hash = hash.trim();
-  if (!RegExp(r'^[a-f\d]{32}$', caseSensitive: false).hasMatch(hash)) return null;
+  if (!RegExp(r'^[a-f\d]{32}$', caseSensitive: false).hasMatch(hash))
+    return null;
   return hash.toLowerCase();
 }
 
@@ -115,11 +114,12 @@ int _streamSize(Map<String, dynamic> stream) {
 }
 
 Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
-  const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+  const ua =
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36';
   final json = await _httpGetJson(
     'https://m.kugou.com/app/i/mv.php?cmd=100&ext=mp4&hash='
-        '${Uri.encodeComponent(mvHash)}',
+    '${Uri.encodeComponent(mvHash)}',
     {'User-Agent': ua, 'Referer': 'https://www.kugou.com/'},
   );
   final status = json?['status'];
@@ -170,13 +170,14 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   final url = _firstString([() => stream['downurl']?.toString()]);
   if (url.isEmpty || !url.toLowerCase().startsWith('http')) return null;
 
-  final backupVal = stream['backupdownurl'] ??
-      stream['backupDownUrl'] ??
-      stream['backupurl'];
+  final backupVal =
+      stream['backupdownurl'] ?? stream['backupDownUrl'] ?? stream['backupurl'];
   final backupUrls = <String>[];
   final list = backupVal is List
       ? backupVal
-      : (backupVal is String && backupVal.isNotEmpty ? [backupVal] : const <dynamic>[]);
+      : (backupVal is String && backupVal.isNotEmpty
+            ? [backupVal]
+            : const <dynamic>[]);
   for (final b in list) {
     final s = b?.toString() ?? '';
     if (s.toLowerCase().startsWith('http')) backupUrls.add(s);
@@ -189,16 +190,18 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   }
 
   final qualities = entries
-      .map((e) => MvQuality(
-            key: e.$1,
-            label: e.$1,
-            height: e.$2.$1,
-            bitrate: e.$2.$2['bitrate'] is num
-                ? (e.$2.$2['bitrate'] as num).toInt()
-                : null,
-            size: _streamSize(e.$2.$2),
-            codec: codecOf(e.$2.$2),
-          ))
+      .map(
+        (e) => MvQuality(
+          key: e.$1,
+          label: e.$1,
+          height: e.$2.$1,
+          bitrate: e.$2.$2['bitrate'] is num
+              ? (e.$2.$2['bitrate'] as num).toInt()
+              : null,
+          size: _streamSize(e.$2.$2),
+          codec: codecOf(e.$2.$2),
+        ),
+      )
       .toList();
 
   return MvSource(
@@ -214,12 +217,13 @@ Future<MvSource?> resolveKugouMvSource(String mvHash, String quality) async {
   );
 }
 
-final RegExp _bilibiliPattern =
-    RegExp(r'bilibili|哔哩哔哩|哔哩|b站', caseSensitive: false);
+final RegExp _bilibiliPattern = RegExp(
+  r'bilibili|哔哩哔哩|哔哩|b站',
+  caseSensitive: false,
+);
 
 bool isBilibiliSong(Map<String, dynamic> song) {
-  if (_nestedValue(song, 'bvid') != null ||
-      _nestedValue(song, 'aid') != null) {
+  if (_nestedValue(song, 'bvid') != null || _nestedValue(song, 'aid') != null) {
     return true;
   }
   return _bilibiliPattern.hasMatch(_identityStrings(song).join(' '));
@@ -231,12 +235,16 @@ Map<String, String> extractBilibiliIdentity(Map<String, dynamic> song) {
   final cid = _nestedValue(song, 'cid')?.toString() ?? '';
   final id = song['id']?.toString() ?? '';
   final identityText = [bvid, id, aid].join(' ');
-  final bvidMatch =
-      RegExp(r'BV[0-9A-Za-z]{10,}', caseSensitive: false).firstMatch(identityText);
+  final bvidMatch = RegExp(
+    r'BV[0-9A-Za-z]{10,}',
+    caseSensitive: false,
+  ).firstMatch(identityText);
   if (bvidMatch != null) bvid = bvidMatch.group(0)!;
   if (aid.isEmpty) {
-    final avMatch = RegExp(r'(?:^|\W)av(\d+)(?:\W|$)', caseSensitive: false)
-        .firstMatch(identityText);
+    final avMatch = RegExp(
+      r'(?:^|\W)av(\d+)(?:\W|$)',
+      caseSensitive: false,
+    ).firstMatch(identityText);
     aid = avMatch?.group(1) ?? '';
   }
   if (aid.isEmpty && bvid.isEmpty && RegExp(r'^\d+$').hasMatch(id)) {
@@ -309,7 +317,7 @@ Future<MvSource?> resolveBilibiliVideoSource(
       : 'https://www.bilibili.com/video/av$aid';
   final play = await _httpGetJson(
     'https://api.bilibili.com/x/player/playurl?$identityQuery'
-        '&cid=${Uri.encodeComponent(cid)}&qn=$qn&fnval=16&fourk=1',
+    '&cid=${Uri.encodeComponent(cid)}&qn=$qn&fnval=16&fourk=1',
     {'Referer': refPage},
   );
   if (play == null) return null;
@@ -332,15 +340,28 @@ Future<MvSource?> resolveBilibiliVideoSource(
     }
   }
 
-  bool isAvc(Map<String, dynamic> v) => (v['codecs']?.toString() ?? '').startsWith('avc1');
+  bool isAvc(Map<String, dynamic> v) =>
+      (v['codecs']?.toString() ?? '').startsWith('avc1');
   int qid(Map<String, dynamic> v) => (v['id'] as num?)?.toInt() ?? 0;
+  // 华为海思硬解（OMX.hisi）对宽度非 16 对齐的流（B站 480P=852 典型中招）
+  // init 会失败并僵死组件，连带后续所有解码器候选初始化失败；width 缺失按对齐处理
+  bool aligned(Map<String, dynamic> v) =>
+      ((v['width'] as num?)?.toInt() ?? 0) % 16 == 0;
   final compatible = dashVideos.where((v) => qid(v) <= qn).toList()
     ..sort((a, b) => qid(b).compareTo(qid(a)));
 
-  Map<String, dynamic>? video = _firstStrMapWhere(dashVideos, (v) => qid(v) == qn && isAvc(v));
+  Map<String, dynamic>? video = _firstStrMapWhere(
+    dashVideos,
+    (v) => qid(v) == qn && isAvc(v) && aligned(v),
+  );
+  video ??= _firstStrMapWhere(dashVideos, (v) => qid(v) == qn && isAvc(v));
+  video ??= _firstStrMapWhere(dashVideos, (v) => qid(v) == qn && aligned(v));
   video ??= _firstStrMapWhere(dashVideos, (v) => qid(v) == qn);
+  video ??= _firstStrMapWhere(compatible, (v) => isAvc(v) && aligned(v));
   video ??= _firstStrMapWhere(compatible, isAvc);
+  video ??= _firstStrMapWhere(compatible, aligned);
   video ??= _firstStrMapWhere(compatible, (_) => true);
+  video ??= _firstStrMapWhere(dashVideos, (v) => isAvc(v) && aligned(v));
   video ??= _firstStrMapWhere(dashVideos, isAvc);
   video ??= _firstStrMapWhere(dashVideos, (_) => true);
 
@@ -349,7 +370,8 @@ Future<MvSource?> resolveBilibiliVideoSource(
     () => video?['base_url']?.toString() ?? '',
     () => durls.isNotEmpty ? durls.first['url']?.toString() ?? '' : '',
   ]);
-  if (directUrl.isEmpty || !directUrl.toLowerCase().startsWith('http')) return null;
+  if (directUrl.isEmpty || !directUrl.toLowerCase().startsWith('http'))
+    return null;
 
   final backupUrls = <String>[];
   void addBackup(dynamic val) {
@@ -367,8 +389,9 @@ Future<MvSource?> resolveBilibiliVideoSource(
   addBackup(video?['backup_url']);
   if (durls.isNotEmpty) addBackup(durls.first['backup_url']);
 
-  final qualityLabel =
-      video != null ? _biliQualityLabels[qid(video)] ?? quality : quality;
+  final qualityLabel = video != null
+      ? _biliQualityLabels[qid(video)] ?? quality
+      : quality;
   final lv = video;
   String mimeType = 'video/mp4';
   if (lv != null) {

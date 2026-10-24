@@ -595,9 +595,21 @@ class MvNotifier extends StateNotifier<MvState> {
   Future<VideoPlayerController?> _initControllerWithFallback(MvSource src) async {
     final candidates = [src.url, ...src.backupUrls];
     Object? lastError;
+    // 必须先起代理再取代理 URL，否则 mvProxyUrlFor 全 null、代理轮被跳过
     await AudioProxyServer.instance.ensureStarted();
-    for (final u in candidates) {
-      final proxy = AudioProxyServer.instance.mvProxyUrlFor(u, src.headers);
+    final proxied = {
+      for (final u in candidates)
+        u: AudioProxyServer.instance.mvProxyUrlFor(u, src.headers),
+    };
+    // 两轮尝试：先代理伺服，全败后直连重试。代理链路对部分视频流
+    // 存在兼容性问题（数据完整送达但设备解码器报错），直连是历史可用路径
+    final attempts = <(String, String?)>[
+      if (proxied.values.any((p) => p != null))
+        for (final u in candidates)
+          if (proxied[u] != null) (u, proxied[u]),
+      for (final u in candidates) (u, null),
+    ];
+    for (final (u, proxy) in attempts) {
       final c = VideoPlayerController.networkUrl(
         Uri.parse(proxy ?? u),
         httpHeaders: src.headers,
@@ -610,9 +622,9 @@ class MvNotifier extends StateNotifier<MvState> {
         if (c.value.hasError) {
           throw StateError(c.value.errorDescription ?? 'init error');
         }
-        if (candidates.length > 1) {
-          AppLog.debug('mv', 'init ok via backup(${candidates.indexOf(u) + 1}/'
-              '${candidates.length}) url=$u');
+        if (attempts.length > 1) {
+          AppLog.debug(
+              'mv', 'init ok url=$u via=${proxy != null ? 'proxy' : 'direct'}');
         }
         return c;
       } catch (e) {
@@ -623,7 +635,7 @@ class MvNotifier extends StateNotifier<MvState> {
       }
     }
     _initProgressTimer?.cancel();
-    AppLog.warn('mv', 'init failed all ${candidates.length} candidates: $lastError');
+    AppLog.warn('mv', 'init failed all ${attempts.length} candidates: $lastError');
     return null;
   }
 
