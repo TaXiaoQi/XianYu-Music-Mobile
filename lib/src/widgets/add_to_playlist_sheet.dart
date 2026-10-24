@@ -56,14 +56,14 @@ ImportedSong importedSongFromQueueItem(QueueItem item) {
 }
 
 ImportedSong importedSongFromLocal(Song song) => ImportedSong(
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      duration: song.duration,
-      coverThumbPath: song.coverThumbPath,
-      localPath: song.path,
-      path: song.path,
-    );
+  title: song.title,
+  artist: song.artist,
+  album: song.album,
+  duration: song.duration,
+  coverThumbPath: song.coverThumbPath,
+  localPath: song.path,
+  path: song.path,
+);
 
 Future<void> showAddToPlaylistSheet(
   BuildContext context,
@@ -84,91 +84,119 @@ Future<void> showAddToPlaylistSheet(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  child: Row(
-                    children: [
-                      Text(
-                        tr('添加到歌单'),
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w700),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                child: Row(
+                  children: [
+                    Text(
+                      tr('添加到歌单'),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
-                      const Spacer(),
-                      Text(
-                        tr('{n} 首', {'n': songs.length}),
-                        style: TextStyle(
-                            fontSize: 12, color: scheme.onSurfaceVariant),
+                    ),
+                    const Spacer(),
+                    Text(
+                      tr('{n} 首', {'n': songs.length}),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                Flexible(
-                  child: ListView(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    children: [
-                      PressableScale(child: ListTile(
+              ),
+              // 外层 showSheetDialog 已统一包滚动：这里不能再套 Flexible
+              // （无界 Column 下 flex 会抛异常），shrinkWrap 直接铺开即可
+              ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                children: [
+                  PressableScale(
+                    child: ListTile(
+                      leading: Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.add, color: scheme.primary, size: 22),
+                      ),
+                      title: Text(
+                        tr('新建歌单'),
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      onTap: () async {
+                        final name = await _promptName(context, tr('新建歌单'));
+                        if (name == null || name.trim().isEmpty) return;
+                        await manager.create(name.trim());
+                        if (!context.mounted) return;
+                        Navigator.of(context).pop();
+                        showXianYuToast(
+                          context,
+                          tr('已创建歌单「{name}」', {'name': name.trim()}),
+                        );
+                      },
+                    ),
+                  ),
+                  for (final p in state.playlists)
+                    PressableScale(
+                      child: ListTile(
                         leading: Container(
                           width: 42,
                           height: 42,
                           decoration: BoxDecoration(
-                            color: scheme.primary.withValues(alpha: 0.12),
+                            color: scheme.primaryContainer,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Icon(Icons.add, color: scheme.primary, size: 22),
-                        ),
-                        title:   Text(tr('新建歌单'),
-                            style: TextStyle(fontWeight: FontWeight.w600)),
-                        onTap: () async {
-                          final name = await _promptName(context, tr('新建歌单'));
-                          if (name == null || name.trim().isEmpty) return;
-                          await manager.create(name.trim());
-                          if (!context.mounted) return;
-                          Navigator.of(context).pop();
-                          showXianYuToast(context, tr('已创建歌单「{name}」', {'name': name.trim()}));
-                        },
-                      )),
-                      for (final p in state.playlists)
-                        PressableScale(child: ListTile(
-                          leading: Container(
-                            width: 42,
-                            height: 42,
-                            decoration: BoxDecoration(
-                              color: scheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(Icons.queue_music,
-                                size: 20,
-                                color: scheme.onPrimaryContainer),
+                          child: Icon(
+                            Icons.queue_music,
+                            size: 20,
+                            color: scheme.onPrimaryContainer,
                           ),
-                          title: Text(p.name,
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(tr('{n} 首', {'n': p.songs.length}),
-                              style: const TextStyle(fontSize: 12)),
-                          onTap: () async {
-                            final marked = songs
-                                .map((s) => s.copyWith(addedInApp: true))
-                                .toList();
-                            await manager.addSongs(p.id, marked);
-                            unawaited(reportDailyLikeSignals(
+                        ),
+                        title: Text(
+                          p.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          tr('{n} 首', {'n': p.songs.length}),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onTap: () async {
+                          final marked = songs
+                              .map((s) => s.copyWith(addedInApp: true))
+                              .toList();
+                          await manager.addSongs(p.id, marked);
+                          unawaited(
+                            reportDailyLikeSignals(
                               ref.read(authProvider.notifier),
-                              ref.read(authProvider).user?.ciyuanxiId?.trim() ?? '',
+                              ref.read(authProvider).user?.ciyuanxiId?.trim() ??
+                                  '',
                               signalType: 'playlist',
                               songs: [
                                 for (final s in songs)
                                   (songName: s.title, singer: s.artist),
                               ],
-                            ));
-                            if (!context.mounted) return;
-                            Navigator.of(context).pop();
-                            showXianYuToast(
-                                context, tr('已添加到「{name}」({n} 首)', {'name': p.name, 'n': songs.length}));
-                          },
-                        )),
-                    ],
-                  ),
-                ),
-              ],
+                            ),
+                          );
+                          if (!context.mounted) return;
+                          Navigator.of(context).pop();
+                          showXianYuToast(
+                            context,
+                            tr('已添加到「{name}」({n} 首)', {
+                              'name': p.name,
+                              'n': songs.length,
+                            }),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ],
           ),
         );
       },
@@ -176,8 +204,11 @@ Future<void> showAddToPlaylistSheet(
   );
 }
 
-Future<String?> _promptName(BuildContext context, String title,
-    {String initial = ''}) {
+Future<String?> _promptName(
+  BuildContext context,
+  String title, {
+  String initial = '',
+}) {
   final ctrl = TextEditingController(text: initial);
   return showPredictiveDialog<String>(
     context: context,
@@ -187,17 +218,21 @@ Future<String?> _promptName(BuildContext context, String title,
         controller: ctrl,
         autofocus: true,
         maxLength: 30,
-        decoration:   InputDecoration(hintText: tr('歌单名称')),
+        decoration: InputDecoration(hintText: tr('歌单名称')),
       ),
       actions: [
-        PressableScale(child: TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child:   Text(tr('取消')),
-        )),
-        PressableScale(child: FilledButton(
-          onPressed: () => Navigator.of(context).pop(ctrl.text),
-          child:   Text(tr('确定')),
-        )),
+        PressableScale(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(tr('取消')),
+          ),
+        ),
+        PressableScale(
+          child: FilledButton(
+            onPressed: () => Navigator.of(context).pop(ctrl.text),
+            child: Text(tr('确定')),
+          ),
+        ),
       ],
     ),
   );
@@ -223,29 +258,35 @@ Future<void> showPlaylistActionsSheet(
               style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
           ),
-          PressableScale(child: ListTile(
-            leading: Icon(Icons.edit_outlined, color: scheme.primary),
-            title:   Text(tr('重命名歌单')),
-            onTap: () async {
-              final name =
-                  await _promptName(context, tr('重命名歌单'), initial: playlist.name);
-              if (name == null || name.trim().isEmpty) return;
-              await manager.rename(playlist.id, name.trim());
-              if (context.mounted) Navigator.of(context).pop();
-            },
-          )),
-          PressableScale(child: ListTile(
-            leading: Icon(Icons.delete_outline, color: scheme.error),
-            title: Text(tr('删除歌单'), style: TextStyle(color: scheme.error)),
-            onTap: () {
-              Navigator.of(context).pop();
-              confirmRemovePlaylist(context, ref, playlist);
-            },
-          )),
+          PressableScale(
+            child: ListTile(
+              leading: Icon(Icons.edit_outlined, color: scheme.primary),
+              title: Text(tr('重命名歌单')),
+              onTap: () async {
+                final name = await _promptName(
+                  context,
+                  tr('重命名歌单'),
+                  initial: playlist.name,
+                );
+                if (name == null || name.trim().isEmpty) return;
+                await manager.rename(playlist.id, name.trim());
+                if (context.mounted) Navigator.of(context).pop();
+              },
+            ),
+          ),
+          PressableScale(
+            child: ListTile(
+              leading: Icon(Icons.delete_outline, color: scheme.error),
+              title: Text(tr('删除歌单'), style: TextStyle(color: scheme.error)),
+              onTap: () {
+                Navigator.of(context).pop();
+                confirmRemovePlaylist(context, ref, playlist);
+              },
+            ),
+          ),
           const SizedBox(height: 6),
         ],
       ),
     ),
   );
 }
-
