@@ -38,6 +38,11 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   List<String> _paths = const [];
   final ScrollController _scroll = ScrollController();
   String _searchError = '';
+  // 加载更多：在线源滚到底自动以更大 limit 重取（Rust 按页缓存保证旧页
+  // 零重复请求），直到某次无新增即认为该源已取完
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  String _lastQuery = '';
   late final StaggerWindow _stagger = StaggerWindow(
     onClosed: () {
       if (mounted) setState(() {});
@@ -50,6 +55,7 @@ class _TrackTabState extends ConsumerState<_TrackTab>
   @override
   void initState() {
     super.initState();
+    _scroll.addListener(_onScroll);
     if (widget.keyword.trim().isNotEmpty) {
       final q = widget.keyword.trim();
       _search(q, '${widget.source.id}|$q');
@@ -111,8 +117,11 @@ class _TrackTabState extends ConsumerState<_TrackTab>
         ListView.builder(
           controller: _scroll,
           padding: EdgeInsets.only(top: topInset, bottom: bottomInset),
-          itemCount: _results.length,
+          itemCount: _results.length + ((_hasMore || _loadingMore) ? 1 : 0),
           itemBuilder: (context, i) {
+            if (i >= _results.length) {
+              return _loadMoreFooter(scheme);
+            }
             final e = _results[i];
             if (e.isLocal) {
               final s = e.localSong!;
@@ -465,10 +474,18 @@ extension _TrackTabActions on _TrackTabState {
     });
     if (q.isEmpty) return;
 
+    // 链路内多处 await 之后还要读 provider：WidgetRef 在组件销毁后会抛
+    // "Cannot use ref after the widget was disposed"（云盘搜索分支曾踩坑），
+    // 统一在搜索发起前捕获容器，后续一律走容器读取
+    final container = ProviderScope.containerOf(context, listen: false);
     final List<_TrackEntry> out = [];
+    // 新一轮搜索重置加载更多状态并记录查询词（滚动追加用它对齐当前结果）
+    _lastQuery = q;
+    _hasMore = false;
+    _loadingMore = false;
     try {
       if (src.isLocal) {
-        final dbPath = await ref.read(dbPathProvider.future);
+        final dbPath = await container.read(dbPathProvider.future);
         final json = await searchLibrarySongs(
           dbPath: dbPath,
           query: q,
@@ -478,7 +495,7 @@ extension _TrackTabActions on _TrackTabState {
             .map((e) => Song.fromJson(e as Map<String, dynamic>))
             .toList();
         out.addAll(list.map((s) => _TrackEntry(isLocal: true, localSong: s)));
-        ref.read(accountApiProvider).reportSearch(q, 'local', list.length);
+        container.read(accountApiProvider).reportSearch(q, 'local', list.length);
       } else if (src.type == _SourceType.cloud) {
         // 网盘来源：取该盘首个账号凭据做文件名搜索，逐个预构造可播放条目。
         // 有已选文件夹的账号只遍历选定范围，避免全盘搜索
@@ -506,7 +523,7 @@ extension _TrackTabActions on _TrackTabState {
             file: f,
           );
           // 列表期头部元数据预探调度（内嵌封面/时长）：去重、限并发、失败静默
-          ref.read(cloudHeadMetaProvider.notifier).scheduleCloudContext(ctx);
+          container.read(cloudHeadMetaProvider.notifier).scheduleCloudContext(ctx);
           final parts = parseCloudFileName(f.name);
           out.add(
             _TrackEntry(
@@ -519,14 +536,17 @@ extension _TrackTabActions on _TrackTabState {
             ),
           );
         }
-        ref
+        container
             .read(accountApiProvider)
             .reportSearch(q, 'cloud:$pid', files.length);
       } else {
-        final engine = await ref.read(pluginEngineProvider.future);
+        final engine = await container.read(pluginEngineProvider.future);
         List<PluginSearchResult> items;
         if (src.type == _SourceType.musicfree) {
-          final catalog = PluginCatalogService(engine, _plugins());
+          final catalog = PluginCatalogService(
+            engine,
+            container.read(pluginManagerProvider).sources,
+          );
           items = await catalog.searchMusic(src.plugin!, q);
         } else {
           items = await engine.searchInPlugin(src.plugin!, src.lxKey!, q);
@@ -540,7 +560,9 @@ extension _TrackTabActions on _TrackTabState {
             ),
           ),
         );
-        ref.read(accountApiProvider).reportSearch(q, 'online', items.length);
+        container
+            .read(accountApiProvider)
+            .reportSearch(q, 'online', items.length);
       }
     } catch (e) {
       AppLog.warn('search', '音源搜索失败 source=${src.id} q=$q error=$e');
@@ -556,13 +578,106 @@ extension _TrackTabActions on _TrackTabState {
     }
     if (!mounted) return;
     if (_searchedHash != hash) return;
+    final online = !src.isLocal && src.type != _SourceType.cloud;
     setState(() {
       _results = out;
       _paths = _buildPaths(out);
       _loading = false;
+      // 首批结果不足 90 条说明上游已在末页（Rust 翻页提前收敛），没有更多
+      _hasMore = online && out.length >= 90;
       // 结果就位时开窗重播入场（换音源/换关键词等同理）
       _stagger.start();
     });
+  }
+
+  /// 滚动近底部触发追加：以「当前条数+90」重取，旧页命中按页缓存，
+  /// 只拉新页；某次结果无增长即判定该源已取完
+  void _onScroll() {
+    if (!_hasMore || _loadingMore || _loading) return;
+    if (!_scroll.hasClients) return;
+    if (_scroll.position.extentAfter < 600) _loadMore();
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    final src = widget.source;
+    if (src.isLocal || src.type == _SourceType.cloud) return;
+    final q = _lastQuery;
+    if (q.isEmpty) return;
+    final hash = '${src.id}|$q';
+    if (hash != _searchedHash) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    final want = _results.length + 90;
+    setState(() => _loadingMore = true);
+    try {
+      List<PluginSearchResult> items;
+      if (src.type == _SourceType.musicfree) {
+        final catalog = PluginCatalogService(
+          await container.read(pluginEngineProvider.future),
+          container.read(pluginManagerProvider).sources,
+        );
+        items = await catalog.searchMusic(src.plugin!, q, limit: want);
+      } else {
+        final engine = await container.read(pluginEngineProvider.future);
+        items = await engine.searchInPlugin(
+          src.plugin!,
+          src.lxKey!,
+          q,
+          limit: want,
+        );
+      }
+      if (!mounted) return;
+      if (_searchedHash != hash) return;
+      final entries = [
+        for (final r in items)
+          _TrackEntry(isLocal: false, pluginSource: src.plugin, pluginResult: r),
+      ];
+      if (entries.length <= _results.length) {
+        setState(() {
+          _hasMore = false;
+          _loadingMore = false;
+        });
+      } else {
+        setState(() {
+          _results = entries;
+          _paths = _buildPaths(entries);
+          _loadingMore = false;
+          _hasMore = entries.length >= want;
+        });
+      }
+    } catch (e) {
+      AppLog.warn('search', '加载更多失败 source=${src.id} q=$q error=$e');
+      if (!mounted) return;
+      setState(() {
+        _loadingMore = false;
+        _hasMore = false;
+      });
+    }
+  }
+
+  Widget _loadMoreFooter(ColorScheme scheme) {
+    if (_loadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 18),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (_hasMore) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        child: Text(
+          tr('已显示全部结果'),
+          style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+        ),
+      ),
+    );
   }
 
   List<String> _buildPaths(List<_TrackEntry> out) {

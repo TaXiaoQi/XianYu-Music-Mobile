@@ -165,6 +165,20 @@ pub(crate) fn mg_filter_data(raw_data: &serde_json::Value) -> Vec<LxSearchItem> 
 }
 
 pub(crate) async fn search_mg(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    if limit <= super::SEARCH_PAGE_SIZE {
+        return search_mg_page(keyword, 1, limit).await;
+    }
+    super::search_fill_pages("mg", keyword, limit, |p| {
+        search_mg_page(keyword, p, super::SEARCH_PAGE_SIZE)
+    })
+    .await
+}
+
+async fn search_mg_page(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
     let time = std::time::SystemTime::now();
     let timestamp = time
         .duration_since(std::time::UNIX_EPOCH)
@@ -177,10 +191,11 @@ pub(crate) async fn search_mg(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
         r#"{"song":1,"album":0,"singer":0,"tagSong":1,"mvSong":0,"bestShow":1,"songlist":0,"lyricSong":0}"#,
     );
     let url = format!(
-        "https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch={}&pageSize={}&text={}&pageNo=1&sort=0&sid=USS",
+        "https://jadeite.migu.cn/music_search/v3/search/searchAll?isCorrect=0&isCopyright=1&searchSwitch={}&pageSize={}&text={}&pageNo={}&sort=0&sid=USS",
         search_switch,
         limit,
-        urlencoding::encode(keyword)
+        urlencoding::encode(keyword),
+        page
     );
 
     let result = http_get_json(

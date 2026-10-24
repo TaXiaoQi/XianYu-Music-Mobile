@@ -308,9 +308,24 @@ fn kg_handle_result(raw_data: &serde_json::Value) -> Vec<LxSearchItem> {
 }
 
 pub(crate) async fn search_kg(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    if limit <= super::SEARCH_PAGE_SIZE {
+        return search_kg_page(keyword, 1, limit).await;
+    }
+    super::search_fill_pages("kg", keyword, limit, |p| {
+        search_kg_page(keyword, p, super::SEARCH_PAGE_SIZE)
+    })
+    .await
+}
+
+async fn search_kg_page(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
     let url = format!(
-        "https://songsearch.kugou.com/song_search_v2?keyword={}&page=1&pagesize={}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1",
+        "https://songsearch.kugou.com/song_search_v2?keyword={}&page={}&pagesize={}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1",
         urlencoding::encode(keyword),
+        page,
         limit
     );
     // 酷狗接口偶发 error_code != 0 / 无列表，最多重试 3 次（对齐桌面端 searchKg）

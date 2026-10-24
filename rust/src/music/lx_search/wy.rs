@@ -4,9 +4,25 @@ use super::*;
 use std::collections::HashMap;
 
 pub(crate) async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    if limit <= super::SEARCH_PAGE_SIZE {
+        return search_wy_page(keyword, 1, limit).await;
+    }
+    super::search_fill_pages("wy", keyword, limit, |p| {
+        search_wy_page(keyword, p, super::SEARCH_PAGE_SIZE)
+    })
+    .await
+}
+
+async fn search_wy_page(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
+    let offset = (page - 1) * limit;
     let url = format!(
-        "https://music.163.com/api/search/get/web?s={}&type=1&offset=0&limit={}",
+        "https://music.163.com/api/search/get/web?s={}&type=1&offset={}&limit={}",
         urlencoding::encode(keyword),
+        offset,
         limit
     );
 
@@ -18,7 +34,7 @@ pub(crate) async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
             match http_get_json(
                 &url,
                 &[
-                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"),
+                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"),
                     ("Referer", "https://music.163.com"),
                     ("Cookie", "MUSIC_A=1"),
                 ],

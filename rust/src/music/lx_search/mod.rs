@@ -54,6 +54,74 @@ pub struct LxSearchItem {
     pub lx_types: Option<HashMap<String, LxTypeEntry>>,
 }
 
+/// 单页大小：搜索按 30/页翻页取数。各上游对单页 pageSize 上限不一
+/// （大 pagesize 单请求会被截断成 30~47 条不等，即「搜不到更多」的根因），
+/// 统一翻页拼取，limit≤30 时行为与原先单请求完全一致
+pub(crate) const SEARCH_PAGE_SIZE: u32 = 30;
+/// 最多翻页数：初始搜索 90 条（3 页），滚动加载更多逐步 +90（每档 3 页），
+/// 20 页（600 条/源）封顶——热门歌上游总数数千，全量拉取会触发风控且尾部
+/// 相关性早已无意义，600 条对搜索场景即"完整"
+pub(crate) const SEARCH_MAX_PAGES: u32 = 20;
+
+/// 跨页去重键：songmid/hash 优先（同源唯一），缺省回退 name+singer+album
+pub(crate) fn search_dedup_key(it: &LxSearchItem) -> String {
+    if !it.songmid.is_empty() {
+        return format!("{}:{}", it.source, it.songmid);
+    }
+    if let Some(h) = &it.hash {
+        if !h.is_empty() {
+            return format!("{}:{}", it.source, h);
+        }
+    }
+    format!("{}:{}:{}", it.source, it.name, it.singer)
+}
+
+/// 按页取数拼满 target 条：顺序翻页，某页不足一页（末页）或失败即提前收敛；
+/// 已取得的页保留，全部失败才上抛首个错误。limit≤SEARCH_PAGE_SIZE 时仅请求 1 页。
+/// 每页结果写入按页缓存——加载更多以更大 limit 重取时旧页命中缓存、只拉新页
+pub(crate) async fn search_fill_pages<F, Fut>(
+    source: &str,
+    keyword: &str,
+    target: u32,
+    page_fetch: F,
+) -> Result<Vec<LxSearchItem>, String>
+where
+    F: Fn(u32) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<LxSearchItem>, String>>,
+{
+    let pages =
+        ((target + SEARCH_PAGE_SIZE - 1) / SEARCH_PAGE_SIZE).clamp(1, SEARCH_MAX_PAGES);
+    let mut out: Vec<LxSearchItem> = Vec::new();
+    let mut first_err: Option<String> = None;
+    for page in 1..=pages {
+        let items = if let Some(cached) = get_cached_search_page(source, keyword, page).await {
+            cached
+        } else {
+            match page_fetch(page).await {
+                Ok(fresh) => {
+                    set_cached_search_page(source, keyword, page, fresh.clone()).await;
+                    fresh
+                }
+                Err(e) => {
+                    first_err = first_err.or(Some(e));
+                    break;
+                }
+            }
+        };
+        let fetched = items.len() as u32;
+        out.extend(items);
+        if fetched < SEARCH_PAGE_SIZE {
+            break; // 末页：上游没有更多了
+        }
+    }
+    if out.is_empty() {
+        return Err(first_err.unwrap_or_else(|| "search: no results".into()));
+    }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|it| seen.insert(search_dedup_key(it)));
+    Ok(out)
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct LxTypeTuple {
     #[serde(rename = "type")]
@@ -80,6 +148,12 @@ const SEARCH_CACHE_MAX_ENTRIES: usize = 200;
 
 fn make_search_cache_key(source: &str, keyword: &str, limit: u32) -> String {
     format!("{}/{}/{}", source, keyword, limit)
+}
+
+/// 按页缓存键：与整结果缓存共用一张表（前缀区分）。加载更多用更大 limit
+/// 重取时，旧页直接命中本缓存，上游零重复请求
+fn make_page_cache_key(source: &str, keyword: &str, page: u32) -> String {
+    format!("page/{}/{}/{}", source, keyword, page)
 }
 
 /// 查询搜索缓存
@@ -131,6 +205,39 @@ fn evict_search_cache(cache: &mut HashMap<String, SearchCacheEntry>, now: Instan
     for (k, _) in keys.into_iter().take(excess) {
         cache.remove(&k);
     }
+}
+
+/// 按页缓存读写（与整结果缓存同表同 TTL 同 LRU 淘汰）
+async fn get_cached_search_page(
+    source: &str,
+    keyword: &str,
+    page: u32,
+) -> Option<Vec<LxSearchItem>> {
+    let key = make_page_cache_key(source, keyword, page);
+    let mut cache = search_cache().write().await;
+    let now = Instant::now();
+    let entry = cache.get_mut(&key)?;
+    if entry.expires_at <= now {
+        cache.remove(&key);
+        return None;
+    }
+    entry.last_access = now;
+    Some(entry.items.clone())
+}
+
+async fn set_cached_search_page(source: &str, keyword: &str, page: u32, items: Vec<LxSearchItem>) {
+    let mut cache = search_cache().write().await;
+    let key = make_page_cache_key(source, keyword, page);
+    let now = Instant::now();
+    cache.insert(
+        key,
+        SearchCacheEntry {
+            items,
+            expires_at: now + Duration::from_secs(SEARCH_CACHE_TTL_SECS),
+            last_access: now,
+        },
+    );
+    evict_search_cache(&mut cache, now);
 }
 
 /// 清除搜索缓存

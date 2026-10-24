@@ -289,11 +289,25 @@ pub(crate) fn tx_handle_result(raw_list: &serde_json::Value) -> Vec<LxSearchItem
 }
 
 pub(crate) async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    if limit <= super::SEARCH_PAGE_SIZE {
+        return search_tx_page(keyword, 1, limit).await;
+    }
+    super::search_fill_pages("tx", keyword, limit, |p| {
+        search_tx_page(keyword, p, super::SEARCH_PAGE_SIZE)
+    })
+    .await
+}
+
+async fn search_tx_page(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
     // 优先走无需签名的 soso 接口。
     //
     // 带签名的 musics.fcg 已返回 code 2000（签名校验失败），
     // 且该接口对桌面版 User-Agent 会返回空列表，需用移动端 UA。
-    if let Ok(items) = search_tx_soso(keyword, limit).await {
+    if let Ok(items) = search_tx_soso(keyword, page, limit).await {
         if !items.is_empty() {
             return Ok(items);
         }
@@ -313,7 +327,7 @@ pub(crate) async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
                 "search_type": 0,
                 "searchid": format!("{}", chrono_like_random()),
                 "query": keyword,
-                "page_num": 1,
+                "page_num": page,
                 "num_per_page": limit,
                 "highlight": 0, "nqc_flag": 0, "multi_zhida": 0, "cat": 2, "grp": 1, "sin": 0, "sem": 0,
             },
@@ -367,7 +381,7 @@ pub(crate) async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
                 "search_type": 0,
                 "searchid": format!("{}", chrono_like_random()),
                 "query": keyword,
-                "page_num": 1,
+                "page_num": page,
                 "num_per_page": limit,
                 "highlight": 0, "nqc_flag": 0, "multi_zhida": 0, "cat": 2, "grp": 1, "sin": 0, "sem": 0,
             },
@@ -405,15 +419,20 @@ pub(crate) async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
 /// QQ 音乐搜索（soso 接口，无需签名）。
 ///
 /// 必须使用移动端 User-Agent：桌面版 UA 会得到 `code:0` 但列表为空。
-async fn search_tx_soso(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+async fn search_tx_soso(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
     const MOBILE_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1";
 
     // 注意：不能带 new_json=1，否则上游返回 code:0 但 song.list 恒为空。
     let url = format!(
         "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?ct=24&qqmusic_ver=1298\
          &remoteplace=txt.yqq.song&t=0&aggr=1&cr=1&catZhida=1&lossless=0\
-         &flag_qc=0&p=1&n={}&w={}&format=json&inCharset=utf8&outCharset=utf-8\
+         &flag_qc=0&p={}&n={}&w={}&format=json&inCharset=utf8&outCharset=utf-8\
          &notice=0&platform=yqq.json&needNewCode=0",
+        page,
         limit,
         urlencoding::encode(keyword)
     );

@@ -146,9 +146,25 @@ fn kw_handle_result(raw_data: &serde_json::Value) -> Option<Vec<LxSearchItem>> {
 }
 
 pub(crate) async fn search_kw(keyword: &str, limit: u32) -> Result<Vec<LxSearchItem>, String> {
+    if limit <= super::SEARCH_PAGE_SIZE {
+        return search_kw_page(keyword, 1, limit).await;
+    }
+    super::search_fill_pages("kw", keyword, limit, |p| {
+        search_kw_page(keyword, p, super::SEARCH_PAGE_SIZE)
+    })
+    .await
+}
+
+async fn search_kw_page(
+    keyword: &str,
+    page: u32,
+    limit: u32,
+) -> Result<Vec<LxSearchItem>, String> {
+    // pn 为 0 起始页码
     let url = format!(
-        "http://search.kuwo.cn/r.s?client=kt&all={}&pn=0&rn={}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1",
+        "http://search.kuwo.cn/r.s?client=kt&all={}&pn={}&rn={}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1",
         urlencoding::encode(keyword),
+        page - 1,
         limit
     );
     let result = http_get_json(&url, &[]).await?;

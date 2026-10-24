@@ -837,7 +837,8 @@ class PluginEngine {
     PluginSource source,
     String sourceKey,
     String keyword, {
-    int limit = 30,
+    // LX 宿主按 30/页翻页拼取，90 ≈ 3 页：单请求大 pagesize 会被上游截断
+    int limit = 90,
   }) async {
     return lxHostSearchFallback(source, sourceKey, keyword, limit: limit);
   }

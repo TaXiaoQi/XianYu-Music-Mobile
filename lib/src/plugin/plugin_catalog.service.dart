@@ -777,8 +777,25 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   Future<List<PluginSearchResult>> searchMusic(
       PluginSource source, String keyword,
       {int limit = 30}) async {
-    final results =
-        await _tryCallList(source, 'search', [keyword, 1, 'music'], limit: limit);
+    // MusicFree 插件 search(keyword, page) 单页约 30 条且无翻页入口：
+    // 按页序并行拉取（初始 3 页；加载更多传入更大 limit，页数随 limit 增长，
+    // 上限 10 页）拼取去重（部分插件忽略 page 返回全量，去重后即收敛），
+    // 避免只显示第一页
+    final pageCount = ((limit / 30).ceil()).clamp(1, 10);
+    final pages = await Future.wait([
+      for (var p = 1; p <= pageCount; p++)
+        _tryCallList(source, 'search', [keyword, p, 'music'], limit: limit),
+    ]);
+    final seen = <String>{};
+    final results = <PluginSearchResult>[];
+    for (final page in pages) {
+      for (final r in page) {
+        final key = r.songmid.isNotEmpty
+            ? '${r.source}:${r.songmid}'
+            : '${r.source}:${r.name}:${r.singer}';
+        if (seen.add(key)) results.add(r);
+      }
+    }
     if (results.isNotEmpty) return results;
     if (isQqMusicPluginSource(source, _platformOf(source))) {
       return qqHostSearchFallback(source, keyword, limit: limit);
