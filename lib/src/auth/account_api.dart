@@ -604,6 +604,23 @@ class AccountApi {
     }, fetchTimeoutMs: 60000);
   }
 
+  /// 批量覆盖上传：一次请求把云端插件/订阅替换为所传全集
+  ///（手动「同步至服务器」专用，替代「批量清理 + N 次 upload_one」）
+  Future<void> uploadPluginsBatch(
+    List<Map<String, dynamic>> plugins, {
+    required List<Map<String, dynamic>> subscriptions,
+  }) async {
+    final ciyuanxiId = _ciyuanxiId;
+    if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
+      throw AuthException(tr('请先登录后再同步插件'));
+    }
+    await _action('plugin_sync_upload_batch', {
+      'user_id': ciyuanxiId,
+      'plugins': plugins,
+      'subscriptions': subscriptions,
+    }, fetchTimeoutMs: 115000);
+  }
+
   Future<Map<String, dynamic>> downloadPluginSnapshot() async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {

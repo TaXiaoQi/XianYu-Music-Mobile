@@ -11,7 +11,7 @@ class PluginsSyncService {
 
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
-  Future<void> upload({bool overwrite = false}) async {
+  Future<void> upload({bool overwrite = false, SyncManualCtx? manual}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
       var sources = _ref.read(pluginManagerProvider).sources;
@@ -29,16 +29,99 @@ class PluginsSyncService {
           .map((s) => s.toJson())
           .toList();
       if (overwrite) {
-        // 覆盖上传：以本地为准清理云端多余插件/订阅；清理失败则中止，
-        // 否则继续上传会得到既非本地也非云端的混合状态
-        final errors = <String>[];
-        if (!await _cleanCloudExtraForOverwrite(
-            targets.map((p) => p.id).toSet(), subs, errors)) {
+        // 批量覆盖上传：先读全部脚本与用户变量，全部可读 → 一次
+        // plugin_sync_upload_batch 把云端替换为本地全集（多余项删除广播
+        // 由服务端处理）；任一脚本读不出来或批量请求失败 → 回退旧两步流程
+        final dir = await _dataDir();
+        final ciyuanxiId = _api.ciyuanxiId;
+        final items = <Map<String, dynamic>>[];
+        var readFailed = false;
+        final batchErrors = <String>[];
+        for (final p in targets) {
+          try {
+            final script =
+                await rust.readPluginFile(path: '$dir/plugins/${p.id}.js');
+            if (script.trim().isEmpty) {
+              batchErrors.add(
+                  tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
+              readFailed = true;
+              continue;
+            }
+            final plugin = <String, dynamic>{
+              'id': p.id,
+              'name': p.name,
+              'version': p.version,
+              'author': p.author,
+              'description': p.description,
+              'enabled': p.enabled,
+              'sources': p.sources,
+              'filePath': '$dir/plugins/${p.id}.js',
+              'sourceUrl': p.sourceUrl,
+              'script': SyncNotifier._encodeRevBase64(script),
+              'scriptEncoded': true,
+            };
+            if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) {
+              final userVars = await _ref
+                  .read(pluginUserVarValuesProvider.notifier)
+                  .valuesOf(p.id);
+              if (userVars.isNotEmpty) {
+                final block =
+                    PluginUserVarCrypto.encrypt(ciyuanxiId, userVars);
+                if (block != null) plugin['userVariablesEncrypted'] = block;
+              }
+            }
+            items.add(plugin);
+          } catch (e) {
+            AppLog.warn('sync', '批量上传预读插件 ${p.name} 失败: $e');
+            batchErrors.add(
+                tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
+            readFailed = true;
+          }
+        }
+        if (targets.isNotEmpty && items.isEmpty) {
+          // 全部脚本读不出来：中止覆盖（避免把云端清成空集）
           _lens.item = _lens.item.copyWith(
             syncing: false,
             lastSummary: tr('覆盖上传已中止'),
             lastTime: DateTime.now(),
-            errors: errors,
+            errors: batchErrors,
+          );
+          return;
+        }
+        if (!readFailed && manual?.cancelled != true) {
+          try {
+            await _api.uploadPluginsBatch(items, subscriptions: subs);
+            await PluginSyncState.setSyncedIds(
+                items.map((p) => p['id'] as String).toList());
+            _lens.item = _lens.item.copyWith(
+              syncing: false,
+              lastSummary: items.isNotEmpty
+                  ? tr('已上传 {n} 个插件{subs}', {
+                      'n': items.length,
+                      'subs': subs.isNotEmpty
+                          ? tr('、{n} 个订阅', {'n': subs.length})
+                          : ''
+                    })
+                  : (subs.isNotEmpty
+                      ? tr('已上传 {n} 个订阅链接', {'n': subs.length})
+                      : tr('本地暂无可上传的插件')),
+              lastTime: DateTime.now(),
+            );
+            return;
+          } catch (e) {
+            AppLog.warn('sync', '插件批量上传失败，回退逐个上传: $e');
+            batchErrors.add(tr('批量上传失败，已回退逐个上传'));
+          }
+        }
+        // 回退旧两步流程：以本地为准清理云端多余插件/订阅；清理失败则中止，
+        // 否则继续上传会得到既非本地也非云端的混合状态
+        if (!await _cleanCloudExtraForOverwrite(
+            targets.map((p) => p.id).toSet(), subs, batchErrors)) {
+          _lens.item = _lens.item.copyWith(
+            syncing: false,
+            lastSummary: tr('覆盖上传已中止'),
+            lastTime: DateTime.now(),
+            errors: batchErrors,
           );
           return;
         }
@@ -71,7 +154,10 @@ class PluginsSyncService {
       var uploaded = 0;
       final uploadedIds = <String>[];
       for (var i = 0; i < targets.length; i++) {
+        // 软取消：下一项边界停止，已完成项保留（对齐桌面端）
+        if (manual?.cancelled == true) break;
         final p = targets[i];
+        manual?.onStep?.call(i + 1, targets.length, p.name);
         final scriptPath = '$dir/plugins/${p.id}.js';
         try {
           final script = await rust.readPluginFile(path: scriptPath);
@@ -124,7 +210,7 @@ class PluginsSyncService {
     }
   }
 
-  Future<void> download({bool overwrite = false}) async {
+  Future<void> download({bool overwrite = false, SyncManualCtx? manual}) async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     // 覆盖下载的事务回滚：清空本地后任何异常整体写回覆盖前状态
     Future<void> Function()? overwriteRollback;
@@ -216,13 +302,18 @@ class PluginsSyncService {
           ? const <String>{}
           : await PluginSyncState.downloadSkipIds();
       final pluginManager = _ref.read(pluginManagerProvider.notifier);
-      for (final item in items) {
+      for (var idx = 0; idx < items.length; idx++) {
+        final item = items[idx];
+        // 软取消：下一项边界停止（清空本地后的覆盖下载同样适用——
+        // 已恢复项保留、账本按实际恢复集重置，下次同步续齐剩余）
+        if (manual?.cancelled == true) break;
         final cloudId = (item['id'] as String?)?.trim() ?? '';
         if (cloudId.isNotEmpty && downloadSkip.contains(cloudId)) {
           continue;
         }
         final cloudName = (item['name'] as String?)?.trim() ?? '';
         final name = cloudName.isNotEmpty ? cloudName : tr('未知插件');
+        manual?.onStep?.call(idx + 1, items.length, name);
         var script = (item['script'] as String?) ?? '';
         if (item['scriptEncoded'] == true && script.isNotEmpty) {
           try {
