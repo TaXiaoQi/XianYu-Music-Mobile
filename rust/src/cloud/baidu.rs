@@ -23,6 +23,7 @@
 // - 日志不打 cred/cookie 内容。
 
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
@@ -68,9 +69,13 @@ fn is_oauth(cred: &Value) -> bool {
             .unwrap_or(false)
 }
 
-/// xpan 业务请求头（UA + access_token 走 query，无需 Cookie）。
+/// xpan 业务请求头（access_token 走 query，无需 Cookie）。UA/Referer
+/// 对齐声影音乐实测组合（pan.baidu.com 系）——无 Cookie 会话绑定问题。
 fn oauth_headers() -> Vec<(String, String)> {
-    vec![("User-Agent".into(), UA.into())]
+    vec![
+        ("User-Agent".into(), "pan.baidu.com".into()),
+        ("Referer".into(), "https://pan.baidu.com/".into()),
+    ]
 }
 
 /// 换 access_token：缓存有效直接用；否则用 refresh_token 续新，
@@ -686,6 +691,53 @@ fn is_rate_limited(host: &str) -> bool {
     host.contains("d2-ant") || host.contains("speed-limited")
 }
 
+/// Cookie 轨签名三元组缓存：sign1/sign3/timestamp 由 gettemplatevariable
+/// 下发（账号 session 派生、长期稳定），按账号缓存后每首歌省 1 个 API
+/// 往返。errno=113（签名过期）时调用方清除，重试链路自动重拉。
+static SIGN_CACHE: OnceLock<Mutex<HashMap<String, (String, String, i64, i64)>>> =
+    OnceLock::new();
+const SIGN_CACHE_TTL_MS: i64 = 30 * 60 * 1000;
+
+fn sign_cache() -> &'static Mutex<HashMap<String, (String, String, i64, i64)>> {
+    SIGN_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 缓存键：登录态 Cookie 串摘要（账号维度）。
+fn sign_cache_key(cred: &Value) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    http::cookie_header(&cred_pairs(cred)).hash(&mut h);
+    format!("{:016x}", h.finish())
+}
+
+fn cached_sign(key: &str) -> Option<(String, String, i64)> {
+    let now = now_ms();
+    let mut map = sign_cache().lock().ok()?;
+    let fresh = map
+        .get(key)
+        .filter(|(_, _, _, at)| now - *at < SIGN_CACHE_TTL_MS)
+        .map(|(s1, s3, ts, _)| (s1.clone(), s3.clone(), *ts));
+    if fresh.is_none() {
+        map.retain(|_, (_, _, _, at)| now - *at < SIGN_CACHE_TTL_MS);
+    }
+    fresh
+}
+
+fn store_sign(key: &str, sign1: &str, sign3: &str, timestamp: i64) {
+    if let Ok(mut map) = sign_cache().lock() {
+        map.insert(
+            key.to_string(),
+            (sign1.to_string(), sign3.to_string(), timestamp, now_ms()),
+        );
+    }
+}
+
+fn drop_sign(key: &str) {
+    if let Ok(mut map) = sign_cache().lock() {
+        map.remove(key);
+    }
+}
+
 /// RC4（百度 /api/download 签名：网页 sign2 下发的即固定 RC4 JS 实现，
 /// key=sign3、data=sign1，输出 base64 即 sign，2026-10 逆向实测）。
 fn rc4(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -828,30 +880,40 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     // netdisk 系 UA + 全量 cookie（缺 cookie 报 31045 user not exists）；
     // 终态 baidupcs URL 自带签名授权，播放头透传即可。
     // 1) 签名三元组（timestamp 也用下发值，避免本地时钟偏差）。
-    let resp = http::get(
-        "https://pan.baidu.com/api/gettemplatevariable?clienttype=0&app_id=250528&web=1&fields=%5B%22sign1%22%2C%22sign2%22%2C%22sign3%22%2C%22timestamp%22%5D",
-        &auth_headers(&req.cred),
-    )
-    .await
-    .map_err(biz_err)?;
-    if !resp.is_ok() {
-        return Err(biz_err(format!("直链获取失败(http={})", resp.status)));
-    }
-    let j = resp.json().map_err(biz_err)?;
-    let errno = num_i64(j.get("errno")).unwrap_or(-1);
-    if errno != 0 {
-        if cred_expired(errno) {
-            return Err(biz_err("登录已过期，请重新绑定"));
+    //    三元组按账号缓存 30 分钟：命中则免掉 gettemplatevariable 往返。
+    let sign_key = sign_cache_key(&req.cred);
+    let (sign1, sign3, timestamp) = match cached_sign(&sign_key) {
+        Some(v) => v,
+        None => {
+            let resp = http::get(
+                "https://pan.baidu.com/api/gettemplatevariable?clienttype=0&app_id=250528&web=1&fields=%5B%22sign1%22%2C%22sign2%22%2C%22sign3%22%2C%22timestamp%22%5D",
+                &auth_headers(&req.cred),
+            )
+            .await
+            .map_err(biz_err)?;
+            if !resp.is_ok() {
+                return Err(biz_err(format!("直链获取失败(http={})", resp.status)));
+            }
+            let j = resp.json().map_err(biz_err)?;
+            let errno = num_i64(j.get("errno")).unwrap_or(-1);
+            if errno != 0 {
+                if cred_expired(errno) {
+                    return Err(biz_err("登录已过期，请重新绑定"));
+                }
+                return Err(biz_err(format!("直链获取失败(errno={errno})")));
+            }
+            let r = j.get("result").cloned().unwrap_or(Value::Null);
+            let sign1 = jstr(r.get("sign1"));
+            let sign3 = jstr(r.get("sign3"));
+            let timestamp =
+                num_i64(r.get("timestamp")).unwrap_or_else(|| now_ms() / 1000);
+            if sign1.is_empty() || sign3.is_empty() {
+                return Err(biz_err("直链获取失败"));
+            }
+            store_sign(&sign_key, &sign1, &sign3, timestamp);
+            (sign1, sign3, timestamp)
         }
-        return Err(biz_err(format!("直链获取失败(errno={errno})")));
-    }
-    let r = j.get("result").cloned().unwrap_or(Value::Null);
-    let sign1 = jstr(r.get("sign1"));
-    let sign3 = jstr(r.get("sign3"));
-    let timestamp = num_i64(r.get("timestamp")).unwrap_or_else(|| now_ms() / 1000);
-    if sign1.is_empty() || sign3.is_empty() {
-        return Err(biz_err("直链获取失败"));
-    }
+    };
     // 2) RC4 + base64 铸 sign，请求直链。
     let sign = B64.encode(rc4(sign3.as_bytes(), sign1.as_bytes()));
     let resp = http::get(
@@ -874,6 +936,8 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             return Err(biz_err("登录已过期，请重新绑定"));
         }
         let msg = if errno == 113 { "签名已过期，请重试" } else { "直链获取失败" };
+        // 签名相关失败清缓存，Dart 侧重取链路将拉到新三元组
+        drop_sign(&sign_key);
         return Err(biz_err(format!("{msg}(errno={errno})")));
     }
     // 响应形态（2026-10 实测三种）：顶层 dlink 字符串；顶层 dlink 数组
@@ -1041,6 +1105,24 @@ mod tests {
         assert_eq!(num_i64(json!({}).get("errno")), None);
         assert_eq!(num_i64(Some(&json!(2.0))), Some(2));
         assert_eq!(num_i64(Some(&json!(-105))), Some(-105));
+    }
+
+    #[test]
+    fn sign_cache_roundtrip_and_account_isolation() {
+        let k = "unit-test-key";
+        assert!(cached_sign(k).is_none());
+        store_sign(k, "s1", "s3", 1700000000);
+        assert_eq!(
+            cached_sign(k),
+            Some(("s1".to_string(), "s3".to_string(), 1700000000))
+        );
+        drop_sign(k);
+        assert!(cached_sign(k).is_none());
+        // 缓存键按登录态 Cookie 摘要：同账号稳定、异账号隔离。
+        let a = sign_cache_key(&json!({ "BDUSS": "aaa" }));
+        let b = sign_cache_key(&json!({ "BDUSS": "bbb" }));
+        assert_ne!(a, b);
+        assert_eq!(a, sign_cache_key(&json!({ "BDUSS": "aaa" })));
     }
 
     #[test]
