@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 $realSource = Split-Path -Parent $PSScriptRoot
 
 if ($env:XIANMU_SKIP_RUST -eq "1") { exit 0 }
@@ -69,6 +69,14 @@ $env:Path = "$cargoBin;" + $env:Path
 
 if ($needCodegen) {
     Write-Host "[rust-hook] Generating Dart bindings..." -ForegroundColor Cyan
+    # 先快照现有 Dart 绑定内容：codegen 产出是确定性的，Rust 逻辑变更（未动
+    # API）时产物逐字节不变 → debug 构建无需中断（Dart 内核快照编译先于
+    # Gradle，只有绑定内容真的变了才必须重跑，与鸿蒙的一轮过体验对齐）。
+    $dartGenDir = Join-Path $realSource "lib\src\rust"
+    $beforeHash = @{}
+    Get-ChildItem $dartGenDir -Recurse -Filter "*.dart" -File | ForEach-Object {
+        $beforeHash[$_.FullName] = (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+    }
     $codegenExe = Join-Path $cargoBin "flutter_rust_bridge_codegen.exe"
     if (-not (Test-Path $codegenExe)) { $codegenExe = "flutter_rust_bridge_codegen" }
     $uncPrefix = [string][char]92 + [char]92 + [char]63 + [char]92
@@ -122,6 +130,17 @@ if ($needCodegen) {
         if (Test-Path $bindings) {
             (Get-Item $bindings).LastWriteTime = Get-Date
         }
+        # 对比 codegen 前后绑定内容：逐字节一致说明只是 Rust 逻辑变更，
+        # 本轮构建直接放行；内容变了（API 变更）才在末尾以退出码 3 提示重跑。
+        $bindingsChanged = $false
+        $afterFiles = Get-ChildItem $dartGenDir -Recurse -Filter "*.dart" -File
+        foreach ($f in $afterFiles) {
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+            if (-not $beforeHash.ContainsKey($f.FullName) -or $beforeHash[$f.FullName] -ne $h) {
+                $bindingsChanged = $true; break
+            }
+        }
+        if (-not $bindingsChanged -and $afterFiles.Count -ne $beforeHash.Count) { $bindingsChanged = $true }
     } finally { Pop-Location }
 }
 
@@ -181,10 +200,14 @@ if ($needSo) {
         Remove-Item -Force
 }
 
-if ($needCodegen) {
+if ($needCodegen -and $bindingsChanged) {
     Write-Host "[rust-hook] Rust API bindings regenerated. Please re-run flutter run." -ForegroundColor Yellow
     exit 3
 }
-
-Write-Host "[rust-hook] .so updated successfully" -ForegroundColor Green
+if ($needCodegen) {
+    Write-Host "[rust-hook] Bindings byte-identical (Rust logic-only change); continuing." -ForegroundColor Green
+}
+if ($needSo) {
+    Write-Host "[rust-hook] .so updated successfully" -ForegroundColor Green
+}
 exit 0

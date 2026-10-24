@@ -3,8 +3,9 @@
 # 由 android/app/build.gradle.kts 的 rustHook 任务在非 Windows 平台调用：
 # flutter run / flutter build / gradle 构建时自动检测并编译 Rust（绑定 + .so）。
 #
-# 退出码：0 = 无需处理或构建成功；3 = 绑定已重新生成（release 构建当轮生效，
-#         debug 需重跑一次）；其他 = 失败（Gradle 任务报错）。
+# 退出码：0 = 无需处理或构建成功；3 = 绑定内容已变更（release 构建当轮生效，
+#         debug 需重跑一次）；绑定逐字节不变（纯 Rust 逻辑变更）时返回 0 直接放行。
+#         其他 = 失败（Gradle 任务报错）。
 # XIANMU_SKIP_RUST=1 可完全跳过（直接复用工程中已有 .so 产物）。
 #
 # 与 ps1 的差异：仅去掉了 Windows 专属的路径规避（D:\ascii-env、UNC 长路径、
@@ -91,6 +92,15 @@ fi
 
 if [ "$needCodegen" -eq 1 ]; then
   log "[rust-hook] Generating Dart bindings..."
+  # 先快照现有 Dart 绑定内容：codegen 产出是确定性的，Rust 逻辑变更（未动
+  # API）时产物逐字节不变 → debug 构建无需中断（与 ps1 版逻辑一致）。
+  DART_GEN_DIR="$ROOT/lib/src/rust"
+  hashDartBindings() {
+    local sum
+    if command -v sha256sum >/dev/null 2>&1; then sum="sha256sum"; else sum="shasum -a 256"; fi
+    find "$DART_GEN_DIR" -type f -name '*.dart' -print0 2>/dev/null | sort -z | xargs -0 $sum 2>/dev/null
+  }
+  beforeHash="$(hashDartBindings)"
   codegen="$CARGO_BIN/flutter_rust_bridge_codegen"
   [ -x "$codegen" ] || codegen="$(command -v flutter_rust_bridge_codegen)" || codegen="flutter_rust_bridge_codegen"
   if ! (cd "$ROOT" && "$codegen" generate \
@@ -104,6 +114,10 @@ if [ "$needCodegen" -eq 1 ]; then
   # 下次仍判定 needCodegen → debug 构建死循环退出码 3。强制刷新
   # mtime 保证与 rust 源的新旧比较必然收敛（与 ps1 版一致）。
   [ -f "$BINDINGS" ] && touch "$BINDINGS"
+  # 对比 codegen 前后绑定内容（哈希含文件路径，新增/删除/改名也能检出）。
+  afterHash="$(hashDartBindings)"
+  bindingsChanged=0
+  [ "$beforeHash" != "$afterHash" ] && bindingsChanged=1
 fi
 
 if [ "$needSo" -eq 1 ]; then
@@ -121,10 +135,10 @@ if [ "$needSo" -eq 1 ]; then
        ! -path '*/arm64-v8a/libxianyu_core.so' -delete 2>/dev/null || true
 fi
 
-if [ "$needCodegen" -eq 1 ]; then
+if [ "$needCodegen" -eq 1 ] && [ "${bindingsChanged:-0}" -eq 1 ]; then
   log "[rust-hook] Rust API bindings regenerated. Please re-run flutter run."
   exit 3
 fi
-
-log "[rust-hook] .so updated successfully"
+[ "$needCodegen" -eq 1 ] && log "[rust-hook] Bindings unchanged (Rust logic-only change); continuing."
+[ "$needSo" -eq 1 ] && log "[rust-hook] .so updated successfully"
 exit 0
