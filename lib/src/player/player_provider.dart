@@ -213,6 +213,17 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   Timer? _sfxSyncTimer;
   DateTime _dspFailUntil = DateTime.fromMillisecondsSinceEpoch(0);
   bool _dspSkipNextStart = false;
+  // 管线轮询重入闸：Timer.periodic 不等上一轮回调跑完，低端机 CPU 被
+  // 插件错误风暴拖慢时回调耗时超过 250ms，多轮回调并发飞行会各自处理
+  // 同一个 active=false 事件，导致 350ms 内连跳多首（实测跳歌根源之一）
+  bool _exclusivePollBusy = false;
+
+  /// 当前管线所属的播放纪元 = 管线启动成功时的 _playEpoch。
+  /// 轮询读到 active=false / 播完时先核对：若已被更新的 _playAt 接管
+  /// （自动升档重播、手动切歌），说明这是旧管线的过期退出事件，必须
+  /// 忽略——否则「升档换管线」被误判为「管线异常退出」，触发自动重播/
+  /// 自动下一曲，与新 _playAt 互相杀管线、同一首歌重复解析音源。
+  int _pipelineEpoch = -1;
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   int _skipDepth = 0;
   Timer? _stallTimer;

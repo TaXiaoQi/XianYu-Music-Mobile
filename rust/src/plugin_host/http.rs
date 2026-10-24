@@ -14,12 +14,34 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const MAX_BODY_SIZE: usize = 50 * 1024 * 1024;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_REDIRECT_LIMIT: usize = 10;
+
+/// 确定性 TLS 失败负缓存窗口：证书握手失败在设备上对该端点是确定性的
+/// （插件的重试也不会成功），窗口内直接返回缓存错误，避免重试风暴
+/// 反复做 TLS 握手拖垮低端机
+const CERT_FAIL_COOLDOWN_SECS: u64 = 120;
+
+/// 提取 https 端点标识（host:port）：证书失败按端点记，http 无证书不参与
+fn cert_endpoint_key(url: &str) -> Option<String> {
+    let u = reqwest::Url::parse(url).ok()?;
+    if u.scheme() != "https" {
+        return None;
+    }
+    let host = u.host_str()?.to_string();
+    let port = u.port_or_known_default().unwrap_or(443);
+    Some(format!("{host}:{port}"))
+}
+
+/// 是否为确定性证书失败（reqwest/hyper 错误链文本，已按 " -> " 展开）
+fn is_cert_failure(err_text: &str) -> bool {
+    let t = err_text.to_ascii_lowercase();
+    t.contains("certificate")
+}
 
 /// 把 reqwest 错误链展开成可读字符串，便于前端定位 timeout/dns/connection/proxy 等问题。
 fn format_request_error(err: reqwest::Error) -> String {
@@ -66,6 +88,8 @@ fn decode_text_body(bytes: &[u8], content_type: Option<&String>) -> String {
 pub struct HttpBridge {
     store: Arc<PluginStore>,
     clients: Mutex<HashMap<usize, reqwest::Client>>,
+    /// 确定性 TLS 失败负缓存：host:port → (冷却截止时刻, 首次错误文本)
+    cert_failures: Mutex<HashMap<String, (Instant, String)>>,
 }
 
 impl HttpBridge {
@@ -73,7 +97,32 @@ impl HttpBridge {
         Self {
             store,
             clients: Mutex::new(HashMap::new()),
+            cert_failures: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// 命中证书失败冷却窗口则返回缓存的错误文本（本次请求直接短路）
+    fn cert_failure_cached(&self, url: &str) -> Option<String> {
+        let key = cert_endpoint_key(url)?;
+        let mut map = self.cert_failures.lock().unwrap();
+        map.retain(|_, (until, _)| *until > Instant::now());
+        let (until, err) = map.get(&key)?;
+        if Instant::now() >= *until {
+            return None;
+        }
+        Some(format!(
+            "{err}（连接熔断：该地址证书握手失败，{CERT_FAIL_COOLDOWN_SECS}s 内跳过重复尝试）"
+        ))
+    }
+
+    fn remember_cert_failure(&self, url: &str, err_text: &str) {
+        let Some(key) = cert_endpoint_key(url) else {
+            return;
+        };
+        let until = Instant::now() + Duration::from_secs(CERT_FAIL_COOLDOWN_SECS);
+        let mut map = self.cert_failures.lock().unwrap();
+        map.retain(|_, (u, _)| *u > Instant::now());
+        map.entry(key).or_insert_with(|| (until, err_text.to_string()));
     }
 
     fn client_for(&self, redirect_limit: usize) -> Result<reqwest::Client, String> {
@@ -144,6 +193,11 @@ impl HttpBridge {
         };
         let client = self.client_for(redirect_limit)?;
 
+        // 确定性 TLS 失败熔断：冷却窗口内不再重复握手，直接短路
+        if let Some(cached_err) = self.cert_failure_cached(url) {
+            return Err(cached_err);
+        }
+
         // SSRF 防护：插件请求只允许公网 http/https 目标，拒绝内网/回环/云元数据等
         let t_validate = std::time::Instant::now();
         let parsed_url = crate::security::ssrf::validate_outbound_url(url)
@@ -196,7 +250,12 @@ impl HttpBridge {
                 if fake_ip_target {
                     return Err("连接失败：该域名被本机代理以 fake-ip 方式接管，但当前应用未走代理隧道（可能被分应用排除）。请在代理软件中将本应用加入代理名单，或将该域名设为直连/加入 fake-ip-filter".to_string());
                 }
-                return Err(format_request_error(e));
+                let err_text = format_request_error(e);
+                // 证书握手失败是确定性的：记录负缓存，让插件随后的重试瞬间短路
+                if is_cert_failure(&err_text) {
+                    self.remember_cert_failure(url, &err_text);
+                }
+                return Err(err_text);
             }
         };
         let status = response.status().as_u16();
@@ -290,5 +349,39 @@ mod tests {
         // 直接验证内部逻辑：有 Cookie 头时不重复注入（通过网络层不可测，跳过）
         assert!(bridge.client_for(0).is_ok());
         assert!(bridge.client_for(10).is_ok());
+    }
+
+    #[test]
+    fn cert_endpoint_key_extracts_host_port() {
+        assert_eq!(
+            cert_endpoint_key("https://a.b:8443/x").as_deref(),
+            Some("a.b:8443")
+        );
+        assert_eq!(cert_endpoint_key("https://a.b/x").as_deref(), Some("a.b:443"));
+        assert_eq!(cert_endpoint_key("http://a.b/x"), None);
+        assert_eq!(cert_endpoint_key("not-a-url"), None);
+    }
+
+    #[test]
+    fn cert_failure_detection() {
+        assert!(is_cert_failure(
+            "error sending request for url (https://1.2.3.4/api) -> client error (Connect) -> invalid peer certificate: Other(OtherError(UnsupportedCertVersion))"
+        ));
+        assert!(!is_cert_failure("error sending request -> client error (Connect) -> connection refused"));
+        assert!(!is_cert_failure("error sending request -> operation timed out"));
+    }
+
+    #[tokio::test]
+    async fn cert_failure_negative_cache_short_circuits() {
+        let bridge = HttpBridge::new(Arc::new(PluginStore::load(None)));
+        let url = "https://cert-broken.example.com/api";
+        assert!(bridge.cert_failure_cached(url).is_none());
+        bridge.remember_cert_failure(
+            url,
+            "client error (Connect) -> invalid peer certificate: UnsupportedCertVersion",
+        );
+        let cached = bridge.cert_failure_cached(url).expect("should hit cooldown");
+        assert!(cached.contains("连接熔断"));
+        assert!(cached.contains("invalid peer certificate"));
     }
 }

@@ -415,6 +415,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
 
   void _startExclusivePolling() {
     _stopExclusivePolling();
+    // 管线启动成功（独占/共享均走这里）：记录归属纪元，供轮询甄别过期事件
+    _pipelineEpoch = _playEpoch;
     // 新会话的管线侧配置是默认值：把交叉时长补上（默认关 → 0）
     final s = _ref.read(settingsProvider).valueOrNull;
     _pushCrossfade(s?.crossfadeEnabled ?? false, s?.crossfadeSeconds ?? 5);
@@ -455,6 +457,18 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
 
   Future<void> _pollExclusive() async {
     if (!state.usbExclusive && !state.dspActive) return;
+    // 上一轮回调未跑完（低端机卡顿时会超 250ms）：丢弃本轮而非并发飞行，
+    // 避免多轮回调各自处理同一个 active=false 事件造成连跳多首
+    if (_exclusivePollBusy) return;
+    _exclusivePollBusy = true;
+    try {
+      await _pollExclusiveInner();
+    } finally {
+      _exclusivePollBusy = false;
+    }
+  }
+
+  Future<void> _pollExclusiveInner() async {
     try {
       final pos = await getUsbExclusivePositionSecs();
       state = state.copyWith(position: pos);
@@ -498,6 +512,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         return;
       }
       if (info['active'] != true) {
+        // 管线已被更新的 _playAt 接管（升档重播/手动切歌会先停旧管线）：
+        // 这是旧管线的过期退出事件，静默忽略，让新 _playAt 自己接管生命周期
+        if (_pipelineEpoch != _playEpoch) return;
         final lastErr = (info['lastError'] as String?)?.trim() ?? '';
         AppLog.warn('play',
             '[dsp] 轮询发现 active=false pos=${pos.toStringAsFixed(1)} lastError=$lastErr');
@@ -509,6 +526,8 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
         return;
       }
       if (dur > 0 && pos >= dur - 0.3) {
+        // 同上：新 _playAt 接管期间旧管线还活着，此时不能按曲终推进队列
+        if (_pipelineEpoch != _playEpoch) return;
         await _onExclusiveTrackEnd();
         return;
       }
@@ -520,34 +539,49 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
   }
 
   Future<void> _onExclusiveDisconnect() async {
+    final epoch = _playEpoch;
     final cur = state.current;
     statsReporter.flush(state);
     AppLog.warn('play',
         '[dsp] 管线提前退出(active=false) 自动重播回退 cur=${cur?.title}');
     if (cur != null) statsReporter.reportBehavior(cur, 'usb_disconnect', 0);
     await _stopExclusive();
+    // 停旧管线的间隙来了新的 _playAt（升档重播/手动切歌）：本次回退已过期，
+    // 必须让位——否则会与新 _playAt 互杀管线、同一首歌重复解析音源
+    if (epoch != _playEpoch) return;
     _dspSkipNextStart = true;
     if (cur == null) return;
     await _playAt(state.queueIndex);
   }
 
   Future<void> _onExclusiveTrackEnd() async {
-    final ended = state.current;
-    if (ended != null) statsReporter.reportBehavior(ended, 'complete', 0);
-    statsReporter.flush(state);
-    await _stopExclusive();
-    if (state.playMode == 1) {
-      await _playAt(state.queueIndex);
-      return;
+    // 曲终推进与 ExoPlayer 侧 _onTrackEnd 共用同一把闸：任何一侧已在
+    // 推进队列时，另一侧的重复事件直接丢弃（多轮回调并发触发会连跳多首）
+    if (_onTrackEndBusy) return;
+    final epoch = _playEpoch;
+    _onTrackEndBusy = true;
+    try {
+      final ended = state.current;
+      if (ended != null) statsReporter.reportBehavior(ended, 'complete', 0);
+      statsReporter.flush(state);
+      await _stopExclusive();
+      // 停管线期间来了新的 _playAt（升档重播/手动切歌）：曲终事件过期，让位
+      if (epoch != _playEpoch) return;
+      if (state.playMode == 1) {
+        await _playAt(state.queueIndex);
+        return;
+      }
+      if (await _playFromTempQueue()) return;
+      final next = _pickNextIndex();
+      if (next < 0) {
+        state = state.copyWith(isPlaying: false, position: 0);
+        _syncToSystemMediaSession();
+        return;
+      }
+      await _playAt(next);
+    } finally {
+      _onTrackEndBusy = false;
     }
-    if (await _playFromTempQueue()) return;
-    final next = _pickNextIndex();
-    if (next < 0) {
-      state = state.copyWith(isPlaying: false, position: 0);
-      _syncToSystemMediaSession();
-      return;
-    }
-    await _playAt(next);
   }
 
   /// 剩余不多时把「下一首」预排给 Rust：播完直接接上，不重启管线。
