@@ -82,6 +82,34 @@ Future<List<CloudFile>> scopedSearchAudio({
     if (viaApi != null) return viaApi;
     // 回落通用遍历
   }
+  return _walkAudioDirs(
+      provider: provider, cred: cred, roots: roots, keyword: kw);
+}
+
+/// 网盘页全量音频列举：遍历 [selectedRoots]（空 = 从全盘根目录起）收集
+/// 全部音频文件，无关键词过滤；BFS/并发/容错语义与 scopedSearchAudio 一致。
+Future<List<CloudFile>> cloudListAllAudio({
+  required CloudProvider provider,
+  required Map<String, String> cred,
+  required List<String> selectedRoots,
+}) {
+  return _walkAudioDirs(
+    provider: provider,
+    cred: cred,
+    roots: selectedRoots.isNotEmpty ? selectedRoots : [provider.rootPath],
+    keyword: null,
+  );
+}
+
+/// 目录树 BFS 遍历收集音频：[keyword] 为空时全量收集（网盘页），
+/// 否则按文件名 contains 过滤（忽略大小写，scope 搜索）。
+Future<List<CloudFile>> _walkAudioDirs({
+  required CloudProvider provider,
+  required Map<String, String> cred,
+  required List<String> roots,
+  String? keyword,
+}) async {
+  final kw = keyword?.trim().toLowerCase() ?? '';
   final seen = <String>{};
   final out = <CloudFile>[];
   final queue = <String>[...roots];
@@ -100,7 +128,7 @@ Future<List<CloudFile>> scopedSearchAudio({
       } catch (e) {
         // 单文件夹失败不影响其余范围；留痕便于诊断遍历断链
         AppLog.warn('cloud',
-            '[scopedSearch] ${provider.id} 列目录失败 dir=$cur cursor=$cursor: $e');
+            '[walkAudio] ${provider.id} 列目录失败 dir=$cur cursor=$cursor: $e');
         break;
       }
       var hits = 0;
@@ -112,14 +140,14 @@ Future<List<CloudFile>> scopedSearchAudio({
                   : f.id;
           queue.add(next);
         } else if (f.isAudio &&
-            f.name.toLowerCase().contains(kw) &&
+            (kw.isEmpty || f.name.toLowerCase().contains(kw)) &&
             seen.add(f.id)) {
           out.add(f);
           hits++;
         }
       }
       AppLog.debug('cloud',
-          '[scopedSearch] ${provider.id} dir=$cur cursor=$cursor files=${r.files.length} hits=$hits next=${r.nextCursor}');
+          '[walkAudio] ${provider.id} dir=$cur cursor=$cursor files=${r.files.length} hits=$hits next=${r.nextCursor}');
       cursor = r.nextCursor;
       if (cursor == null || cursor.isEmpty) break;
     }

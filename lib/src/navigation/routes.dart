@@ -37,6 +37,7 @@ import '../../pages/settings/nav_manage_page.dart';
 import '../../pages/settings/account_settings_page.dart';
 import '../../pages/cloud/cloud_bind_page.dart';
 import '../../pages/cloud/cloud_browser_page.dart';
+import '../../pages/cloud/cloud_disk_page.dart';
 import '../../pages/cloud/cloud_folder_picker_page.dart';
 import '../../pages/cloud/cloud_link_import_page.dart';
 import '../../pages/cloud/cloud_password_login_page.dart';
@@ -74,21 +75,15 @@ part 'routes_player_cover.dart';
 
 final appNavigatorKey = GlobalKey<NavigatorState>();
 
-final _branchKeys = <GlobalKey>[
-  GlobalKey(),
-  GlobalKey(),
-  GlobalKey(),
-];
+final _branchKeys = <GlobalKey>[GlobalKey(), GlobalKey(), GlobalKey()];
 final appRouter = GoRouter(
   navigatorKey: appNavigatorKey,
   observers: [AppLogRouteObserver(), TransitionTracker()],
   initialLocation: '/home',
   routes: [
     StatefulShellRoute(
-      pageBuilder: (context, state, navigationShell) => _ShellPage(
-        key: state.pageKey,
-        navigationShell: navigationShell,
-      ),
+      pageBuilder: (context, state, navigationShell) =>
+          _ShellPage(key: state.pageKey, navigationShell: navigationShell),
       navigatorContainerBuilder: (context, navigationShell, children) {
         return PredictiveBackTabContainer(
           navigationShell: navigationShell,
@@ -163,9 +158,7 @@ final appRouter = GoRouter(
       path: '/search',
       pageBuilder: (context, state) => _coverPage(
         context,
-        (_) => SearchPage(
-          initialQuery: state.uri.queryParameters['q'],
-        ),
+        (_) => SearchPage(initialQuery: state.uri.queryParameters['q']),
         key: state.pageKey,
         location: state.matchedLocation,
       ),
@@ -225,25 +218,20 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/scan',
-      pageBuilder: (context, state) => _coverBackPage(
-        context,
-        (_) => const ScanPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverBackPage(context, (_) => const ScanPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/tv-login-confirm',
-      pageBuilder: (context, state) => _coverBackPage(
-        context,
-        (_) {
-          final extra = state.extra;
-          final code = (extra is Map ? extra['code'] : null) as String? ?? '';
-          final info =
-              (extra is Map ? extra['info'] : null) as TvLoginScanInfo?;
-          return TvLoginConfirmPage(code: code, info: info ?? const TvLoginScanInfo());
-        },
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) => _coverBackPage(context, (_) {
+        final extra = state.extra;
+        final code = (extra is Map ? extra['code'] : null) as String? ?? '';
+        final info = (extra is Map ? extra['info'] : null) as TvLoginScanInfo?;
+        return TvLoginConfirmPage(
+          code: code,
+          info: info ?? const TvLoginScanInfo(),
+        );
+      }, key: state.pageKey),
     ),
     GoRoute(
       path: '/shareBridge',
@@ -255,11 +243,8 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/account',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const AccountPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const AccountPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/settings/account',
@@ -283,9 +268,8 @@ final appRouter = GoRouter(
       path: '/cloud/webview-login/:id',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => CloudWebviewLoginPage(
-          providerId: state.pathParameters['id'] ?? '',
-        ),
+        (_) =>
+            CloudWebviewLoginPage(providerId: state.pathParameters['id'] ?? ''),
         key: state.pageKey,
       ),
     ),
@@ -303,9 +287,8 @@ final appRouter = GoRouter(
       path: '/cloud/qrcode-login/:id',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => CloudQrcodeLoginPage(
-          providerId: state.pathParameters['id'] ?? '',
-        ),
+        (_) =>
+            CloudQrcodeLoginPage(providerId: state.pathParameters['id'] ?? ''),
         key: state.pageKey,
       ),
     ),
@@ -356,8 +339,7 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/feedback',
       pageBuilder: (context, state) {
-        final tab =
-            int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+        final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
         return _coverPage(
           context,
           (_) => FeedbackPage(initialTab: tab),
@@ -367,19 +349,13 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/about',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const AboutPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const AboutPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/debug',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const DebugPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const DebugPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/leaderboard',
@@ -393,19 +369,13 @@ final appRouter = GoRouter(
     // 页签路径 /plugin 已是 shell 第三分支，两者分离避免路由抢占
     GoRoute(
       path: '/plugin-manage',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const PluginPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const PluginPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/nav-manage',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const NavManagePage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const NavManagePage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/playlists',
@@ -432,9 +402,7 @@ final appRouter = GoRouter(
       path: '/playlist/:id',
       pageBuilder: (context, state) => _coverBackPage(
         context,
-        (_) => PlaylistDetailPage(
-          playlistId: state.pathParameters['id'] ?? '',
-        ),
+        (_) => PlaylistDetailPage(playlistId: state.pathParameters['id'] ?? ''),
         key: state.pageKey,
       ),
     ),
@@ -468,6 +436,14 @@ final appRouter = GoRouter(
       pageBuilder: (context, state) => _coverBackPage(
         context,
         (_) => const HideShellChrome(child: DownloadPage()),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
+      path: '/cloud-disk',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => const HideShellChrome(child: CloudDiskPage()),
         key: state.pageKey,
       ),
     ),
@@ -529,11 +505,8 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/audio-trim',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const AudioTrimPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const AudioTrimPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/home/daily',
@@ -545,11 +518,8 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/home/toplists',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const TopListsPage(),
-        key: state.pageKey,
-      ),
+      pageBuilder: (context, state) =>
+          _coverPage(context, (_) => const TopListsPage(), key: state.pageKey),
     ),
     GoRoute(
       path: '/home/recommend-sheets',
@@ -598,29 +568,119 @@ class BottomNavItem {
   /// 三个渲染点（底栏/侧栏/横屏 rail）也不需各自处理空值。
   final String? themeSlot;
 
-  const BottomNavItem(this.title, this.icon, this.location,
-      {required this.branchIndex, required this.navId, this.themeSlot,
-      this.optIn = false});
+  const BottomNavItem(
+    this.title,
+    this.icon,
+    this.location, {
+    required this.branchIndex,
+    required this.navId,
+    this.themeSlot,
+    this.optIn = false,
+  });
 }
 
 final List<BottomNavItem> bottomNavItems = [
-  BottomNavItem(tr('首页'), Icons.home, '/home',
-      branchIndex: 0, navId: 'home', themeSlot: 'nav.home'),
-  BottomNavItem(tr('我的'), Icons.person_outline_rounded, '/mine',
-      branchIndex: 1, navId: 'mine', themeSlot: 'nav.settings'),
+  BottomNavItem(
+    tr('首页'),
+    Icons.home,
+    '/home',
+    branchIndex: 0,
+    navId: 'home',
+    themeSlot: 'nav.home',
+  ),
+  BottomNavItem(
+    tr('我的'),
+    Icons.person_outline_rounded,
+    '/mine',
+    branchIndex: 1,
+    navId: 'mine',
+    themeSlot: 'nav.settings',
+  ),
 ];
 
 /// 插件页签（默认不出现，导航栏管理页里按需开启）：shell 第三分支，
 /// 切换后底栏/侧栏保留，与首页/我的同层级
 final BottomNavItem pluginsNavItem = BottomNavItem(
-    tr('插件'), Icons.extension_outlined, '/plugin',
-    branchIndex: 2, navId: 'plugin', optIn: true);
+  tr('插件'),
+  Icons.extension_outlined,
+  '/plugin',
+  branchIndex: 2,
+  navId: 'plugin',
+  optIn: true,
+);
 
 /// 页签 id → 页签项的单一数据源：navItemsFor / 预测返回 tab 排序 /
 /// 导航栏管理页都从这里取。新增分支只需登记一个 BottomNavItem 并把
 /// id 加入 kDefaultNavOrder（settings.dart），其余页面自动跟随
 final Map<String, BottomNavItem> navItemsById = {
   for (final it in [...bottomNavItems, pluginsNavItem]) it.navId: it,
+};
+
+/// 横屏 rail 的音乐库项：与导航页签合并成一组（顺序见
+/// kDefaultNavOrderLandscape），paneIndex 为 landscapeLibraryProvider 的
+/// 稳定面板 id（5=文件夹管理，归属「本地音乐」，不作为导航项）。
+class LandscapeLibraryNavItem {
+  const LandscapeLibraryNavItem({
+    required this.navId,
+    required this.title,
+    required this.shortTitle,
+    required this.icon,
+    required this.paneIndex,
+    this.requiresCloud = false,
+  });
+
+  final String navId;
+  final String title;
+
+  /// rail 窄档（折叠）简称
+  final String shortTitle;
+  final IconData icon;
+  final int paneIndex;
+
+  /// 已绑定网盘才显示（网盘音乐）
+  final bool requiresCloud;
+}
+
+final Map<String, LandscapeLibraryNavItem> landscapeLibraryNavById = {
+  for (final it in [
+    LandscapeLibraryNavItem(
+      navId: 'lib-local',
+      title: tr('本地音乐'),
+      shortTitle: tr('本地'),
+      icon: Icons.library_music_outlined,
+      paneIndex: 0,
+    ),
+    LandscapeLibraryNavItem(
+      navId: 'lib-cloud',
+      title: tr('网盘音乐'),
+      shortTitle: tr('网盘'),
+      icon: Icons.cloud_outlined,
+      paneIndex: 1,
+      requiresCloud: true,
+    ),
+    LandscapeLibraryNavItem(
+      navId: 'lib-favorites',
+      title: tr('我的收藏'),
+      shortTitle: tr('收藏'),
+      icon: Icons.favorite_outline,
+      paneIndex: 2,
+    ),
+    LandscapeLibraryNavItem(
+      navId: 'lib-recent',
+      title: tr('最近播放'),
+      shortTitle: tr('最近'),
+      icon: Icons.history_outlined,
+      paneIndex: 3,
+    ),
+    LandscapeLibraryNavItem(
+      navId: 'lib-playlists',
+      title: tr('我的歌单'),
+      shortTitle: tr('歌单'),
+      icon: Icons.queue_music_outlined,
+      paneIndex: 4,
+    ),
+  ])
+    it.navId: it,
 };
 
 /// 竖屏导航（底栏/悬浮导航/竖屏侧栏）页签列表；横屏 rail 传横屏顺序。
