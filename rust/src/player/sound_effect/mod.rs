@@ -565,6 +565,11 @@ impl SoundEffectBlockProcessor {
 		p
 	}
 
+	/// 音效链是否硬旁路（全部效果关闭/无操作）：渲染循环可整链旁路
+	pub fn is_hard_bypassed(&self) -> bool {
+		self.settings.should_hard_bypass()
+	}
+
 	fn prepare_all(&mut self) {
 		let sr = self.sample_rate as f32;
 		let ch = self.channels as usize;

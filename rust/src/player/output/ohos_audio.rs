@@ -1195,16 +1195,22 @@ fn run_ohos_playback(
             block
         };
 
-        // DSP 链处理（直出时旁路，仅保留限幅，对齐 android 共享路径）
-        let do_bypass = bit_perfect.load(Ordering::Relaxed);
-        let mut effected = if do_bypass {
+        // DSP 链处理：bit-perfect 直出全旁路仅保留限幅；EQ/音效/响度归一
+        // 全关时同样旁路（软解是固定开销，无效果时逐样本 DSP 是纯浪费，
+        // 低端机开无损可感知）。音量与限幅始终保留，对齐 android 共享路径
+        let bit_perfect = bit_perfect.load(Ordering::Relaxed);
+        let dsp_idle = !bit_perfect
+            && normalizer.is_idle()
+            && equalizer.is_hard_bypassed()
+            && sound_effect.is_hard_bypassed();
+        let mut effected = if bit_perfect || dsp_idle {
             block
         } else {
             let normalized = normalizer.process_block(&block);
             let eq_applied = equalizer.process_block(&normalized);
             sound_effect.process_block(eq_applied)
         };
-        if !do_bypass {
+        if !bit_perfect {
             user_volume_source.process_block(&mut effected, playback_channels, &user_volume);
         }
         clip_guard.process_block(&mut effected);

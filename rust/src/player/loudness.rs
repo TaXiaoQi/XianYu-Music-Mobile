@@ -197,6 +197,14 @@ impl VolumeNormalizer {
 		(normalizer, handle)
 	}
 
+	/// 响度归一空闲（目标增益为 1.0 且无渐变进行中）：渲染循环可整链旁路。
+	/// 旁路期间 ramp 状态冻结在稳态 1.0，之后 set_target_gain 恢复非 1.0 时
+	/// 从 current_gain=1.0 正常起坡，无爆音风险。
+	pub fn is_idle(&self) -> bool {
+		let target = f32::from_bits(self.ramp.target_gain.load(Ordering::Relaxed));
+		!self.ramp.is_ramping && (target - 1.0).abs() < 0.00001
+	}
+
 	/// 处理一块交错 PCM，返回乘以逐帧渐增增益后的交错 PCM。
 	///
 	/// 输入样本数应为 channels 的整数倍；返回值长度与输入一致。

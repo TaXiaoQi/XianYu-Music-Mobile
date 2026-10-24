@@ -190,6 +190,11 @@ pub struct Equalizer {
 }
 
 impl Equalizer {
+	/// EQ 是否处于硬旁路（全部频段增益为 0 且预放大 1.0）：渲染循环可整链旁路
+	pub fn is_hard_bypassed(&self) -> bool {
+		self.is_hard_bypassed
+	}
+
 	pub fn new(sample_rate: u32, channels: u16, handle: Arc<EqualizerHandle>) -> Self {
 		let initial_settings = if let Ok(s) = handle.settings.lock() {
 			s.clone()

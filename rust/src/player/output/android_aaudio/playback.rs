@@ -990,8 +990,14 @@ pub(crate) fn run_exclusive_playback(
         };
 
         // DSP 链处理。Bit-perfect 直出：绕过响度/EQ/音效/主音量，仅保留安全限幅（对齐桌面端）。
-        let do_bypass = bit_perfect.load(Ordering::Relaxed);
-        let mut effected = if do_bypass {
+        // 非 bit-perfect 但响度归一/EQ/音效全关时同样旁路 DSP 链（音量保留）：
+        // 软解是固定开销，无效果时逐样本 DSP 是纯浪费。
+        let bit_perfect = bit_perfect.load(Ordering::Relaxed);
+        let dsp_idle = !bit_perfect
+            && normalizer.is_idle()
+            && equalizer.is_hard_bypassed()
+            && sound_effect.is_hard_bypassed();
+        let mut effected = if bit_perfect || dsp_idle {
             block
         } else {
             let normalized = normalizer.process_block(&block);
@@ -1000,7 +1006,7 @@ pub(crate) fn run_exclusive_playback(
         };
 
         // 用户音量渐变（直出时旁通，对齐桌面端 bit-perfect 分支）+ 最终安全限幅。
-        if !do_bypass {
+        if !bit_perfect {
             user_volume_source.process_block(&mut effected, playback_channels, &user_volume);
         }
         clip_guard.process_block(&mut effected);
