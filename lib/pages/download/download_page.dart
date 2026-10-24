@@ -174,6 +174,30 @@ class DownloadPage extends ConsumerWidget {
 
 // ==================== 下载列表 ====================
 
+/// 裸内容版下载列表（供本地页「下载」tab 内嵌复用）：无自带顶栏与
+/// 清空按钮，顶部留白由宿主按自身头部高度经 [topInset] 传入。
+class DownloadContent extends ConsumerWidget {
+  const DownloadContent({super.key, this.topInset = 0});
+
+  final double topInset;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(downloadProvider);
+    final notifier = ref.read(downloadProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
+    if (state.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    return _DownloadList(
+      state: state,
+      notifier: notifier,
+      scheme: scheme,
+      contentTop: topInset,
+    );
+  }
+}
+
 class _DownloadList extends ConsumerWidget {
   const _DownloadList({
     required this.state,

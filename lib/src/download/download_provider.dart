@@ -404,8 +404,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
     // 直链 URL 文件名多为 hash，不可作文件名来源）。
     final extUrl =
         'https://cloud-download.local/${Uri.encodeComponent(ctx.file.name)}';
-    final destPath = await resolveDownloadFullPath(
-      directory: dir,
+    final headersJson = jsonEncode(link.headers);
+    final (destPath, resolveFallback) = await _resolveDestPath(
+      dir: dir,
       title: task.title,
       artist: task.artist,
       album: task.album,
@@ -416,9 +417,30 @@ class DownloadManager extends StateNotifier<DownloadState> {
       overwriteExisting: settings?.overwriteExisting ?? false,
     );
 
+    // 直写目录不可用（不存在/无权限）：跳过直写，直接走 MediaStore 兼容写入
+    if (resolveFallback) {
+      final fallback = await _mediaStoreFallback(
+        url: link.url,
+        dir: dir,
+        destPath: destPath,
+        item: item,
+        parsed: const {},
+        settings: settings,
+        headersJson: headersJson,
+      );
+      if (fallback == null) {
+        ApplicationLogManager.instance
+            .error('下载', 'MediaStore 回退也失败：目录 $dir 不可用');
+        throw StateError(tr('下载目录不可用，请重新选择'));
+      }
+      ApplicationLogManager.instance
+          .warn('下载', '已回退写入：$fallback（目标目录 ${p.basename(dir)}）');
+      _updateTask(task.songPath, progressPercent: 95);
+      return (fallback, 'source');
+    }
+
     _updateTask(task.songPath, progressPercent: 60);
 
-    final headersJson = jsonEncode(link.headers);
     var finalPath = destPath;
     try {
       await downloadOnlineSong(
@@ -652,8 +674,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
     _updateTask(task.songPath, progressPercent: 40);
 
     final dir = await _downloadDir();
-    final destPath = await resolveDownloadFullPath(
-      directory: dir,
+    final (destPath, resolveFallback) = await _resolveDestPath(
+      dir: dir,
       title: item.title,
       artist: item.artist,
       album: item.album,
@@ -664,6 +686,30 @@ class DownloadManager extends StateNotifier<DownloadState> {
       overwriteExisting: settings?.overwriteExisting ?? false,
       cek: cek,
     );
+
+    // 直写目录不可用（不存在/无权限）：跳过直写，直接走 MediaStore 兼容写入
+    if (resolveFallback) {
+      final fallback = await _mediaStoreFallback(
+        url: url,
+        dir: dir,
+        destPath: destPath,
+        item: item,
+        parsed: parsed,
+        settings: settings,
+        headersJson: headersJson,
+        ekey: ekey,
+        cek: cek,
+      );
+      if (fallback == null) {
+        ApplicationLogManager.instance
+            .error('下载', 'MediaStore 回退也失败：目录 $dir 不可用');
+        throw StateError(tr('下载目录不可用，请重新选择'));
+      }
+      ApplicationLogManager.instance
+          .warn('下载', '已回退写入：$fallback（目标目录 ${p.basename(dir)}）');
+      _updateTask(task.songPath, progressPercent: 95);
+      return (fallback, usedQuality);
+    }
 
     _updateTask(task.songPath, progressPercent: 60);
 
@@ -715,6 +761,57 @@ class DownloadManager extends StateNotifier<DownloadState> {
     _updateTask(task.songPath, progressPercent: 95);
 
     return (finalPath, usedQuality);
+  }
+
+  /// 解析下载目标路径；目录不可写/不存在（如未授予「所有文件访问」）时，
+  /// 改在应用缓存目录（恒可写）解析文件名并返回回退标记，
+  /// 由调用方改走 MediaStore 兼容写入（与直写失败同一条回退链）。
+  Future<(String, bool)> _resolveDestPath({
+    required String dir,
+    required String title,
+    required String artist,
+    required String album,
+    required String url,
+    required String quality,
+    required bool keepSourceFilename,
+    required String fileNameStyle,
+    required bool overwriteExisting,
+    String? cek,
+  }) async {
+    try {
+      final destPath = await resolveDownloadFullPath(
+        directory: dir,
+        title: title,
+        artist: artist,
+        album: album,
+        url: url,
+        quality: quality,
+        keepSourceFilename: keepSourceFilename,
+        fileNameStyle: fileNameStyle,
+        overwriteExisting: overwriteExisting,
+        cek: cek,
+      );
+      return (destPath, false);
+    } catch (e) {
+      final msg = e.toString();
+      if (!msg.contains('创建下载目录失败')) rethrow;
+      ApplicationLogManager.instance
+          .warn('下载', '解析直写路径失败，回退 MediaStore 兼容模式：$msg');
+      final cache = await getTemporaryDirectory();
+      final destPath = await resolveDownloadFullPath(
+        directory: cache.path,
+        title: title,
+        artist: artist,
+        album: album,
+        url: url,
+        quality: quality,
+        keepSourceFilename: keepSourceFilename,
+        fileNameStyle: fileNameStyle,
+        overwriteExisting: overwriteExisting,
+        cek: cek,
+      );
+      return (destPath, true);
+    }
   }
 
   Future<String?> _mediaStoreFallback({
