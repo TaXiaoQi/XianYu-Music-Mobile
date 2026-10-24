@@ -37,8 +37,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   List<Widget> _discoverBlocks(BuildContext context, WidgetRef ref) {
-    final hasEnabledPlugin = ref.watch(pluginManagerProvider
-        .select((s) => s.sources.any((p) => p.enabled)));
+    final hasEnabledPlugin = ref.watch(
+      pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
+    );
     if (!hasEnabledPlugin) return const [];
     return [
       _SectionHeader(
@@ -56,8 +57,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       const DailyRecommendSection(),
       const SizedBox(height: 26),
       // 推荐歌单：无插件支持/无数据时整块隐藏（含标题，避免孤标题）
-      if (ref.watch(recommendSheetsPreviewProvider
-          .select((s) => s.hasData))) ...[
+      if (ref.watch(
+        recommendSheetsPreviewProvider.select((s) => s.hasData),
+      )) ...[
         _SectionHeader(
           title: tr('推荐歌单'),
           action: _viewAllAction(context, ref, '/home/recommend-sheets'),
@@ -70,8 +72,9 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _buildPortrait(BuildContext context, WidgetRef ref) {
-    final floating = ref.watch(settingsProvider.select(
-        (s) => s.valueOrNull?.floatingSearchBar ?? false));
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     final searchBar = PageSearchBarBottom(
       onTap: () => context.push('/search'),
       onRecognize: () => context.push('/recognize'),
@@ -86,17 +89,21 @@ class _HomePageState extends ConsumerState<HomePage> {
         children: [
           RepaintBoundary(
             child: ListView(
-            padding: EdgeInsets.fromLTRB(
-                18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
-            children: [
-              SizedBox(height: 14),
-              CoverCarousel(),
-              SizedBox(height: 26),
-              ..._discoverBlocks(context, ref),
-              _SectionHeader(title: tr('听过最多')),
-              SizedBox(height: 14),
-              _MostPlayedList(),
-            ],
+              padding: EdgeInsets.fromLTRB(
+                18,
+                topInset,
+                18,
+                ref.watch(navBarInsetProvider) + 24,
+              ),
+              children: [
+                SizedBox(height: 14),
+                CoverCarousel(),
+                SizedBox(height: 26),
+                ..._discoverBlocks(context, ref),
+                _SectionHeader(title: tr('听过最多')),
+                SizedBox(height: 14),
+                _MostPlayedList(),
+              ],
             ),
           ),
         ],
@@ -106,7 +113,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Widget _buildLandscape(BuildContext context, WidgetRef ref) {
     final floating = ref.watch(
-        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     // 悬浮 chrome 高 60 + 顶距 8；横屏 statusBar=0，尾距取 24 保证
     // 首个区块标题与搜索胶囊拉开可见间距（竖屏靠 statusBar 自然撑开）。
     // 固定态自垫带高+12：壳层不再垫 top，列表视口全高，内容从带下穿过
@@ -119,9 +127,14 @@ class _HomePageState extends ConsumerState<HomePage> {
         children: [
           ListView(
             padding: EdgeInsets.fromLTRB(
-                18, topInset, 18, ref.watch(navBarInsetProvider) + 24),
+              18,
+              topInset,
+              18,
+              ref.watch(navBarInsetProvider) + 24,
+            ),
             children: [
               SizedBox(height: 10),
+              // 横屏不放封面轮播：横屏视口矮，240 高卡片占屏过半（有意省略）
               ..._discoverBlocks(context, ref),
               _SectionHeader(title: tr('听过最多')),
               SizedBox(height: 14),
@@ -162,21 +175,21 @@ Widget _viewAllAction(BuildContext context, WidgetRef ref, String route) {
   return PressableScale(
     pressScale: 0.92,
     child: InkWell(
-    onTap: () => openDiscoverEntry(context, ref, route),
-    borderRadius: BorderRadius.circular(6),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-      child: Row(
-        children: [
-          Text(
-            tr('查看全部'),
-            style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-          ),
-          Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
-        ],
+      onTap: () => openDiscoverEntry(context, ref, route),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          children: [
+            Text(
+              tr('查看全部'),
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            Icon(Icons.chevron_right, size: 16, color: scheme.onSurfaceVariant),
+          ],
+        ),
       ),
     ),
-      ),
   );
 }
 
@@ -240,15 +253,19 @@ class _MostPlayedList extends ConsumerWidget {
                   Expanded(
                     child: Column(
                       children: [
-                        for (var i = c * per;
-                            i < (c + 1) * per && i < entries.length;
-                            i++)
+                        for (
+                          var i = c * per;
+                          i < (c + 1) * per && i < entries.length;
+                          i++
+                        )
                           Padding(
                             padding: EdgeInsets.only(
                               bottom: i == entries.length - 1 ? 0 : 8,
                             ),
                             child: _MostPlayedRow(
-                                entry: entries[i], themeSlot: themeSlot),
+                              entry: entries[i],
+                              themeSlot: themeSlot,
+                            ),
                           ),
                       ],
                     ),
@@ -280,104 +297,106 @@ class _MostPlayedRow extends ConsumerWidget {
     BuildContext? coverCtx;
     return PressableScale(
       child: frostedCardSurface(
-      context: context,
-      ref: ref,
-      radius: 13,
-      themeSlot: themeSlot,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(13),
-        child: InkWell(
-          onTap: () async {
-            // 封面飞向 mini 条；飞行不可用（mini 条未挂载）时不阻塞播放
-            await launchFlyCover(
-              context,
-              coverContext: coverCtx,
-              coverSize: 42,
-              songPath: path,
-              networkUrl: item?.coverUrl,
-              radius: 10,
-            );
-            if (song != null) {
-              ref.read(libraryProvider.notifier).playList([song], 0);
-            } else if (item != null) {
-              ref.read(playerProvider.notifier).playQueue([item], startIndex: 0);
-            }
-          },
+        context: context,
+        ref: ref,
+        radius: 13,
+        themeSlot: themeSlot,
+        child: Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(13),
-          child: Container(
-            height: 62,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-            children: [
-              Builder(
-                builder: (c) {
-                  coverCtx = c;
-                  return CoverImage(
-                    songPath: path,
-                    networkUrl: item?.coverUrl,
-                    width: 42,
-                    height: 42,
-                    radius: 10,
-                    icon: Icons.music_note,
-                  );
-                },
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
+          child: InkWell(
+            onTap: () async {
+              // 封面飞向 mini 条；飞行不可用（mini 条未挂载）时不阻塞播放
+              await launchFlyCover(
+                context,
+                coverContext: coverCtx,
+                coverSize: 42,
+                songPath: path,
+                networkUrl: item?.coverUrl,
+                radius: 10,
+              );
+              if (song != null) {
+                ref.read(libraryProvider.notifier).playList([song], 0);
+              } else if (item != null) {
+                ref.read(playerProvider.notifier).playQueue([
+                  item,
+                ], startIndex: 0);
+              }
+            },
+            borderRadius: BorderRadius.circular(13),
+            child: Container(
+              height: 62,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Builder(
+                    builder: (c) {
+                      coverCtx = c;
+                      return CoverImage(
+                        songPath: path,
+                        networkUrl: item?.coverUrl,
+                        width: 42,
+                        height: 42,
+                        radius: 10,
+                        icon: Icons.music_note,
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      artist,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: scheme.onSurfaceVariant,
-                      ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    tr('{n} 次', {'n': entry.playCount}),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      color: Color(0x24EC4141),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.play_arrow,
+                      size: 20,
+                      color: Color(0xFFEC4141),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Text(
-                tr('{n} 次', {'n': entry.playCount}),
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 34,
-                height: 34,
-                decoration: const BoxDecoration(
-                  color: Color(0x24EC4141),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.play_arrow,
-                  size: 20,
-                  color: Color(0xFFEC4141),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
-      ),
       ),
     );
   }

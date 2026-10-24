@@ -61,8 +61,9 @@ class _CoverCarouselState extends ConsumerState<CoverCarousel>
 
   @override
   Widget build(BuildContext context) {
-    final sel =
-        ref.watch(playerProvider.select((s) => (current: s.current, playing: s.isPlaying)));
+    final sel = ref.watch(
+      playerProvider.select((s) => (current: s.current, playing: s.isPlaying)),
+    );
 
     ref.listen(playerProvider, (prev, next) {
       final shouldRun = next.current != null && next.isPlaying;
@@ -130,62 +131,67 @@ class _NowPlayingCard extends StatelessWidget {
       onTap: onTap,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(24),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            CoverImage(
-              songPath: item.path,
-              networkUrl: item.coverUrl,
-              width: double.infinity,
-              height: double.infinity,
-              radius: 0,
-              icon: Icons.album,
-              highQuality: true,
-              cacheWidth: CoverImage.fullCoverDecodePx(),
-            ),
-            const DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black87],
+        child: LayoutBuilder(
+          builder: (context, box) => Stack(
+            fit: StackFit.expand,
+            children: [
+              CoverImage(
+                songPath: item.path,
+                networkUrl: item.coverUrl,
+                // 必须传有限宽高：infinity 落入 CoverImage 的 Align 松约束
+                // 分支，16:9 视频帧封面会按高适配、左右各留一条边；
+                // 有限尺寸走紧约束 + BoxFit.cover 才能整卡铺满
+                width: box.maxWidth,
+                height: box.maxHeight,
+                radius: 0,
+                icon: Icons.album,
+                highQuality: true,
+                cacheWidth: CoverImage.fullCoverDecodePx(),
+              ),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black87],
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 20,
-              right: 20,
-              bottom: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _PlayingBadge(eq: eq, isPlaying: isPlaying),
-                  const SizedBox(height: 10),
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      shadows: [Shadow(color: Colors.black45, blurRadius: 8)],
+              Positioned(
+                left: 20,
+                right: 20,
+                bottom: 20,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _PlayingBadge(eq: eq, isPlaying: isPlaying),
+                    const SizedBox(height: 10),
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        shadows: [Shadow(color: Colors.black45, blurRadius: 8)],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    item.artist.isEmpty ? item.album : item.artist,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white.withValues(alpha: 0.8),
+                    const SizedBox(height: 3),
+                    Text(
+                      item.artist.isEmpty ? item.album : item.artist,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -226,14 +232,10 @@ class _StatsCard extends ConsumerWidget {
                   color: scheme.primary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
-                  Icons.insights,
-                  size: 18,
-                  color: scheme.primary,
-                ),
+                child: Icon(Icons.insights, size: 18, color: scheme.primary),
               ),
               const SizedBox(width: 8),
-                Text(
+              Text(
                 tr('听歌数据统计'),
                 style: TextStyle(
                   fontSize: 14,
@@ -252,14 +254,12 @@ class _StatsCard extends ConsumerWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-            error: (_, _) =>   Text(
-              tr('暂无统计数据'),
-              style: TextStyle(color: Colors.white54),
-            ),
+            error: (_, _) =>
+                Text(tr('暂无统计数据'), style: TextStyle(color: Colors.white54)),
             data: (stats) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                  Text(
+                Text(
                   tr('累计听歌总时长'),
                   style: TextStyle(fontSize: 12, color: Colors.white54),
                 ),
@@ -317,8 +317,7 @@ class _SubStatItem extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon,
-            size: 16, color: Theme.of(context).colorScheme.primary),
+        Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 6),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -356,10 +355,7 @@ class _EmptyCarousel extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            scheme.surfaceContainerHigh,
-            scheme.surfaceContainer,
-          ],
+          colors: [scheme.surfaceContainerHigh, scheme.surfaceContainer],
         ),
       ),
       child: Column(
@@ -367,10 +363,7 @@ class _EmptyCarousel extends StatelessWidget {
         children: [
           Icon(Icons.music_note, size: 44, color: scheme.onSurfaceVariant),
           const SizedBox(height: 12),
-          Text(
-            tr('暂无播放'),
-            style: TextStyle(color: scheme.onSurfaceVariant),
-          ),
+          Text(tr('暂无播放'), style: TextStyle(color: scheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -404,17 +397,13 @@ class _PlayingBadge extends StatelessWidget {
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    _bar(t, 0),
-                    _bar(t, 0.25),
-                    _bar(t, 0.5),
-                  ],
+                  children: [_bar(t, 0), _bar(t, 0.25), _bar(t, 0.5)],
                 );
               },
             ),
           ),
           const SizedBox(width: 6),
-            Text(
+          Text(
             tr('播放中'),
             style: TextStyle(
               fontSize: 11,
