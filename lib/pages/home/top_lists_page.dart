@@ -143,6 +143,8 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
         _loadingIds.remove(source.id);
       });
       if (boards.isNotEmpty) _stagger.start();
+      // 插件榜单常为静态图标占位（API 无封面），先展示再后台回填真实封面
+      _enrichBoards(source, catalog, boards);
     } catch (e, st) {
       // 任何一次加载异常都不能让转圈态永久卡死：标记失败，切 chip/点击可重试
       AppLog.warn('plugin', '[TopLists] ${source.name} 榜单加载失败: $e\n$st');
@@ -152,6 +154,17 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
         _loadingIds.remove(source.id);
       });
     }
+  }
+
+  Future<void> _enrichBoards(
+      _TopSource source, PluginCatalogService catalog,
+      List<MfSheetItem> boards) async {
+    try {
+      final enriched = await catalog.enrichTopListCovers(source.plugin, boards);
+      if (identical(enriched, boards) || !mounted) return;
+      if (_boardsCache[source.id] == null) return;
+      setState(() => _boardsCache[source.id] = enriched);
+    } catch (_) {}
   }
 
   void _retryBoards(_TopSource source) {

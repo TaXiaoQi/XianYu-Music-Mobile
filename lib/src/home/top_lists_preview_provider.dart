@@ -119,14 +119,28 @@ class TopListsPreviewNotifier extends StateNotifier<TopListsPreview> {
           break;
         }
       }
+      final previewBoards = boards.take(_previewCount).toList();
       state = TopListsPreview(
         checking: false,
         loading: false,
         loaded: true,
         hasSource: true,
         sourceName: chosen.name,
-        boards: boards.take(_previewCount).toList(),
+        boards: previewBoards,
       );
+      // 插件榜单常为静态图标占位（API 无封面），先展示再后台回填真实封面
+      final enriched =
+          await catalog.enrichTopListCovers(chosen.plugin, previewBoards);
+      if (!identical(enriched, previewBoards)) {
+        state = TopListsPreview(
+          checking: false,
+          loading: false,
+          loaded: true,
+          hasSource: true,
+          sourceName: chosen.name,
+          boards: enriched,
+        );
+      }
     } finally {
       _running = false;
     }

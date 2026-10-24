@@ -1,5 +1,52 @@
 part of 'plugin_catalog.dart';
 
+// 榜单封面回填缓存：部分 MF 插件的榜单 API 不返回封面（如 bilibili 每周必看/
+// 排行榜只有标题），插件只能给所有条目塞同一张静态图标；App 侧按「榜单第一页
+// 首个视频封面」回填，结果持久化 7 天（每周必看期号每周轮换，缓存键含期号自然失效）
+const String _kTopListCoverCacheKey = 'plugin.toplist_covers.v1';
+const int _topListCoverTtlMs = 7 * 24 * 60 * 60 * 1000;
+const int _topListCoverFetchCap = 12;
+Map<String, Map<String, dynamic>>? _topListCoverCache;
+final Map<String, Future<String?>> _topListCoverInflight = {};
+
+Future<Map<String, Map<String, dynamic>>> _loadTopListCoverCache() async {
+  final cached = _topListCoverCache;
+  if (cached != null) return cached;
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kTopListCoverCacheKey);
+    if (raw != null && raw.isNotEmpty) {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        _topListCoverCache =
+            decoded.map<String, Map<String, dynamic>>((k, v) => MapEntry(
+                k.toString(), v is Map ? Map<String, dynamic>.from(v) : {}));
+      }
+    }
+  } catch (_) {}
+  return _topListCoverCache ??= {};
+}
+
+Future<void> _saveTopListCoverCache(
+    Map<String, Map<String, dynamic>> cache) async {
+  _topListCoverCache = cache;
+  try {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    cache.removeWhere(
+        (k, v) => now - ((v['ts'] as num?)?.toInt() ?? 0) >= _topListCoverTtlMs);
+    if (cache.length > 300) {
+      final keys = cache.keys.toList()
+        ..sort((a, b) => ((cache[a]!['ts'] as num?)?.toInt() ?? 0)
+            .compareTo((cache[b]!['ts'] as num?)?.toInt() ?? 0));
+      for (final k in keys.take(cache.length - 300)) {
+        cache.remove(k);
+      }
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kTopListCoverCacheKey, jsonEncode(cache));
+  } catch (_) {}
+}
+
 extension PluginCatalogServiceMethods on PluginCatalogService {
   List<PluginSource> get musicFreeSources =>
       sources.where((s) => s.enabled && s.format.isMfCompatible).toList();
@@ -112,6 +159,92 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     final list = await _tryCallList(
         source, 'getTopListDetail', [item, page]);
     return _maybeFillQqDurations(source, list);
+  }
+
+  /// 回填榜单真实封面：同 coverUrl 复用 ≥3 次视为插件静态图标（榜单 API 无封面），
+  /// 取该榜单第一页首个视频封面替代。单次最多 12 条控制成本，持久缓存 7 天；
+  /// 拉取失败保持原图。仅 MF 源（LX 榜单封面来自真实数据）。调用方应先展示
+  /// 原列表、后台调用本方法后再刷新，避免阻塞首屏
+  Future<List<MfSheetItem>> enrichTopListCovers(
+      PluginSource source, List<MfSheetItem> boards) async {
+    if (boards.isEmpty || source.format == PluginFormat.lx) return boards;
+    final counts = <String, int>{};
+    for (final b in boards) {
+      final c = b.coverUrl;
+      if (c != null && c.isNotEmpty) counts[c] = (counts[c] ?? 0) + 1;
+    }
+    final generic = counts.entries
+        .where((e) => e.value >= 3)
+        .map((e) => e.key)
+        .toSet();
+    if (generic.isEmpty) return boards;
+
+    final cache = await _loadTopListCoverCache();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final targets = <MfSheetItem>[];
+    for (final b in boards) {
+      if (targets.length >= _topListCoverFetchCap) break;
+      final c = b.coverUrl;
+      if (c != null && generic.contains(c)) targets.add(b);
+    }
+    if (targets.isEmpty) return boards;
+
+    final resolved = <MfSheetItem, String>{};
+    await Future.wait(targets.map((b) async {
+      final key = '${source.id}|${b.id}';
+      final hit = cache[key];
+      if (hit != null &&
+          now - ((hit['ts'] as num?)?.toInt() ?? 0) < _topListCoverTtlMs) {
+        final c = hit['cover'] as String?;
+        if (c != null && c.isNotEmpty) resolved[b] = c;
+        return;
+      }
+      final inflight = _topListCoverInflight[key];
+      final task = inflight ?? _fetchTopListFirstCover(source, b.raw);
+      _topListCoverInflight[key] = task;
+      try {
+        final cover = await task;
+        if (cover != null && cover.isNotEmpty) {
+          resolved[b] = cover;
+          cache[key] = {'cover': cover, 'ts': now};
+        }
+      } catch (_) {
+        // 拉取失败保持静态图标，不缓存失败结果
+      } finally {
+        if (identical(_topListCoverInflight[key], task)) {
+          _topListCoverInflight.remove(key);
+        }
+      }
+    }));
+    if (resolved.isEmpty) return boards;
+    await _saveTopListCoverCache(cache);
+    return boards.map((b) {
+      final cover = resolved[b];
+      if (cover == null) return b;
+      return MfSheetItem(
+        id: b.id,
+        title: b.title,
+        artist: b.artist,
+        coverUrl: cover,
+        playCount: b.playCount,
+        trackCount: b.trackCount,
+        platform: b.platform,
+        pluginId: b.pluginId,
+        isTopList: b.isTopList,
+        isAlbum: b.isAlbum,
+        raw: b.raw,
+      );
+    }).toList();
+  }
+
+  Future<String?> _fetchTopListFirstCover(
+      PluginSource source, Map<String, dynamic> item) async {
+    final tracks = await getTopListDetail(source, item);
+    for (final t in tracks) {
+      final c = t.img;
+      if (c != null && c.trim().isNotEmpty) return c;
+    }
+    return null;
   }
 
   // ==================== 推荐歌单 ====================
