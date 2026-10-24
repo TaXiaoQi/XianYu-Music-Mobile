@@ -19,9 +19,9 @@ class OnlineMetaStore {
     if (raw != null && raw.isNotEmpty) {
       try {
         final map = jsonDecode(raw) as Map;
-        _cache = map
-            .map((k, v) => MapEntry(k as String,
-                (v as Map).cast<String, dynamic>()));
+        _cache = map.map(
+          (k, v) => MapEntry(k as String, (v as Map).cast<String, dynamic>()),
+        );
       } catch (_) {
         _cache = {};
       }
@@ -57,6 +57,7 @@ class OnlineMetaStore {
         onlineSongJson: meta['onlineSongJson'] as String?,
         onlineQuality: meta['onlineQuality'] as String?,
         onlineInfoJson: meta['onlineInfoJson'] as String?,
+        cloudInfoJson: meta['cloudInfoJson'] as String?,
       );
     }
     return out;
@@ -76,6 +77,8 @@ class OnlineMetaStore {
       'onlineSongJson': item.onlineSongJson,
       'onlineQuality': item.onlineQuality,
       'onlineInfoJson': item.onlineInfoJson,
+      // 网盘上下文：最近播放恢复后可回放（QueueItem.isCloud 依赖它）
+      'cloudInfoJson': item.cloudInfoJson,
       '_updatedAt': DateTime.now().millisecondsSinceEpoch,
     };
     while (_cache.length > maxEntries) {
@@ -113,5 +116,6 @@ class OnlineMetaStore {
   }
 }
 
-final onlineMetaStoreProvider =
-    Provider<OnlineMetaStore>((ref) => OnlineMetaStore());
+final onlineMetaStoreProvider = Provider<OnlineMetaStore>(
+  (ref) => OnlineMetaStore(),
+);

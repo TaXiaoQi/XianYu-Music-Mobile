@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:flutter/foundation.dart'
-    show compute;
+import 'package:flutter/foundation.dart' show compute;
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/navigation/shell.dart';
+import '../../src/cloud/cloud_filename.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/core/settings.dart';
 import '../../src/responsive/landscape.dart';
@@ -40,8 +41,7 @@ class RecentPage extends ConsumerStatefulWidget {
   ConsumerState<RecentPage> createState() => _RecentPageState();
 }
 
-class _RecentPageState extends ConsumerState<RecentPage>
-    with HidesShellChrome {
+class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -79,12 +79,9 @@ class _RecentPageState extends ConsumerState<RecentPage>
           title: _recentTitle(e),
           artist: _recentArtist(e),
           playedAt: e.playedAt,
-        )
+        ),
     ];
-    final out = await compute(
-      _filterSortRecent,
-      (rows, _query, _sort.index),
-    );
+    final out = await compute(_filterSortRecent, (rows, _query, _sort.index));
     if (!mounted || gen != _req) return;
     setState(() {
       _result = [for (final i in out) entries[i]];
@@ -110,27 +107,37 @@ class _RecentPageState extends ConsumerState<RecentPage>
         style: TextStyle(fontSize: 14.5, color: scheme.onSurface),
         decoration: InputDecoration(
           hintText: tr('搜索歌曲、歌手、专辑'),
-          hintStyle:
-              TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
-          prefixIcon: Icon(Icons.search, size: 20, color: scheme.onSurfaceVariant),
-          prefixIconConstraints:
-              const BoxConstraints(minWidth: 40, minHeight: 40),
+          hintStyle: TextStyle(fontSize: 14.5, color: scheme.onSurfaceVariant),
+          prefixIcon: Icon(
+            Icons.search,
+            size: 20,
+            color: scheme.onSurfaceVariant,
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 40,
+            minHeight: 40,
+          ),
           suffixIcon: _query.isNotEmpty
               ? InkWell(
                   onTap: _clearSearch,
-                  child: Icon(Icons.close,
-                      size: 18, color: scheme.onSurfaceVariant),
+                  child: Icon(
+                    Icons.close,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 )
               : null,
-          suffixIconConstraints:
-              const BoxConstraints(minWidth: 40, minHeight: 40),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 40,
+            minHeight: 40,
+          ),
           isDense: true,
           filled: true,
-          fillColor: isDark
-              ? const Color(0x14FFFFFF)
-              : const Color(0x14000000),
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 0, horizontal: 8),
+          fillColor: isDark ? const Color(0x14FFFFFF) : const Color(0x14000000),
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 0,
+            horizontal: 8,
+          ),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(20),
             borderSide: BorderSide.none,
@@ -188,16 +195,19 @@ class _RecentPageState extends ConsumerState<RecentPage>
     final notifier = ref.read(recentProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final floating = ref.watch(
-        settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false));
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
     final statusBar = MediaQuery.paddingOf(context).top;
     final paneTop = (floating && inMusicPane) ? statusBar + 66 : 0.0;
     final hasHeader = inMusicPane && recent.entries.isNotEmpty;
-    final portraitFloating = !inMusicPane &&
+    final portraitFloating =
+        !inMusicPane &&
         MediaQuery.of(context).orientation != Orientation.landscape &&
         floating;
     // 横屏固定态：shell 固定带盖住顶部（带内全局 chrome），页面沿用悬浮
     // 玻璃 header 整体下移到带下，不另画贴顶顶栏
-    final landscapeFixed = !inMusicPane &&
+    final landscapeFixed =
+        !inMusicPane &&
         MediaQuery.of(context).orientation == Orientation.landscape &&
         !floating;
     final floatHeader = portraitFloating || landscapeFixed;
@@ -233,39 +243,41 @@ class _RecentPageState extends ConsumerState<RecentPage>
                   top: inMusicPane
                       ? paneTop + (hasHeader ? 48 : 8)
                       : (floatHeader
-                          ? floatContentTop
-                          : GlassTopBar.height(context)),
+                            ? floatContentTop
+                            : GlassTopBar.height(context)),
                 ),
                 child: recent.loading
                     ? const Center(child: CircularProgressIndicator())
                     : recent.entries.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.history,
-                                    size: 48,
-                                    color: scheme.onSurface
-                                        .withValues(alpha: 0.25)),
-                                const SizedBox(height: 12),
-                                Text(
-                                  tr('暂无播放记录'),
-                                  style: TextStyle(
-                                      fontSize: 14,
-                                      color: scheme.onSurfaceVariant),
-                                ),
-                              ],
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.history,
+                              size: 48,
+                              color: scheme.onSurface.withValues(alpha: 0.25),
                             ),
-                          )
-                        : _RecentList(
-                            recent: recent,
-                            notifier: notifier,
-                            filter: filter,
-                            items: items,
-                            showSortBar: showControls,
-                            sort: _sort,
-                            onOpenSort: () => _openSortMenu(context),
-                          ),
+                            const SizedBox(height: 12),
+                            Text(
+                              tr('暂无播放记录'),
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _RecentList(
+                        recent: recent,
+                        notifier: notifier,
+                        filter: filter,
+                        items: items,
+                        showSortBar: showControls,
+                        sort: _sort,
+                        onOpenSort: () => _openSortMenu(context),
+                      ),
               ),
             if (inMusicPane)
               Positioned(
@@ -302,8 +314,7 @@ class _RecentPageState extends ConsumerState<RecentPage>
                             ? BiliPaiIconButton(
                                 icon: Icons.delete_sweep_outlined,
                                 tooltip: tr('清空'),
-                                onTap: () =>
-                                    _confirmClear(context, notifier),
+                                onTap: () => _confirmClear(context, notifier),
                               )
                             : null,
                       )
@@ -313,11 +324,9 @@ class _RecentPageState extends ConsumerState<RecentPage>
                         actions: [
                           if (recent.entries.isNotEmpty)
                             IconButton(
-                              icon:
-                                  const Icon(Icons.delete_sweep_outlined),
+                              icon: const Icon(Icons.delete_sweep_outlined),
                               tooltip: tr('清空'),
-                              onPressed: () =>
-                                  _confirmClear(context, notifier),
+                              onPressed: () => _confirmClear(context, notifier),
                             ),
                         ],
                       ),
@@ -332,19 +341,19 @@ class _RecentPageState extends ConsumerState<RecentPage>
     showPredictiveDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title:   Text(tr('清空最近播放')),
-        content:   Text(tr('确定要清空全部播放记录吗？')),
+        title: Text(tr('清空最近播放')),
+        content: Text(tr('确定要清空全部播放记录吗？')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child:   Text(tr('取消')),
+            child: Text(tr('取消')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               notifier.clear();
             },
-            child:   Text(tr('清空')),
+            child: Text(tr('清空')),
           ),
         ],
       ),
@@ -385,9 +394,11 @@ class _RecentList extends ConsumerStatefulWidget {
 
 class _RecentListState extends ConsumerState<_RecentList> {
   final ScrollController _controller = ScrollController();
-  late final StaggerWindow _stagger = StaggerWindow(onClosed: () {
-    if (mounted) setState(() {});
-  });
+  late final StaggerWindow _stagger = StaggerWindow(
+    onClosed: () {
+      if (mounted) setState(() {});
+    },
+  );
 
   @override
   void initState() {
@@ -433,7 +444,8 @@ class _RecentListState extends ConsumerState<_RecentList> {
     final filter = widget.filter;
     final items = widget.items;
     final visible =
-        items ?? (filter.isEmpty ? all : all.where((e) => _match(e, filter)).toList());
+        items ??
+        (filter.isEmpty ? all : all.where((e) => _match(e, filter)).toList());
 
     if (visible.isEmpty) {
       final scheme = Theme.of(context).colorScheme;
@@ -441,15 +453,17 @@ class _RecentListState extends ConsumerState<_RecentList> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search_off,
-                size: 40, color: scheme.onSurface.withValues(alpha: 0.25)),
+            Icon(
+              Icons.search_off,
+              size: 40,
+              color: scheme.onSurface.withValues(alpha: 0.25),
+            ),
             const SizedBox(height: 12),
             Text(
               items != null || filter.isNotEmpty
                   ? tr('没有找到相关歌曲')
                   : tr('暂无播放记录'),
-              style:
-                  TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
+              style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -460,8 +474,7 @@ class _RecentListState extends ConsumerState<_RecentList> {
       children: [
         ListView.builder(
           controller: _controller,
-          padding: EdgeInsets.only(
-              top: topExtent + sortPad, bottom: bottomPad),
+          padding: EdgeInsets.only(top: topExtent + sortPad, bottom: bottomPad),
           itemExtent: rowExtent,
           scrollCacheExtent: ScrollCacheExtent.pixels(500),
           addAutomaticKeepAlives: false,
@@ -487,10 +500,7 @@ class _RecentListState extends ConsumerState<_RecentList> {
                     bottom: 0,
                     width: 36,
                     child: Center(
-                      child: SongRowLeading(
-                        index: i,
-                        songPath: entry.songPath,
-                      ),
+                      child: SongRowLeading(index: i, songPath: entry.songPath),
                     ),
                   ),
                 ],
@@ -541,11 +551,16 @@ class _RecentListState extends ConsumerState<_RecentList> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          fontSize: 13, color: scheme.onSurfaceVariant),
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                  Icon(Icons.arrow_drop_down,
-                      size: 18, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    size: 18,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ],
               ),
             ),
@@ -576,22 +591,26 @@ class _RecentTile extends ConsumerWidget {
     final artist = item?.artist ?? '';
 
     BuildContext? coverCtx;
-    final g = songRowPlay(ref, onPlay: () async {
-      final ok = await launchFlyCover(
-        context,
-        coverContext: coverCtx,
-        coverSize: m.songCover,
-        vPad: m.vPad,
-        songPath: entry.songPath,
-        networkUrl: item?.coverUrl,
-        radius: m.songRadius,
-      );
-      if (ok) onPlay();
-    });
+    final g = songRowPlay(
+      ref,
+      onPlay: () async {
+        final ok = await launchFlyCover(
+          context,
+          coverContext: coverCtx,
+          coverSize: m.songCover,
+          vPad: m.vPad,
+          songPath: entry.songPath,
+          networkUrl: item?.coverUrl,
+          radius: m.songRadius,
+        );
+        if (ok) onPlay();
+      },
+    );
     return g.wrap(
       CoverRow(
-        background:
-            useLandscape(ref) ? themeTintOrNull(ref, 'ls-lib.row') : null,
+        background: useLandscape(ref)
+            ? themeTintOrNull(ref, 'ls-lib.row')
+            : null,
         horizontalPadding: 16,
         verticalPadding: m.vPad,
         onTap: g.onTap,
@@ -613,10 +632,7 @@ class _RecentTile extends ConsumerWidget {
           title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: m.titleSize,
-            fontWeight: FontWeight.w600,
-          ),
+          style: TextStyle(fontSize: m.titleSize, fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
           artist.isEmpty
@@ -634,8 +650,7 @@ class _RecentTile extends ConsumerWidget {
           children: [
             SourceTag(
               path: entry.songPath,
-              isOnline:
-                  item?.isOnline ?? _isOnlinePath(entry.songPath),
+              isOnline: item?.isOnline ?? _isOnlinePath(entry.songPath),
               source: item?.source,
               onlineSongJson: item?.onlineSongJson,
             ),
@@ -652,9 +667,26 @@ class _RecentTile extends ConsumerWidget {
   }
 
   bool _isOnlinePath(String p) =>
-      p.startsWith('lx://') || p.startsWith('plugin://');
+      p.startsWith('lx://') ||
+      p.startsWith('plugin://') ||
+      p.startsWith('cloud://');
 
   String _titleFromPath(String p) {
+    // 网盘播放标识 cloud://<provider>/<accountId>/<urlEncodedFileJson>：
+    // 无 meta 的存量记录反解文件名兜底，避免整段编码串上屏
+    if (p.startsWith('cloud://')) {
+      try {
+        final segs = p.split('/');
+        if (segs.length >= 5) {
+          final raw = Uri.decodeComponent(segs.sublist(4).join('/'));
+          final j = jsonDecode(raw);
+          if (j is Map && j['name'] is String) {
+            return parseCloudFileName(j['name'] as String).title;
+          }
+        }
+      } catch (_) {}
+      return p;
+    }
     final name = p.split(RegExp(r'[\\/]')).last;
     final dot = name.lastIndexOf('.');
     return dot > 0 ? name.substring(0, dot) : name;
@@ -667,10 +699,12 @@ class _RecentTile extends ConsumerWidget {
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(dt.year, dt.month, dt.day);
     final diff = today.difference(day).inDays;
-    final hm = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    final hm =
+        '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     if (diff == 0) return tr('今天 {hm}', {'hm': hm});
     if (diff == 1) return tr('昨天 {hm}', {'hm': hm});
-    if (diff < 7) return tr('{m}月{d}日 {hm}', {'m': dt.month, 'd': dt.day, 'hm': hm});
+    if (diff < 7)
+      return tr('{m}月{d}日 {hm}', {'m': dt.month, 'd': dt.day, 'hm': hm});
     return tr('{y}年{m}月{d}日', {'y': dt.year, 'm': dt.month, 'd': dt.day});
   }
 }
@@ -678,11 +712,11 @@ class _RecentTile extends ConsumerWidget {
 enum _RecentSort { none, title, artist, time }
 
 String _recentSortLabel(_RecentSort s) => switch (s) {
-      _RecentSort.none => tr('默认排序'),
-      _RecentSort.time => tr('按播放时间'),
-      _RecentSort.title => tr('按标题'),
-      _RecentSort.artist => tr('按歌手'),
-    };
+  _RecentSort.none => tr('默认排序'),
+  _RecentSort.time => tr('按播放时间'),
+  _RecentSort.title => tr('按标题'),
+  _RecentSort.artist => tr('按歌手'),
+};
 
 String _recentTitle(RecentEntry e) {
   final item = e.toQueueItem();
@@ -696,7 +730,8 @@ String _recentTitle(RecentEntry e) {
 String _recentArtist(RecentEntry e) => e.toQueueItem()?.artist ?? '';
 
 List<int> _filterSortRecent(
-    (List<({String title, String artist, int playedAt})>, String, int) args) {
+  (List<({String title, String artist, int playedAt})>, String, int) args,
+) {
   final (rows, query, sortIdx) = args;
   final indices = List<int>.generate(rows.length, (i) => i);
   List<int> result = indices;
@@ -754,8 +789,7 @@ class _SortItem extends StatelessWidget {
                 ),
               ),
             ),
-            if (selected)
-              Icon(Icons.check, size: 18, color: scheme.primary),
+            if (selected) Icon(Icons.check, size: 18, color: scheme.primary),
           ],
         ),
       ),

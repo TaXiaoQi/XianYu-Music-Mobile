@@ -48,7 +48,10 @@ class RecentManager extends StateNotifier<RecentState> {
   Future<void> refresh() async {
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
-      final json = await statsGetRecentHistory(dbPath: dbPath, limit: BigInt.from(200));
+      final json = await statsGetRecentHistory(
+        dbPath: dbPath,
+        limit: BigInt.from(200),
+      );
       final list = (jsonDecode(json) as List)
           .map((e) => e as Map<String, dynamic>)
           .toList();
@@ -61,8 +64,10 @@ class RecentManager extends StateNotifier<RecentState> {
       final songMap = <String, Song>{};
       if (localPaths.isNotEmpty) {
         try {
-          final songsJson =
-              await getLibrarySongsByPaths(dbPath: dbPath, paths: localPaths);
+          final songsJson = await getLibrarySongsByPaths(
+            dbPath: dbPath,
+            paths: localPaths,
+          );
           for (final e in jsonDecode(songsJson) as List) {
             final s = Song.fromJson(e as Map<String, dynamic>);
             songMap[s.path] = s;
@@ -85,11 +90,9 @@ class RecentManager extends StateNotifier<RecentState> {
         if (_isOnline(path)) {
           final meta = onlineMeta[path];
           if (meta != null) {
-            entries.add(RecentEntry(
-              songPath: path,
-              playedAt: playedAt,
-              onlineItem: meta,
-            ));
+            entries.add(
+              RecentEntry(songPath: path, playedAt: playedAt, onlineItem: meta),
+            );
             continue;
           }
           final fav = _ref
@@ -98,20 +101,24 @@ class RecentManager extends StateNotifier<RecentState> {
               .where((f) => f.path == path)
               .toList();
           if (fav.isNotEmpty) {
-            entries.add(RecentEntry(
-              songPath: path,
-              playedAt: playedAt,
-              onlineItem: fav.first.toQueueItem(),
-            ));
+            entries.add(
+              RecentEntry(
+                songPath: path,
+                playedAt: playedAt,
+                onlineItem: fav.first.toQueueItem(),
+              ),
+            );
           } else {
             entries.add(RecentEntry(songPath: path, playedAt: playedAt));
           }
         } else {
-          entries.add(RecentEntry(
-            songPath: path,
-            playedAt: playedAt,
-            song: songMap[path],
-          ));
+          entries.add(
+            RecentEntry(
+              songPath: path,
+              playedAt: playedAt,
+              song: songMap[path],
+            ),
+          );
         }
       }
       state = RecentState(entries: entries, loading: false);
@@ -121,7 +128,10 @@ class RecentManager extends StateNotifier<RecentState> {
   }
 
   bool _isOnline(String path) =>
-      path.startsWith('lx://') || path.startsWith('plugin://');
+      path.startsWith('lx://') ||
+      path.startsWith('plugin://') ||
+      // 网盘播放标识：走 online 分支从 onlineMeta 恢复标题/歌手
+      path.startsWith('cloud://');
 
   Future<void> play(int index) async {
     final items = state.entries
@@ -129,15 +139,18 @@ class RecentManager extends StateNotifier<RecentState> {
         .whereType<QueueItem>()
         .toList();
     if (items.isEmpty) return;
-    await _ref.read(playerProvider.notifier).playQueue(items, startIndex: index);
+    await _ref
+        .read(playerProvider.notifier)
+        .playQueue(items, startIndex: index);
   }
 
   Future<void> remove(String songPath) async {
     try {
       final dbPath = await _ref.read(dbPathProvider.future);
-      await statsRemoveFromRecentHistory(
-          dbPath: dbPath, songPaths: [songPath]);
-      final isFav = _ref.read(favoritesProvider).entries
+      await statsRemoveFromRecentHistory(dbPath: dbPath, songPaths: [songPath]);
+      final isFav = _ref
+          .read(favoritesProvider)
+          .entries
           .any((f) => f.path == songPath);
       if (!isFav) {
         await _ref.read(onlineMetaStoreProvider).remove([songPath]);

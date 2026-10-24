@@ -118,8 +118,12 @@ class PlayStatsReporter {
   }
 
   void reportBehavior(QueueItem item, String action, int listenDuration) {
-    final hash = md5.convert(utf8.encode('${item.title}|${item.artist}|local')).toString();
-    _ref.read(accountApiProvider).reportUserBehavior(
+    final hash = md5
+        .convert(utf8.encode('${item.title}|${item.artist}|local'))
+        .toString();
+    _ref
+        .read(accountApiProvider)
+        .reportUserBehavior(
           songId: item.path,
           songName: item.title,
           singer: item.artist,
@@ -136,7 +140,9 @@ class PlayStatsReporter {
       try {
         final dbPath = await _ref.read(dbPathProvider.future);
         await statsAddToHistory(dbPath: dbPath, songPath: item.path);
-        if (item.isOnline) {
+        // 网盘（cloud://）不在 isOnline 语义内，但最近播放同样靠
+        // onlineMeta 恢复标题/歌手/封面，这里一并写入
+        if (item.isOnline || item.isCloud) {
           await _ref.read(onlineMetaStoreProvider).put(item);
         }
         _ref.invalidate(recentProvider);
