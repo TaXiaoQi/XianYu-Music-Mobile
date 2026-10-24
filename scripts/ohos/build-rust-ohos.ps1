@@ -13,6 +13,11 @@
 #   ./scripts/build-rust-ohos.ps1 -SdkRoot <SDK root>      # SDK dir containing native/llvm/bin/clang.exe
 #   ./scripts/build-rust-ohos.ps1 -RustDir <rust crate>    # xianyu_core crate dir (default: main project)
 #
+# flutter-hvigor-plugin also invokes this script automatically with -Archs
+# derived from the flutter build's TARGET_PLATFORM, then prunes stale-arch
+# copies of libxianyu_core.so from ohos/entry/libs (arch parity with the
+# engine/dart AOT, so hap/app packages never carry a wrong-arch rust so).
+#
 # Artifacts:
 #   <rust>/target/<target>/release/libxianyu_core.so
 #   auto-copied to ohos/entry/libs/{arm64-v8a[,x86_64]}/ when ohos/entry exists
@@ -23,6 +28,8 @@ param(
     [switch]$Emu
 )
 if ($Archs.Count -eq 0) { $Archs = if ($Emu) { @('aarch64', 'x86_64') } else { @('aarch64') } }
+# hvigor plugin passes archs as one comma-joined token (powershell -File binds it to a single string)
+if ($Archs.Count -eq 1 -and $Archs[0].Contains(',')) { $Archs = $Archs[0] -split ',' | ForEach-Object { $_.Trim() } }
 
 $ErrorActionPreference = 'Continue' # native tool stderr must not abort; explicit LASTEXITCODE checks below
 
