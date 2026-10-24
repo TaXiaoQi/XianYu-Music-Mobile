@@ -462,7 +462,54 @@ pub(crate) fn item_text(item: &TagItem) -> Option<String> {
 
 pub(crate) fn clean_text(value: &str) -> Option<String> {
 	let trimmed = value.trim_matches('\0').trim();
-	(!trimmed.is_empty()).then(|| trimmed.to_string())
+	(!trimmed.is_empty()).then(|| repair_latin1_mojibake(trimmed).into_owned())
+}
+
+/// 修复被按 Latin-1 误读的中文标签乱码（如「ºÚÅÂ²»ÅÂºÚ」→「黑怕不怕黑」）。
+/// 老式中文打轨器常把 GBK 字节写进 ID3v2.3 的编码字节 0（ISO-8859-1）或
+/// ID3v1 定长字段，解析端逐字节映射成 Latin-1 字符后即成乱码。判定与修复：
+/// 1. 纯 ASCII 或含超出 Latin-1 范围的字符 → 真·Unicode，原样返回；
+/// 2. 字节序列恰为合法 UTF-8 → 打轨器把 UTF-8 塞进了 Latin-1 字段，按
+///    UTF-8 还原（如「ç\u{88}\u{B1}」→「爱」）；
+/// 3. 其余含高位字节的按 GBK 解码，仅当无替换符（encoding_rs 对非法序列
+///    吐 U+FFFD）且结果含 CJK 字符才采用，避免「Café」「Beyoncé」这类
+///    真 Latin-1 文本被误转（法语/西语老标签理论上存在被误转的边角，
+///    中文库里 GBK 乱码的量级远大于此，取舍与 decode_riff_info_text 一致）。
+pub(crate) fn repair_latin1_mojibake(value: &str) -> std::borrow::Cow<'_, str> {
+	if value.is_ascii() {
+		return std::borrow::Cow::Borrowed(value);
+	}
+	let mut bytes = Vec::with_capacity(value.len());
+	for ch in value.chars() {
+		let code = ch as u32;
+		if code > 0xFF {
+			// 真·Unicode（中文/日文/emoji 等），不是 Latin-1 误读
+			return std::borrow::Cow::Borrowed(value);
+		}
+		bytes.push(code as u8);
+	}
+	if let Ok(s) = std::str::from_utf8(&bytes) {
+		return std::borrow::Cow::Owned(s.to_string());
+	}
+	if bytes.iter().any(|&b| b >= 0x81) {
+		// 不走带 BOM 嗅探的 decode()：GBK 首对字节恰为 FF FE 时会被误判成 UTF-16
+		let (decoded, had_errors) = encoding_rs::GBK.decode_without_bom_handling(&bytes);
+		if !had_errors && decoded.chars().any(is_cjk_char) {
+			return std::borrow::Cow::Owned(decoded.into_owned());
+		}
+	}
+	std::borrow::Cow::Borrowed(value)
+}
+
+fn is_cjk_char(c: char) -> bool {
+	matches!(c as u32,
+		0x3040..=0x30FF   // 假名
+		| 0x3400..=0x4DBF // CJK 扩展 A
+		| 0x4E00..=0x9FFF // CJK 统一表意
+		| 0xAC00..=0xD7AF // 谚文
+		| 0xF900..=0xFAFF // CJK 兼容表意
+		| 0xFF00..=0xFFEF // 全角字符
+	)
 }
 
 pub(crate) fn looks_like_lyrics_key(raw_key: &str) -> bool {
@@ -483,8 +530,9 @@ pub(crate) fn seems_like_lyrics_text(text: &str) -> bool {
 
 #[cfg(test)] mod tests {
 	use super::{
-		extract_detail_metadata, extract_embedded_lyrics, extract_text_metadata, find_embedded_picture,
-		read_tagged_file_from_path, read_tagged_file_from_path_for_scan, EmbedMetadataRequest,
+		clean_text, extract_detail_metadata, extract_embedded_lyrics, extract_text_metadata,
+		find_embedded_picture, read_tagged_file_from_path, read_tagged_file_from_path_for_scan,
+		repair_latin1_mojibake, EmbedMetadataRequest,
 	};
 	use id3::frame::{Frame, Picture as Id3Picture, PictureType as Id3PictureType};
 	use id3::TagLike;
@@ -786,5 +834,30 @@ pub(crate) fn seems_like_lyrics_text(text: &str) -> bool {
 		assert!(find_embedded_picture(&scan_tagged_file).is_none());
 
 		let _ = fs::remove_file(temp_path);
+	}
+
+	#[test]
+	fn repairs_gbk_misread_as_latin1() {
+		// 「黑怕不怕黑」的 GBK 字节被按 Latin-1 逐字节映射后的样子（反馈日志原文）
+		assert_eq!(repair_latin1_mojibake("ºÚÅÂ²»ÅÂºÚ"), "黑怕不怕黑");
+		assert_eq!(clean_text("ºÚÅÂ²»ÅÂºÚ").as_deref(), Some("黑怕不怕黑"));
+		// 「爱琴海」GBK: B0 AE C7 D9 BA A3
+		assert_eq!(repair_latin1_mojibake("°®ÇÙº£"), "爱琴海");
+	}
+
+	#[test]
+	fn repairs_utf8_stored_in_latin1_field() {
+		// 「爱」的 UTF-8 字节 E7 88 B1 被按 Latin-1 读成 ç + U+0088 + ±
+		assert_eq!(repair_latin1_mojibake("ç\u{88}\u{B1}"), "爱");
+	}
+
+	#[test]
+	fn keeps_genuine_unicode_and_latin1_text() {
+		// 真·Unicode 原样保留
+		assert_eq!(repair_latin1_mojibake("周杰伦"), "周杰伦");
+		assert_eq!(repair_latin1_mojibake("Hello"), "Hello");
+		// 真 Latin-1：GBK 解不出（吐 U+FFFD）时保持原样
+		assert_eq!(repair_latin1_mojibake("Café"), "Café");
+		assert_eq!(repair_latin1_mojibake("Beyoncé"), "Beyoncé");
 	}
 }

@@ -1,7 +1,9 @@
 // music/library.rs - 音乐库管理
 
 use super::scanner::ScanOptions;
-use super::scanner::{scan_folder_recursive, scan_single_directory_internal};
+use super::scanner::{
+	scan_folder_recursive, scan_single_directory_internal, serialize_string_list,
+};
 use super::types::{LibrarySong, LibraryFolder, FolderNode, ArtistCatalogItem, AlbumCatalogItem};
 use super::utils::{ // 实现
 	clamp_i64_to_u32, descendant_like_patterns, i64_to_u64_opt, i64_to_u8_opt, normalize_path,
@@ -194,6 +196,186 @@ fn folder_song_matches_query(row: &FolderViewSongRow, query: &str) -> bool {
 			.any(|name| name.to_lowercase().contains(&lowered_query))
 }
 
+/// 旧版本把 GBK 标签按 Latin-1 误读后写进了库表（如「ºÚÅÂ²»ÅÂºÚ」），
+/// 读取展示侧统一修复。非破坏性：不改库内容；扫描 diff（scanner/diff.rs）
+/// 刻意不做此修复，让新旧值差异在下次扫描时用正确解析值回写自愈。
+fn repair_stored_tag_text(value: String) -> String {
+	crate::music::tags::repair_latin1_mojibake(&value).into_owned()
+}
+
+fn repair_stored_tag_list(values: Vec<String>) -> Vec<String> {
+	values
+		.into_iter()
+		.map(|value| repair_stored_tag_text(value))
+		.collect()
+}
+
+/// 一次性数据修复（由 run_migrations 在启动时调用）：旧版本把 GBK 标签按
+/// Latin-1 误读后写进了 songs / artists / playback_session 表。对文本列做
+/// 确定性修复，仅更新发生变化的行。幂等：修复值是真·Unicode，重复执行
+/// 不再变动。
+pub(crate) fn repair_gbk_tag_mojibake(conn: &Connection) -> Result<(), String> {
+	// songs 表：展示字段 + 分组键 + 两个 JSON 名单列
+	let mut stmt = conn
+		.prepare(
+			"SELECT id, title, artist, album, album_artist, album_key, artist_names, effective_artist_names FROM songs",
+		)
+		.map_err(|e| format!("repair_gbk_tag_mojibake songs select: {}", e))?;
+	let mut songs: Vec<(i64, String, String, String, String, String, String, String)> =
+		Vec::new();
+	let song_rows = stmt
+		.query_map([], |row| {
+			Ok((
+				row.get::<_, i64>(0)?,
+				row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+				row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+				row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+				row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+				row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+				row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+				row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+			))
+		})
+		.map_err(|e| e.to_string())?;
+	for row in song_rows {
+		songs.push(row.map_err(|e| e.to_string())?);
+	}
+	drop(stmt);
+
+	{
+		let mut update = conn
+			.prepare(
+				"UPDATE songs SET title = ?1, artist = ?2, album = ?3, album_artist = ?4, album_key = ?5, artist_names = ?6, effective_artist_names = ?7 WHERE id = ?8",
+			)
+			.map_err(|e| e.to_string())?;
+		for (id, title, artist, album, album_artist, album_key, artist_names, effective_artist_names)
+			in songs
+		{
+			let new_title = repair_stored_tag_text(title.clone());
+			let new_artist = repair_stored_tag_text(artist.clone());
+			let new_album = repair_stored_tag_text(album.clone());
+			let new_album_artist = repair_stored_tag_text(album_artist.clone());
+			let new_album_key = repair_stored_tag_text(album_key.clone());
+			// 名单列序列化失败时保留原值，避免损坏数据
+			let heal_names = |raw: &String| -> String {
+				serialize_string_list(&repair_stored_tag_list(deserialize_string_list(Some(
+					raw.clone(),
+				))))
+				.unwrap_or_else(|_| raw.clone())
+			};
+			let new_artist_names = heal_names(&artist_names);
+			let new_effective_artist_names = heal_names(&effective_artist_names);
+			if new_title != title
+				|| new_artist != artist
+				|| new_album != album
+				|| new_album_artist != album_artist
+				|| new_album_key != album_key
+				|| new_artist_names != artist_names
+				|| new_effective_artist_names != effective_artist_names
+			{
+				update
+					.execute(rusqlite::params![
+						new_title,
+						new_artist,
+						new_album,
+						new_album_artist,
+						new_album_key,
+						new_artist_names,
+						new_effective_artist_names,
+						id
+					])
+					.map_err(|e| format!("repair_gbk_tag_mojibake songs update: {}", e))?;
+			}
+		}
+	}
+
+	// artists 表：歌手目录名（歌手详情页按 name 精确回查，必须与展示值一致）
+	let mut stmt = conn
+		.prepare("SELECT id, name FROM artists")
+		.map_err(|e| e.to_string())?;
+	let mut artists: Vec<(i64, String)> = Vec::new();
+	let artist_rows = stmt
+		.query_map([], |row| {
+			Ok((
+				row.get::<_, i64>(0)?,
+				row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+			))
+		})
+		.map_err(|e| e.to_string())?;
+	for row in artist_rows {
+		artists.push(row.map_err(|e| e.to_string())?);
+	}
+	drop(stmt);
+
+	{
+		let mut update = conn
+			.prepare("UPDATE artists SET name = ?1 WHERE id = ?2")
+			.map_err(|e| e.to_string())?;
+		for (id, name) in artists {
+			let new_name = repair_stored_tag_text(name.clone());
+			if new_name != name {
+				update
+					.execute(rusqlite::params![new_name, id])
+					.map_err(|e| format!("repair_gbk_tag_mojibake artists update: {}", e))?;
+			}
+		}
+	}
+
+	// playback_session 表：持久化播放队列里排队时快照的 title/artist/album
+	let session_data: Option<String> = conn
+		.query_row(
+			"SELECT data FROM playback_session WHERE id = 1",
+			[],
+			|row| row.get::<_, Option<String>>(0),
+		)
+		.unwrap_or(None);
+	if let Some(data) = session_data {
+		if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&data) {
+			let mut changed = false;
+			if let Some(meta_map) = value.get_mut("queueSongMeta").and_then(|v| v.as_object_mut())
+			{
+				for (_path, meta) in meta_map.iter_mut() {
+					let is_object = matches!(meta, serde_json::Value::Object(_));
+					if !is_object {
+						continue;
+					}
+					let meta_obj = meta.as_object_mut().expect("checked above");
+					for field in ["title", "artist", "album"] {
+						let is_string = matches!(
+							meta_obj.get(field),
+							Some(serde_json::Value::String(_))
+						);
+						if !is_string {
+							continue;
+						}
+						let text = match meta_obj.get(field) {
+							Some(serde_json::Value::String(text)) => text.clone(),
+							_ => continue,
+						};
+						let repaired =
+							crate::music::tags::repair_latin1_mojibake(&text).into_owned();
+						if repaired != text {
+							meta_obj.insert(field.to_string(), serde_json::Value::String(repaired));
+							changed = true;
+						}
+					}
+				}
+			}
+			if changed {
+				let updated = serde_json::to_string(&value)
+					.map_err(|e| format!("repair_gbk_tag_mojibake session serialize: {}", e))?;
+				conn.execute(
+					"UPDATE playback_session SET data = ?1 WHERE id = 1",
+					rusqlite::params![updated],
+				)
+				.map_err(|e| format!("repair_gbk_tag_mojibake session update: {}", e))?;
+			}
+		}
+	}
+
+	Ok(())
+}
+
 /// 从 rusqlite::Row 解析 LibrarySong（共享行解析逻辑）
 fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
 	let path: String = row.get(1)?;
@@ -206,8 +388,12 @@ fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
 	let disc_number = row.get::<_, Option<String>>(21)?;
 	let added_at_i64 = row.get::<_, Option<i64>>(22)?;
 	let file_modified_at_i64 = row.get::<_, Option<i64>>(23)?;
-	let artist_names = deserialize_string_list(row.get::<_, Option<String>>(4)?);
-	let effective_artist_names = deserialize_string_list(row.get::<_, Option<String>>(5)?);
+	let artist_names = repair_stored_tag_list(deserialize_string_list(
+		row.get::<_, Option<String>>(4)?,
+	));
+	let effective_artist_names = repair_stored_tag_list(deserialize_string_list(
+		row.get::<_, Option<String>>(5)?,
+	));
 
 	let name = std::path::Path::new(&path)
 		.file_name()
@@ -218,13 +404,13 @@ fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
 		id: row.get(0)?,
 		name,
 		path,
-		title: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-		artist: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+		title: repair_stored_tag_text(row.get::<_, Option<String>>(2)?.unwrap_or_default()),
+		artist: repair_stored_tag_text(row.get::<_, Option<String>>(3)?.unwrap_or_default()),
 		artist_names,
 		effective_artist_names,
-		album: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
-		album_artist: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
-		album_key: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+		album: repair_stored_tag_text(row.get::<_, Option<String>>(6)?.unwrap_or_default()),
+		album_artist: repair_stored_tag_text(row.get::<_, Option<String>>(7)?.unwrap_or_default()),
+		album_key: repair_stored_tag_text(row.get::<_, Option<String>>(8)?.unwrap_or_default()),
 		is_various_artists_album: row.get::<_, Option<i64>>(9)?.unwrap_or(0) != 0,
 		collapse_artist_credits: row.get::<_, Option<i64>>(10)?.unwrap_or(0) != 0,
 		duration,
@@ -742,12 +928,16 @@ pub fn get_library_song_paths_for_folder_view(
 			|row| {
 				Ok(FolderViewSongRow {
 					path: row.get::<_, String>(0)?,
-					title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-					artist: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-					artist_names: deserialize_string_list(row.get::<_, Option<String>>(3)?),
-					effective_artist_names: deserialize_string_list(row.get::<_, Option<String>>(4)?),
-					album: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
-					album_artist: row.get::<_, Option<String>>(6)?.unwrap_or_default(),
+					title: repair_stored_tag_text(row.get::<_, Option<String>>(1)?.unwrap_or_default()),
+					artist: repair_stored_tag_text(row.get::<_, Option<String>>(2)?.unwrap_or_default()),
+					artist_names: repair_stored_tag_list(deserialize_string_list(
+						row.get::<_, Option<String>>(3)?,
+					)),
+					effective_artist_names: repair_stored_tag_list(deserialize_string_list(
+						row.get::<_, Option<String>>(4)?,
+					)),
+					album: repair_stored_tag_text(row.get::<_, Option<String>>(5)?.unwrap_or_default()),
+					album_artist: repair_stored_tag_text(row.get::<_, Option<String>>(6)?.unwrap_or_default()),
 					added_at: i64_to_u64_opt(row.get::<_, Option<i64>>(7)?),
 					track_number: row.get::<_, Option<String>>(8)?,
 					disc_number: row.get::<_, Option<String>>(9)?,

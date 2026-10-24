@@ -419,6 +419,10 @@ pub(crate) fn run_migrations(conn: &Connection) -> Result<(), String> {
 	migrate_artists_columns(conn)?;
 	migrate_playback_session(conn)?;
 	migrate_song_backgrounds(conn)?;
+	// GBK 标签乱码修复为容错调用：修复失败不阻断启动，下次启动重试
+	if let Err(e) = crate::music::library::repair_gbk_tag_mojibake(conn) {
+		eprintln!("[migrations] repair_gbk_tag_mojibake failed: {}", e);
+	}
 	Ok(())
 }
 
@@ -451,6 +455,88 @@ fn migrate_song_backgrounds(conn: &Connection) -> Result<(), String> {
 		// 验证 avatar_path 字段存在
 		let columns = get_table_columns(&conn, "artists").unwrap();
 		assert!(columns.iter().any(|c| c == "avatar_path"));
+	}
+
+	#[test]
+	fn test_repair_gbk_tag_mojibake_heals_library_and_session() {
+		let conn = Connection::open_in_memory().unwrap();
+		conn
+			.execute_batch(
+				"CREATE TABLE songs (id INTEGER PRIMARY KEY, title TEXT, artist TEXT, album TEXT, album_artist TEXT, album_key TEXT, artist_names TEXT, effective_artist_names TEXT);
+				 CREATE TABLE artists (id INTEGER PRIMARY KEY, name TEXT);
+				 CREATE TABLE playback_session (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL, updated_at INTEGER NOT NULL);",
+			)
+			.unwrap();
+
+		// 「黑怕不怕黑」「爱琴海」的 GBK 字节被按 Latin-1 误读后的乱码（反馈日志原文）
+		conn
+			.execute(
+				"INSERT INTO songs (id, title, artist, album, album_artist, album_key, artist_names, effective_artist_names)
+				 VALUES (1, 'ºÚÅÂ²»ÅÂºÚ', 'ºÚÅÂ²»ÅÂºÚ', '°®ÇÙº£', 'ºÚÅÂ²»ÅÂºÚ', '°®ÇÙº£', '[\"ºÚÅÂ²»ÅÂºÚ\"]', '[\"ºÚÅÂ²»ÅÂºÚ\"]')",
+				[],
+			)
+			.unwrap();
+		// 真 Latin-1 与正常数据不应被改动
+		conn
+			.execute(
+				"INSERT INTO songs (id, title, artist, album, album_artist, album_key, artist_names, effective_artist_names)
+				 VALUES (2, 'Café', 'Beyoncé', 'Normal', 'Beyoncé', 'Normal', '[\"Beyoncé\"]', '[\"Beyoncé\"]')",
+				[],
+			)
+			.unwrap();
+		conn
+			.execute("INSERT INTO artists (id, name) VALUES (1, 'ºÚÅÂ²»ÅÂºÚ')", [])
+			.unwrap();
+		conn
+			.execute(
+				"INSERT INTO playback_session (id, data, updated_at) VALUES (1, '{\"queueSongMeta\":{\"/a.mp3\":{\"title\":\"ºÚÅÂ²»ÅÂºÚ\",\"artist\":\"ºÚÅÂ²»ÅÂºÚ\",\"album\":\"°®ÇÙº£\"}}}', 1)",
+				[],
+			)
+			.unwrap();
+
+		crate::music::library::repair_gbk_tag_mojibake(&conn).unwrap();
+
+		let (title, artist, album, names): (String, String, String, String) = conn
+			.query_row(
+				"SELECT title, artist, album, artist_names FROM songs WHERE id = 1",
+				[],
+				|r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+			)
+			.unwrap();
+		assert_eq!(title, "黑怕不怕黑");
+		assert_eq!(artist, "黑怕不怕黑");
+		assert_eq!(album, "爱琴海");
+		assert_eq!(names, "[\"黑怕不怕黑\"]");
+
+		let untouched: (String, String) = conn
+			.query_row(
+				"SELECT title, artist FROM songs WHERE id = 2",
+				[],
+				|r| Ok((r.get(0)?, r.get(1)?)),
+			)
+			.unwrap();
+		assert_eq!(untouched.0, "Café");
+		assert_eq!(untouched.1, "Beyoncé");
+
+		let artist_name: String = conn
+			.query_row("SELECT name FROM artists WHERE id = 1", [], |r| r.get(0))
+			.unwrap();
+		assert_eq!(artist_name, "黑怕不怕黑");
+
+		let session: String = conn
+			.query_row("SELECT data FROM playback_session WHERE id = 1", [], |r| {
+				r.get(0)
+			})
+			.unwrap();
+		assert!(session.contains("黑怕不怕黑"));
+		assert!(!session.contains("ºÚÅÂ²»ÅÂºÚ"));
+
+		// 幂等：重复执行不再变化
+		crate::music::library::repair_gbk_tag_mojibake(&conn).unwrap();
+		let title_again: String = conn
+			.query_row("SELECT title FROM songs WHERE id = 1", [], |r| r.get(0))
+			.unwrap();
+		assert_eq!(title_again, "黑怕不怕黑");
 	}
 
 	#[test]
