@@ -390,16 +390,18 @@ class _PlayingBadge extends StatelessWidget {
           SizedBox(
             width: 16,
             height: 10,
-            child: AnimatedBuilder(
-              animation: eq,
-              builder: (context, _) {
-                final t = eq.value;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [_bar(t, 0), _bar(t, 0.25), _bar(t, 0.5)],
-                );
-              },
+            child: RepaintBoundary(
+              // 播放期首页唯一的常驻逐帧动画：painter 直接监听控制器重绘，
+              // 不重建组件；RepaintBoundary 把每帧重绘限制在 16×10 徽标内，
+              // 否则整张轮播卡每帧重绘（约 0.78MP/帧@3x），低端机光栅线程
+              // 被吃满会拖累 mini 条碟面旋转（首页左下角旋转一卡一卡）
+              child: CustomPaint(
+                painter: _EqPainter(
+                  eq: eq,
+                  playing: isPlaying,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ),
           const SizedBox(width: 6),
@@ -415,21 +417,46 @@ class _PlayingBadge extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _bar(double t, double phase) {
-    final h = isPlaying
-        ? 4 + 5 * (0.5 + 0.5 * math.sin(t * 2 * math.pi + phase * 2 * math.pi))
-        : 4.0;
-    return Container(
-      width: 2.5,
-      height: h,
-      margin: const EdgeInsets.symmetric(horizontal: 1),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(2),
-      ),
-    );
+class _EqPainter extends CustomPainter {
+  _EqPainter({
+    required this.eq,
+    required this.playing,
+    required this.color,
+  }) : super(repaint: eq);
+
+  final Animation<double> eq;
+  final bool playing;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    const barW = 2.5;
+    const gap = 2.0;
+    final total = barW * 3 + gap * 2;
+    var x = (size.width - total) / 2;
+    final t = eq.value;
+    for (final phase in const [0.0, 0.25, 0.5]) {
+      final h = playing
+          ? 4.0 +
+              5.0 * (0.5 + 0.5 * math.sin(t * 2 * math.pi + phase * 2 * math.pi))
+          : 4.0;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(x, size.height - h, barW, h),
+          const Radius.circular(2),
+        ),
+        paint,
+      );
+      x += barW + gap;
+    }
   }
+
+  @override
+  bool shouldRepaint(_EqPainter oldDelegate) =>
+      oldDelegate.playing != playing || oldDelegate.color != color;
 }
 
 class _Dots extends StatelessWidget {

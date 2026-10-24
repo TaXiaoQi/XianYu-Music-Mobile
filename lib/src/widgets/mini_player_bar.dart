@@ -833,18 +833,18 @@ class _RotatingDisc extends ConsumerWidget {
         child: Padding(
           padding: EdgeInsets.all(inset),
           child: ClipOval(
-            child: AnimatedBuilder(
-              animation: spin,
-              builder: (context, _) => Transform.rotate(
-                angle: spin.value * 2 * math.pi,
-                child: CoverImage(
-                  songPath: current.path,
-                  networkUrl: current.coverUrl,
-                  width: size - inset * 2,
-                  height: size - inset * 2,
-                  radius: 0,
-                  icon: Icons.music_note,
-                ),
+            // RenderObject 级旋转：每帧只更新 transform 矩阵，不重建
+            // CoverImage 子树（AnimatedBuilder 每帧重建会让 CachedNetworkImage
+            // 等 image 组件跟着跑 build，低端机 UI 线程吃紧导致旋转掉帧）
+            child: RotationTransition(
+              turns: spin,
+              child: CoverImage(
+                songPath: current.path,
+                networkUrl: current.coverUrl,
+                width: size - inset * 2,
+                height: size - inset * 2,
+                radius: 0,
+                icon: Icons.music_note,
               ),
             ),
           ),
