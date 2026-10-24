@@ -9,7 +9,6 @@ import 'package:video_player/video_player.dart';
 
 import '../core/application_logger.dart';
 import '../core/settings.dart';
-import '../effects/sound_effect_provider.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
 import 'audio_proxy_server.dart';
@@ -26,8 +25,22 @@ String normalizeMvQuality(String q) {
 }
 
 const _kMvIdKeys = [
-  'mv', 'mvHash', 'mvdata', 'mvVid', 'mvId', 'vid', 'vid_hash', 'vhash',
-  'bvid', 'aid', 'cid', 'id', 'songmid', 'mvid', 'mid', 'hash',
+  'mv',
+  'mvHash',
+  'mvdata',
+  'mvVid',
+  'mvId',
+  'vid',
+  'vid_hash',
+  'vhash',
+  'bvid',
+  'aid',
+  'cid',
+  'id',
+  'songmid',
+  'mvid',
+  'mid',
+  'hash',
 ];
 
 final Map<String, bool> _mvProbeResult = {};
@@ -140,8 +153,7 @@ class MvState {
 
   bool get active => requested;
 
-  MvState copyWith(
-          {String? phase, int? bufferedSec, bool? audioTakenOver}) =>
+  MvState copyWith({String? phase, int? bufferedSec, bool? audioTakenOver}) =>
       MvState(
         requested: requested,
         ready: ready,
@@ -154,15 +166,15 @@ class MvState {
       );
 
   MvState refresh() => MvState(
-        requested: requested,
-        ready: ready,
-        loading: loading,
-        source: source,
-        controller: controller,
-        phase: phase,
-        bufferedSec: bufferedSec,
-        audioTakenOver: audioTakenOver,
-      );
+    requested: requested,
+    ready: ready,
+    loading: loading,
+    source: source,
+    controller: controller,
+    phase: phase,
+    bufferedSec: bufferedSec,
+    audioTakenOver: audioTakenOver,
+  );
 }
 
 String _songIdentity(QueueItem? c) {
@@ -199,45 +211,48 @@ bool _sameSong(QueueItem? a, QueueItem? b) {
 
 class MvNotifier extends StateNotifier<MvState> {
   MvNotifier(this._ref) : super(const MvState()) {
-    _syncTimer = Timer.periodic(const Duration(milliseconds: 500), (_) => _syncTimeline());
-    _ref.listen<QueueItem?>(
-      playerProvider.select((s) => s.current),
-      (prev, next) {
-        if (prev == next) return;
-        syncSong(next);
-      },
+    _syncTimer = Timer.periodic(
+      const Duration(milliseconds: 500),
+      (_) => _syncTimeline(),
     );
-    _ref.listen<bool>(
-      playerProvider.select((s) => s.isPlaying),
-      (prev, playing) {
-        if (playing) return;
-        if (!state.requested || !state.ready) return;
-        final pn = _ref.read(playerProvider.notifier);
-        if (DateTime.now().difference(pn.lastUserPauseAt).inMilliseconds <
-            1500) {
-          return;
-        }
-        final now = DateTime.now();
-        if (now.difference(_guardWindowStart) >
-            const Duration(minutes: 1)) {
-          _guardWindowStart = now;
-          _guardCount = 0;
-        }
-        _guardCount++;
-        if (_guardCount > 8) {
-          AppLog.warn('mv', 'focus-fight guard give up (8/min)');
-          return;
-        }
-        AppLog.warn('mv',
-            'non-user pause while mv active, auto resume #$_guardCount');
-        Future.delayed(const Duration(milliseconds: 450), () async {
-          if (!mounted || !state.requested || !state.ready) return;
-          final s = _ref.read(playerProvider);
-          if (s.isPlaying || s.current == null) return;
-          await _ref.read(playerProvider.notifier).resumeAfterMvPause();
-        });
-      },
-    );
+    _ref.listen<QueueItem?>(playerProvider.select((s) => s.current), (
+      prev,
+      next,
+    ) {
+      if (prev == next) return;
+      syncSong(next);
+    });
+    _ref.listen<bool>(playerProvider.select((s) => s.isPlaying), (
+      prev,
+      playing,
+    ) {
+      if (playing) return;
+      if (!state.requested || !state.ready) return;
+      final pn = _ref.read(playerProvider.notifier);
+      if (DateTime.now().difference(pn.lastUserPauseAt).inMilliseconds < 1500) {
+        return;
+      }
+      final now = DateTime.now();
+      if (now.difference(_guardWindowStart) > const Duration(minutes: 1)) {
+        _guardWindowStart = now;
+        _guardCount = 0;
+      }
+      _guardCount++;
+      if (_guardCount > 8) {
+        AppLog.warn('mv', 'focus-fight guard give up (8/min)');
+        return;
+      }
+      AppLog.warn(
+        'mv',
+        'non-user pause while mv active, auto resume #$_guardCount',
+      );
+      Future.delayed(const Duration(milliseconds: 450), () async {
+        if (!mounted || !state.requested || !state.ready) return;
+        final s = _ref.read(playerProvider);
+        if (s.isPlaying || s.current == null) return;
+        await _ref.read(playerProvider.notifier).resumeAfterMvPause();
+      });
+    });
     _ref.listen<double>(volumeProvider, (_, v) {
       final c = state.controller;
       if (_audioTakenOver && c != null && c.value.isInitialized) {
@@ -253,8 +268,10 @@ class MvNotifier extends StateNotifier<MvState> {
   // —— MV 解析降噪（仅影响日志与重复探测，不改变解析结果）——
   /// 本源插件已明确答复"无 MV"的歌曲：会话内不再重复走三档梯次
   final Set<String> _mvNoResultCache = {};
+
   /// 本源插件确定性答复过"无 MV"（方法存在且返回空），才允许写缓存
   bool _mvResolvedDefinitive = false;
+
   /// 已告警过一次"全链路无 MV"的插件，后续同类告警降为 debug
   final Set<String> _mvFailWarned = {};
 
@@ -285,6 +302,7 @@ class MvNotifier extends StateNotifier<MvState> {
     _song = c;
     _stallTicks = 0;
     _lastVposMs = -1;
+    _lastApMs = -1;
     _restartCount = 0;
     if (c != null) unawaited(probeMvFor(c));
     if (!state.requested) {
@@ -322,9 +340,7 @@ class MvNotifier extends StateNotifier<MvState> {
     bool? has;
     try {
       final src = await _resolve(mvSongOf(c), _defaultQuality());
-      has = _mvResolveAmbiguous
-          ? null
-          : (src != null && src.url.isNotEmpty);
+      has = _mvResolveAmbiguous ? null : (src != null && src.url.isNotEmpty);
     } catch (_) {
       has = null;
     }
@@ -350,7 +366,6 @@ class MvNotifier extends StateNotifier<MvState> {
   }
 
   Future<String?> _start(QueueItem c, {String? quality}) async {
-    if (_audioTakenOver) await _releaseAudio(state.controller);
     final song = mvSongOf(c);
     final ver = ++_requestVersion;
     final target = (quality != null && quality.isNotEmpty)
@@ -359,12 +374,23 @@ class MvNotifier extends StateNotifier<MvState> {
     final identity = _songIdentity(c);
     _syncOffsetMs = mvCachedSyncOffset(identity) ?? 0;
 
-    state = MvState(
-      requested: true,
-      loading: true,
-      phase: 'resolve',
-      source: quality == null ? state.source : null,
-    );
+    // 无缝画质切换（PiliNara 同款体验，video_player 无「同实例换源」，
+    // 用双实例过渡实现）：旧画面继续显示播放，新实例后台就绪并 seek 到
+    // 旧画面当前位置后原子替换。任何失败都保留旧画面只报错
+    final switching =
+        quality != null &&
+        state.ready &&
+        state.controller != null &&
+        state.source != null;
+    if (!switching && _audioTakenOver) await _releaseAudio();
+    if (!switching) {
+      state = MvState(
+        requested: true,
+        loading: true,
+        phase: 'resolve',
+        source: null,
+      );
+    }
 
     final src = await _resolve(song, target);
     if (ver != _requestVersion) return null;
@@ -373,15 +399,15 @@ class MvNotifier extends StateNotifier<MvState> {
         final key = _mvProbeKey(c);
         if (key.isNotEmpty) _mvProbeResult[key] = false;
       }
-      state = const MvState();
+      if (!switching) state = const MvState();
       return '此歌曲无 MV 或插件未提供 MV 解析';
     }
 
-    state = state.copyWith(phase: 'init', bufferedSec: 0);
+    if (!switching) state = state.copyWith(phase: 'init', bufferedSec: 0);
     final controller = await _initControllerWithFallback(src);
     if (controller == null) {
       if (ver != _requestVersion || !mounted) return null;
-      state = const MvState();
+      if (!switching) state = const MvState();
       AppLog.warn('mv', 'init failed for all candidates: ${src.url}');
       return _lastInitError == null
           ? 'MV 加载失败'
@@ -393,29 +419,60 @@ class MvNotifier extends StateNotifier<MvState> {
     }
 
     await controller.setLooping(true);
-    await controller.setVolume(0);
-    final ad = _ref.read(playerProvider);
-    final vd0 = controller.value.duration;
-    if (ad.current != null && vd0 > Duration.zero) {
-      final vd0Ms = vd0.inMilliseconds;
-      var posMs = ((ad.position * 1000).round() + _syncOffsetMs) % vd0Ms;
-      if (posMs < 0) posMs += vd0Ms;
-      await controller.seekTo(Duration(milliseconds: posMs));
+    if (switching) {
+      // 位置恢复：对齐旧画面当前位置（同一 MV 内容换档，画面不跳）
+      final oldPos = state.controller?.value.position.inMilliseconds ?? 0;
+      final vd = controller.value.duration.inMilliseconds;
+      if (vd > 0) {
+        var posMs = oldPos % vd;
+        if (posMs < 0) posMs += vd;
+        await controller.seekTo(Duration(milliseconds: posMs));
+      }
+    } else {
+      await controller.setVolume(0);
+      final ad = _ref.read(playerProvider);
+      final vd0 = controller.value.duration;
+      if (ad.current != null && vd0 > Duration.zero) {
+        final vd0Ms = vd0.inMilliseconds;
+        var posMs = ((ad.position * 1000).round() + _syncOffsetMs) % vd0Ms;
+        if (posMs < 0) posMs += vd0Ms;
+        await controller.seekTo(Duration(milliseconds: posMs));
+      }
+    }
+    if (ver != _requestVersion || !mounted) {
+      await controller.dispose();
+      return null;
     }
 
+    final wasTakenOver = switching && state.audioTakenOver;
     final old = state.controller;
     state = MvState(
       requested: true,
       ready: true,
       source: src,
       controller: controller,
+      audioTakenOver: wasTakenOver,
     );
     await old?.dispose();
     unawaited(controller.play());
+    // 切换时接管态延续：歌曲本就被暂停压制，新源直接出声，不再重走接管
+    if (wasTakenOver) {
+      await controller.setVolume(1);
+    }
     final vs = controller.value.size;
-    AppLog.debug('mv', 'init ok dim=${vs.width.toInt()}x${vs.height.toInt()} '
-        'dur=${controller.value.duration} q=$target url=${src.url}');
-    await _takeOverAudio(controller);
+    AppLog.debug(
+      'mv',
+      'init ok dim=${vs.width.toInt()}x${vs.height.toInt()} '
+          'dur=${controller.value.duration} q=$target url=${src.url}',
+    );
+    // 桌面端同款模型：起播位置按偏移环形映射（未分析时 offset=0，与歌曲
+    // 同刻度），音画天然同步。autoSync 命中后仅做一次重对齐 seek，
+    // 无持续同步机器。合流 MP4 自带音轨→接管淡出歌曲；DASH 视频流等
+    // 无声源不接管，歌曲继续出声，画面纯跟时间轴。
+    // 画质切换时接管态已延续（wasTakenOver），不再重走接管淡入
+    if (src.hasAudioTrack && !switching) {
+      await _takeOverAudio();
+    }
     unawaited(_runTakeover(c, identity, ver));
     return null;
   }
@@ -464,8 +521,11 @@ class MvNotifier extends StateNotifier<MvState> {
     }
   }
 
-  Future<void> _takeOverAudio(VideoPlayerController c) async {
+  Future<void> _takeOverAudio() async {
     if (_audioTakenOver) return;
+    // 合流 MP4 自带音轨：视频控制器即音源，直接拉其音量
+    final target = state.controller;
+    if (target == null || !target.value.isInitialized) return;
     _audioTakenOver = true;
     if (mounted) state = state.copyWith(audioTakenOver: true);
     final pn = _ref.read(playerProvider.notifier);
@@ -476,7 +536,7 @@ class MvNotifier extends StateNotifier<MvState> {
       final k = (i / steps) * math.pi / 2;
       try {
         await pn.setMvSongGain(math.cos(k));
-        await c.setVolume(vol * math.sin(k));
+        await target.setVolume(vol * math.sin(k));
       } catch (_) {
         return;
       }
@@ -484,18 +544,19 @@ class MvNotifier extends StateNotifier<MvState> {
     }
   }
 
-  Future<void> _releaseAudio(VideoPlayerController? c) async {
+  Future<void> _releaseAudio() async {
     if (!_audioTakenOver) return;
     _audioTakenOver = false;
     if (mounted) state = state.copyWith(audioTakenOver: false);
     final pn = _ref.read(playerProvider.notifier);
-    if (c != null && c.value.isInitialized) {
+    final target = state.controller;
+    if (target != null && target.value.isInitialized) {
       final vol = _ref.read(volumeProvider).clamp(0.0, 1.0);
       const steps = 6;
       for (var i = 1; i <= steps; i++) {
         final k = (i / steps) * math.pi / 2;
         try {
-          await c.setVolume(vol * math.cos(k));
+          await target.setVolume(vol * math.cos(k));
           await pn.setMvSongGain(math.sin(k));
         } catch (_) {
           break;
@@ -503,7 +564,7 @@ class MvNotifier extends StateNotifier<MvState> {
         if (i < steps) await Future.delayed(const Duration(milliseconds: 30));
       }
       try {
-        await c.setVolume(0);
+        await target.setVolume(0);
       } catch (e) {
         AppLog.warn('player', 'MV 音量归零失败: $e');
       }
@@ -535,8 +596,7 @@ class MvNotifier extends StateNotifier<MvState> {
     var tMs = (mvSecs * 1000).round();
     if (tMs < 0) tMs = 0;
     if (tMs > vdMs) tMs = vdMs;
-    final songDurMs =
-        (_ref.read(playerProvider).duration * 1000).round();
+    final songDurMs = (_ref.read(playerProvider).duration * 1000).round();
     if (songDurMs > 0) {
       if (tMs < off) tMs = off;
       final maxSongMs = songDurMs > 800 ? songDurMs - 500 : songDurMs;
@@ -556,7 +616,7 @@ class MvNotifier extends StateNotifier<MvState> {
   Future<void> _hardStop() async {
     _requestVersion++;
     final old = state.controller;
-    if (_audioTakenOver) await _releaseAudio(old);
+    if (_audioTakenOver) await _releaseAudio();
     state = const MvState();
     await old?.dispose();
   }
@@ -570,7 +630,9 @@ class MvNotifier extends StateNotifier<MvState> {
       final v = c.value;
       final endMs = v.buffered.isEmpty ? 0 : v.buffered.last.end.inMilliseconds;
       final sec = (endMs / 1000).round();
-      if (mounted && state.loading && state.phase == 'init' &&
+      if (mounted &&
+          state.loading &&
+          state.phase == 'init' &&
           sec != state.bufferedSec) {
         state = state.copyWith(bufferedSec: sec);
       }
@@ -592,7 +654,9 @@ class MvNotifier extends StateNotifier<MvState> {
     return t.length > 24 ? '${t.substring(0, 24)}…' : t;
   }
 
-  Future<VideoPlayerController?> _initControllerWithFallback(MvSource src) async {
+  Future<VideoPlayerController?> _initControllerWithFallback(
+    MvSource src,
+  ) async {
     final candidates = [src.url, ...src.backupUrls];
     Object? lastError;
     // 必须先起代理再取代理 URL，否则 mvProxyUrlFor 全 null、代理轮被跳过
@@ -601,13 +665,14 @@ class MvNotifier extends StateNotifier<MvState> {
       for (final u in candidates)
         u: AudioProxyServer.instance.mvProxyUrlFor(u, src.headers),
     };
-    // 两轮尝试：先代理伺服，全败后直连重试。代理链路对部分视频流
-    // 存在兼容性问题（数据完整送达但设备解码器报错），直连是历史可用路径
+    // 两轮尝试：直连在前（PiliNara 同款——CDN 直连 + ExoPlayer 原生管道
+    // 缓冲，Dart 代理逐段转发是真机卡顿主因；MV 只需 Referer 头，ExoPlayer
+    // httpHeaders 原生支持），代理伺服作全败兜底（不可达网络下的保险）
     final attempts = <(String, String?)>[
+      for (final u in candidates) (u, null),
       if (proxied.values.any((p) => p != null))
         for (final u in candidates)
           if (proxied[u] != null) (u, proxied[u]),
-      for (final u in candidates) (u, null),
     ];
     for (final (u, proxy) in attempts) {
       final c = VideoPlayerController.networkUrl(
@@ -617,14 +682,18 @@ class MvNotifier extends StateNotifier<MvState> {
       try {
         _lastInitError = null;
         _trackInitProgress(c);
-        await c.initialize();
+        // 不可达 CDN 会「TCP 连上但数据停摆」，initialize 无限挂起——
+        // 限时判负立即换下一候选，避免整条初始化链挂死几分钟
+        await c.initialize().timeout(const Duration(seconds: 6));
         _initProgressTimer?.cancel();
         if (c.value.hasError) {
           throw StateError(c.value.errorDescription ?? 'init error');
         }
         if (attempts.length > 1) {
           AppLog.debug(
-              'mv', 'init ok url=$u via=${proxy != null ? 'proxy' : 'direct'}');
+            'mv',
+            'init ok url=$u via=${proxy != null ? 'proxy' : 'direct'}',
+          );
         }
         return c;
       } catch (e) {
@@ -635,7 +704,10 @@ class MvNotifier extends StateNotifier<MvState> {
       }
     }
     _initProgressTimer?.cancel();
-    AppLog.warn('mv', 'init failed all ${attempts.length} candidates: $lastError');
+    AppLog.warn(
+      'mv',
+      'init failed all ${attempts.length} candidates: $lastError',
+    );
     return null;
   }
 
@@ -662,12 +734,13 @@ class MvNotifier extends StateNotifier<MvState> {
   static String? _mvEmptyKey(Map<String, dynamic> song) {
     final sourceId =
         song['pluginId']?.toString() ?? song['source']?.toString() ?? '';
-    final id = (song['songmid'] ??
-            song['songId'] ??
-            song['vid'] ??
-            song['hash'] ??
-            song['id'])
-        ?.toString();
+    final id =
+        (song['songmid'] ??
+                song['songId'] ??
+                song['vid'] ??
+                song['hash'] ??
+                song['id'])
+            ?.toString();
     final title = song['title']?.toString() ?? '';
     final artist = song['artist']?.toString() ?? '';
     if ((id == null || id.isEmpty) && (title.isEmpty || artist.isEmpty)) {
@@ -689,7 +762,9 @@ class MvNotifier extends StateNotifier<MvState> {
       _resolve(mvSongOf(song), quality);
 
   Future<MvSource?> _resolveQuality(
-      Map<String, dynamic> song, String quality) async {
+    Map<String, dynamic> song,
+    String quality,
+  ) async {
     String? sourceId = song['pluginId']?.toString();
     sourceId ??= song['source']?.toString();
     if (sourceId == null || sourceId.isEmpty) {
@@ -725,8 +800,9 @@ class MvNotifier extends StateNotifier<MvState> {
       }
 
       final identity = _songIdentityForPluginMatch(song, sourceId);
-      final candidates =
-          _matchMfPlugins(identity).where((c) => c.$1 != sourceId).toList();
+      final candidates = _matchMfPlugins(
+        identity,
+      ).where((c) => c.$1 != sourceId).toList();
       for (final (pluginId, _) in candidates) {
         try {
           final raw = await engine.call(pluginId, 'getMvSource', args);
@@ -752,17 +828,17 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     // 全链路无 MV 属常见常态（多数插件未实现 getMvSource），每源仅告警一次
     if (_mvFailWarned.add(sourceId)) {
-      AppLog.warn('mv',
-          'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
+      AppLog.warn('mv', 'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
     } else {
-      AppLog.debug('mv',
-          'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
+      AppLog.debug('mv', 'MV 解析失败: plugin=$sourceId q=$quality（插件与宿主兜底均无结果）');
     }
     return null;
   }
 
   static String _songIdentityForPluginMatch(
-      Map<String, dynamic> song, String sourceId) {
+    Map<String, dynamic> song,
+    String sourceId,
+  ) {
     final raw = song['rawData'];
     final rawMap = raw is Map ? raw : null;
     return [
@@ -809,7 +885,9 @@ class MvNotifier extends StateNotifier<MvState> {
     });
     if (keywords.isEmpty) return const [];
     final store = _ref.read(pluginManagerProvider);
-    final sources = store.sources.where((s) => s.format == PluginFormat.musicfree);
+    final sources = store.sources.where(
+      (s) => s.format == PluginFormat.musicfree,
+    );
     final matched = <(String, String)>[];
     for (final s in sources) {
       final lowerName = s.name.toLowerCase();
@@ -831,8 +909,11 @@ class MvNotifier extends StateNotifier<MvState> {
       if (!state.requested) return;
       _missCount++;
       if (_missCount % 10 == 1) {
-        AppLog.warn('mv', 'tick skip: hasCtrl=${c != null} '
-            'init=${c?.value.isInitialized}');
+        AppLog.warn(
+          'mv',
+          'tick skip: hasCtrl=${c != null} '
+              'init=${c?.value.isInitialized}',
+        );
       }
       return;
     }
@@ -849,14 +930,19 @@ class MvNotifier extends StateNotifier<MvState> {
         final t = _ringTarget(audio.position * 1000, vd);
         if ((c.value.position - t).abs() > const Duration(milliseconds: 50)) {
           _lastSeekAt = DateTime.now();
-          AppLog.debug('mv', 'paused align vpos=${c.value.position} '
-              'target=$t');
+          AppLog.debug(
+            'mv',
+            'paused align vpos=${c.value.position} '
+                'target=$t',
+          );
           unawaited(c.seekTo(t));
         }
       }
       return;
     }
     if (!c.value.isPlaying) unawaited(c.play());
+    // 桌面端同款：播放中不做持续对齐——合流 MP4 音画同源自洽，
+    // 起播/autoSync 各对齐一次即可；这里只做状态镜像与停摆自愈
     if (c.value.isBuffering) {
       if (!_lastBuffering) {
         _lastBuffering = true;
@@ -866,8 +952,11 @@ class MvNotifier extends StateNotifier<MvState> {
     }
     if (_lastBuffering) {
       _lastBuffering = false;
-      AppLog.info('mv', 'buffering end vpos=${c.value.position} '
-          'ap=${audio.position}');
+      AppLog.info(
+        'mv',
+        'buffering end vpos=${c.value.position} '
+            'ap=${audio.position}',
+      );
     }
 
     final vposMs = c.value.position.inMilliseconds;
@@ -886,33 +975,21 @@ class MvNotifier extends StateNotifier<MvState> {
       return;
     }
 
-    final vdMs = vd.inMilliseconds;
-    final target = _ringTarget(audio.position * 1000, vd);
-    double driftMs = (target.inMilliseconds - c.value.position.inMilliseconds)
-        .toDouble();
-    if (driftMs.abs() > vdMs / 2) {
-      driftMs += driftMs > 0 ? -vdMs : vdMs;
-    }
-    final drift = Duration(milliseconds: driftMs.round());
-
-    final now = DateTime.now();
-    if (_seekCooling) {
-      _applyNudge(c, driftMs);
+    // 歌曲进度被外部拖动（>3s 跳变）时 MV 环形映射跟随（桌面 currentTime
+    // watch 同款行为）；MV 自身拖动由 seekToMvSeconds 的冷却期豁免
+    final apMs = audio.position * 1000;
+    if (_lastApMs >= 0 &&
+        (apMs - _lastApMs).abs() > 3000 &&
+        !_seekCooling &&
+        !c.value.isBuffering) {
+      _lastApMs = apMs;
+      final t = _ringTarget(apMs, vd);
+      _lastSeekAt = DateTime.now();
+      AppLog.debug('mv', 'external seek follow ap=$apMs → $t');
+      unawaited(c.seekTo(t));
       return;
     }
-    if (drift.abs() > const Duration(milliseconds: 1200)) {
-      _lastSeekAt = now;
-      AppLog.warn('mv', 'hard seek drift=${drift.inMilliseconds}ms '
-          'vpos=${c.value.position.inMilliseconds} '
-          'ap=${audio.position} spd=${c.value.playbackSpeed}');
-      var destMs =
-          ((c.value.position.inMilliseconds + driftMs) % vdMs).round();
-      if (destMs < 0) destMs += vdMs;
-      unawaited(c.setPlaybackSpeed(_audioRate()));
-      unawaited(c.seekTo(Duration(milliseconds: destMs)));
-      return;
-    }
-    _applyNudge(c, driftMs);
+    _lastApMs = apMs;
   }
 
   int _missCount = 0;
@@ -920,6 +997,7 @@ class MvNotifier extends StateNotifier<MvState> {
 
   int _stallTicks = 0;
   int _lastVposMs = -1;
+  double _lastApMs = -1;
   DateTime? _lastRestartAt;
   int _restartCount = 0;
 
@@ -938,8 +1016,11 @@ class MvNotifier extends StateNotifier<MvState> {
     if (song == null) return;
     _lastRestartAt = now;
     _restartCount++;
-    AppLog.warn('mv', 'stall detected, restart #$_restartCount '
-        'vpos=$vposMs q=$q');
+    AppLog.warn(
+      'mv',
+      'stall detected, restart #$_restartCount '
+          'vpos=$vposMs q=$q',
+    );
     await _start(song, quality: q);
   }
 
@@ -948,26 +1029,6 @@ class MvNotifier extends StateNotifier<MvState> {
       DateTime.now().difference(_lastSeekAt!) < const Duration(seconds: 5);
 
   DateTime? _lastSeekAt;
-
-  void _applyNudge(VideoPlayerController c, double driftMs) {
-    final base = _audioRate();
-    final nudge = driftMs.abs() <= 350
-        ? 0.0
-        : (driftMs / 1000.0 * 0.5).clamp(-0.08, 0.08);
-    final target = base * (1 + nudge);
-    if ((c.value.playbackSpeed - target).abs() > 0.001) {
-      unawaited(c.setPlaybackSpeed(target));
-    }
-  }
-
-  double _audioRate() {
-    try {
-      final s = _ref.read(soundEffectProvider).settings.playbackRate;
-      return (s.clamp(50.0, 200.0)) / 100.0;
-    } catch (_) {
-      return 1.0;
-    }
-  }
 
   Duration _ringTarget(double audioPosMs, Duration vd) {
     final vdMs = vd.inMilliseconds;

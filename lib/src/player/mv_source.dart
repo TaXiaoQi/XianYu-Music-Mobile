@@ -22,15 +22,15 @@ class MvQuality {
   });
 
   factory MvQuality.fromJson(Map<String, dynamic> j) => MvQuality(
-        key: (j['key'] ?? j['quality'] ?? '').toString(),
-        label: (j['label'] ?? j['quality'] ?? '').toString(),
-        width: (j['width'] as num?)?.toInt(),
-        height: (j['height'] as num?)?.toInt(),
-        bitrate: (j['bitrate'] as num?)?.toInt(),
-        size: (j['size'] as num?)?.toInt(),
-        codec: j['codec']?.toString(),
-        mimeType: j['mimeType']?.toString(),
-      );
+    key: (j['key'] ?? j['quality'] ?? '').toString(),
+    label: (j['label'] ?? j['quality'] ?? '').toString(),
+    width: (j['width'] as num?)?.toInt(),
+    height: (j['height'] as num?)?.toInt(),
+    bitrate: (j['bitrate'] as num?)?.toInt(),
+    size: (j['size'] as num?)?.toInt(),
+    codec: j['codec']?.toString(),
+    mimeType: j['mimeType']?.toString(),
+  );
 }
 
 class MvSource {
@@ -51,6 +51,10 @@ class MvSource {
 
   final List<String> backupUrls;
 
+  /// 合流 MP4（durl/html5/酷狗 downurl）自带音轨为 true；B站 DASH 视频流
+  /// 等无声源为 false——provider 据此跳过接管（歌曲继续出声，画面对齐）
+  final bool hasAudioTrack;
+
   final DateTime? expiresAt;
 
   const MvSource({
@@ -64,6 +68,7 @@ class MvSource {
     this.size,
     this.availableVideoQualities = const [],
     this.backupUrls = const [],
+    this.hasAudioTrack = true,
     this.expiresAt,
   });
 
@@ -81,9 +86,10 @@ class MvSource {
       headers['User-Agent'] = ua;
     }
 
-    final qualities = (j['availableVideoQualities'] as List<dynamic>? ?? const [])
-        .map((e) => MvQuality.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final qualities =
+        (j['availableVideoQualities'] as List<dynamic>? ?? const [])
+            .map((e) => MvQuality.fromJson(e as Map<String, dynamic>))
+            .toList();
 
     final backups = (j['backupUrls'] as List<dynamic>? ?? const [])
         .whereType<String>()
@@ -109,11 +115,14 @@ class MvSource {
       size: (j['size'] as num?)?.toInt(),
       availableVideoQualities: qualities,
       backupUrls: backups,
+      hasAudioTrack: j['hasAudioTrack'] is bool
+          ? j['hasAudioTrack'] as bool
+          : true,
       expiresAt: expiresAt,
     );
   }
 
   bool get isExpired =>
-      expiresAt != null && expiresAt!.isBefore(DateTime.now().subtract(const Duration(seconds: 30)));
+      expiresAt != null &&
+      expiresAt!.isBefore(DateTime.now().subtract(const Duration(seconds: 30)));
 }
-

@@ -2,6 +2,7 @@ library;
 
 import 'dart:convert';
 import '../core/app_http.dart';
+import '../core/application_logger.dart';
 import 'mv_source.dart';
 
 String _firstString(List<dynamic Function()> getters) {
@@ -36,6 +37,18 @@ Iterable<String> _identityStrings(Map<String, dynamic> song) sync* {
 Map<String, dynamic>? _strMap(dynamic v) {
   if (v is! Map) return null;
   return Map<String, dynamic>.from(v);
+}
+
+/// 把 String / List 形态的备用地址里的 http(s) 链接收集进 [out]
+void _addHttpUrls(dynamic val, List<String> out) {
+  if (val is String && val.toLowerCase().startsWith('http')) {
+    out.add(val);
+  } else if (val is List) {
+    for (final b in val) {
+      final s = b?.toString() ?? '';
+      if (s.toLowerCase().startsWith('http')) out.add(s);
+    }
+  }
 }
 
 Map<String, dynamic>? _firstStrMapWhere(
@@ -311,20 +324,69 @@ Future<MvSource?> resolveBilibiliVideoSource(
   }
   if (cid.isEmpty) return null;
 
+  // 主路：html5 端点直接要 durl 合流 MP4——音视频同一文件，单控制器天然
+  // 音画同步；fnval=16 的 dash 分离流单控制器用不上音轨（选它必然「歌曲
+  // 出声 + 画面跟时间轴」，且 CDN 常落 PCDN 慢节点）。html5 失败再走
+  // fnval=16（durl 优先，dash 仅最后画面兜底）。
   final qn = _biliQualityId(quality);
   final refPage = bvid.isNotEmpty
       ? 'https://www.bilibili.com/video/$bvid'
       : 'https://www.bilibili.com/video/av$aid';
+  final merged = await _resolveBiliMergedFallback(
+    identityQuery,
+    cid,
+    qn,
+    quality,
+    refPage,
+  );
+  if (merged != null) return merged;
+
   final play = await _httpGetJson(
     'https://api.bilibili.com/x/player/playurl?$identityQuery'
-    '&cid=${Uri.encodeComponent(cid)}&qn=$qn&fnval=16&fourk=1',
+    '&cid=${Uri.encodeComponent(cid)}&qn=$qn&fnval=16&fourk=1&try_look=1',
     {'Referer': refPage},
   );
-  if (play == null) return null;
-  final data = _strMap(play['data']);
-  if (data == null) return null;
+  final data = _strMap(play?['data']);
+  // 服务端实授档位（try_look 未登录上限 720P）
+  final dashGrantedQn = (data?['quality'] as num?)?.toInt() ?? qn;
 
-  final dash = _strMap(data['dash']);
+  final durls = <Map<String, dynamic>>[];
+  if (data?['durl'] is List) {
+    for (final e in data?['durl'] as List) {
+      final v = _strMap(e);
+      if (v != null) durls.add(v);
+    }
+  }
+  if (durls.isNotEmpty) {
+    final d0 = durls.first;
+    final url = _firstString([() => d0['url']?.toString() ?? '']);
+    if (url.toLowerCase().startsWith('http')) {
+      final backupUrls = <String>[];
+      _addHttpUrls(d0['backup_url'], backupUrls);
+      _addHttpUrls(d0['backupUrl'], backupUrls);
+      if (durls.length > 1) {
+        final u2 = _firstString([() => durls[1]['url']?.toString() ?? '']);
+        if (u2.toLowerCase().startsWith('http')) backupUrls.add(u2);
+      }
+      final grantedQn = (data?['quality'] as num?)?.toInt() ?? qn;
+      AppLog.debug('mv', 'bili durl 合流 qn=$grantedQn');
+      return MvSource(
+        url: url,
+        headers: const {'Referer': 'https://www.bilibili.com/'},
+        videoQuality: _biliQualityLabels[grantedQn] ?? quality,
+        mimeType: 'video/mp4',
+        // 未登录 B 站上限 480P：只标实得能力档，虚标高档会让画质
+        // 菜单「切不动」（点高档仍返回低档源）
+        availableVideoQualities: _biliQualityPresets
+            .where((p) => p.qn <= (grantedQn > 32 ? 32 : grantedQn))
+            .map((p) => MvQuality(key: p.key, label: p.label))
+            .toList(),
+        backupUrls: backupUrls.take(4).toList(),
+      );
+    }
+  }
+
+  final dash = _strMap(data?['dash']);
   final dashVideos = <Map<String, dynamic>>[];
   if (dash != null && dash['video'] is List) {
     for (final e in dash['video'] as List) {
@@ -332,19 +394,11 @@ Future<MvSource?> resolveBilibiliVideoSource(
       if (v != null) dashVideos.add(v);
     }
   }
-  final durls = <Map<String, dynamic>>[];
-  if (data['durl'] is List) {
-    for (final e in data['durl'] as List) {
-      final v = _strMap(e);
-      if (v != null) durls.add(v);
-    }
-  }
-
   bool isAvc(Map<String, dynamic> v) =>
       (v['codecs']?.toString() ?? '').startsWith('avc1');
   int qid(Map<String, dynamic> v) => (v['id'] as num?)?.toInt() ?? 0;
-  // 华为海思硬解（OMX.hisi）对宽度非 16 对齐的流（B站 480P=852 典型中招）
-  // init 会失败并僵死组件，连带后续所有解码器候选初始化失败；width 缺失按对齐处理
+  // 海思等硬解对宽度非 16 对齐的流（B站 480P=852 典型中招）init 会失败，
+  // 优先取对齐流；width 缺失按对齐处理
   bool aligned(Map<String, dynamic> v) =>
       ((v['width'] as num?)?.toInt() ?? 0) % 16 == 0;
   final compatible = dashVideos.where((v) => qid(v) <= qn).toList()
@@ -354,65 +408,104 @@ Future<MvSource?> resolveBilibiliVideoSource(
     dashVideos,
     (v) => qid(v) == qn && isAvc(v) && aligned(v),
   );
-  video ??= _firstStrMapWhere(dashVideos, (v) => qid(v) == qn && isAvc(v));
   video ??= _firstStrMapWhere(dashVideos, (v) => qid(v) == qn && aligned(v));
-  video ??= _firstStrMapWhere(dashVideos, (v) => qid(v) == qn);
   video ??= _firstStrMapWhere(compatible, (v) => isAvc(v) && aligned(v));
-  video ??= _firstStrMapWhere(compatible, isAvc);
   video ??= _firstStrMapWhere(compatible, aligned);
-  video ??= _firstStrMapWhere(compatible, (_) => true);
-  video ??= _firstStrMapWhere(dashVideos, (v) => isAvc(v) && aligned(v));
   video ??= _firstStrMapWhere(dashVideos, isAvc);
   video ??= _firstStrMapWhere(dashVideos, (_) => true);
 
-  final directUrl = _firstString([
-    () => video?['baseUrl']?.toString() ?? '',
-    () => video?['base_url']?.toString() ?? '',
-    () => durls.isNotEmpty ? durls.first['url']?.toString() ?? '' : '',
-  ]);
-  if (directUrl.isEmpty || !directUrl.toLowerCase().startsWith('http'))
-    return null;
+  final directUrl = video == null
+      ? ''
+      : _firstString([
+          () => video?['baseUrl']?.toString() ?? '',
+          () => video?['base_url']?.toString() ?? '',
+        ]);
+  if (directUrl.toLowerCase().startsWith('http')) {
+    final backupUrls = <String>[];
+    _addHttpUrls(video?['backupUrl'], backupUrls);
+    _addHttpUrls(video?['backup_url'], backupUrls);
+    final mimeType =
+        _firstString([
+          () => video?['mimeType']?.toString() ?? '',
+          () => video?['mime_type']?.toString() ?? '',
+        ]).isEmpty
+        ? 'video/mp4'
+        : _firstString([
+            () => video?['mimeType']?.toString() ?? '',
+            () => video?['mime_type']?.toString() ?? '',
+          ]);
+    AppLog.debug('mv', 'bili dash 视频流 qn=${qid(video!)}（无音轨）');
+    return MvSource(
+      url: directUrl,
+      headers: const {'Referer': 'https://www.bilibili.com/'},
+      videoQuality: _biliQualityLabels[qid(video)] ?? quality,
+      mimeType: mimeType,
+      width: video['width'] is num ? (video['width'] as num).toInt() : null,
+      height: video['height'] is num ? (video['height'] as num).toInt() : null,
+      // dash 兜底同样按实得能力档标注（try_look 后 dash 也可上 720P）
+      availableVideoQualities: _biliQualityPresets
+          .where((p) => p.qn <= (dashGrantedQn > 64 ? 64 : dashGrantedQn))
+          .map((p) => MvQuality(key: p.key, label: p.label))
+          .toList(),
+      backupUrls: backupUrls.take(4).toList(),
+      hasAudioTrack: false,
+    );
+  }
 
-  final backupUrls = <String>[];
-  void addBackup(dynamic val) {
-    if (val is String && val.toLowerCase().startsWith('http')) {
-      backupUrls.add(val);
-    } else if (val is List) {
-      for (final b in val) {
-        final s = b?.toString() ?? '';
-        if (s.toLowerCase().startsWith('http')) backupUrls.add(s);
-      }
+  // fnval=16 请求整个失败/字段全空：退 html5 端点合流（estg 池慢但可用）
+  return _resolveBiliMergedFallback(identityQuery, cid, qn, quality, refPage);
+}
+
+/// B站 MV 主路径（与桌面端一致）：html5 端点要 durl 合流 MP4
+/// （音视频同一文件，单控制器接管出声）；estg CDN 池首字节偏慢，
+/// 由初始化限时判负 + 备用候选兜住；未登录上限 480P 但自带音轨。
+Future<MvSource?> _resolveBiliMergedFallback(
+  String identityQuery,
+  String cid,
+  int qn,
+  String quality,
+  String refPage,
+) async {
+  final merged = await _httpGetJson(
+    'https://api.bilibili.com/x/player/playurl?$identityQuery'
+    // try_look=1：未登录试看，实测可拿 720P durl 合流（qn=80/116 服务端
+    // 自动降回 64，qn 原样传即可；不带头部 UA 伪造）
+    '&cid=${Uri.encodeComponent(cid)}&qn=$qn'
+    '&platform=html5&high_quality=1&try_look=1',
+    {'Referer': refPage},
+  );
+  final mergedData = merged == null ? null : _strMap(merged['data']);
+  final mergedDurls = <Map<String, dynamic>>[];
+  if (mergedData?['durl'] is List) {
+    for (final e in mergedData!['durl'] as List) {
+      final v = _strMap(e);
+      if (v != null) mergedDurls.add(v);
     }
   }
-
-  addBackup(video?['backupUrl']);
-  addBackup(video?['backup_url']);
-  if (durls.isNotEmpty) addBackup(durls.first['backup_url']);
-
-  final qualityLabel = video != null
-      ? _biliQualityLabels[qid(video)] ?? quality
-      : quality;
-  final lv = video;
-  String mimeType = 'video/mp4';
-  if (lv != null) {
-    mimeType = _firstString([
-      () => lv['mimeType']?.toString() ?? '',
-      () => lv['mime_type']?.toString() ?? '',
-    ]);
-    if (mimeType.isEmpty) mimeType = 'video/mp4';
-  }
-
+  if (mergedDurls.isEmpty) return null;
+  final d0 = mergedDurls.first;
+  final mergedUrl = _firstString([
+    () => d0['url']?.toString() ?? '',
+    () => d0['baseUrl']?.toString() ?? '',
+  ]);
+  if (!mergedUrl.toLowerCase().startsWith('http')) return null;
+  final mergedBackups = <String>[];
+  _addHttpUrls(d0['backup_url'], mergedBackups);
+  _addHttpUrls(d0['backupUrl'], mergedBackups);
+  final grantedQn = (mergedData?['quality'] as num?)?.toInt() ?? qn;
+  AppLog.debug('mv', 'bili merged durl fallback qn=$grantedQn');
   return MvSource(
-    url: directUrl,
+    url: mergedUrl,
     headers: const {'Referer': 'https://www.bilibili.com/'},
-    videoQuality: qualityLabel,
-    mimeType: mimeType,
-    width: video?['width'] is num ? (video?['width'] as num).toInt() : null,
-    height: video?['height'] is num ? (video?['height'] as num).toInt() : null,
+    videoQuality: _biliQualityLabels[grantedQn] ?? quality,
+    mimeType: 'video/mp4',
+    // 菜单按实得档位标注（未登录 try_look 上限 720P），虚标高档
+    // 会「切不动」：点高档仍返回低档源
     availableVideoQualities: _biliQualityPresets
+        .where((p) => p.qn <= grantedQn)
         .map((p) => MvQuality(key: p.key, label: p.label))
         .toList(),
-    backupUrls: backupUrls,
+    backupUrls: mergedBackups,
   );
 }
 

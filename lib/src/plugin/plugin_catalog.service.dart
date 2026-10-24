@@ -5,7 +5,9 @@ part of 'plugin_catalog.dart';
 // 首个视频封面」回填，结果持久化 7 天（每周必看期号每周轮换，缓存键含期号自然失效）
 const String _kTopListCoverCacheKey = 'plugin.toplist_covers.v1';
 const int _topListCoverTtlMs = 7 * 24 * 60 * 60 * 1000;
-const int _topListCoverFetchCap = 12;
+// bilibili 官方榜（热门/入站必刷/排行榜 17 个）排在每周必看 12 期之后，
+// 上限须覆盖全部榜单条目，否则官方榜抢不到回填名额
+const int _topListCoverFetchCap = 32;
 Map<String, Map<String, dynamic>>? _topListCoverCache;
 final Map<String, Future<String?>> _topListCoverInflight = {};
 
@@ -18,9 +20,12 @@ Future<Map<String, Map<String, dynamic>>> _loadTopListCoverCache() async {
     if (raw != null && raw.isNotEmpty) {
       final decoded = jsonDecode(raw);
       if (decoded is Map) {
-        _topListCoverCache =
-            decoded.map<String, Map<String, dynamic>>((k, v) => MapEntry(
-                k.toString(), v is Map ? Map<String, dynamic>.from(v) : {}));
+        _topListCoverCache = decoded.map<String, Map<String, dynamic>>(
+          (k, v) => MapEntry(
+            k.toString(),
+            v is Map ? Map<String, dynamic>.from(v) : {},
+          ),
+        );
       }
     }
   } catch (_) {}
@@ -28,16 +33,21 @@ Future<Map<String, Map<String, dynamic>>> _loadTopListCoverCache() async {
 }
 
 Future<void> _saveTopListCoverCache(
-    Map<String, Map<String, dynamic>> cache) async {
+  Map<String, Map<String, dynamic>> cache,
+) async {
   _topListCoverCache = cache;
   try {
     final now = DateTime.now().millisecondsSinceEpoch;
     cache.removeWhere(
-        (k, v) => now - ((v['ts'] as num?)?.toInt() ?? 0) >= _topListCoverTtlMs);
+      (k, v) => now - ((v['ts'] as num?)?.toInt() ?? 0) >= _topListCoverTtlMs,
+    );
     if (cache.length > 300) {
       final keys = cache.keys.toList()
-        ..sort((a, b) => ((cache[a]!['ts'] as num?)?.toInt() ?? 0)
-            .compareTo((cache[b]!['ts'] as num?)?.toInt() ?? 0));
+        ..sort(
+          (a, b) => ((cache[a]!['ts'] as num?)?.toInt() ?? 0).compareTo(
+            (cache[b]!['ts'] as num?)?.toInt() ?? 0,
+          ),
+        );
       for (final k in keys.take(cache.length - 300)) {
         cache.remove(k);
       }
@@ -54,13 +64,17 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 已启用且覆盖榜单平台（wy/kg/kw/tx）的 LX 音源，
   /// 榜单能力由 lx_toplist 兜底模块保证，无需探测插件方法
   List<PluginSource> get lxToplistSources => sources
-      .where((s) =>
-          s.enabled &&
-          s.format == PluginFormat.lx &&
-          s.sources
-              .toSet()
-              .intersection(const {'wy', 'kg', 'kw', 'tx'})
-              .isNotEmpty)
+      .where(
+        (s) =>
+            s.enabled &&
+            s.format == PluginFormat.lx &&
+            s.sources.toSet().intersection(const {
+              'wy',
+              'kg',
+              'kw',
+              'tx',
+            }).isNotEmpty,
+      )
       .toList();
 
   Future<Set<String>> _availableMethods(PluginSource source) async {
@@ -80,18 +94,22 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
 
   // ==================== 基础调用 ====================
 
-  Future<dynamic> _call(PluginSource source, String method,
-      List<dynamic> args, {
-        int timeoutMs = 30000,
-      }) async {
+  Future<dynamic> _call(
+    PluginSource source,
+    String method,
+    List<dynamic> args, {
+    int timeoutMs = 30000,
+  }) async {
     await engine.ensureLoaded(source);
     return engine.call(source.id, method, args, timeoutMs: timeoutMs);
   }
 
   // ==================== 榜单 ====================
 
-  Future<List<MfSheetItem>> getTopLists(PluginSource source,
-      {String? lxKey}) async {
+  Future<List<MfSheetItem>> getTopLists(
+    PluginSource source, {
+    String? lxKey,
+  }) async {
     if (source.format == PluginFormat.lx) {
       return _getLxTopLists(source, lxKey: lxKey);
     }
@@ -124,8 +142,10 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// LX 音源榜单：走 lx_toplist 兜底模块（服务端下发 JS 优先、Rust builtin 兜底），
   /// 各平台分组扁平进单组。subtitle 取榜单 description（MfSheetItem.subtitle
   /// 首段为 artist，分组标题在榜单页无独立展示位，故不传 categoryTitle）。
-  Future<List<MfSheetItem>> _getLxTopLists(PluginSource source,
-      {String? lxKey}) async {
+  Future<List<MfSheetItem>> _getLxTopLists(
+    PluginSource source, {
+    String? lxKey,
+  }) async {
     final keys = source.sources
         .where((k) => const {'wy', 'kg', 'kw', 'tx'}.contains(k))
         .where((k) => lxKey == null || k == lxKey)
@@ -155,9 +175,11 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<List<PluginSearchResult>> getTopListDetail(
-      PluginSource source, Map<String, dynamic> item, {int page = 1}) async {
-    final list = await _tryCallList(
-        source, 'getTopListDetail', [item, page]);
+    PluginSource source,
+    Map<String, dynamic> item, {
+    int page = 1,
+  }) async {
+    final list = await _tryCallList(source, 'getTopListDetail', [item, page]);
     return _maybeFillQqDurations(source, list);
   }
 
@@ -166,7 +188,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 拉取失败保持原图。仅 MF 源（LX 榜单封面来自真实数据）。调用方应先展示
   /// 原列表、后台调用本方法后再刷新，避免阻塞首屏
   Future<List<MfSheetItem>> enrichTopListCovers(
-      PluginSource source, List<MfSheetItem> boards) async {
+    PluginSource source,
+    List<MfSheetItem> boards,
+  ) async {
     if (boards.isEmpty || source.format == PluginFormat.lx) return boards;
     final counts = <String, int>{};
     for (final b in boards) {
@@ -190,7 +214,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     if (targets.isEmpty) return boards;
 
     final resolved = <MfSheetItem, String>{};
-    await Future.wait(targets.map((b) async {
+    // 分批回填：bilibili 榜单官方榜（热门/排行榜）排每周必看 12 期之后，
+    // 一次性并发全量拉取易触发 B 站风控（-412），按每批 8 个串行推进
+    Future<void> fetchOne(MfSheetItem b) async {
       final key = '${source.id}|${b.id}';
       final hit = cache[key];
       if (hit != null &&
@@ -215,7 +241,11 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
           _topListCoverInflight.remove(key);
         }
       }
-    }));
+    }
+
+    for (var i = 0; i < targets.length; i += 8) {
+      await Future.wait(targets.skip(i).take(8).map(fetchOne));
+    }
     if (resolved.isEmpty) return boards;
     await _saveTopListCoverCache(cache);
     return boards.map((b) {
@@ -238,7 +268,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<String?> _fetchTopListFirstCover(
-      PluginSource source, Map<String, dynamic> item) async {
+    PluginSource source,
+    Map<String, dynamic> item,
+  ) async {
     final tracks = await getTopListDetail(source, item);
     for (final t in tracks) {
       final c = t.img;
@@ -255,8 +287,7 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     if (source.format == PluginFormat.lx) {
       return lxToplistSources.contains(source);
     }
-    return (await _availableMethods(source))
-        .contains('getRecommendSheetTags');
+    return (await _availableMethods(source)).contains('getRecommendSheetTags');
   }
 
   /// MF 插件 getRecommendSheetTags 的标签形态：
@@ -275,7 +306,8 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       if (tags['data'] is List &&
           (tags['data'] as List).isNotEmpty &&
           (tags['data'] as List).first is Map)
-        ...((((tags['data'] as List).first as Map)['data'] ?? const []) as List),
+        ...((((tags['data'] as List).first as Map)['data'] ?? const [])
+            as List),
     ];
     for (final candidate in candidates) {
       if (candidate is Map && candidate['id'] != null) {
@@ -288,8 +320,10 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 推荐歌单首页：getRecommendSheetTags 取默认标签，getRecommendSheetsByTag
   /// 拉第一页。无标签协议的插件以 null 标签调用，由插件自身回退默认。
   /// lxKey 用于二级页把多平台 LX 音源按平台拆分（与榜单页同款）
-  Future<List<MfSheetItem>> getRecommendSheets(PluginSource source,
-      {String? lxKey}) async {
+  Future<List<MfSheetItem>> getRecommendSheets(
+    PluginSource source, {
+    String? lxKey,
+  }) async {
     if (source.format == PluginFormat.lx) {
       return _getLxRecommendSheets(source, lxKey: lxKey);
     }
@@ -297,7 +331,8 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       dynamic tag;
       try {
         tag = _defaultRecommendTag(
-            await _call(source, 'getRecommendSheetTags', []));
+          await _call(source, 'getRecommendSheetTags', []),
+        );
       } catch (_) {
         // 标签接口异常不阻塞默认推荐，交由插件以 null 标签走自身默认逻辑
       }
@@ -316,8 +351,10 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// Rust builtin 兜底）。取 pinned 首个标签（按其 source 平台）拉第一页；
   /// 空结果且有标签时以 null 标签（各平台默认推荐）对首个平台重试一次。
   /// 指定 lxKey 时仅在该平台内取数，且只接受该平台的标签
-  Future<List<MfSheetItem>> _getLxRecommendSheets(PluginSource source,
-      {String? lxKey}) async {
+  Future<List<MfSheetItem>> _getLxRecommendSheets(
+    PluginSource source, {
+    String? lxKey,
+  }) async {
     final keys = source.sources
         .where((k) => const {'wy', 'kg', 'kw', 'tx'}.contains(k))
         .where((k) => lxKey == null || k == lxKey)
@@ -349,14 +386,16 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       }
       return list;
     } catch (e, st) {
-      AppLog.warn(
-          'plugin', '[catalog] ${source.name} LX推荐歌单获取失败: $e\n$st');
+      AppLog.warn('plugin', '[catalog] ${source.name} LX推荐歌单获取失败: $e\n$st');
       return const [];
     }
   }
 
   List<MfSheetItem> _lxRecommendSheetList(
-      Map<String, dynamic>? result, String fallbackSource, PluginSource source) {
+    Map<String, dynamic>? result,
+    String fallbackSource,
+    PluginSource source,
+  ) {
     final data = result?['data'];
     if (data is! List) return const [];
     return data
@@ -376,16 +415,19 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
 
   // ==================== 歌单 ====================
 
-  Future<({List<PluginSearchResult> songs, bool? isEnd})> getMusicSheetInfoWithEnd(
-      PluginSource source, Map<String, dynamic> item,
-      {int page = 1}) async {
+  Future<({List<PluginSearchResult> songs, bool? isEnd})>
+  getMusicSheetInfoWithEnd(
+    PluginSource source,
+    Map<String, dynamic> item, {
+    int page = 1,
+  }) async {
     final imported = _importedTracksOf(item);
     if (imported != null) {
       final songs = page == 1
           ? imported
-              .map((e) => mfItemToSearchResult(e, source))
-              .where((r) => r.name.isNotEmpty)
-              .toList()
+                .map((e) => mfItemToSearchResult(e, source))
+                .where((r) => r.name.isNotEmpty)
+                .toList()
           : const <PluginSearchResult>[];
       return (songs: await _maybeFillQqDurations(source, songs), isEnd: true);
     }
@@ -409,8 +451,12 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
           }
           if (page == 1) {
             // 插件歌单详情单页截断时用宿主全量补齐（酷狗 31 / QQ 50 场景）
-            final fullSheet =
-                await _hostFullSheetIfTruncated(source, item, list, extractMfIsEnd(raw));
+            final fullSheet = await _hostFullSheetIfTruncated(
+              source,
+              item,
+              list,
+              extractMfIsEnd(raw),
+            );
             if (fullSheet != null && fullSheet.isNotEmpty) {
               return (
                 songs: await _maybeFillQqDurations(source, fullSheet),
@@ -446,8 +492,16 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   // 截断检测，命中时用宿主实现补全（kg/wy/tx/kw/mg 有宿主实现的平台）。
   int? _sheetDeclaredCount(Map<String, dynamic> sheetItem) {
     const keys = [
-      'trackCount', 'trackcount', 'track_count', 'worksNum', 'worksnum',
-      'totalworks', 'songcount', 'songCount', 'song_count', 'totalSongNum',
+      'trackCount',
+      'trackcount',
+      'track_count',
+      'worksNum',
+      'worksnum',
+      'totalworks',
+      'songcount',
+      'songCount',
+      'song_count',
+      'totalSongNum',
       'total_song_num',
     ];
     final raw = sheetItem['rawData'];
@@ -459,7 +513,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         final v = entry[k];
         final n = v is num
             ? v.toInt()
-            : (v is String && RegExp(r'^\d+$').hasMatch(v) ? int.tryParse(v) : null);
+            : (v is String && RegExp(r'^\d+$').hasMatch(v)
+                  ? int.tryParse(v)
+                  : null);
         if (n != null && n > 0) return n;
       }
     }
@@ -471,12 +527,21 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     if (item is! Map) return const [];
     final raw = item['rawData'];
     return [
-      item['id'], item['songmid'], item['songId'], item['song_id'], item['hash'],
-      item['audioId'], item['audio_id'], item['musicId'],
-      if (raw is Map) ...[
-        raw['songmid'], raw['songId'], raw['hash'], raw['id'],
-      ],
-    ]
+          item['id'],
+          item['songmid'],
+          item['songId'],
+          item['song_id'],
+          item['hash'],
+          item['audioId'],
+          item['audio_id'],
+          item['musicId'],
+          if (raw is Map) ...[
+            raw['songmid'],
+            raw['songId'],
+            raw['hash'],
+            raw['id'],
+          ],
+        ]
         .where((v) => v != null && v.toString().isNotEmpty)
         .map((v) => v.toString().toLowerCase())
         .toList();
@@ -500,13 +565,16 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     var probeCount = 0;
     var probeFirstKeys = const <String>[];
     try {
-      final probeRaw =
-          await _tryCallRaw(source, 'getMusicSheetInfo', [sheetItem, 2]);
+      final probeRaw = await _tryCallRaw(source, 'getMusicSheetInfo', [
+        sheetItem,
+        2,
+      ]);
       if (probeRaw != null) {
         final probeList = extractMfResultList(probeRaw);
         probeCount = probeList.length;
-        probeFirstKeys =
-            probeList.isNotEmpty ? _sheetSongIdKeys(probeList.first) : const [];
+        probeFirstKeys = probeList.isNotEmpty
+            ? _sheetSongIdKeys(probeList.first)
+            : const [];
       }
     } catch (_) {
       // 第二页异常按「不翻页」处理
@@ -519,8 +587,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       if (!duplicated) return null;
     }
 
-    final rawId =
-        sheetItem['rawData'] is Map ? (sheetItem['rawData'] as Map)['id'] : null;
+    final rawId = sheetItem['rawData'] is Map
+        ? (sheetItem['rawData'] as Map)['id']
+        : null;
     final sheetId = (sheetItem['id'] ?? rawId ?? '').toString().trim();
     if (sheetId.isEmpty) return null;
     final page1Keys = <String>{
@@ -542,21 +611,22 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
             result.tracks.length <= page1List.length) {
           continue;
         }
-        final overlapped = result.tracks
-            .any((s) => _sheetSongIdKeys(s).any(page1Keys.contains));
+        final overlapped = result.tracks.any(
+          (s) => _sheetSongIdKeys(s).any(page1Keys.contains),
+        );
         if (!overlapped) continue;
         AppLog.debug(
-            'plugin',
-            '[${source.name}] 歌单详情单页截断(${page1List.length}/${result.tracks.length})，'
-            '宿主 ${entry.key} 全量兜底: $sheetId');
+          'plugin',
+          '[${source.name}] 歌单详情单页截断(${page1List.length}/${result.tracks.length})，'
+              '宿主 ${entry.key} 全量兜底: $sheetId',
+        );
         // 复用 _importedTracks 条目形状：播放链路与导入歌单一致
         return result.tracks
             .map((e) => mfItemToSearchResult(e, source))
             .where((r) => r.name.isNotEmpty)
             .toList();
       } catch (e) {
-        AppLog.warn(
-            'plugin', '[${source.name}] 宿主 ${entry.key} 歌单详情兜底失败: $e');
+        AppLog.warn('plugin', '[${source.name}] 宿主 ${entry.key} 歌单详情兜底失败: $e');
       }
     }
     return null;
@@ -565,24 +635,31 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   List<Map<String, dynamic>>? _importedTracksOf(Map<String, dynamic> item) {
     final raw = item['_importedTracks'];
     if (raw is List && raw.isNotEmpty) {
-      return raw.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+      return raw
+          .whereType<Map>()
+          .map((e) => e.cast<String, dynamic>())
+          .toList();
     }
     return null;
   }
 
   Future<bool> supportsSheetImport(PluginSource source) => _availableMethods(
-      source).then((m) =>
-      m.contains('importMusicSheet') || m.contains('importPlaylist'));
+    source,
+  ).then((m) => m.contains('importMusicSheet') || m.contains('importPlaylist'));
 
   Future<List<Map<String, dynamic>>> _importSheetRaw(
-      PluginSource source, String urlLike) async {
+    PluginSource source,
+    String urlLike,
+  ) async {
     final methods = await _availableMethods(source);
     if (!methods.contains('importMusicSheet')) return const [];
     return _tryCallRawList(source, 'importMusicSheet', [urlLike]);
   }
 
   Future<List<PluginSearchResult>> importMusicSheet(
-      PluginSource source, String urlLike) async {
+    PluginSource source,
+    String urlLike,
+  ) async {
     final raw = await _importSheetRaw(source, urlLike);
     if (raw.isEmpty) return const [];
     final songs = raw
@@ -594,7 +671,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<PluginSearchResult?> importMusicItem(
-      PluginSource source, String urlLike) async {
+    PluginSource source,
+    String urlLike,
+  ) async {
     final methods = await _availableMethods(source);
     if (!methods.contains('importMusicItem')) return null;
     final raw = await _tryCallRaw(source, 'importMusicItem', [urlLike]);
@@ -615,7 +694,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 五平台宿主兜底。返回 null 表示该音源无法精确导入此输入。
   /// 供 searchSheets 与导入页「自动识别」遍历音源使用（不落公开搜索）。
   Future<MfSheetItem?> importSheetExact(
-      PluginSource source, String keyword) async {
+    PluginSource source,
+    String keyword,
+  ) async {
     // am 插件（animemusic/1）歌单导入：importPlaylist 返回真实歌单
     // 名/封面/创建者，优先走它
     final methods = await _availableMethods(source);
@@ -624,8 +705,7 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       final sheet = _sheetFromAnimeImport(source, keyword, raw);
       if (sheet != null) return sheet;
     }
-    final direct =
-        await _tryCallRawList(source, 'importMusicSheet', [keyword]);
+    final direct = await _tryCallRawList(source, 'importMusicSheet', [keyword]);
     if (direct.isNotEmpty) {
       return _sheetFromImportedTracks(source, keyword, direct).first;
     }
@@ -646,7 +726,10 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   List<MfSheetItem> _sheetFromImportedTracks(
-      PluginSource source, String keyword, List<Map<String, dynamic>> tracks) {
+    PluginSource source,
+    String keyword,
+    List<Map<String, dynamic>> tracks,
+  ) {
     final title = tr('{name}收藏夹', {'name': source.name});
     return [
       MfSheetItem(
@@ -656,17 +739,16 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         trackCount: tracks.length,
         platform: source.name,
         pluginId: source.id,
-        raw: {
-          'id': keyword,
-          'title': title,
-          '_importedTracks': tracks,
-        },
+        raw: {'id': keyword, 'title': title, '_importedTracks': tracks},
       ),
     ];
   }
 
   Future<MfSheetItem> _hostImportSheetItem(
-      PluginSource source, String keyword, HostSheetImportResult result) async {
+    PluginSource source,
+    String keyword,
+    HostSheetImportResult result,
+  ) async {
     final songs = result.tracks
         .map((e) => mfItemToSearchResult(e, source))
         .where((r) => r.name.isNotEmpty)
@@ -680,15 +762,13 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       artist: result.author,
       coverUrl: result.cover.isNotEmpty
           ? result.cover
-          : (result.tracks.isNotEmpty ? _extractCover(result.tracks.first) : null),
+          : (result.tracks.isNotEmpty
+                ? _extractCover(result.tracks.first)
+                : null),
       trackCount: songs.isNotEmpty ? songs.length : result.tracks.length,
       platform: source.name,
       pluginId: source.id,
-      raw: {
-        'id': keyword,
-        'title': title,
-        '_importedTracks': result.tracks,
-      },
+      raw: {'id': keyword, 'title': title, '_importedTracks': result.tracks},
     );
   }
 
@@ -696,7 +776,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 酷狗→汽水→网易云→QQ→酷我→咪咕依次尝试（新四平台按来源门槛收敛数字 ID 歧义）。
   /// 返回原始曲目 map。
   Future<List<Map<String, dynamic>>> importHostSheetRaw(
-      PluginSource source, String urlLike) async {
+    PluginSource source,
+    String urlLike,
+  ) async {
     final kg = await KgSheetImport.import(urlLike);
     if (kg != null && kg.tracks.isNotEmpty) {
       final songs = kg.tracks
@@ -763,12 +845,17 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// am importPlaylist 返回 {id,title,cover,creator,desc,total,list}，
   /// 曲目结构同 search；用真实歌单元数据包成单一导入结果
   MfSheetItem? _sheetFromAnimeImport(
-      PluginSource source, String keyword, dynamic raw) {
+    PluginSource source,
+    String keyword,
+    dynamic raw,
+  ) {
     if (raw is! Map) return null;
     final list = raw['list'];
     if (list is! List || list.isEmpty) return null;
-    final tracks =
-        list.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    final tracks = list
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
     final title = (raw['title'] ?? '').toString().trim();
     final total = _toInt(raw['total']) ?? 0;
     return MfSheetItem(
@@ -779,19 +866,21 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       trackCount: total > 0 ? total : tracks.length,
       platform: source.name,
       pluginId: source.id,
-      raw: {
-        'id': keyword,
-        'title': title,
-        '_importedTracks': tracks,
-      },
+      raw: {'id': keyword, 'title': title, '_importedTracks': tracks},
     );
   }
 
   // ==================== 歌手 ====================
 
   Future<List<MfArtistItem>> searchArtists(
-      PluginSource source, String keyword) async {
-    final list = await _tryCallRawList(source, 'search', [keyword, 1, 'artist']);
+    PluginSource source,
+    String keyword,
+  ) async {
+    final list = await _tryCallRawList(source, 'search', [
+      keyword,
+      1,
+      'artist',
+    ]);
     return list
         .map((m) => _toArtist(m, source))
         .where((a) => a.name.isNotEmpty)
@@ -799,15 +888,23 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<List<PluginSearchResult>> getArtistWorks(
-      PluginSource source, Map<String, dynamic> item, {int page = 1}) async {
+    PluginSource source,
+    Map<String, dynamic> item, {
+    int page = 1,
+  }) async {
     final methods = await _availableMethods(source);
     if (methods.contains('getArtistWorks')) {
-      final list =
-          await _tryCallList(source, 'getArtistWorks', [item, page, 'music']);
+      final list = await _tryCallList(source, 'getArtistWorks', [
+        item,
+        page,
+        'music',
+      ]);
       if (list.isNotEmpty) return _maybeFillQqDurations(source, list);
     }
     if (page == 1 && methods.contains('search')) {
-      final name = _stripHtml(item['name'] ?? item['title'] ?? item['artist'] ?? '');
+      final name = _stripHtml(
+        item['name'] ?? item['title'] ?? item['artist'] ?? '',
+      );
       if (name.isNotEmpty) {
         return _tryCallList(source, 'search', [name, 1, 'music']);
       }
@@ -816,9 +913,15 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<List<MfAlbumItem>> getArtistAlbums(
-      PluginSource source, Map<String, dynamic> item, {int page = 1}) async {
-    final list =
-        await _tryCallRawList(source, 'getArtistWorks', [item, page, 'album']);
+    PluginSource source,
+    Map<String, dynamic> item, {
+    int page = 1,
+  }) async {
+    final list = await _tryCallRawList(source, 'getArtistWorks', [
+      item,
+      page,
+      'album',
+    ]);
     return list
         .map((m) => _toAlbum(m, source))
         .where((a) => a.name.isNotEmpty)
@@ -826,7 +929,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<String> getArtistInfo(
-      PluginSource source, Map<String, dynamic> item) async {
+    PluginSource source,
+    Map<String, dynamic> item,
+  ) async {
     try {
       final methods = await _availableMethods(source);
       if (!methods.contains('getArtistInfo')) return '';
@@ -841,7 +946,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   // ==================== 专辑 ====================
 
   Future<List<MfAlbumItem>> searchAlbums(
-      PluginSource source, String keyword) async {
+    PluginSource source,
+    String keyword,
+  ) async {
     var list = await _tryCallRawList(source, 'search', [keyword, 1, 'album']);
     var albums = list.map((m) => _toAlbum(m, source)).toList();
     if (albums.isEmpty && isQqMusicPluginSource(source, _platformOf(source))) {
@@ -854,14 +961,22 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   /// 专辑曲目。不截断数量（小说类专辑可达数千条），isEnd 取插件返回值，
   /// 插件未返回时为 null，由调用方按页大小兜底。
   Future<({List<PluginSearchResult> songs, bool? isEnd})> getAlbumSongs(
-      PluginSource source, Map<String, dynamic> item,
-      {int page = 1}) async {
+    PluginSource source,
+    Map<String, dynamic> item, {
+    int page = 1,
+  }) async {
     final methods = await _availableMethods(source);
     if (!methods.contains('getAlbumInfo')) {
       if (methods.contains('search')) {
-        final title = _stripHtml(item['title'] ?? item['name'] ?? item['album'] ?? '');
+        final title = _stripHtml(
+          item['title'] ?? item['name'] ?? item['album'] ?? '',
+        );
         if (title.isNotEmpty) {
-          final songs = await _tryCallList(source, 'search', [title, 1, 'music']);
+          final songs = await _tryCallList(source, 'search', [
+            title,
+            1,
+            'music',
+          ]);
           return (songs: songs, isEnd: true);
         }
       }
@@ -904,12 +1019,15 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<List<PluginSearchResult>> _maybeFillQqDurations(
-          PluginSource source, List<PluginSearchResult> list) async =>
-      qqFillSongDurations(source, _platformOf(source), list);
+    PluginSource source,
+    List<PluginSearchResult> list,
+  ) async => qqFillSongDurations(source, _platformOf(source), list);
 
   Future<List<PluginSearchResult>> searchMusic(
-      PluginSource source, String keyword,
-      {int limit = 30}) async {
+    PluginSource source,
+    String keyword, {
+    int limit = 30,
+  }) async {
     // MusicFree 插件 search(keyword, page) 单页约 30 条且无翻页入口：
     // 按页序并行拉取（初始 3 页；加载更多传入更大 limit，页数随 limit 增长，
     // 上限 10 页）拼取去重（部分插件忽略 page 返回全量，去重后即收敛），
@@ -939,8 +1057,11 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   // ==================== 内部工具 ====================
 
   Future<List<PluginSearchResult>> _tryCallList(
-      PluginSource source, String method, List<dynamic> args,
-      {int limit = 100}) async {
+    PluginSource source,
+    String method,
+    List<dynamic> args, {
+    int limit = 100,
+  }) async {
     final raw = await _tryCallRawList(source, method, args);
     final mapped = raw
         .map((e) => mfItemToSearchResult(e, source))
@@ -950,42 +1071,55 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
   }
 
   Future<dynamic> _tryCallRaw(
-      PluginSource source, String method, List<dynamic> args) async {
+    PluginSource source,
+    String method,
+    List<dynamic> args,
+  ) async {
     try {
       return await _call(source, method, args);
     } catch (e) {
-      AppLog.warn('plugin',
-          '[catalog] ${source.name} $method 调用失败: $e');
+      AppLog.warn('plugin', '[catalog] ${source.name} $method 调用失败: $e');
       return null;
     }
   }
 
   Future<List<Map<String, dynamic>>> _tryCallRawList(
-      PluginSource source, String method, List<dynamic> args) async {
+    PluginSource source,
+    String method,
+    List<dynamic> args,
+  ) async {
     try {
       final result = await _call(source, method, args);
       final list = extractMfResultList(result);
       AppLog.debug(
-          'plugin', '[catalog] ${source.name} $method 返回 ${list.length} 条');
+        'plugin',
+        '[catalog] ${source.name} $method 返回 ${list.length} 条',
+      );
       return list;
     } catch (e) {
-      AppLog.warn('plugin',
-          '[catalog] ${source.name} $method 调用失败: $e');
+      AppLog.warn('plugin', '[catalog] ${source.name} $method 调用失败: $e');
       return const [];
     }
   }
 
-  MfSheetItem _toSheet(Map<String, dynamic> m, PluginSource source,
-      {dynamic categoryTitle}) {
+  MfSheetItem _toSheet(
+    Map<String, dynamic> m,
+    PluginSource source, {
+    dynamic categoryTitle,
+  }) {
     final id = (m['id'] ?? m['albumId'] ?? m['songId'] ?? m['musicId'] ?? '')
         .toString();
     return MfSheetItem(
       id: id,
       title: _stripHtml(m['title'] ?? m['name'] ?? m['album'] ?? ''),
-      artist: _stripHtml(categoryTitle ?? m['artist'] ?? m['author'] ?? m['singer'] ?? ''),
+      artist: _stripHtml(
+        categoryTitle ?? m['artist'] ?? m['author'] ?? m['singer'] ?? '',
+      ),
       coverUrl: _extractCover(m),
       playCount: _toInt(m['playCount'] ?? m['playcount'] ?? m['play_count']),
-      trackCount: _toInt(m['trackCount'] ?? m['trackcount'] ?? m['track_count']),
+      trackCount: _toInt(
+        m['trackCount'] ?? m['trackcount'] ?? m['track_count'],
+      ),
       platform: source.name,
       pluginId: source.id,
       isTopList: m['_isTopList'] == true,
