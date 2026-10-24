@@ -47,7 +47,6 @@ class UploadConfig {
   final bool plugins;
   final bool settings;
   final bool history;
-  final bool cloudCreds;
 
   const UploadConfig({
     this.playlists = true,
@@ -55,7 +54,6 @@ class UploadConfig {
     this.plugins = true,
     this.settings = true,
     this.history = false,
-    this.cloudCreds = true,
   });
 
   UploadConfig copyWith({
@@ -64,7 +62,6 @@ class UploadConfig {
     bool? plugins,
     bool? settings,
     bool? history,
-    bool? cloudCreds,
   }) {
     return UploadConfig(
       playlists: playlists ?? this.playlists,
@@ -72,7 +69,6 @@ class UploadConfig {
       plugins: plugins ?? this.plugins,
       settings: settings ?? this.settings,
       history: history ?? this.history,
-      cloudCreds: cloudCreds ?? this.cloudCreds,
     );
   }
 
@@ -82,7 +78,6 @@ class UploadConfig {
         'plugins': plugins,
         'settings': settings,
         'history': history,
-        'cloudCreds': cloudCreds,
       };
 
   factory UploadConfig.fromJson(Map<String, dynamic> j) => UploadConfig(
@@ -91,7 +86,6 @@ class UploadConfig {
         plugins: j['plugins'] as bool? ?? true,
         settings: j['settings'] as bool? ?? true,
         history: false,
-        cloudCreds: j['cloudCreds'] as bool? ?? true,
       );
 }
 
@@ -259,7 +253,6 @@ class SyncNotifier extends StateNotifier<SyncState> {
     _cloudCredsUploadTimer = Timer(const Duration(seconds: 3), () {
       final loggedIn = _ref.read(authProvider.select((s) => s.user != null));
       if (!loggedIn) return;
-      if (!state.uploadConfig.cloudCreds) return;
       _cloudCredsSyncSvc.upload();
     });
   }
@@ -415,12 +408,12 @@ class SyncNotifier extends StateNotifier<SyncState> {
             await syncFavoritesDownload();
             await syncFavoritesUpload();
           }),
-        if (upload.cloudCreds)
-          guard(() async {
-            // 先拉后推：把云端绑定合并进本地，再把合并结果推回云端
-            await syncCloudCredsDownload();
-            await syncCloudCredsUpload();
-          }),
+        guard(() async {
+          // 网盘凭据不受上传开关约束（对齐桌面端）：先拉后推，
+          // 把云端绑定合并进本地，再把合并结果推回云端
+          await syncCloudCredsDownload();
+          await syncCloudCredsUpload();
+        }),
         guard(syncListenStats),
       ]);
       // UI 段并发结束后串行：通知弹窗与设置冲突对话框需要独占交互，

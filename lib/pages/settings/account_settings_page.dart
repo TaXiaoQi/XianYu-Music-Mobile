@@ -950,43 +950,36 @@ class _AutoSyncCard extends ConsumerWidget {
           onChanged: (v) =>
               notifier.updateAutoSyncConfig(config.copyWith(enabled: v)),
         ),
-        // 自动同步内容开关（对齐桌面端）：仅约束自动同步范围，手动同步不受限制
-        _SwitchTile(
-          title: tr('歌单'),
-          subtitle: tr('自动同步本地创建与编辑的歌单'),
-          value: upload.playlists,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(upload.copyWith(playlists: v)),
-        ),
-        _SwitchTile(
-          title: tr('收藏'),
-          subtitle: tr('自动同步我的收藏歌曲'),
-          value: upload.favorites,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(upload.copyWith(favorites: v)),
-        ),
-        _SwitchTile(
-          title: tr('插件'),
-          subtitle: tr('自动同步已安装的插件配置'),
-          value: upload.plugins,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(upload.copyWith(plugins: v)),
-        ),
-        _SwitchTile(
-          title: tr('本地设置'),
-          subtitle: tr('自动同步播放设置、歌词设置等偏好配置'),
-          value: upload.settings,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(upload.copyWith(settings: v)),
-        ),
-        _SwitchTile(
-          title: tr('网盘账号'),
-          subtitle: tr('自动加密同步已绑定的网盘登录状态'),
-          value: upload.cloudCreds,
-          onChanged: (v) =>
-              notifier.updateUploadConfig(upload.copyWith(cloudCreds: v)),
-        ),
+        // 自动同步内容开关（对齐桌面端）：随「启用自动同步」展开/收起，仅约束自动同步范围，手动同步不受限制
         if (config.enabled) ...[
+          _SwitchTile(
+            title: tr('歌单'),
+            subtitle: tr('自动同步本地创建与编辑的歌单'),
+            value: upload.playlists,
+            onChanged: (v) =>
+                notifier.updateUploadConfig(upload.copyWith(playlists: v)),
+          ),
+          _SwitchTile(
+            title: tr('收藏'),
+            subtitle: tr('自动同步我的收藏歌曲'),
+            value: upload.favorites,
+            onChanged: (v) =>
+                notifier.updateUploadConfig(upload.copyWith(favorites: v)),
+          ),
+          _SwitchTile(
+            title: tr('插件'),
+            subtitle: tr('自动同步已安装的插件配置'),
+            value: upload.plugins,
+            onChanged: (v) =>
+                notifier.updateUploadConfig(upload.copyWith(plugins: v)),
+          ),
+          _SwitchTile(
+            title: tr('本地设置'),
+            subtitle: tr('自动同步播放设置、歌词设置等偏好配置'),
+            value: upload.settings,
+            onChanged: (v) =>
+                notifier.updateUploadConfig(upload.copyWith(settings: v)),
+          ),
           _DropdownTile(
             title: tr('同步间隔'),
             value: config.syncIntervalSeconds,

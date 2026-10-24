@@ -186,11 +186,9 @@ class AutoSyncService {
       await notifier.syncFavoritesDownload();
       await notifier.syncFavoritesUpload();
     }
-    if (upload.cloudCreds) {
-      // 网盘绑定必须及时下发覆盖：A 端绑定/轮换 → B 端下个周期即拉取应用
-      await notifier.syncCloudCredsDownload();
-      await notifier.syncCloudCredsUpload();
-    }
+    // 网盘绑定不受上传开关约束（对齐桌面端）：A 端绑定/轮换 → B 端下个周期即拉取应用
+    await notifier.syncCloudCredsDownload();
+    await notifier.syncCloudCredsUpload();
     await notifier.syncListenStats();
     if (upload.settings) {
       await notifier.syncSettingsUpload();
