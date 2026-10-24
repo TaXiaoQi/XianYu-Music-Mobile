@@ -916,7 +916,7 @@ class _ManualSyncCard extends ConsumerWidget {
           onDownload: () => _confirmOverwriteSync(
             context,
             title: '覆盖下载设置',
-            message: '将用云端设置覆盖本地设置。确定继续吗？',
+            message: '将用云端设置覆盖本地设置，操作不可逆，确定继续吗？',
             action: () => _runManualSync(
               context,
               label: tr('正在下载设置...'),
