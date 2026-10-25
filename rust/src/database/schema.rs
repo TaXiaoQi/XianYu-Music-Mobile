@@ -4,6 +4,10 @@ pub(crate) fn configure_connection(conn: &Connection) -> Result<(), String> {
 	conn
 		.pragma_update(None, "foreign_keys", "ON")
 		.map_err(|e| e.to_string())?;
+	// 多连接并发写（统计/会话/下载历史）时等待写锁而非立即报 busy，
+	// 消除「database is locked」偶发失败
+	conn.busy_timeout(std::time::Duration::from_millis(5000))
+		.map_err(|e| e.to_string())?;
 	conn
 		.pragma_update(None, "journal_mode", "WAL")
 		.map_err(|e| e.to_string())?;
