@@ -125,8 +125,8 @@ git clone https://github.com/TaXiaoQi/XianYu-Music-Mobile.git
 cd XianYu-Music-Mobile
 flutter pub get
 
-flutter dev          # Android 调试（= flutter run：同步版本号 + 预生成 Rust 绑定与 .so + run，绑定更新不再断一次）
-flutter run          # 同上（自动经 scripts\dev.ps1 预生成后启动）
+flutter dev          # Android 调试（自动同步版本号 + 预生成 Rust 绑定与 .so，绑定更新不再断一次）
+flutter run          # 同上（等价 flutter dev）
 flutter hap          # 鸿蒙调试运行
 ```
 
