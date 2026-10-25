@@ -173,9 +173,7 @@ class _CloudWebviewFieldsLoginPageState
     await controller.runJavaScript(_unlockZoomJs).catchError((_) {});
 
     final u = Uri.tryParse(url);
-    final host = u?.host ?? '';
-    if (host.endsWith('open.uc.cn') &&
-        (u?.path ?? '').startsWith('/cas/custom/login')) {
+    if (u != null && _provider.isWebviewFieldsLoginPage(u)) {
       // CAS 页就绪：注入执行脚本（填表 + 等盾 + 提交 + 回传 hook）。
       final script = _provider.webviewFieldsScript(
         _accountCtrl.text.trim(),
@@ -187,16 +185,16 @@ class _CloudWebviewFieldsLoginPageState
       }
       return;
     }
-    if (host == (_provider.captureRule?.postLoginUrl != null
-            ? Uri.tryParse(_provider.captureRule!.postLoginUrl!)?.host
-            : null)) {
+    final post = _provider.captureRule?.postLoginUrl;
+    final postHost =
+        post == null ? null : Uri.tryParse(post)?.host;
+    if (postHost != null && postHost == (u?.host ?? '') && postHost.isNotEmpty) {
       // 主站落地页：__puus 由 init 请求数秒后才签发，稳定性轮询收尾。
       await _postLoginCapture();
       return;
     }
-    if (host == 'drive.uc.cn' && (u?.path ?? '') == '/account/info') {
+    if (u != null && _provider.isTicketExchangePage(u)) {
       // 兑换页 Set-Cookie 已下发，跳主站等 __puus 签发再捕获。
-      final post = _provider.captureRule?.postLoginUrl;
       if (post != null && _finishing == false) {
         if (mounted) setState(() => _hint = tr('验证通过，正在写入登录态…'));
         await controller.loadRequest(Uri.parse(post));

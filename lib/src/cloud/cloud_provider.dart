@@ -71,6 +71,21 @@ abstract class CloudProvider {
   /// 服务端 Set-Cookie 种网盘凭据（复用 captureRule 捕获链收尾）。
   String ticketExchangeUrl(String ticket) => '';
 
+  /// CAS 账密登录页判定（登录页据此决定注入执行脚本的时机）。
+  /// 默认不识别，webviewFields 实现盘各自 override。
+  bool isWebviewFieldsLoginPage(Uri url) => false;
+
+  /// CAS 兑换页判定（TICKET 兑换落地页，Set-Cookie 下发后应跳主站）。
+  /// 默认按 [ticketExchangeUrl] 模板的 host+path 匹配，实现盘无需
+  /// 单独 override（模板未配置时恒 false）。
+  bool isTicketExchangePage(Uri url) {
+    final t = Uri.tryParse(ticketExchangeUrl('probe'));
+    return t != null &&
+        t.host.isNotEmpty &&
+        url.host == t.host &&
+        url.path == t.path;
+  }
+
   /// 账密/短信表单字段（httpPassword/smsPassword）。
   List<CloudLoginField> get loginFields => const [];
 

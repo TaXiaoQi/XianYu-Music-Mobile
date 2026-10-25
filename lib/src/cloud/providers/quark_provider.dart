@@ -1,4 +1,11 @@
 // 夸克网盘：继承 QuarkUcBase，仅声明品牌与登录页常量。
+//
+// 账密登录走 CAS 逆向（webviewFields，2026-10 实测同构 UC）：主 SPA
+// passwordLoginPage 常量即 uop.quark.cn/cas/custom/login
+// （client_id=532，sso/next 前端与 UC 同款表单 id/阿里云盾/ticket
+// hook）；service_ticket 经 GET pan.quark.cn/account/info?st= 兑换
+// 种 Cookie（假票实测返回 AUTH_ERROR:50051 Invalid service ticket，
+// 端点在且与 UC 同码同体系）。表单/盾/脚本共享实现见 QuarkUcBase。
 
 import '../cloud_types.dart';
 import 'quark_uc_base.dart';
@@ -46,4 +53,26 @@ class QuarkProvider extends QuarkUcBase {
         // 同 UC：__puus 由落地页 init 请求后补签发，稳定性轮询等齐再收尾。
         postLoginUrl: 'https://pan.quark.cn/',
       );
+
+  // ── CAS 账密逆向通道（webviewFields）────────────────────
+
+  @override
+  CloudLoginKind get loginKind => CloudLoginKind.webviewFields;
+
+  @override
+  String get casPageHost => 'uop.quark.cn';
+
+  /// CAS 账密登录页：主 SPA passwordLoginPage 同款端点（display=pc
+  /// 出账密表单，token/key 由页面下发且与 CAS 会话 Cookie 绑定）。
+  @override
+  String get webviewFieldsLoginUrl =>
+      'https://uop.quark.cn/cas/custom/login'
+      '?custom_login_type=common&client_id=532&display=pc';
+
+  /// service_ticket 兑换页：GET account/info?st= 服务端校验通过即
+  /// Set-Cookie 种网盘凭据。__puus 由随后的主站落地页 init 请求
+  /// 签发（captureRule.postLoginUrl 链）。
+  @override
+  String ticketExchangeUrl(String ticket) =>
+      'https://pan.quark.cn/account/info?st=${Uri.encodeComponent(ticket)}';
 }

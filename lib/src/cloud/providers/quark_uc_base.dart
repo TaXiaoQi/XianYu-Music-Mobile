@@ -6,6 +6,8 @@
 // 业务（列目录/分享/转存/直链）一律经 cloud_remote 桥转发内嵌
 // Rust（rust/src/cloud/quark_uc.rs）。子类声明品牌与登录页常量。
 
+import 'dart:convert';
+
 import '../../core/application_logger.dart';
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
@@ -48,6 +50,89 @@ abstract class QuarkUcBase extends CloudProvider {
 
   @override
   CloudLoginKind get loginKind => CloudLoginKind.webviewCookie;
+
+  // ── CAS 账密逆向通道（webviewFields，UC/夸克同构共享）───────
+  //
+  // 两家登录面板 iframe 同为阿里 open 平台 CAS（sso/next 前端）：
+  // 表单 id（login_name/password/submit_btn/captcha_data）、阿里云盾
+  // （AliyunCaptchaV2）、ticket 回传 hook（postMessagePrivate）与
+  // 兑换端点（{webHost}/account/info?st=）完全一致，差异仅 host 与
+  // client_id。提交/发码强制过盾（离线伪造不可行）——自绘表单收账
+  // 密，WebView 加载 CAS 页注入脚本自动填表过盾抓 ticket，兑换后
+  // 复用捕获链收尾。
+
+  /// CAS 登录页 host（open.uc.cn / uop.quark.cn）。
+  String get casPageHost => '';
+
+  @override
+  bool isWebviewFieldsLoginPage(Uri url) =>
+      url.host == casPageHost &&
+      url.path.startsWith('/cas/custom/login');
+
+  /// 账密表单字段（两家同款：手机号/邮箱 + 密码）。
+  @override
+  List<CloudLoginField> get loginFields => const [
+        CloudLoginField(key: 'account', label: '手机号 / 邮箱'),
+        CloudLoginField(key: 'password', label: '密码', obscure: true),
+      ];
+
+  /// CAS 页执行脚本：hook 成功/失败回传 → 填账密 → 轮询盾回调
+  /// （无痕自动通过约数秒；触发滑块时用户在 WebView 里拖动）→
+  /// 就绪后点击原生提交按钮。60 秒未就绪放弃（防僵尸轮询）。
+  @override
+  String webviewFieldsScript(String account, String password) {
+    final acc = jsonEncode(account);
+    final pwd = jsonEncode(password);
+    return '''
+(function(){
+  try {
+    if (window.__xyCasHooked) return;
+    window.__xyCasHooked = true;
+    var post = function(m){ try { window.XianYuLogin.postMessage(m); } catch(e){} };
+    window.postMessagePrivate = function(data){
+      post('TICKET:' + (typeof data === 'string' ? data : JSON.stringify(data)));
+    };
+    var _sem = window.showErrorMessage;
+    window.showErrorMessage = function(m){ post('MSG:' + (m || '')); if (_sem) _sem(m); };
+    var ACC = $acc, PWD = $pwd;
+    var fill = function(){
+      var a = document.getElementById('login_name');
+      var p = document.getElementById('password');
+      if (a) a.value = ACC;
+      if (p) p.value = PWD;
+    };
+    fill();
+    var n = 0;
+    var t = setInterval(function(){
+      n++;
+      fill();
+      var ready = '';
+      try {
+        if (typeof AliyunCaptchaV2 !== 'undefined' && AliyunCaptchaV2.captchaVerifyParam) {
+          ready = AliyunCaptchaV2.captchaVerifyParam;
+          var cd = document.getElementById('captcha_data');
+          if (cd && !cd.value) cd.value = ready;
+        }
+      } catch(e){}
+      if (!ready) {
+        var cd2 = document.getElementById('captcha_data');
+        if (cd2 && cd2.value) ready = cd2.value;
+      }
+      if (ready) {
+        clearInterval(t);
+        var b = document.getElementById('submit_btn');
+        if (b) b.click(); else post('MSG:提交入口缺失，请改用网页登录');
+      } else if (n >= 60) {
+        clearInterval(t);
+        post('MSG:安全验证未就绪，请重试或改用网页登录');
+      }
+    }, 1000);
+  } catch(e) {
+    try { window.XianYuLogin.postMessage('MSG:' + e); } catch(_){}
+  }
+})();
+''';
+  }
 
   // 必须强制桌面 UA：移动 UA 下 pan.quark.cn / drive.uc.cn 一律
   // 302 到 h5.sm.cn / broccoli.uc.cn 的 H5 下载宣传页（无任何登录
