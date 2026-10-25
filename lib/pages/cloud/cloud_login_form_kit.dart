@@ -8,6 +8,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/i18n/i18n.dart';
@@ -186,6 +187,28 @@ class CloudLoginSubmitButton extends StatelessWidget {
                 style:
                     const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
               ),
+      ),
+    );
+  }
+}
+
+/// 网页登录兜底入口：自绘/自动填表通道之外留官方网页登录退路。
+/// 全屏页有顶栏 actions 位不渲染本按钮；嵌入面板无顶栏位，放表单
+/// 尾部（provider 无 webviewLoginUrl 时不展示）。
+class CloudLoginWebFallbackButton extends StatelessWidget {
+  const CloudLoginWebFallbackButton({super.key, required this.providerId});
+
+  final String providerId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: PressableScale(
+        pressScale: 0.92,
+        child: TextButton(
+          onPressed: () => context.push('/cloud/webview-login/$providerId'),
+          child: Text(tr('网页登录')),
+        ),
       ),
     );
   }

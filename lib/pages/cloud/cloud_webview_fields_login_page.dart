@@ -507,6 +507,9 @@ class _CloudWebviewFieldsLoginPageState
             color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
           ),
         ),
+        // 嵌入面板无顶栏 actions 位：网页登录兜底入口放表单尾部。
+        if (widget.embedded && _provider.webviewLoginUrl.isNotEmpty)
+          CloudLoginWebFallbackButton(providerId: _provider.id),
       ],
     );
   }

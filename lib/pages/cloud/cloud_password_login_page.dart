@@ -404,6 +404,9 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
           _buildCookieForm(scheme)
         else
           _buildFieldsForm(scheme),
+        // 嵌入面板无顶栏 actions 位：网页登录兜底入口放表单尾部。
+        if (widget.embedded && _provider.webviewLoginUrl.isNotEmpty)
+          CloudLoginWebFallbackButton(providerId: _provider.id),
       ],
     );
     // 横屏设置面板嵌入：整块表单收进玻璃胶囊卡片，标题由统一带 head 位承载
