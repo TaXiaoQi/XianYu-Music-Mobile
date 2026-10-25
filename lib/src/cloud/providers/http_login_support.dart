@@ -71,13 +71,33 @@ String uuidV4() {
 }
 
 /// 天翼 logbox RSA 公钥加密（PKCS#1 v1.5，hex 输出）。
-String rsaPkcs1Hex(String plain, String modulusHex, String exponentHex) {
+String rsaPkcs1Hex(String plain, String modulusHex, String exponentHex) =>
+    _rsaPkcs1(plain, modulusHex, exponentHex, (b) => b.map((x) => x.toRadixString(16).padLeft(2, '0')).join());
+
+/// RSA 公钥加密（PKCS#1 v1.5，base64 输出。139 mcloud-skey 用）。
+String rsaPkcs1B64(String plain, String modulusHex, String exponentHex) =>
+    _rsaPkcs1(plain, modulusHex, exponentHex, base64Encode);
+
+String _rsaPkcs1(String plain, String modulusHex, String exponentHex,
+    String Function(List<int> bytes) encode) {
   final n = BigInt.parse(modulusHex, radix: 16);
   final e = BigInt.parse(exponentHex, radix: 16);
   final cipher = PKCS1Encoding(RSAEngine())
     ..init(true, PublicKeyParameter<RSAPublicKey>(RSAPublicKey(n, e)));
-  final out = cipher.process(Uint8List.fromList(utf8.encode(plain)));
-  return out.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  return encode(cipher.process(Uint8List.fromList(utf8.encode(plain))));
+}
+
+/// AES-128-ECB PKCS#7 加密（base64 输出。139 encryptMsg 用）。
+String aesEcbPkcs7B64(String plain, String key) {
+  final cipher = PaddedBlockCipherImpl(PKCS7Padding(), ECBBlockCipher(AESEngine()))
+    ..init(
+      true,
+      PaddedBlockCipherParameters<KeyParameter, Null>(
+        KeyParameter(utf8.encode(key)),
+        null,
+      ),
+    );
+  return base64Encode(cipher.process(Uint8List.fromList(utf8.encode(plain))));
 }
 
 /// 解析天翼 encryptConf 返回的 pubKey（base64 编码的 X.509

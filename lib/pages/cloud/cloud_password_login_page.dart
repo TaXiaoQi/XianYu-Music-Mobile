@@ -9,15 +9,14 @@ import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
 import '../../src/cloud/providers/webview_login_support.dart';
-import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/navigation/shell.dart'
     show landscapeSettingsCategoryProvider;
 import '../../src/widgets/app_toast.dart';
-import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/press_scale.dart';
+import 'cloud_login_form_kit.dart';
 
 /// 账号登录页（Cookie / 账密双模式，按 provider 能力展示）。
 ///
@@ -361,132 +360,61 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final showCookie = _supportsCookie && _mode != _LoginMode.fields;
-    final landscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
-    // 横屏设置面板嵌入：整块表单收进玻璃胶囊卡片（反馈页 TabBar 带同
-    // 款材质，壁纸模式读毛玻璃填充保证字色可读），标题由统一带 head 位承载
-    if (widget.embedded) {
-      return ListView(
-        padding: EdgeInsets.fromLTRB(
-          16,
-          landscapePanelBand(context, ref) + 12,
-          16,
-          24 + MediaQuery.of(context).padding.bottom,
+    final Widget body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CloudLoginHintText(
+          text: tr('登录{name}后即可播放网盘内的音乐',
+              {'name': _provider.displayName}),
         ),
-        children: [
-          GlassBand(
-            // 独立回读：宿主左列带先画，同组会复用其制备纹理
-            sharedNavGroup: false,
-            borderRadius: BorderRadius.circular(24),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    tr('登录{name}后即可播放网盘内的音乐',
-                        {'name': _provider.displayName}),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  if (_supportsCookie && _supportsFields) ...[
-                    const SizedBox(height: 16),
-                    SegmentedButton<_LoginMode>(
-                      segments: [
-                        ButtonSegment(
-                          value: _LoginMode.cookie,
-                          label: Text(tr('Cookie 登录')),
-                        ),
-                        ButtonSegment(
-                          value: _LoginMode.fields,
-                          label: Text(tr('账号密码')),
-                        ),
-                      ],
-                      selected: {_mode!},
-                      onSelectionChanged: (s) => setState(() => _mode = s.first),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  if (showCookie)
-                    _buildCookieForm(scheme)
-                  else
-                    _buildFieldsForm(scheme),
-                ],
+        if (_supportsCookie && _supportsFields) ...[
+          const SizedBox(height: 16),
+          SegmentedButton<_LoginMode>(
+            segments: [
+              ButtonSegment(
+                value: _LoginMode.cookie,
+                label: Text(tr('Cookie 登录')),
               ),
-            ),
+              ButtonSegment(
+                value: _LoginMode.fields,
+                label: Text(tr('账号密码')),
+              ),
+            ],
+            selected: {_mode!},
+            onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
         ],
-      );
+        // 嵌入卡片内 16、全屏 24（保持两处既有间距口径）
+        SizedBox(height: widget.embedded ? 16 : 24),
+        if (showCookie)
+          _buildCookieForm(scheme)
+        else
+          _buildFieldsForm(scheme),
+      ],
+    );
+    // 横屏设置面板嵌入：整块表单收进玻璃胶囊卡片，标题由统一带 head 位承载
+    if (widget.embedded) {
+      return cloudLoginEmbeddedCard(context: context, ref: ref, child: body);
     }
-    return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
-      resizeToAvoidBottomInset: false,
-      body: Stack(
-        children: [
-          Align(
-            alignment: Alignment.topCenter,
-            child: ConstrainedBox(
-              // 横屏表单收窄居中（登录表单口径），竖屏照旧全幅
-              constraints: BoxConstraints(
-                maxWidth: landscape ? 560 : double.infinity,
-              ),
-              child: ListView(
-                padding: EdgeInsets.fromLTRB(
-                  24,
-                  GlassTopBar.height(context) + 24,
-                  24,
-                  40 + MediaQuery.of(context).padding.bottom,
+    return cloudLoginScaffold(
+      context: context,
+      ref: ref,
+      title: _provider.displayName,
+      body: body,
+      // 顶栏「网页登录」：自绘表单之外的兜底通道（如 139 网页版捕获链）。
+      // 嵌入面板无顶栏位，不展示；无 webviewLoginUrl 的盘不展示。
+      actions: widget.embedded || _provider.webviewLoginUrl.isEmpty
+          ? null
+          : [
+              PressableScale(
+                pressScale: 0.92,
+                child: TextButton(
+                  onPressed: () =>
+                      context.push('/cloud/webview-login/${_provider.id}'),
+                  child: Text(tr('网页登录')),
                 ),
-                children: [
-                  Text(
-                    tr('登录{name}后即可播放网盘内的音乐', {'name': _provider.displayName}),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                    ),
-                  ),
-                  if (_supportsCookie && _supportsFields) ...[
-                    const SizedBox(height: 16),
-                    SegmentedButton<_LoginMode>(
-                      segments: [
-                        ButtonSegment(
-                          value: _LoginMode.cookie,
-                          label: Text(tr('Cookie 登录')),
-                        ),
-                        ButtonSegment(
-                          value: _LoginMode.fields,
-                          label: Text(tr('账号密码')),
-                        ),
-                      ],
-                      selected: {_mode!},
-                      onSelectionChanged: (s) =>
-                          setState(() => _mode = s.first),
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  if (showCookie)
-                    _buildCookieForm(scheme)
-                  else
-                    _buildFieldsForm(scheme),
-                ],
               ),
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: GlassTopBar(
-              // 横屏时挖孔在左缘，返回钮内推避让（与设置统一带同口径）
-              leadingIndent: MediaQuery.paddingOf(context).left,
-              leading: const BackButton(),
-              title: Text(_provider.displayName),
-            ),
-          ),
-        ],
-      ),
+            ],
     );
   }
 
@@ -530,29 +458,30 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
               hintText: '${names.join('=xxx; ')}=xxx',
               filled: true,
               fillColor: scheme.onSurface.withValues(alpha: 0.05),
-              border: _inputBorder(),
-              enabledBorder: _inputBorder(),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: scheme.primary, width: 1.5),
-              ),
+              border: cloudLoginBorder(),
+              enabledBorder: cloudLoginBorder(),
+              focusedBorder: cloudLoginFocusedBorder(context),
             ),
           ),
         ),
-        _submitButton(tr('登录并绑定'), _submitCookie),
+        CloudLoginSubmitButton(
+          label: tr('登录并绑定'),
+          submitting: _submitting,
+          onPressed: _submitCookie,
+        ),
       ],
     );
   }
 
   /// 账密 / 短信表单（httpPassword / smsPassword 范式，按 loginFields
-  /// 动态渲染）：弦予号登录同款输入框（前图标 + 填充底色 + 16 圆角），
+  /// 动态渲染）：公共 kit 输入框（前图标 + 填充底色 + 16 圆角），
   /// 密码框小眼睛切换明文，下方「记住密码」勾选（账号默认记住）。
   Widget _buildFieldsForm(ColorScheme scheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final f in _provider.loginFields)
-          _fieldBox(
+          CloudLoginFieldBox(
             _ctrls[f.key]!,
             label: tr(f.label),
             icon: _iconFor(f),
@@ -564,54 +493,16 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
                     : (f.isSmsCode ? TextInputType.number : TextInputType.text)),
             suffixIcon: _suffixFor(f),
           ),
-        _rememberRow(scheme),
-        _submitButton(tr('登录并绑定'), _submitFields),
-      ],
-    );
-  }
-
-  /// 弦予号登录同款输入框：填充底色、无默认边框、聚焦主题色描边。
-  Widget _fieldBox(
-    TextEditingController ctrl, {
-    required String label,
-    IconData? icon,
-    bool obscure = false,
-    TextInputType? keyboard,
-    Widget? suffixIcon,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      // 26px：给浮出的 label 留出上探空间，避免与上方内容视觉重叠
-      padding: const EdgeInsets.only(bottom: 26),
-      child: TextField(
-        controller: ctrl,
-        obscureText: obscure,
-        keyboardType: keyboard,
-        autocorrect: false,
-        enableSuggestions: !obscure,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: scheme.onSurface.withValues(alpha: 0.05),
-          prefixIcon: icon == null
-              ? null
-              : Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-          suffixIcon: suffixIcon,
-          border: _inputBorder(),
-          enabledBorder: _inputBorder(),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(color: scheme.primary, width: 1.5),
-          ),
+        CloudLoginRememberRow(
+          value: _rememberPwd,
+          onChanged: (v) => setState(() => _rememberPwd = v),
         ),
-      ),
-    );
-  }
-
-  OutlineInputBorder _inputBorder() {
-    return OutlineInputBorder(
-      borderRadius: BorderRadius.circular(16),
-      borderSide: BorderSide.none,
+        CloudLoginSubmitButton(
+          label: tr('登录并绑定'),
+          submitting: _submitting,
+          onPressed: _submitFields,
+        ),
+      ],
     );
   }
 
@@ -626,12 +517,9 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   /// 字段后缀：密码框小眼睛（点击切换明文），验证码字段发码按钮。
   Widget? _suffixFor(CloudLoginField f) {
     if (f.obscure) {
-      return PressableScale(
-        pressScale: 0.88,
-        child: IconButton(
-          icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-          onPressed: () => setState(() => _obscure = !_obscure),
-        ),
+      return CloudLoginEyeToggle(
+        obscured: _obscure,
+        onToggle: () => setState(() => _obscure = !_obscure),
       );
     }
     if (f.isSmsCode) {
@@ -645,66 +533,5 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       );
     }
     return null;
-  }
-
-  /// 「记住密码」勾选行：账号默认记住，勾选后密码一并保存到本机，
-  /// 下次会话失效重登自动回填，免重复输入。
-  Widget _rememberRow(ColorScheme scheme) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          Transform.translate(
-            offset: const Offset(-6, 0),
-            child: Checkbox(
-              value: _rememberPwd,
-              activeColor: scheme.primary,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-              onChanged: (v) => setState(() => _rememberPwd = v ?? false),
-            ),
-          ),
-          Text(
-            tr('记住密码'),
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              tr('账号默认记住，勾选后密码也保存在本机'),
-              style: TextStyle(
-                fontSize: 11,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 弦予号登录同款提交按钮：通栏圆角 + 按压缩放，提交中转圈。
-  Widget _submitButton(String label, VoidCallback onPressed) {
-    return PressableScale(
-      pressScale: 0.92,
-      child: FilledButton(
-        onPressed: _submitting ? null : onPressed,
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        ),
-        child: _submitting
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Text(
-                label,
-                style:
-                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-              ),
-      ),
-    );
   }
 }
