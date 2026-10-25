@@ -120,6 +120,29 @@ code{background:#f2f2f2;border-radius:4px;padding:1px 5px;font-size:13px}
   @override
   Duration get directLinkTtl => const Duration(hours: 8);
 
+  /// 百度登录域（openapi/passport/wappass）的 wap 页是流式全宽布局，
+  /// 宽视口（模拟器窗口/平板/桌面壳）下表单拉伸到 1000px+ 难看；
+  /// 限宽 480 居中保持手机版形态。仅宽视口生效（真机 innerWidth
+  /// 360-430 不受影响），幂等防 onPageFinished 重复注入。
+  static const _constrainWidthJs = r'''
+(function(){
+  try {
+    if (!/(^|\.)baidu\.com$/i.test(location.hostname)) return;
+    if (window.innerWidth <= 520) return;
+    if (document.getElementById('xy-baidu-constrain')) return;
+    var s = document.createElement('style');
+    s.id = 'xy-baidu-constrain';
+    s.textContent =
+      'html body{max-width:480px!important;' +
+      'margin-left:auto!important;margin-right:auto!important;}';
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) {}
+})();
+''';
+
+  @override
+  String? get webviewInjectJs => _constrainWidthJs;
+
   // 手动填兜底：Cookie（WebView 会话签发的 BDUSS 被降权，但电脑浏览器
   // 登录后复制的 Cookie 实测可用——网页 API 轨）；OAuth 凭据仍兼容
   // token JSON/refresh_token 手填，等 AppKey 注入后走授权页。

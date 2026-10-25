@@ -51,6 +51,11 @@ abstract class CloudProvider {
   /// 壳页 baseUrl（决定壳页 origin；postMessage targetOrigin 需匹配）。
   String? get webviewShellBaseUrl => null;
 
+  /// 每页加载后注入的盘特有 JS（null=不注入）。用于个别盘的页面
+  /// 适配（如百度 wap 登录页在宽视口下限宽居中），脚本自身按 host、
+  /// 视口宽度与幂等自守卫，通用登录页不感知其内容。
+  String? get webviewInjectJs => null;
+
   /// 账密/短信表单字段（httpPassword/smsPassword）。
   List<CloudLoginField> get loginFields => const [];
 

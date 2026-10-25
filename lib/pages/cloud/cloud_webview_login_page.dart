@@ -76,6 +76,10 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
         onPageFinished: (url) {
           if (mounted) setState(() => _pageLoaded = true);
           _controller.runJavaScript(_unlockZoomJs).catchError((_) {});
+          final inject = _provider.webviewInjectJs;
+          if (inject != null) {
+            _controller.runJavaScript(inject).catchError((_) {});
+          }
           // postLoginUrl 补跳完成：等页面 JS 种完 Cookie 再捕获，
           // 此期间不做 URL 自动判定（SPA 路由会误触发）。
           if (_pendingPostLogin) {
