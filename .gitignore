@@ -121,3 +121,6 @@ third_party/*/ohos/build/
 
 # 软著申请材料不入库
 软著申请材料/
+
+# 百度 OAuth 密钥本地注入（含真实密钥，永不入 git）
+rust/.cargo/config.toml

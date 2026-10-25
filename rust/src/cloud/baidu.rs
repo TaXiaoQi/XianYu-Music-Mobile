@@ -38,8 +38,17 @@ use super::{biz_err, pre_parse_share, require_cred};
 const APP_ID: &str = "250528";
 const SAVE_DIR: &str = "/apps/弦予音乐";
 // OAuth 凭据（pan.baidu.com/union 注册，与 Dart 侧 baidu_provider 一致）。
-const OAUTH_CLIENT_ID: &str = "__BAIDU_APPKEY__";
-const OAUTH_CLIENT_SECRET: &str = "__BAIDU_APPSECRET__";
+// 构建时注入：本地 gitignored 的 .cargo/config.toml [env] 段提供
+// XIANYU_BAIDU_APPKEY / XIANYU_BAIDU_APPSECRET；未注入（CI/他人克隆）
+// 时保持占位符，密钥永不入 git。
+const OAUTH_CLIENT_ID: &str = match option_env!("XIANYU_BAIDU_APPKEY") {
+	Some(key) => key,
+	None => "__BAIDU_APPKEY__",
+};
+const OAUTH_CLIENT_SECRET: &str = match option_env!("XIANYU_BAIDU_APPSECRET") {
+	Some(secret) => secret,
+	None => "__BAIDU_APPSECRET__",
+};
 // 统一移动 UA：百度网页会话与创建环境 UA 绑定——移动端 WebView（安卓
 // UA）种的 Cookie 用桌面 UA 请求会判定会话无效（/disk/main 302 循环、
 // api/list errno=-6）；实测移动 UA 对 WebView 与电脑浏览器种的 Cookie
