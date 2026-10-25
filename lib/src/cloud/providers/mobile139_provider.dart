@@ -1,14 +1,15 @@
 // 移动云盘（139）provider（smsPassword 自绘短信登录 + webviewCookie
-// 网页登录兜底，双通道）。
+// 网页登录兜底，双通道；收码复用天翼同款公共弹窗）。
 //
 // 自绘短信通道（auth-rebuild 现役 API，2026-10 实测全链）：
 //   ① POST /orchestration/auth-rebuild/key/v1.0/getRsaPublicKey —— 动态
 //      RSA 公钥；前端随机 16 位 AESKey 经 RSA-PKCS1(base64) 放 mcloud-skey
 //      header，服务端按 skey 无状态解密，会话可逐请求重建；
 //   ② 业务 payload JSON → AES-128-ECB/PKCS7(base64) 包 encryptMsg；
-//   ③ 短信登录：getSmsVerifyCode{account,reqType:"1",mode:0} 发码（服务端
-//      回传 random）→ verifySmsCode{account,random,verifyCode,recordID,
-//      reqType:"1",setCookie:0} → data.token；
+//   ③ 短信登录（天翼同构弹窗范式）：getSmsVerifyCode{account,reqType:"1",
+//      mode:0} 自动发码（服务端回传 random）→ 抛 CloudSmsRequiredException
+//      → 公共收码弹窗填码（弹窗内可重发）→ verifySmsCode{account,random,
+//      verifyCode,recordID,reqType:"1",setCookie:0} → data.token；
 //   ④ authorization = "Basic " + base64("pc:手机号:token")，与网页登录
 //      同构，业务（rust 桥）零改动。
 //   公共 headers：mcloud-sign = "ts,msgId,MD5(MD5(b64(encodeURIComponent(
@@ -56,7 +57,6 @@ class Mobile139Provider extends CloudProvider {
   @override
   List<CloudLoginField> get loginFields => const [
         CloudLoginField(key: 'phone', label: '手机号', isPhone: true),
-        CloudLoginField(key: 'smsCode', label: '短信验证码', isSmsCode: true),
       ];
 
   @override
@@ -118,51 +118,47 @@ class Mobile139Provider extends CloudProvider {
   /// 服务端按 skey 无状态解密（实测），验证码校验复用发码同会话最稳。
   static _SmsLoginSession? _pendingSession;
 
+  /// 天翼同构弹窗范式：表单只收手机号，「登录并绑定」自动发码后抛
+  /// [CloudSmsRequiredException]，UI 复用公共收码弹窗（弹窗内可重发，
+  /// 走 [resendDeviceSms]）。
   @override
-  Future<void> sendLoginSms(Map<String, String> fields) async {
+  Future<CloudAccount> loginWithFields(Map<String, String> fields) async {
     final phone = (fields['phone'] ?? '').trim();
     if (phone.length != 11) {
       throw const CloudException('请输入 11 位手机号');
     }
+    HttpLoginGate.instance.ensureAllowed(id);
+    HttpLoginGate.instance.recordAttempt(id);
     final sess = await _openSession();
-    final resp = await _postAuth(
-      sess,
-      'https://yun.139.com/orchestration/auth-rebuild/sms/v1.0/getSmsVerifyCode',
-      '{"account":"$phone","reqType":"1","mode":0}',
-    );
-    // 风控拼图（mode != 0）：免拼图次数用尽，HTTP 侧过不去，提示兜底通道。
-    final mode = '${resp['mode'] ?? '0'}';
-    if (mode != '0') {
-      throw const CloudException('验证码获取过于频繁，请稍后再试或改用网页登录');
+    try {
+      await _sendSms(sess, phone);
+    } on CloudException {
+      HttpLoginGate.instance.recordFailure(id);
+      rethrow;
     }
     _pendingSession = sess
-      ..random = '${resp['random'] ?? ''}'
+      ..random = '${sess.random}'
       ..phone = phone;
+    // 已自动发码并暂存会话；公共收码弹窗内填码后走 submitSmsCode。
+    throw CloudSmsRequiredException(phone, hint: '验证码将发送至 $phone');
   }
 
+  /// 提交短信验证码（公共收码弹窗「确定」后调用）。
   @override
-  Future<CloudAccount> loginWithFields(Map<String, String> fields) async {
+  Future<CloudAccount> submitSmsCode(String username, String smsCode) async {
     final sess = _pendingSession;
-    final code = (fields['smsCode'] ?? '').trim();
-    if (sess == null ||
-        (sess.phone ?? '').isEmpty ||
-        (sess.random ?? '').isEmpty) {
-      throw const CloudException('请先获取短信验证码');
+    if (sess == null || username != sess.phone || (sess.random ?? '').isEmpty) {
+      throw const CloudException('登录会话已失效，请重新登录');
     }
-    final phone = (fields['phone'] ?? '').trim();
-    if (phone != sess.phone) {
-      throw const CloudException('手机号已变更，请重新获取验证码');
-    }
+    final code = smsCode.trim();
     if (code.isEmpty) {
       throw const CloudException('请输入短信验证码');
     }
-    HttpLoginGate.instance.ensureAllowed(id);
-    HttpLoginGate.instance.recordAttempt(id);
     try {
       final resp = await _postAuth(
         sess,
         'https://yun.139.com/orchestration/auth-rebuild/sms/v1.0/verifySmsCode',
-        '{"account":"$phone","random":"${sess.random}","verifyCode":"$code",'
+        '{"account":"$username","random":"${sess.random}","verifyCode":"$code",'
             '"recordID":"","reqType":"1","setCookie":0}',
       );
       final data = (resp['data'] as Map<String, dynamic>?) ?? const {};
@@ -173,12 +169,37 @@ class Mobile139Provider extends CloudProvider {
       _pendingSession = null;
       HttpLoginGate.instance.recordSuccess(id);
       return _accountFromAuth(
-        'Basic ${base64Encode(utf8.encode('pc:$phone:$token'))}',
+        'Basic ${base64Encode(utf8.encode('pc:$username:$token'))}',
       );
     } on CloudException {
       HttpLoginGate.instance.recordFailure(id);
       rethrow;
     }
+  }
+
+  /// 弹窗内重发验证码（「发送验证码」按钮调用）。
+  @override
+  Future<void> resendDeviceSms(String username) async {
+    final sess = _pendingSession;
+    if (sess == null || username != sess.phone) {
+      throw const CloudException('登录会话已失效，请重新登录');
+    }
+    await _sendSms(sess, username);
+  }
+
+  /// 发码：getSmsVerifyCode；回传 random 暂存进会话（verifySmsCode 必须
+  /// 原样回传）。风控拼图（mode != 0）= 免拼图次数用尽，提示走网页兜底。
+  Future<void> _sendSms(_SmsLoginSession sess, String phone) async {
+    final resp = await _postAuth(
+      sess,
+      'https://yun.139.com/orchestration/auth-rebuild/sms/v1.0/getSmsVerifyCode',
+      '{"account":"$phone","reqType":"1","mode":0}',
+    );
+    final mode = '${resp['mode'] ?? '0'}';
+    if (mode != '0') {
+      throw const CloudException('验证码获取过于频繁，请稍后再试或改用网页登录');
+    }
+    sess.random = '${resp['random'] ?? ''}';
   }
 
   /// 建加密会话：动态 RSA 公钥 → 随机 16 位 AESKey → RSA-PKCS1(base64)

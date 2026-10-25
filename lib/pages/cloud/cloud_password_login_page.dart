@@ -180,10 +180,11 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       showXianYuToast(context, tr('绑定成功'));
       _finish();
     } on CloudSmsRequiredException catch (e) {
-      // 风控要求设备短信二次校验：provider 已自动发码，弹窗收码续登。
+      // 风控/主动短信校验：provider 已自动发码，弹窗收码续登（天翼/139
+      // 共用同一弹窗；139 走 e.hint 说明文案）。
       if (!mounted) return;
       setState(() => _submitting = false);
-      await _promptSmsCode(e.username);
+      await _promptSmsCode(e.username, hint: e.hint);
     } catch (e) {
       AppLog.warn('cloud', '${_provider.id} 账密登录失败: $e');
       if (!mounted) return;
@@ -197,7 +198,8 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
 
   /// 验证码输入弹窗（同新建歌单的输入范式）：打开时不自动发码，弹窗内
   /// 「发送验证码」按钮手动触发，60 秒冷却防连点；确认后提交完成绑定。
-  Future<void> _promptSmsCode(String username) async {
+  /// [hint] 覆盖默认「新设备登录」说明行（139 等主动短信登录盘用）。
+  Future<void> _promptSmsCode(String username, {String? hint}) async {
     final controller = TextEditingController();
     // 弹窗内状态放外层闭包：StatefulBuilder 重建不会重置。
     var cooldown = 0;
@@ -248,8 +250,9 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(tr('检测到新设备登录，验证码将发送至 {username}',
-                {'username': username})),
+            Text(hint ??
+                tr('检测到新设备登录，验证码将发送至 {username}',
+                    {'username': username})),
             const SizedBox(height: 12),
             TextField(
               controller: controller,

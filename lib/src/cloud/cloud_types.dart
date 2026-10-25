@@ -303,9 +303,14 @@ class CloudException implements Exception {
   String toString() => message;
 }
 
-/// 登录要求短信二次校验（如天翼 -133 设备校验）。provider 已自动发码并
-/// 暂存会话，UI 弹窗收码后调 [CloudProvider.submitSmsCode] 完成绑定。
+/// 登录要求短信二次校验（如天翼 -133 设备校验、139 主动短信登录）。
+/// provider 发码并暂存会话，UI 弹窗收码后调 [CloudProvider.submitSmsCode]
+/// 完成绑定。[hint] 为弹窗说明文案（不传用「新设备登录」默认文案）。
 class CloudSmsRequiredException extends CloudException {
-  const CloudSmsRequiredException(this.username) : super('需要短信验证');
+  const CloudSmsRequiredException(this.username, {this.hint})
+      : super('需要短信验证');
   final String username;
+
+  /// 弹窗说明行（部分盘语义不同，如 139 是主动短信登录）。
+  final String? hint;
 }
