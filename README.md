@@ -125,11 +125,12 @@ git clone https://github.com/TaXiaoQi/XianYu-Music-Mobile.git
 cd XianYu-Music-Mobile
 flutter pub get
 
-flutter run          # Android 调试（或 .\scripts\dev.ps1：同步版本号 + 编 Rust + run）
+flutter dev          # Android 调试（= flutter run：同步版本号 + 预生成 Rust 绑定与 .so + run，绑定更新不再断一次）
+flutter run          # 同上（自动经 scripts\dev.ps1 预生成后启动）
 flutter hap          # 鸿蒙调试运行
 ```
 
-> `flutter run` / `flutter build` 均自动检测并编译 Rust（`XIANMU_SKIP_RUST=1` 跳过）；改 Rust API 时首次构建会中止，重跑一次即可。热重载按 `r`，热重启按 `R`。
+> `flutter dev` / `flutter run`（Android）/ `flutter hap` / `flutter build` 均自动检测并编译 Rust（`XIANMU_SKIP_RUST=1` 跳过）；Rust 绑定更新随当轮构建直接生效，无需重跑。热重载按 `r`，热重启按 `R`。
 
 ### 构建各平台安装包
 
