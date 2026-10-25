@@ -58,8 +58,16 @@ class _CloudWebviewFieldsLoginPageState
   bool _pageLoaded = false;
   String _hint = '';
 
-  final _accountCtrl = TextEditingController();
-  final _passwordCtrl = TextEditingController();
+  // 表单字段按 provider.loginFields 泛化（UC/夸克=账密两字段；迅雷=
+  // 手机号 + 服务密码选填切换）。首个非 obscure 字段为账号、obscure
+  // 字段为密码，凭据经 webviewFieldsScript(account, password) 传入。
+  final Map<String, TextEditingController> _ctrls = {};
+  String? _accountKey;
+  String? _passwordKey;
+
+  /// 已展开的 optional 字段（多通道二选一切换态，如迅雷服务密码）。
+  final Set<String> _expandedFields = {};
+
   bool _obscure = true;
   bool _rememberPwd = false;
 
@@ -93,39 +101,62 @@ class _CloudWebviewFieldsLoginPageState
     _session = CloudWebviewCaptureSession(
       _provider.captureRule ?? const CloudCaptureRule(),
     );
+    for (final f in _provider.loginFields) {
+      _ctrls[f.key] = TextEditingController();
+      if (f.obscure) {
+        _passwordKey ??= f.key;
+      } else if (!f.isSmsCode) {
+        _accountKey ??= f.key;
+      }
+    }
     _loadLoginHint();
   }
 
   @override
   void dispose() {
-    _accountCtrl.dispose();
-    _passwordCtrl.dispose();
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
     _session.dispose();
     super.dispose();
   }
 
-  /// 回填上次登录的账号/密码（与自绘账密登录页同款语义：账号恒回填，
-  /// 密码仅勾选过「记住密码」时回填并同步勾选态）。
+  /// 回填上次登录的账号/密码（自绘账密登录页同款语义：账号恒回填，
+  /// 密码仅勾选过「记住密码」时回填并同步勾选态；回填了密码则自动
+  /// 展开密码通道）。
   Future<void> _loadLoginHint() async {
     final hint = await CloudLoginHintStore.instance.hintFor(_provider.id);
     if (hint == null || !mounted) return;
     setState(() {
-      if (hint.account.isNotEmpty) _accountCtrl.text = hint.account;
-      if (hint.rememberPassword && hint.password.isNotEmpty) {
-        _passwordCtrl.text = hint.password;
+      final accountCtrl = _accountKey == null ? null : _ctrls[_accountKey];
+      if (hint.account.isNotEmpty &&
+          accountCtrl != null &&
+          accountCtrl.text.isEmpty) {
+        accountCtrl.text = hint.account;
+      }
+      final pwdCtrl = _passwordKey == null ? null : _ctrls[_passwordKey];
+      if (hint.rememberPassword && pwdCtrl != null && pwdCtrl.text.isEmpty) {
+        pwdCtrl.text = hint.password;
         _rememberPwd = true;
+        _expandedFields.add(_passwordKey!);
       }
     });
   }
 
   Future<void> _saveLoginHint() async {
+    final accountKey = _accountKey;
+    if (accountKey == null) return;
     await CloudLoginHintStore.instance.save(
       _provider.id,
-      _accountCtrl.text.trim(),
-      _passwordCtrl.text,
+      _ctrls[accountKey]!.text.trim(),
+      _passwordKey == null ? '' : _ctrls[_passwordKey]!.text,
       _rememberPwd,
     );
   }
+
+  /// optional 字段是否处于折叠态（switchLabel 为空的不折叠）。
+  bool _fieldCollapsed(CloudLoginField f) =>
+      f.optional && f.switchLabel != null && !_expandedFields.contains(f.key);
 
   // ── WebView 执行器 ────────────────────────────────────────
 
@@ -174,10 +205,10 @@ class _CloudWebviewFieldsLoginPageState
 
     final u = Uri.tryParse(url);
     if (u != null && _provider.isWebviewFieldsLoginPage(u)) {
-      // CAS 页就绪：注入执行脚本（填表 + 等盾 + 提交 + 回传 hook）。
+      // 执行页就绪：注入执行脚本（填表 + 等验证 + 提交 + 回传 hook）。
       final script = _provider.webviewFieldsScript(
-        _accountCtrl.text.trim(),
-        _passwordCtrl.text,
+        _accountKey == null ? '' : _ctrls[_accountKey]!.text.trim(),
+        _passwordKey == null ? '' : _ctrls[_passwordKey]!.text,
       );
       await controller.runJavaScript(script).catchError((_) {});
       if (mounted) {
@@ -188,7 +219,16 @@ class _CloudWebviewFieldsLoginPageState
     final post = _provider.captureRule?.postLoginUrl;
     final postHost =
         post == null ? null : Uri.tryParse(post)?.host;
-    if (postHost != null && postHost == (u?.host ?? '') && postHost.isNotEmpty) {
+    // 排除执行页自身（同 host 不同 path 的盘，如迅雷 /login/ = 主站域）。
+    final loginUri = Uri.tryParse(_provider.webviewFieldsLoginUrl);
+    final isExecPage = loginUri != null &&
+        u != null &&
+        u.host == loginUri.host &&
+        u.path == loginUri.path;
+    if (postHost != null &&
+        postHost.isNotEmpty &&
+        postHost == (u?.host ?? '') &&
+        !isExecPage) {
       // 主站落地页：__puus 由 init 请求数秒后才签发，稳定性轮询收尾。
       await _postLoginCapture();
       return;
@@ -342,7 +382,13 @@ class _CloudWebviewFieldsLoginPageState
 
   void _submit() {
     if (_submitting) return;
-    if (_accountCtrl.text.trim().isEmpty || _passwordCtrl.text.isEmpty) {
+    // 必填字段非空即可提交：optional 字段折叠时不校验（留空走另一
+    // 通道），展开即视为选择该通道、参与必填校验。
+    final requiredKeys = {
+      for (final f in _provider.loginFields)
+        if (!f.optional || _expandedFields.contains(f.key)) f.key,
+    };
+    if (requiredKeys.any((k) => (_ctrls[k]?.text.trim() ?? '').isEmpty)) {
       showXianYuToast(context, tr('请填写完整'));
       return;
     }
@@ -388,8 +434,9 @@ class _CloudWebviewFieldsLoginPageState
         : _buildFieldsForm(scheme);
   }
 
-  /// 账密表单（天翼同款）：公共 kit 输入框（前图标 + 填充底色 +
-  /// 16 圆角），密码框小眼睛切换明文，「记住密码」勾选行带说明文案。
+  /// 账密表单（天翼同款公共 kit，字段按 provider.loginFields 泛化）：
+  /// optional 字段折叠为切换入口（自绘账密登录页同款交互），展开后
+  /// 参与必填校验并可切回。
   Widget _buildFieldsForm(ColorScheme scheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -399,24 +446,49 @@ class _CloudWebviewFieldsLoginPageState
               {'name': _provider.displayName}),
         ),
         const SizedBox(height: 20),
-        CloudLoginFieldBox(
-          _accountCtrl,
-          label: tr('手机号 / 邮箱'),
-          icon: Icons.person_outline,
-          keyboard: TextInputType.emailAddress,
-        ),
-        CloudLoginFieldBox(
-          _passwordCtrl,
-          label: tr('密码'),
-          icon: Icons.lock_outline,
-          obscure: _obscure,
-          keyboard: TextInputType.visiblePassword,
-          suffixIcon: CloudLoginEyeToggle(
-            obscured: _obscure,
-            onToggle: () => setState(() => _obscure = !_obscure),
-          ),
-          onSubmitted: _obscure ? (_) => _submit() : null,
-        ),
+        for (final f in _provider.loginFields)
+          if (_fieldCollapsed(f))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 26),
+              child: TextButton(
+                onPressed: () => setState(() => _expandedFields.add(f.key)),
+                child: Text(tr(f.switchLabel!)),
+              ),
+            )
+          else ...[
+            CloudLoginFieldBox(
+              _ctrls[f.key]!,
+              label: tr(f.label),
+              icon: f.obscure
+                  ? Icons.lock_outline
+                  : (f.isPhone ? Icons.smartphone : Icons.person_outline),
+              obscure: f.obscure ? _obscure : false,
+              keyboard: f.isPhone
+                  ? TextInputType.phone
+                  : (f.obscure
+                      ? TextInputType.visiblePassword
+                      : TextInputType.emailAddress),
+              suffixIcon: f.obscure
+                  ? CloudLoginEyeToggle(
+                      obscured: _obscure,
+                      onToggle: () => setState(() => _obscure = !_obscure),
+                    )
+                  : null,
+              onSubmitted:
+                  f.obscure && _obscure ? (_) => _submit() : null,
+            ),
+            if (f.collapseLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 26),
+                child: TextButton(
+                  onPressed: () {
+                    _ctrls[f.key]!.clear();
+                    setState(() => _expandedFields.remove(f.key));
+                  },
+                  child: Text(tr(f.collapseLabel!)),
+                ),
+              ),
+          ],
         CloudLoginRememberRow(
           value: _rememberPwd,
           onChanged: (v) => setState(() => _rememberPwd = v),
@@ -428,7 +500,7 @@ class _CloudWebviewFieldsLoginPageState
         ),
         const SizedBox(height: 14),
         Text(
-          tr('提交后将自动完成安全验证；若出现滑块请按提示拖动'),
+          tr('提交后自动填入官方登录页；若出现滑块请按提示拖动'),
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: 12,
