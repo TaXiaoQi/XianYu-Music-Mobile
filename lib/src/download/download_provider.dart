@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -637,13 +638,25 @@ class DownloadManager extends StateNotifier<DownloadState> {
     Map<String, String>? urlHeaders;
     String? ekey;
     String? cek;
+    // 劣质插件一轮全组超时就要 8~30s，顺着音质梯子串行拖几分钟，期间
+    // 网络与插件引擎被占满，整机表现为「下载时格外卡顿」。这里加
+    // 单候选 20s + 整曲 90s 硬上限，与播放链路 8s 超时同一套防御。
+    final resolveDeadline = DateTime.now().add(const Duration(seconds: 90));
     for (final q in _qualityCandidates(
         task.quality, settings?.downloadQualityFallbackBehavior ?? 'lower')) {
+      if (DateTime.now().isAfter(resolveDeadline)) {
+        AppLog.warn('download', '直链解析超预算（90s）提前终止: ${task.title}');
+        break;
+      }
       ResolvedMediaUrl? tried;
       try {
-        tried = parsed.containsKey('pluginId')
-            ? await _resolvePluginUrl(parsed, q)
-            : await _resolveLxUrl(songJson, q);
+        tried = await (parsed.containsKey('pluginId')
+                ? _resolvePluginUrl(parsed, q)
+                : _resolveLxUrl(songJson, q))
+            .timeout(const Duration(seconds: 20));
+      } on TimeoutException {
+        AppLog.warn('download', '直链解析单候选超时（20s）跳过 $q: ${task.title}');
+        continue;
       } on PluginEngineException catch (e) {
         if (PluginEngine.isAuthFailureMessage(e.message)) rethrow;
         continue;
