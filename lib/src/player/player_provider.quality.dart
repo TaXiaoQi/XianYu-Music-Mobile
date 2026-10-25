@@ -199,8 +199,16 @@ extension PlayerNotifierQuality on PlayerNotifier {
     if (quality == state.currentQuality) return true;
     final prevOverride = _sessionQualityOverride;
     _sessionQualityOverride = quality;
+    // 目标档预热解析不出可用直链（预检不可播/全链路超时）时，_playAt
+    // 只会回落到当前档并整曲重启——升档必败还重播一遍。直接中止，
+    // 保持现状播放（反馈：一放这首歌就卡）。
+    final prewarm = await _prewarmQuality(item, quality);
+    if (prewarm == null || prewarm.url.isEmpty) {
+      _sessionQualityOverride = prevOverride;
+      AppLog.info('quality', '[quality] 目标档 $quality 不可达，跳过重播');
+      return false;
+    }
     try {
-      await _prewarmQuality(item, quality);
       final resumePos = state.position;
       await _playAt(
         state.queueIndex,
@@ -228,9 +236,10 @@ extension PlayerNotifierQuality on PlayerNotifier {
     }
   }
 
-  Future<void> _prewarmQuality(QueueItem item, String quality) async {
+  Future<QualityProbeResult?> _prewarmQuality(
+      QueueItem item, String quality) async {
     final json = item.onlineSongJson;
-    if (json == null || json.isEmpty) return;
+    if (json == null || json.isEmpty) return null;
     QualityProbeResult? resolved;
     try {
       final songJson = jsonDecode(json) as Map<String, dynamic>;
@@ -245,11 +254,11 @@ extension PlayerNotifierQuality on PlayerNotifier {
     }
     final res = resolved;
     if (res == null || res.url.isEmpty || res.ekey != null || res.cek != null) {
-      return;
+      return res;
     }
     try {
       final clean = sanitizeMediaUrl(res.url);
-      if (clean.isEmpty || !clean.startsWith('http')) return;
+      if (clean.isEmpty || !clean.startsWith('http')) return null;
       final h = await withBilibiliStreamCookie(
             clean,
             normalizeMediaRequestHeaders(clean, res.headers),
@@ -263,6 +272,7 @@ extension PlayerNotifierQuality on PlayerNotifier {
     } catch (e) {
       AppLog.debug('player', '流缓存预热失败: $e');
     }
+    return res;
   }
 
   Future<List<String>> qualityOptions() =>
