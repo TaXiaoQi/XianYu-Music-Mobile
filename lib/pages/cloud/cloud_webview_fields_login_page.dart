@@ -11,6 +11,7 @@ import '../../src/cloud/cloud_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/cloud/cloud_types.dart';
 import '../../src/cloud/providers/webview_login_support.dart';
+import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
 import '../../src/navigation/shell.dart'
@@ -350,116 +351,245 @@ class _CloudWebviewFieldsLoginPageState
     _startWebviewFlow();
   }
 
-  // ── UI ────────────────────────────────────────────────────
+  // ── UI（样式对齐天翼账密登录页）──────────────────────────
 
   @override
   Widget build(BuildContext context) {
-    final running = _stage == _Stage.running;
-    final body = Column(
-      children: [
-        if (!widget.embedded)
-          GlassTopBar(
-            leading: const BackButton(),
-            title: Text(_provider.displayName),
-            actions: [
-              PressableScale(
-                pressScale: 0.92,
-                child: TextButton(
-                  onPressed: () =>
-                      context.push('/cloud/webview-login/${_provider.id}'),
-                  child: Text(tr('网页登录')),
-                ),
-              ),
-            ],
+    final scheme = Theme.of(context).colorScheme;
+    final landscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    // 横屏设置面板嵌入：整块表单收进玻璃胶囊卡片（与天翼账密登录页
+    // 同款材质），标题由统一带 head 位承载。
+    if (widget.embedded) {
+      return ListView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          landscapePanelBand(context, ref) + 12,
+          16,
+          24 + MediaQuery.of(context).padding.bottom,
+        ),
+        children: [
+          GlassBand(
+            // 独立回读：宿主左列带先画，同组会复用其制备纹理
+            sharedNavGroup: false,
+            borderRadius: BorderRadius.circular(24),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: _buildBody(scheme),
+            ),
           ),
-        Expanded(
-          child: running ? _buildRunner() : _buildForm(),
+        ],
+      );
+    }
+    return Scaffold(
+      backgroundColor: appScaffoldBackground(context, ref),
+      resizeToAvoidBottomInset: false,
+      body: Stack(
+        children: [
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              // 横屏表单收窄居中（登录表单口径），竖屏照旧全幅
+              constraints: BoxConstraints(
+                maxWidth: landscape ? 560 : double.infinity,
+              ),
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  24,
+                  GlassTopBar.height(context) + 24,
+                  24,
+                  40 + MediaQuery.of(context).padding.bottom,
+                ),
+                children: [
+                  _buildBody(scheme),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: GlassTopBar(
+              leadingIndent: MediaQuery.paddingOf(context).left,
+              leading: const BackButton(),
+              title: Text(_provider.displayName),
+              actions: [
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton(
+                    onPressed: () =>
+                        context.push('/cloud/webview-login/${_provider.id}'),
+                    child: Text(tr('网页登录')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 主体：表单阶段 = 说明文案 + 账密表单；执行阶段 = WebView 盾执行器。
+  Widget _buildBody(ColorScheme scheme) {
+    return _stage == _Stage.running
+        ? _buildRunner()
+        : _buildFieldsForm(scheme);
+  }
+
+  /// 账密表单（天翼同款）：弦予号登录风格输入框（前图标 + 填充底色 +
+  /// 16 圆角），密码框小眼睛切换明文，「记住密码」勾选行带说明文案。
+  Widget _buildFieldsForm(ColorScheme scheme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          tr('登录{name}后即可播放网盘内的音乐', {'name': _provider.displayName}),
+          style: TextStyle(
+            fontSize: 13,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _fieldBox(
+          _accountCtrl,
+          label: tr('手机号 / 邮箱'),
+          icon: Icons.person_outline,
+          keyboard: TextInputType.emailAddress,
+        ),
+        _fieldBox(
+          _passwordCtrl,
+          label: tr('密码'),
+          icon: Icons.lock_outline,
+          obscure: _obscure,
+          keyboard: TextInputType.visiblePassword,
+          suffixIcon: PressableScale(
+            pressScale: 0.88,
+            child: IconButton(
+              icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+              onPressed: () => setState(() => _obscure = !_obscure),
+            ),
+          ),
+        ),
+        _rememberRow(scheme),
+        _submitButton(tr('登录并绑定'), _submit),
+        const SizedBox(height: 14),
+        Text(
+          tr('提交后将自动完成安全验证；若出现滑块请按提示拖动'),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
         ),
       ],
     );
-    if (widget.embedded) return body;
-    return Scaffold(body: body);
   }
 
-  Widget _buildForm() {
+  /// 弦予号登录同款输入框：填充底色、无默认边框、聚焦主题色描边。
+  Widget _fieldBox(
+    TextEditingController ctrl, {
+    required String label,
+    IconData? icon,
+    bool obscure = false,
+    TextInputType? keyboard,
+    Widget? suffixIcon,
+  }) {
     final scheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Padding(
+      // 26px：给浮出的 label 留出上探空间，避免与上方内容视觉重叠
+      padding: const EdgeInsets.only(bottom: 26),
+      child: TextField(
+        controller: ctrl,
+        obscureText: obscure,
+        keyboardType: keyboard,
+        autocorrect: false,
+        enableSuggestions: !obscure,
+        onSubmitted: obscure ? (_) => _submit() : null,
+        decoration: InputDecoration(
+          labelText: label,
+          filled: true,
+          fillColor: scheme.onSurface.withValues(alpha: 0.05),
+          prefixIcon: icon == null
+              ? null
+              : Icon(icon, size: 20, color: scheme.onSurfaceVariant),
+          suffixIcon: suffixIcon,
+          border: _inputBorder(),
+          enabledBorder: _inputBorder(),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide(color: scheme.primary, width: 1.5),
+          ),
+        ),
+      ),
+    );
+  }
+
+  OutlineInputBorder _inputBorder() {
+    return OutlineInputBorder(
+      borderRadius: BorderRadius.circular(16),
+      borderSide: BorderSide.none,
+    );
+  }
+
+  /// 「记住密码」勾选行（天翼同款）：账号默认记住，勾选后密码一并
+  /// 保存到本机，下次会话失效重登自动回填。
+  Widget _rememberRow(ColorScheme scheme) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
         children: [
-          Text(
-            tr('{name} 账号登录', {'name': _provider.displayName}),
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            tr('账号密码登录，提交后自动完成安全验证'),
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
-          ),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _accountCtrl,
-            keyboardType: TextInputType.emailAddress,
-            autofillHints: const [AutofillHints.username],
-            decoration: InputDecoration(
-              labelText: tr('手机号 / 邮箱'),
-              prefixIcon: const Icon(Icons.person_outline),
+          Transform.translate(
+            offset: const Offset(-6, 0),
+            child: Checkbox(
+              value: _rememberPwd,
+              activeColor: scheme.primary,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              onChanged: (v) => setState(() => _rememberPwd = v ?? false),
             ),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _passwordCtrl,
-            obscureText: _obscure,
-            autofillHints: const [AutofillHints.password],
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              labelText: tr('密码'),
-              prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                onPressed: () => setState(() => _obscure = !_obscure),
-                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+          Text(
+            tr('记住密码'),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              tr('账号默认记住，勾选后密码也保存在本机'),
+              style: TextStyle(
+                fontSize: 11,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              SizedBox(
-                width: 24,
-                height: 24,
-                child: Checkbox(
-                  value: _rememberPwd,
-                  onChanged: (v) =>
-                      setState(() => _rememberPwd = v ?? false),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Text(tr('记住密码'),
-                  style: Theme.of(context).textTheme.bodySmall),
-            ],
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _submitting ? null : _submit,
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
-            ),
-            child: Text(tr('登录')),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            tr('提交后将自动完成安全验证；若出现滑块请按提示拖动'),
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 弦予号登录同款提交按钮：通栏圆角 + 按压缩放，提交中转圈。
+  Widget _submitButton(String label, VoidCallback onPressed) {
+    return PressableScale(
+      pressScale: 0.92,
+      child: FilledButton(
+        onPressed: _submitting ? null : onPressed,
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+        child: _submitting
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(
+                label,
+                style:
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }
@@ -467,30 +597,28 @@ class _CloudWebviewFieldsLoginPageState
   /// 执行阶段：WebView 可见（滑块交互需要）+ 顶部状态条 + 返回修改。
   Widget _buildRunner() {
     final controller = _controller;
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          padding: const EdgeInsets.only(bottom: 8),
           child: Row(
             children: [
+              SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: scheme.primary,
+                ),
+              ),
+              const SizedBox(width: 10),
               Expanded(
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        _hint,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  _hint,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
               PressableScale(
@@ -503,12 +631,17 @@ class _CloudWebviewFieldsLoginPageState
             ],
           ),
         ),
-        Expanded(
+        AspectRatio(
+          // CAS 页为 PC 排版，横竖屏统一 4:3 视口保滑块可点区域
+          aspectRatio: 0.9,
           child: controller == null
               ? const Center(child: CircularProgressIndicator())
               : Stack(
                   children: [
-                    WebViewWidget(controller: controller),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: WebViewWidget(controller: controller),
+                    ),
                     if (!_pageLoaded)
                       const Center(child: CircularProgressIndicator()),
                     if (_finishing)
