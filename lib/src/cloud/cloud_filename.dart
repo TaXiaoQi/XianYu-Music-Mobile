@@ -35,6 +35,15 @@ const _kTagKeywords = <String>[
 /// 中英文括号包裹的分组：【…】[…]（…）（…）
 final RegExp _kBracketGroup = RegExp(r'[【\[\(（][^\】\]\)）]*[】\]\)）]');
 
+/// 前导曲目序号（01. / 02 - / 03_ / 01、）——网盘命名常见「01. 歌名 - 歌手」，
+/// 序号残留会污染歌名与排序（声影同款正则）。
+final RegExp _kLeadingIndex = RegExp(r'^\d{1,3}\s*[.\-–—－、_]\s*');
+
+/// 歌手段的合作标注括号（feat/ft/featuring/with，不区分大小写）——展示与
+/// 搜索匹配用主歌手名即可，完整标注仍在原文件名可查（声影同款）。
+final RegExp _kFeatGroup =
+    RegExp(r'\s*[（(][^）)]*(?:feat|ft|featuring|with)[^）)]*[）)]', caseSensitive: false);
+
 /// 去扩展名与音质/来源标签（括号包裹形式整体剔除）。
 String cleanCloudFileName(String raw) {
   var name = raw.trim();
@@ -59,18 +68,23 @@ class CloudNameParts {
   const CloudNameParts({required this.title, this.artist});
 }
 
-/// 文件名 → {artist, title}。分隔符优先级：' - ' > '–' > '-' > '_'。
+/// 文件名 → {artist, title}。分隔符优先级：' - ' > '–' > '—' > '－' > '-' > '_'。
 /// 网盘音频文件名拆歌名/歌手：主流命名是「歌名 - 歌手」（天天-陶喆、
 /// 7 Years-Lukas Graham），两段默认段1=歌名、段2=歌手；三段以上余段
-/// 并回歌手。单段整体作歌名。
+/// 并回歌手。单段整体作歌名。歌名段剥离前导曲目序号，歌手段剔除
+/// feat 合作标注括号、纯数字段不算歌手（声影同款）。
 CloudNameParts parseCloudFileName(String raw) {
-  final name = cleanCloudFileName(raw);
+  final name = cleanCloudFileName(raw).replaceFirst(_kLeadingIndex, '').trim();
   if (name.isEmpty) return CloudNameParts(title: raw);
   List<String> segments;
   if (name.contains(' - ')) {
     segments = name.split(' - ');
   } else if (name.contains('–')) {
     segments = name.split('–');
+  } else if (name.contains('—')) {
+    segments = name.split('—');
+  } else if (name.contains('－')) {
+    segments = name.split('－');
   } else if (name.contains('-')) {
     segments = name.split('-');
   } else if (name.contains('_')) {
@@ -80,8 +94,10 @@ CloudNameParts parseCloudFileName(String raw) {
   }
   if (segments.length < 2) return CloudNameParts(title: name);
   final s1 = segments.first.trim();
-  final s2 = segments.sublist(1).join(' - ').trim();
+  var s2 = segments.sublist(1).join(' - ').trim();
+  if (s2.isNotEmpty) s2 = s2.replaceAllMapped(_kFeatGroup, (_) => '').trim();
+  final artistValid = s2.isNotEmpty && !RegExp(r'^\d+$').hasMatch(s2);
   if (s1.isEmpty) return CloudNameParts(title: s2);
-  if (s2.isEmpty) return CloudNameParts(title: s1);
+  if (!artistValid) return CloudNameParts(title: s1);
   return CloudNameParts(title: s1, artist: s2);
 }
