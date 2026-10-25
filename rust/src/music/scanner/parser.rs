@@ -251,11 +251,35 @@ fn parse_song_inner(
 		bitrate = derive_bitrate_kbps(file_size, duration);
 	}
 	if title.trim().is_empty() {
-		title = Path::new(semantic_name)
-			.file_stem()
+		// 无 tag 回退与远程/网盘线同构：文件名反解「歌名 - 歌手」（公共
+		// filename_meta，含前导序号剥离、feat 清理、纯数字段判无效），
+		// 歌手仅在 tag 缺失时回填；拆不中时也剥掉序号再当歌名。
+		let file_name = Path::new(semantic_name)
+			.file_name()
 			.map(|value| value.to_string_lossy().into_owned())
-			.filter(|value| !value.is_empty())
 			.unwrap_or_else(|| semantic_name.to_string());
+		match crate::filename_meta::split_filename_title_artist(&file_name) {
+			Some((parsed_title, parsed_artist)) => {
+				title = parsed_title;
+				if artist.trim().is_empty() || artist == super::UNKNOWN_ARTIST {
+					artist = parsed_artist;
+				}
+			}
+			None => {
+				let stripped = crate::filename_meta::strip_leading_index(
+					&crate::filename_meta::title_from_name(&file_name),
+				);
+				if !stripped.is_empty() {
+					title = stripped;
+				} else {
+					title = Path::new(semantic_name)
+						.file_stem()
+						.map(|value| value.to_string_lossy().into_owned())
+						.filter(|value| !value.is_empty())
+						.unwrap_or_else(|| semantic_name.to_string());
+				}
+			}
+		}
 	}
 	if album_artist.trim().is_empty() {
 		album_artist = artist.clone();

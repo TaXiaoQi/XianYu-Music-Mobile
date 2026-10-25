@@ -179,7 +179,7 @@ fn artist_split_regex() -> &'static Regex {
 	REGEX.get_or_init(|| Regex::new(r"(?i)[;,&/、]|feat\.|\s+with\s+").expect("artist split regex"))
 }
 
-pub(super) fn split_artist_names(artist: &str) -> Vec<String> {
+pub(crate) fn split_artist_names(artist: &str) -> Vec<String> {
 	let mut seen = HashSet::new();
 	let mut result = Vec::new();
 
