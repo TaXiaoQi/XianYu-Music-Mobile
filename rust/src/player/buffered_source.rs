@@ -37,13 +37,18 @@ pub const BLOCK_SAMPLES: usize = 1024;
 /// 足以吸收数百毫秒的解码抖动 / 网络停顿 / 系统调度抢占。
 const CHANNEL_BLOCKS: usize = 64usize;
 
-/// 后台线程满载时的退避间隔。短到不影响 seek 响应，长到不空转浪费 CPU。
-const BACKOFF: Duration = Duration::from_micros(400_u64);
+/// 后台线程满载时的退避间隔。通道满/EOF 等命令时按此节奏轮询：
+/// 4ms 让稳态唤醒频率从 2500 次/s 降到 250 次/s（鸿蒙低端机上
+/// 400µs 自旋足以拖垮整机 UI 调度），seek/stop 响应仍 <5ms 无感知。
+const BACKOFF: Duration = Duration::from_millis(4_u64);
 
 #[cfg(test)] // 实现
 const CONSUMER_WAIT_TIMEOUT: Duration = Duration::from_millis(500);
 #[cfg(not(test))]
-const CONSUMER_WAIT_TIMEOUT: Duration = BACKOFF;
+/// 消费者等块超时：recv_timeout 是「最长等待」，通道来块立即返回。
+/// 20ms 上限只在真饥饿时生效——把超时静音块（4KB 分配+DSP+ring 锁）
+/// 的频率从 2500 次/s 压到 50 次/s，避免分配器锁竞争拖累全局。
+const CONSUMER_WAIT_TIMEOUT: Duration = Duration::from_millis(20_u64);
 
 // Windows 线程优先级 FFI：提升生产者线程优先级，防止系统负载下被抢占导致
 // 744ms 缓冲排空 → 静音卡顿。生产者只需略高于普通优先级即可在系统繁忙时

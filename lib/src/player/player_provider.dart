@@ -227,6 +227,8 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   DateTime _lastPosPersist = DateTime.fromMillisecondsSinceEpoch(0);
   int _skipDepth = 0;
   Timer? _stallTimer;
+  /// 媒体会话签名（见 _syncToSystemMediaSession）：元数据未变化时短路下发
+  String _mediaSessionSig = '';
   double _stallLastPos = -1;
   int _stallTicks = 0;
   final Map<String, DateTime> _failedOnlineSources = {};
@@ -1582,23 +1584,23 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (_ref.read(dlnaCastProvider).isCasting) {
       await _ref.read(dlnaCastProvider.notifier).castSeek(secs);
       state = state.copyWith(position: secs);
-      _syncToSystemMediaSession();
+      _syncToSystemMediaSession(force: true);
       return;
     }
     if (_restoredOnlinePending != null) {
       _restoredOnlinePending = secs;
       state = state.copyWith(position: secs);
-      _syncToSystemMediaSession();
+      _syncToSystemMediaSession(force: true);
       return;
     }
     if (state.usbExclusive || state.dspActive) {
       await seekUsbExclusive(timeSecs: secs, isPlaying: state.isPlaying);
       state = state.copyWith(position: secs);
-      _syncToSystemMediaSession();
+      _syncToSystemMediaSession(force: true);
       return;
     }
     await _player.seek(Duration(milliseconds: (secs * 1000).round()));
-    _syncToSystemMediaSession();
+    _syncToSystemMediaSession(force: true);
   }
 
   Future<void> next() async {

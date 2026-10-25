@@ -1,44 +1,61 @@
 part of 'player_provider.dart';
 
 extension PlayerNotifierSession on PlayerNotifier {
-  void _syncToSystemMediaSession() {
+  /// 媒体会话内容签名：元数据没变就绝不下发。
+  /// 管线轮询（250ms）曾把本方法当心跳用，每轮全量 setMediaItem +
+  /// syncQueue（整队列 JSON）+ setState + startContinuousTask 全跑在
+  /// 平台主线程，hilog 实测 AVSession napi 失败风暴（每轮 4 条错误日志），
+  /// 鸿蒙上主线程 100% 满转、整机 UI 巨慢。seek 用 [force] 位置校准。
+  String? _mediaSessionSignature() {
     final cur = state.current;
-    if (cur != null) {
-      var item = cur;
-      if (!cur.isOnline && cur.coverUrl?.isNotEmpty != true) {
-        final hd = coverMaterializer.hdCoverCache[cur.path];
-        if (hd != null && hd.isNotEmpty && File(hd).existsSync()) {
-          // 内嵌原图（高清）：锁屏/通知放大展示不糊。
-          item = cur.copyWith(coverPath: hd);
-        } else {
-          final cp = cur.coverPath;
-          final coverPathLive = cp != null &&
-              cp.isNotEmpty &&
-              !cp.startsWith('http') &&
-              File(cp).existsSync();
-          if (!coverPathLive) {
-            final cached = coverMaterializer.notifCoverCache[cur.path];
-            if (cached != null && cached.isNotEmpty) {
-              item = cur.copyWith(coverPath: cached);
-            }
+    if (cur == null) return null;
+    final fav = _ref.read(favoritesProvider).contains(cur.path);
+    return '${cur.path}|${cur.coverPath}|${cur.coverUrl}'
+        '|${state.duration}|${state.isPlaying}|${state.queueIndex}'
+        '|${state.playMode}|${state.queue.length}|$fav';
+  }
+
+  void _syncToSystemMediaSession({bool force = false}) {
+    final sig = _mediaSessionSignature();
+    if (sig == null) return;
+    if (!force && sig == _mediaSessionSig) return;
+    _mediaSessionSig = sig;
+    final cur = state.current;
+    if (cur == null) return;
+    var item = cur;
+    if (!cur.isOnline && cur.coverUrl?.isNotEmpty != true) {
+      final hd = coverMaterializer.hdCoverCache[cur.path];
+      if (hd != null && hd.isNotEmpty && File(hd).existsSync()) {
+        // 内嵌原图（高清）：锁屏/通知放大展示不糊。
+        item = cur.copyWith(coverPath: hd);
+      } else {
+        final cp = cur.coverPath;
+        final coverPathLive = cp != null &&
+            cp.isNotEmpty &&
+            !cp.startsWith('http') &&
+            File(cp).existsSync();
+        if (!coverPathLive) {
+          final cached = coverMaterializer.notifCoverCache[cur.path];
+          if (cached != null && cached.isNotEmpty) {
+            item = cur.copyWith(coverPath: cached);
           }
-          // 缩略图先行占位，同时异步提取内嵌原图，完成后重推。
-          unawaited(_materializeLocalHdCover(cur));
         }
+        // 缩略图先行占位，同时异步提取内嵌原图，完成后重推。
+        unawaited(_materializeLocalHdCover(cur));
       }
-      audioHandler?.syncMediaItem(item, state.duration);
-      if (state.queue.isNotEmpty) {
-        audioHandler?.syncQueue(state.queue, coverMaterializer.notifCoverCache);
-      }
-      audioHandler?.syncPlaybackState(
-        isPlaying: state.isPlaying,
-        positionSecs: state.position,
-        durationSecs: state.duration,
-        isFavorite: _ref.read(favoritesProvider).contains(cur.path),
-        playMode: state.playMode,
-        queueIndex: state.queueIndex,
-      );
     }
+    audioHandler?.syncMediaItem(item, state.duration);
+    if (state.queue.isNotEmpty) {
+      audioHandler?.syncQueue(state.queue, coverMaterializer.notifCoverCache);
+    }
+    audioHandler?.syncPlaybackState(
+      isPlaying: state.isPlaying,
+      positionSecs: state.position,
+      durationSecs: state.duration,
+      isFavorite: _ref.read(favoritesProvider).contains(cur.path),
+      playMode: state.playMode,
+      queueIndex: state.queueIndex,
+    );
   }
 
   Future<void> _resolveNotificationCover(QueueItem item) async {
