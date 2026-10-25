@@ -3,6 +3,16 @@ part of 'library_folder_page.dart';
 // ignore_for_file: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
 
 extension _LibraryFolderPageActions on _LibraryFolderPageState {
+  /// 原生通道异常转可读文案：PlatformException 只保留 message/code，
+  /// 避免出现「PlatformException(LIST_FAILED, …, null, null)」这类原始文本。
+  String _importErrorText(Object e) {
+    if (e is PlatformException) {
+      final msg = (e.message ?? '').trim();
+      return msg.isEmpty ? e.code : msg;
+    }
+    return '$e';
+  }
+
   Future<void> _seedSandboxFolders() async {
     if (!PlatformCaps.supportsSandboxLibrary) return;
     final existing = ref.read(scanFoldersProvider).valueOrNull;
@@ -50,7 +60,7 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
       _toast(tr('{n} 个文件已导入，开始扫描', {'n': imported}));
       await _startScan();
     } catch (e) {
-      _toast('导入失败：$e');
+      _toast(_importErrorText(e));
     } finally {
       if (mounted) setState(() => _adding = false);
     }
@@ -97,7 +107,7 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
       await ref.read(scanFoldersProvider.notifier).addFolder(destDir.path);
       await _startScan();
     } catch (e) {
-      _toast('导入失败：$e');
+      _toast(_importErrorText(e));
     } finally {
       if (mounted) setState(() => _adding = false);
     }

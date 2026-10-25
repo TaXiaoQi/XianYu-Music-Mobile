@@ -13,6 +13,7 @@ import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../playlist/playlist_import_page.dart' show openPlaylistImport;
 import '../../src/playlist/playlist_delete.dart';
 import '../../src/playlist/playlist_provider.dart';
 import '../../src/playlist/playlist_store.dart';
@@ -746,7 +747,7 @@ class _MyPlaylistsSection extends ConsumerWidget {
                 scheme,
                 Icons.file_download_outlined,
                 '导入',
-                () => context.push('/playlist-import'),
+                () => openPlaylistImport(context),
                 themeSlot: 'entry.import',
               ),
             ],

@@ -138,6 +138,10 @@ class _LandscapeRail extends ConsumerWidget {
             onTap: () {
               ref.read(landscapeDetailProvider.notifier).state = null;
               ref.read(landscapeLibraryProvider.notifier).state = null;
+              // 账号/下载是盖在页签内容上的浮层面板，切页签时一并收起，
+              // 否则底层页签已切换却被面板挡住（需手动关闭才能看到）
+              ref.read(landscapeAccountOpenProvider.notifier).state = false;
+              ref.read(landscapeDownloadOpenProvider.notifier).state = false;
               onSelect(nav.branchIndex);
             },
           ),
@@ -161,6 +165,8 @@ class _LandscapeRail extends ConsumerWidget {
           onTap: () {
             closeLandscapeSearch(ref);
             ref.read(landscapeDetailProvider.notifier).state = null;
+            ref.read(landscapeAccountOpenProvider.notifier).state = false;
+            ref.read(landscapeDownloadOpenProvider.notifier).state = false;
             ref.read(landscapeLibraryProvider.notifier).state = lib.paneIndex;
           },
         ),
@@ -546,14 +552,13 @@ class _LandscapeDetailPane extends ConsumerWidget {
   }
 }
 
-class _ContentPane extends StatelessWidget {
-  const _ContentPane({required this.path, required this.onBack});
+class _ContentPane extends ConsumerWidget {
+  const _ContentPane({required this.path});
 
   final String path;
-  final VoidCallback onBack;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final page = switch (path) {
       '/home/daily' => const DailyRecommendPage(embedded: true),
       '/home/toplists' => const TopListsPage(embedded: true),
@@ -561,21 +566,17 @@ class _ContentPane extends StatelessWidget {
       '/leaderboard' => const LeaderboardPage(embedded: true),
       _ => const SizedBox.shrink(),
     };
-    final title = switch (path) {
-      '/home/daily' => tr('每日推荐'),
-      '/home/toplists' => tr('音源榜单'),
-      '/home/recommend-sheets' => tr('推荐歌单'),
-      '/leaderboard' => tr('听歌排行榜'),
-      _ => '',
-    };
-    return Column(
-      children: [
-        FlatTopBar(
-          title: title,
-          leading: BackButton(onPressed: onBack),
-        ),
-        Expanded(child: page),
-      ],
+    // 与详情面板同口径：公共 LandscapeGlobalTopBar 常驻（返回经 handleBack
+    // 清 contentPath），面板只垫带高，不再自绘 FlatTopBar
+    final floating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
+    );
+    final topInset = floating
+        ? MediaQuery.paddingOf(context).top + 66
+        : GlassTopBar.height(context, topInset: 8);
+    return Padding(
+      padding: EdgeInsets.only(top: topInset),
+      child: page,
     );
   }
 }

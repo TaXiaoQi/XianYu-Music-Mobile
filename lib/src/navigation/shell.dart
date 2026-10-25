@@ -46,7 +46,6 @@ import '../../pages/recent/recent_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../widgets/floating_search_bar.dart';
 import '../widgets/skin_icon.dart';
-import '../widgets/flat_top_bar.dart';
 import '../widgets/glass_appbar.dart' show GlassTopBar;
 import '../widgets/landscape_top_bar.dart';
 import '../../pages/account/account_page.dart';
@@ -919,11 +918,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     } else if (contentPath != null) {
       landPaneTrigger = 'content:$contentPath';
       landPane = EmbeddedShellScope(
-        child: _ContentPane(
-          path: contentPath,
-          onBack: () =>
-              ref.read(landscapeContentPathProvider.notifier).state = null,
-        ),
+        child: _ContentPane(path: contentPath),
       );
     } else if (playlistOpenId != null) {
       landPaneTrigger = 'pl:$playlistOpenId';
@@ -1230,10 +1225,7 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                               child: landPane,
                             ),
                     ),
-                  if (landscape &&
-                      anyPaneOpen &&
-                      !accountOpen &&
-                      contentPath == null)
+                  if (landscape && anyPaneOpen)
                     Positioned(
                       top: 0,
                       left: 0,

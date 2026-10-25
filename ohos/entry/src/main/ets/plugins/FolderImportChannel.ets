@@ -89,28 +89,99 @@ export class FolderImportChannel {
     const exts: string[] = call.argument('exts') as string[];
     const extSet: Set<string> = new Set((exts ?? []).map((e: string): string => e.toLowerCase()));
     // listFileSync 的 File 重载在当前 SDK 不可用（仅 string path），
-    // 直接传 picker 授权 uri。
+    // 直接传 picker 授权 uri。部分 API 版本/机型对含百分号编码段的
+    // picker 目录 uri 返回 ENOENT、或 recursion 实现异常，依次兜底：
+    // 1) uri 递归列出 → 2) 解码后 uri 递归列出 → 3) 非递归手动遍历。
+    let rels: string[] | null = null;
+    let lastErr = '';
     try {
-      const rels: string[] = fs.listFileSync(uri, { recursion: true });
-      // ArkTS 禁止无类型对象字面量（arkts-no-untyped-obj-literals），
-      // 条目用 Map<string, string> 表达（Dart 侧同为 Map，协议不变）。
-      const out: Array<Map<string, string>> = [];
-      for (const rel of rels) {
-        const name: string = rel.substring(rel.lastIndexOf('/') + 1);
-        const dot = name.lastIndexOf('.');
-        const ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
-        if (!extSet.has(ext)) {
-          continue;
-        }
-        const item = new Map<string, string>();
-        item.set('name', name);
-        item.set('rel', rel);
-        out.push(item);
-      }
-      result.success(out);
+      rels = fs.listFileSync(uri, { recursion: true });
     } catch (e) {
-      Log.e(TAG, `listAudioFiles failed: ${e}`);
-      result.error('LIST_FAILED', `${e}`, null);
+      lastErr = `${e}`;
+      Log.w(TAG, `listFile(uri, recursion) failed: ${e}`);
+    }
+    if (rels == null) {
+      try {
+        rels = fs.listFileSync(FolderImportChannel.decodeUri(uri), { recursion: true });
+      } catch (e) {
+        lastErr = `${e}`;
+        Log.w(TAG, `listFile(decoded, recursion) failed: ${e}`);
+      }
+    }
+    if (rels == null) {
+      try {
+        const acc: string[] = [];
+        FolderImportChannel.walk(uri, '', acc, 0);
+        rels = acc;
+      } catch (e) {
+        lastErr = `${e}`;
+        Log.w(TAG, `manual walk failed: ${e}`);
+      }
+    }
+    if (rels == null) {
+      Log.e(TAG, `listAudioFiles failed: ${lastErr}`);
+      result.error('LIST_FAILED', lastErr, null);
+      return;
+    }
+    // ArkTS 禁止无类型对象字面量（arkts-no-untyped-obj-literals），
+    // 条目用 Map<string, string> 表达（Dart 侧同为 Map，协议不变）。
+    const out: Array<Map<string, string>> = [];
+    for (const rel of rels) {
+      const name: string = rel.substring(rel.lastIndexOf('/') + 1);
+      const dot = name.lastIndexOf('.');
+      const ext = dot > 0 ? name.substring(dot + 1).toLowerCase() : '';
+      if (!extSet.has(ext)) {
+        continue;
+      }
+      const item = new Map<string, string>();
+      item.set('name', name);
+      item.set('rel', rel);
+      out.push(item);
+    }
+    result.success(out);
+  }
+
+  // picker uri 各段为百分号编码；个别版本 listFile 按字面路径解析，
+  // 编码段匹配不到真实目录导致 ENOENT，解码后再试。
+  private static decodeUri(uri: string): string {
+    try {
+      return decodeURIComponent(uri);
+    } catch (_) {
+      return uri;
+    }
+  }
+
+  // listFileSync 单层列出，raw uri 失败时退回解码 uri。
+  private static listDirEntries(dirUri: string): string[] {
+    try {
+      return fs.listFileSync(dirUri);
+    } catch (e) {
+      Log.w(TAG, `listFile(${dirUri}) failed: ${e}`);
+      return fs.listFileSync(FolderImportChannel.decodeUri(dirUri));
+    }
+  }
+
+  // 手动遍历兜底：逐层 listFileSync + statSync 判目录，rel 以 / 开头。
+  private static walk(baseUri: string, prefix: string, acc: string[], depth: number): void {
+    if (depth >= 10) {
+      return;
+    }
+    const dirUri = prefix.length === 0 ? baseUri : FolderImportChannel.childUri(baseUri, prefix);
+    const entries: string[] = FolderImportChannel.listDirEntries(dirUri);
+    for (const name of entries) {
+      const rel = `${prefix}/${name}`;
+      const child = FolderImportChannel.childUri(baseUri, rel);
+      let isDir = false;
+      try {
+        isDir = fs.statSync(child).isDirectory();
+      } catch (_) {
+        isDir = false;
+      }
+      if (isDir) {
+        FolderImportChannel.walk(baseUri, rel, acc, depth + 1);
+      } else {
+        acc.push(rel);
+      }
     }
   }
 

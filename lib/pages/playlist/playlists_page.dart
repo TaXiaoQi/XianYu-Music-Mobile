@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'playlist_import_page.dart' show openPlaylistImport;
+
 import '../../src/auth/account_api.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/theme/theme_tint.dart';
@@ -130,7 +132,7 @@ class PlaylistsPage extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 TextButton.icon(
-                                  onPressed: () => context.push('/playlist-import'),
+                                  onPressed: () => openPlaylistImport(context),
                                   icon: const Icon(Icons.file_download_outlined,
                                       size: 16),
                                   label:   Text(tr('导入歌单')),
@@ -160,7 +162,7 @@ class PlaylistsPage extends ConsumerWidget {
                         BiliPaiIconButton(
                           icon: Icons.file_download_outlined,
                           tooltip: tr('导入歌单'),
-                          onTap: () => context.push('/playlist-import'),
+                          onTap: () => openPlaylistImport(context),
                         ),
                       ] else ...[
                         IconButton(
@@ -171,7 +173,7 @@ class PlaylistsPage extends ConsumerWidget {
                         IconButton(
                           icon: const Icon(Icons.file_download_outlined),
                           tooltip: tr('导入歌单'),
-                          onPressed: () => context.push('/playlist-import'),
+                          onPressed: () => openPlaylistImport(context),
                         ),
                       ],
                     ],
@@ -218,7 +220,7 @@ class PlaylistsPage extends ConsumerWidget {
                           BiliPaiIconButton(
                             icon: Icons.file_download_outlined,
                             tooltip: tr('导入歌单'),
-                            onTap: () => context.push('/playlist-import'),
+                            onTap: () => openPlaylistImport(context),
                           ),
                         ],
                       )

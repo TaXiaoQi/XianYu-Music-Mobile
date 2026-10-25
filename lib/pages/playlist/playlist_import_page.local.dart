@@ -42,6 +42,19 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
   }
 
   Future<void> _pickFolder() async {
+    if (PlatformCaps.isOhos) {
+      final uri = await OhosFolderChannel.pickFolder();
+      if (uri == null || uri.isEmpty || !mounted) return;
+      final segs =
+          Uri.parse(uri).pathSegments.where((s) => s.isNotEmpty).toList();
+      final name = segs.isNotEmpty ? segs.last : uri;
+      setState(() {
+        _treeUri = uri;
+        _folderName = name;
+      });
+      if (_nameCtrl.text.trim().isEmpty) _nameCtrl.text = name;
+      return;
+    }
     if (!SafChannel.isSupported) {
       showXianYuToast(context, tr('本地文件夹导入仅支持 Android 设备'));
       return;
@@ -81,73 +94,159 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     });
 
     try {
-      final files = await SafChannel.listAudioTree(treeUri, _audioExtensions);
-      if (files.isEmpty) {
-        if (!mounted) return;
-        _finish(false, tr('所选文件夹中没有支持的音乐文件'));
-        return;
-      }
-      setState(() => _total = files.length);
-
-      final songs = <ImportedSong>[];
-      for (final f in files) {
-        final path = SafChannel.songPath(treeUri, f.docId);
-        final fd = await SafChannel.openFd(treeUri, f.docId);
-        if (fd < 0) continue;
-        try {
-          final songJson = await parseAudioFromFdAndroid(
-            fd: fd,
-            fileName: f.name,
-            pathKey: path,
-            format: f.ext,
-          );
-          final parsed = jsonDecode(songJson) as Map<String, dynamic>;
-          if ((parsed['duration'] as num? ?? 0) > 0) {
-            songs.add(
-              ImportedSong(
-                title: (parsed['title'] as String? ?? '').isNotEmpty
-                    ? parsed['title'] as String
-                    : f.name,
-                artist: parsed['artist'] as String? ?? '',
-                album: parsed['album'] as String? ?? '',
-                duration: (parsed['duration'] as num?)?.toInt() ?? 0,
-                localPath: path,
-                path: path,
-              ),
-            );
-          }
-        } catch (e) {
-          AppLog.debug('playlist', '解析音频失败，跳过 ${f.name}: $e');
-        } finally {
-          await SafChannel.closeFd(fd);
-        }
-        if (mounted) setState(() => _parsed = songs.length);
-      }
-
+      final songs = PlatformCaps.isOhos
+          ? await _collectSongsOhos(treeUri)
+          : await _collectSongsAndroid(treeUri);
+      if (songs == null) return;
       if (songs.isEmpty) {
         if (!mounted) return;
         _finish(false, tr('未能解析出任何歌曲'));
         return;
       }
-
-      final manager = ref.read(playlistManagerProvider.notifier);
-      await manager.create(name);
-      final created = ref.read(playlistManagerProvider).playlists;
-      if (created.isEmpty) {
-        if (!mounted) return;
-        _finish(false, tr('歌单创建失败'));
-        return;
-      }
-      await manager.addSongs(created.last.id, songs);
-      if (!mounted) return;
-      _finish(
-        true,
-        tr('已创建歌单「{name}」，共导入 {n} 首歌曲', {'name': name, 'n': songs.length}),
-      );
+      await _saveImported(name, songs);
     } catch (e) {
       if (!mounted) return;
-      _finish(false, tr('导入失败：{e}', {'e': e}));
+      // PlatformException 只保留 message/code，避免 toast 出现原始异常文本
+      _finish(
+        false,
+        e is PlatformException
+            ? ((e.message ?? '').trim().isEmpty ? e.code : e.message!.trim())
+            : tr('导入失败：{e}', {'e': e}),
+      );
     }
+  }
+
+  /// Android SAF：递归列文件 → 逐个 openFd 解析，歌曲直接引用 content URI。
+  /// 返回 null 表示已在收集阶段提示并结束。
+  Future<List<ImportedSong>?> _collectSongsAndroid(String treeUri) async {
+    final files = await SafChannel.listAudioTree(treeUri, _audioExtensions);
+    if (files.isEmpty) {
+      if (!mounted) return null;
+      _finish(false, tr('所选文件夹中没有支持的音乐文件'));
+      return null;
+    }
+    setState(() => _total = files.length);
+
+    final songs = <ImportedSong>[];
+    for (final f in files) {
+      final path = SafChannel.songPath(treeUri, f.docId);
+      final fd = await SafChannel.openFd(treeUri, f.docId);
+      if (fd < 0) continue;
+      try {
+        final songJson = await parseAudioFromFdAndroid(
+          fd: fd,
+          fileName: f.name,
+          pathKey: path,
+          format: f.ext,
+        );
+        final parsed = jsonDecode(songJson) as Map<String, dynamic>;
+        if ((parsed['duration'] as num? ?? 0) > 0) {
+          songs.add(
+            ImportedSong(
+              title: (parsed['title'] as String? ?? '').isNotEmpty
+                  ? parsed['title'] as String
+                  : f.name,
+              artist: parsed['artist'] as String? ?? '',
+              album: parsed['album'] as String? ?? '',
+              duration: (parsed['duration'] as num?)?.toInt() ?? 0,
+              localPath: path,
+              path: path,
+            ),
+          );
+        }
+      } catch (e) {
+        AppLog.debug('playlist', '解析音频失败，跳过 ${f.name}: $e');
+      } finally {
+        await SafChannel.closeFd(fd);
+      }
+      if (mounted) setState(() => _parsed = songs.length);
+    }
+    return songs;
+  }
+
+  /// 鸿蒙：DocumentViewPicker 临时授权 → 列音频 → 物化到沙盒
+  /// `Documents/PlaylistImports/<文件夹名>/` → 按真实路径逐个解析。
+  /// 与曲库导入同一物化模型：授权不持久化，歌单引用沙盒副本，重启可用；
+  /// 目录不在曲库扫描根下，符合「不会加入本地库扫描目录」的说明。
+  Future<List<ImportedSong>?> _collectSongsOhos(String folderUri) async {
+    final files =
+        await OhosFolderChannel.listAudioFiles(folderUri, _audioExtensions);
+    if (files.isEmpty) {
+      if (!mounted) return null;
+      _finish(false, tr('所选文件夹中没有支持的音乐文件'));
+      return null;
+    }
+    if (!mounted) return null;
+    setState(() => _total = files.length);
+
+    final docs = await getApplicationDocumentsDirectory();
+    final segs =
+        Uri.parse(folderUri).pathSegments.where((s) => s.isNotEmpty);
+    final folderName = segs.isEmpty ? 'imported' : segs.last;
+    final destDir = Directory(p.join(docs.path, 'PlaylistImports', folderName));
+    await destDir.create(recursive: true);
+    await OhosFolderChannel.importFiles(
+      folderUri: folderUri,
+      rels: [for (final f in files) f.rel],
+      destDir: destDir.path,
+    );
+
+    final songs = <ImportedSong>[];
+    for (final f in files) {
+      final file = File(p.join(
+        destDir.path,
+        f.rel.replaceFirst(RegExp(r'^/+'), ''),
+      ));
+      if (!file.existsSync()) continue;
+      final ext = p
+          .extension(f.name)
+          .replaceFirst('.', '')
+          .toLowerCase();
+      try {
+        final songJson = await parseAudioFromPathAndroid(
+          filePath: file.path,
+          fileName: f.name,
+          pathKey: file.path,
+          format: ext,
+        );
+        final parsed = jsonDecode(songJson) as Map<String, dynamic>;
+        if ((parsed['duration'] as num? ?? 0) > 0) {
+          songs.add(
+            ImportedSong(
+              title: (parsed['title'] as String? ?? '').isNotEmpty
+                  ? parsed['title'] as String
+                  : f.name,
+              artist: parsed['artist'] as String? ?? '',
+              album: parsed['album'] as String? ?? '',
+              duration: (parsed['duration'] as num?)?.toInt() ?? 0,
+              localPath: file.path,
+              path: file.path,
+            ),
+          );
+        }
+      } catch (e) {
+        AppLog.debug('playlist', '解析音频失败，跳过 ${f.name}: $e');
+      }
+      if (mounted) setState(() => _parsed = songs.length);
+    }
+    return songs;
+  }
+
+  Future<void> _saveImported(String name, List<ImportedSong> songs) async {
+    final manager = ref.read(playlistManagerProvider.notifier);
+    await manager.create(name);
+    final created = ref.read(playlistManagerProvider).playlists;
+    if (created.isEmpty) {
+      if (!mounted) return;
+      _finish(false, tr('歌单创建失败'));
+      return;
+    }
+    await manager.addSongs(created.last.id, songs);
+    if (!mounted) return;
+    _finish(
+      true,
+      tr('已创建歌单「{name}」，共导入 {n} 首歌曲', {'name': name, 'n': songs.length}),
+    );
   }
 
   void _finish(bool ok, String message) {
