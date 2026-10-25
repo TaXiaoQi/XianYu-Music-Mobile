@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+    <!-- 触觉反馈幅值振动（设置里轻/正常/重三档经 VibrationEffect 直接驱动马达） -->
+    <uses-permission android:name="android.permission.VIBRATE"/>
     <!-- 自定义视频壁纸选择：Android 13+ 读取视频权限 -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <!-- 自定义下载目录直写：MediaStore 兼容回退只能落 Music/Download 集合，

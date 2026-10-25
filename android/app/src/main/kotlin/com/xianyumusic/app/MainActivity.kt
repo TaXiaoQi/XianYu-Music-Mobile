@@ -59,6 +59,7 @@ class MainActivity : AudioServiceActivity() {
     private val ROTATION_EVENT_CHANNEL = "xianyu/rotation/events"
     private val DEVICE_INFO_CHANNEL = "xianyu/device_info"
     private val SYSTEM_UI_CHANNEL = "xianyu/system_ui"
+    private val HAPTICS_CHANNEL = "xianyu/haptics"
     private val REQ_CHOOSE_TREE = 1001
 
     // 横竖屏旋转事件：旋转一开始系统即回调 onConfigurationChanged，把当前屏幕
@@ -893,6 +894,21 @@ class MainActivity : AudioServiceActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, HAPTICS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // 触觉反馈幅值振动：设置里轻/正常/重三档在 Android 12 上
+                    // 区分不开（部分 ROM 把引擎三档 HapticFeedbackConstants
+                    // 全渲染成最重效果），改按幅值直接驱动马达
+                    "vibrateAmplitude" -> {
+                        val amp = (call.argument<Number>("amplitude")?.toInt() ?: 160)
+                            .coerceIn(1, 255)
+                        val ms = call.argument<Number>("durationMs")?.toLong() ?: 24L
+                        result.success(vibrateWithAmplitude(amp, ms))
+                    }
+                    else -> result.notImplemented()
+                }
+            }
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, ROTATION_EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -1244,5 +1260,30 @@ class MainActivity : AudioServiceActivity() {
         AudioDeviceInfo.TYPE_BLE_HEADSET -> "BLE 耳机"
         AudioDeviceInfo.TYPE_BLE_SPEAKER -> "BLE 音箱"
         else -> "设备#${type}"
+    }
+
+    /**
+     * 幅值振动（触觉反馈三档强度的基础）：按 amplitude（1-255）直接驱动马达，
+     * 不经 HapticFeedbackConstants 渲染。API 26 引入 VibrationEffect.createOneShot，
+     * 31（Android 12）起 VibratorManager 为标准获取路径（旧 API 已弃用但仍可用）。
+     * 马达不支持幅值控制（hasAmplitudeControl=false）返回 false，Dart 侧回落
+     * 引擎 HapticFeedback 常量（此时与旧行为一致）。
+     */
+    private fun vibrateWithAmplitude(amplitude: Int, durationMs: Long): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as android.os.VibratorManager)
+                .defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+        }
+        if (!vibrator.hasAmplitudeControl()) return false
+        return try {
+            vibrator.vibrate(android.os.VibrationEffect.createOneShot(durationMs, amplitude))
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 }

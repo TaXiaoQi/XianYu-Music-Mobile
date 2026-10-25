@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/gestures.dart'
     show DelayedMultiDragGestureRecognizer, MultiDragGestureRecognizer;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/cloud/cloud_registry.dart';
@@ -364,7 +363,7 @@ class _HandleDragListenerState extends State<_HandleDragListener> {
   void _onDown(PointerDownEvent _) {
     _haptic?.cancel();
     _haptic = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) HapticFeedback.mediumImpact();
+      if (mounted) triggerHaptic(HapticStrength.normal);
     });
   }
 

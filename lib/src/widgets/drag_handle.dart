@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/haptics.dart';
 import '../player/player_provider.dart';
 import '../theme/theme_icon.dart';
 import 'list_metrics.dart';
@@ -40,7 +40,7 @@ class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
   void _onDown(PointerDownEvent _) {
     _haptic?.cancel();
     _haptic = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) HapticFeedback.mediumImpact();
+      if (mounted) triggerHaptic(HapticStrength.normal);
     });
   }
 

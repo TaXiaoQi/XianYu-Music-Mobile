@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/core/application_logger.dart';
+import '../../src/core/haptics.dart';
 import '../../src/core/app_colors.dart';
 import '../../src/theme/theme_icon.dart';
 import '../../src/theme/theme_tint.dart';
@@ -81,7 +81,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       );
       if (!mounted) return;
       if (matches.isNotEmpty) {
-        HapticFeedback.mediumImpact();
+        triggerHaptic(HapticStrength.normal);
       }
       setState(() {
         _matches = matches;
