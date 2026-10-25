@@ -118,6 +118,7 @@ dependencies:
   tencent_kit: ^6.2.0
   # 登录/注册人机验证：渲染服务端下发的 Turnstile / hCaptcha 组件
   webview_flutter: ^4.13.0
+  webview_flutter_android: ^4.14.1
   pinyin: ^3.3.0
   # 修复构建警告「Expected to find fonts for packages/cupertino_icons/CupertinoIcons」：
   # liquid_glass_widgets 代码里硬编码引用了 CupertinoIcons 字体常量，但其 pubspec

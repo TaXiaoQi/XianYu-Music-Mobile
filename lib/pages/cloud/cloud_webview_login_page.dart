@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import '../../src/cloud/cloud_credentials_store.dart';
 import '../../src/cloud/cloud_provider.dart';
@@ -379,7 +381,17 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
           Expanded(
             child: Stack(
               children: [
-                WebViewWidget(controller: _controller),
+                // Android 用 Hybrid Composition 承载：默认 TLHC 纹理模式
+                // 拖动滑块渲染滞后（抬手才刷新），HC 实时。
+                Platform.isAndroid
+                    ? WebViewWidget.fromPlatformCreationParams(
+                        params: AndroidWebViewWidgetCreationParams(
+                          controller:
+                              _controller.platform as AndroidWebViewController,
+                          displayWithHybridComposition: true,
+                        ),
+                      )
+                    : WebViewWidget(controller: _controller),
                 if (!_pageLoaded)
                   const Center(child: CircularProgressIndicator()),
                 if (_finishing)
