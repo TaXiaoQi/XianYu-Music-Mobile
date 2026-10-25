@@ -21,7 +21,8 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     return DropdownMenuItem(
       value: value,
       child: Container(
-        width: double.infinity,
+        // 不设 width: double.infinity——按钮行给非弹性子项的是无界宽度，
+        // tightFor(∞) 钳不住会直接布局崩溃（BoxConstraints forces an infinite width）
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 12),
         alignment: AlignmentDirectional.centerStart,
@@ -355,6 +356,12 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final plugins = _plugins;
+    assert(() {
+      debugPrint(
+        '[cloud-import] plugins=${plugins.map((p) => '${p.name}/${p.format.value}/${p.enabled}').join(',')}',
+      );
+      return true;
+    }());
 
     if (plugins.isEmpty) {
       return Center(
@@ -401,6 +408,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
           data: Theme.of(context).copyWith(focusColor: Colors.transparent),
           child: DropdownButtonFormField<String>(
             initialValue: selected ?? _autoKey,
+            isExpanded: true,
             borderRadius: BorderRadius.circular(14),
             dropdownColor: appCardColor(context),
             menuMaxHeight: 320,

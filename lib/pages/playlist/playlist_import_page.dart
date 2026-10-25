@@ -6,14 +6,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
-import '../../src/navigation/shell.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/ohos_folder_channel.dart';
 import '../../src/library/saf_channel.dart';
@@ -27,98 +25,19 @@ import '../../src/rust/api.dart';
 import '../../src/widgets/add_to_playlist_sheet.dart'
     show importedSongFromQueueItem;
 import '../../src/widgets/app_toast.dart';
-import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 import '../../src/widgets/press_scale.dart';
+import '../../src/widgets/glass_dialog_shell.dart';
 import '../../src/i18n/i18n.dart';
 
 
 part 'playlist_import_page.backup.dart';
 part 'playlist_import_page.local.dart';
 part 'playlist_import_page.cloud.dart';
-class PlaylistImportPage extends ConsumerStatefulWidget {
-  const PlaylistImportPage({super.key});
 
-  @override
-  ConsumerState<PlaylistImportPage> createState() => _PlaylistImportPageState();
-}
-
-class _PlaylistImportPageState extends ConsumerState<PlaylistImportPage>
-    with TickerProviderStateMixin, HideMiniBar {
-  late TabController _tabCtrl = TabController(length: 3, vsync: this);
-  bool _cloudTab = true;
-
-  @override
-  void dispose() {
-    _tabCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPlugin = ref.watch(
-      pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
-    );
-    if (hasPlugin != _cloudTab) {
-      _cloudTab = hasPlugin;
-      final prev = _tabCtrl.index;
-      _tabCtrl.dispose();
-      _tabCtrl = TabController(length: hasPlugin ? 3 : 2, vsync: this)
-        ..index = prev.clamp(0, (hasPlugin ? 3 : 2) - 1);
-    }
-    final tabBar = TabBar(
-      controller: _tabCtrl,
-      tabs: [
-        Tab(text: tr('备份文件')),
-        Tab(text: tr('本地文件')),
-        if (hasPlugin) Tab(text: tr('云端导入')),
-      ],
-    );
-    return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
-      resizeToAvoidBottomInset: false,
-      body: RepaintBoundary(
-        child: Stack(
-          children: [
-            Padding(
-              padding: EdgeInsets.only(
-                top: GlassTopBar.height(context, bottom: tabBar),
-              ),
-              child: TabBarView(
-                controller: _tabCtrl,
-                children: [
-                  const _BackupImportTab(),
-                  const _LocalFolderTab(),
-                  if (hasPlugin) const _CloudImportTab(),
-                ],
-              ),
-            ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: const BackButton(),
-                title: Text(tr('导入歌单')),
-                bottom: tabBar,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 打开歌单导入：竖屏保持整页路由；横屏（平板/车机大屏）改为桌面端同款
-/// 居中弹窗，替代原先整面铺满的页面。
+/// 打开歌单导入：双端（横竖屏）统一为桌面端同款居中弹窗，替代原先的
+/// 整页路由（竖屏整页已删，与横屏共用弹窗）。
 Future<void> openPlaylistImport(BuildContext context) async {
-  final landscape =
-      MediaQuery.of(context).orientation == Orientation.landscape;
-  if (!landscape) {
-    await context.push('/playlist-import');
-    return;
-  }
   await showPredictiveDialog<void>(
     context: context,
     builder: (_) => const _ImportDialog(),
@@ -135,8 +54,10 @@ class _ImportDialog extends ConsumerStatefulWidget {
 
 class _ImportDialogState extends ConsumerState<_ImportDialog>
     with TickerProviderStateMixin {
-  late TabController _tabCtrl = TabController(length: 3, vsync: this);
-  bool _cloudTab = true;
+  /// controller 恒 3（云端 tab 缺席时只有 2 个 tab，index 由下方 clamp
+  /// 兜底）。绝不在 build 中 dispose/重建：旧 controller 的动画还被
+  /// TabBar 指示器等引用，paint 期会抛空指针（弹窗整片空白的根因）
+  late final TabController _tabCtrl = TabController(length: 3, vsync: this);
 
   @override
   void dispose() {
@@ -149,19 +70,37 @@ class _ImportDialogState extends ConsumerState<_ImportDialog>
     final hasPlugin = ref.watch(
       pluginManagerProvider.select((s) => s.sources.any((p) => p.enabled)),
     );
-    if (hasPlugin != _cloudTab) {
-      _cloudTab = hasPlugin;
-      final prev = _tabCtrl.index;
-      _tabCtrl.dispose();
-      _tabCtrl = TabController(length: hasPlugin ? 3 : 2, vsync: this)
-        ..index = prev.clamp(0, (hasPlugin ? 3 : 2) - 1);
+    // 插件被禁用导致云端页不可用时，帧后把停在云端页的 index 拉回
+    // 本地文件页（build 期间不能改 controller：会同步触发 setState）
+    if (!hasPlugin && _tabCtrl.index >= 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _tabCtrl.index = 1;
+      });
     }
+    final scheme = Theme.of(context).colorScheme;
+    // tabs 恒 3 与 controller.length 恒匹配：无插件时云端 tab 置灰并
+    // 拦截点击（避免 index 指向不存在的 tab 导致指示器绘制越界）
     final tabBar = TabBar(
       controller: _tabCtrl,
+      // IndexedStack 直切页面：弹窗内 PageView(TabBarView) 在部分机型
+      // 上切页后不渲染（空白），索引直切更稳
+      onTap: (i) {
+        if (i == 2 && !hasPlugin) {
+          _tabCtrl.index = 1;
+        }
+        setState(() {});
+      },
       tabs: [
         Tab(text: tr('备份文件')),
         Tab(text: tr('本地文件')),
-        if (hasPlugin) Tab(text: tr('云端导入')),
+        Tab(
+          child: Text(
+            tr('云端导入'),
+            style: TextStyle(
+              color: hasPlugin ? null : scheme.outline,
+            ),
+          ),
+        ),
       ],
     );
     return Dialog(
@@ -172,30 +111,31 @@ class _ImportDialogState extends ConsumerState<_ImportDialog>
           maxWidth: 560,
           maxHeight: MediaQuery.of(context).size.height * 0.8,
         ),
-        decoration: BoxDecoration(
-          color: Theme.of(context).dialogTheme.backgroundColor ??
-              Theme.of(context).colorScheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: tabBar,
-            ),
-            Flexible(
-              child: TabBarView(
-                controller: _tabCtrl,
-                children: [
-                  const _BackupImportTab(),
-                  const _LocalFolderTab(),
-                  if (hasPlugin) const _CloudImportTab(),
-                ],
+        // 桌面端同款玻璃弹窗：材质开启时整窗毛玻璃透底（无按钮区）
+        child: GlassDialogShell(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: tabBar,
               ),
-            ),
-          ],
+              // 内容区固定高度：屏幕过矮时由 Flexible 收缩让位
+              Flexible(
+                child: SizedBox(
+                  height: 360,
+                  child: IndexedStack(
+                    index: _tabCtrl.index,
+                    children: [
+                      const _BackupImportTab(),
+                      const _LocalFolderTab(),
+                      const _CloudImportTab(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
