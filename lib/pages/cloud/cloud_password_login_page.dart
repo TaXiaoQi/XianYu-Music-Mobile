@@ -167,7 +167,13 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   Future<void> _submitFields() async {
     if (_submitting) return;
     final fields = _fields;
-    if (fields.values.any((v) => v.isEmpty)) {
+    // 必填字段非空即可提交（optional 字段选填，多通道二选一由
+    // provider 自行分派）。
+    final requiredKeys = {
+      for (final f in _provider.loginFields)
+        if (!f.optional) f.key,
+    };
+    if (requiredKeys.any((k) => (fields[k] ?? '').isEmpty)) {
       showXianYuToast(context, tr('请填写完整'));
       return;
     }

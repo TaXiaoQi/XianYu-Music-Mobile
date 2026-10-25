@@ -103,6 +103,7 @@ class CloudLoginField {
     this.obscure = false,
     this.isPhone = false,
     this.isSmsCode = false,
+    this.optional = false,
   });
 
   final String key;
@@ -114,6 +115,10 @@ class CloudLoginField {
 
   /// 该字段是短信验证码输入框（决定是否显示「发送验证码」按钮）。
   final bool isSmsCode;
+
+  /// 选填字段（提交校验跳过；多通道二选一表单用，如 139 服务密码
+  /// 与短信登录互备）。
+  final bool optional;
 }
 
 /// 扫码登录会话。

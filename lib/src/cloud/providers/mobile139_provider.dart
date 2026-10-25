@@ -30,6 +30,8 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
+
 import '../cloud_http.dart';
 import '../cloud_provider.dart';
 import '../cloud_remote.dart';
@@ -57,6 +59,13 @@ class Mobile139Provider extends CloudProvider {
   @override
   List<CloudLoginField> get loginFields => const [
         CloudLoginField(key: 'phone', label: '手机号', isPhone: true),
+        // 服务密码与短信二选一：填密码走 passPwd 通道，留空走短信弹窗。
+        CloudLoginField(
+          key: 'password',
+          label: '服务密码（与短信二选一）',
+          obscure: true,
+          optional: true,
+        ),
       ];
 
   @override
@@ -118,14 +127,19 @@ class Mobile139Provider extends CloudProvider {
   /// 服务端按 skey 无状态解密（实测），验证码校验复用发码同会话最稳。
   static _SmsLoginSession? _pendingSession;
 
-  /// 天翼同构弹窗范式：表单只收手机号，「登录并绑定」自动发码后抛
-  /// [CloudSmsRequiredException]，UI 复用公共收码弹窗（弹窗内可重发，
-  /// 走 [resendDeviceSms]）。
+  /// 天翼同构弹窗范式：表单收手机号 + 服务密码（选填）。密码非空走
+  /// passPwd 通道（permission/login，dycPwd = SHA1(密码) 大写）；留空
+  /// 自动发码后抛 [CloudSmsRequiredException]，UI 复用公共收码弹窗
+  /// （弹窗内可重发，走 [resendDeviceSms]）。
   @override
   Future<CloudAccount> loginWithFields(Map<String, String> fields) async {
     final phone = (fields['phone'] ?? '').trim();
     if (phone.length != 11) {
       throw const CloudException('请输入 11 位手机号');
+    }
+    final password = (fields['password'] ?? '').trim();
+    if (password.isNotEmpty) {
+      return _loginByServicePassword(phone, password);
     }
     HttpLoginGate.instance.ensureAllowed(id);
     HttpLoginGate.instance.recordAttempt(id);
@@ -141,6 +155,38 @@ class Mobile139Provider extends CloudProvider {
       ..phone = phone;
     // 已自动发码并暂存会话；公共收码弹窗内填码后走 submitSmsCode。
     throw CloudSmsRequiredException(phone, hint: '验证码将发送至 $phone');
+  }
+
+  /// 服务密码登录：auth-rebuild permission/login passPwd 通道
+  /// （dycPwd = SHA1(服务密码) 大写，实测参数形态服务端认可）。
+  Future<CloudAccount> _loginByServicePassword(
+    String phone,
+    String password,
+  ) async {
+    HttpLoginGate.instance.ensureAllowed(id);
+    HttpLoginGate.instance.recordAttempt(id);
+    final sess = await _openSession();
+    try {
+      final dycPwd = sha1.convert(utf8.encode(password)).toString().toUpperCase();
+      final resp = await _postAuth(
+        sess,
+        'https://yun.139.com/orchestration/auth-rebuild/permission/v1.0/login',
+        '{"dycPwd":"$dycPwd","loginStyle":"passPwd","ifOpenAccount":1,'
+            '"verType":1,"clientEnv":"3","setCookie":0,"account":"$phone"}',
+      );
+      final data = (resp['data'] as Map<String, dynamic>?) ?? const {};
+      final token = '${data['token'] ?? data['authToken'] ?? ''}';
+      if (token.isEmpty) {
+        throw const CloudException('登录未返回凭据，请重试');
+      }
+      HttpLoginGate.instance.recordSuccess(id);
+      return _accountFromAuth(
+        'Basic ${base64Encode(utf8.encode('pc:$phone:$token'))}',
+      );
+    } on CloudException {
+      HttpLoginGate.instance.recordFailure(id);
+      rethrow;
+    }
   }
 
   /// 提交短信验证码（公共收码弹窗「确定」后调用）。
