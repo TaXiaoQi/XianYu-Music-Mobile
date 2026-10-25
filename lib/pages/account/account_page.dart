@@ -1,4 +1,5 @@
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import '../../src/auth/auth_provider.dart';
 import '../../src/core/app_colors.dart';
@@ -25,6 +27,7 @@ import '../../src/i18n/i18n.dart';
 
 part 'account_page.auth_actions.dart';
 part 'account_page.auth_forms.dart';
+part 'account_page.qr_login.dart';
 part 'account_page.profile_actions.dart';
 part 'account_page.profile_widgets.dart';
 part 'account_page.glass_widgets.dart';
@@ -60,7 +63,8 @@ class _AccountPageState extends ConsumerState<AccountPage>
   bool _obscure = true;
   int _countdown = 0;
   bool _agreed = false;
-  bool _loginByEmail = false;
+  // 登录方式：0=密码登录 1=邮箱验证码 2=扫码登录
+  int _loginMethod = 0;
 
   @override
   void initState() {
@@ -126,7 +130,16 @@ class _AccountPageState extends ConsumerState<AccountPage>
               ),
             ) ==
             true);
+    // 横屏右容器面板形态：与其他页同口径——透明底垫在壳层背景上，
+    // 不再整面自绘白色背景
+    final content = auth.isLoggedIn
+        ? _ProfileView(
+            user: auth.user!,
+            onLogout: () => _confirmLogout(context),
+          )
+        : _buildAuthForm(context, auth);
     return Scaffold(
+      backgroundColor: widget.embedded ? Colors.transparent : null,
       resizeToAvoidBottomInset: true,
       body: RepaintBoundary(
         child: Stack(
@@ -138,28 +151,21 @@ class _AccountPageState extends ConsumerState<AccountPage>
                 padding: EdgeInsets.only(
                   top: GlassTopBar.height(context) + (portraitFloating ? 6 : 0),
                 ),
-                child: auth.isLoggedIn
-                    ? _ProfileView(
-                        user: auth.user!,
-                        onLogout: () => _confirmLogout(context),
-                      )
-                    : _buildAuthForm(context, auth),
+                child: content,
               ),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: GlassTopBar(
-                leading: widget.embedded
-                    ? IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: widget.onBack,
-                      )
-                    : const BackButton(),
-                title: Text(auth.isLoggedIn ? tr('账号与安全') : tr('账号认证')),
+            // 横屏面板形态不画自己的顶栏：公共 LandscapeGlobalTopBar 由壳层
+            // 提供（返回经 handleBack 关面板），与其他页签/面板同口径
+            if (!widget.embedded)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: GlassTopBar(
+                  leading: const BackButton(),
+                  title: Text(auth.isLoggedIn ? tr('账号与安全') : tr('账号认证')),
+                ),
               ),
-            ),
           ],
         ),
       ),

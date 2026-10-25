@@ -274,7 +274,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
         barrierDismissible: false,
         builder: (dctx) => AlertDialog(
           title: Text(tr('请先登录')),
-          content: Text(tr('扫码确认登录桌面端，需要先登录你的弦予音乐账号。')),
+          content: Text(tr('扫码确认登录其他设备，需要先登录你的弦予音乐账号。')),
           actions: [
             PressableScale(
               pressScale: 0.92,
@@ -357,7 +357,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
       barrierDismissible: false,
       builder: (dctx) => AlertDialog(
         title: Text(tr('登录成功')),
-        content: Text(tr('桌面端已登录你的弦予音乐账号。')),
+        content: Text(tr('该设备已登录你的弦予音乐账号。')),
         actions: [
           PressableScale(
             pressScale: 0.92,
@@ -465,7 +465,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 48),
                         child: Text(
-                          tr('将桌面端登录页的二维码对准取景框'),
+                          tr('将待登录设备的二维码对准取景框'),
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.white70, fontSize: 14),
                         ),
@@ -531,7 +531,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
           ),
           const SizedBox(height: 8),
           Text(
-            tr('请登录你的弦予音乐账号后，再扫描桌面端二维码确认登录。'),
+            tr('请登录你的弦予音乐账号后，再扫描待登录设备的二维码确认登录。'),
             textAlign: TextAlign.center,
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),

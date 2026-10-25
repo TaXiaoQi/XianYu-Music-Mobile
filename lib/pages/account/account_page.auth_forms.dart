@@ -5,59 +5,66 @@ part of 'account_page.dart';
 extension _AccountPageAuthForms on _AccountPageState {
   Widget _buildAuthForm(BuildContext context, AuthState auth) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-          child: Column(
-            children: [
-              const AppLogo(size: 96, radius: 24),
-              const SizedBox(height: 12),
-              Text(
-                tr('弦予音乐'),
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    // 大屏（平板横屏）限宽居中，避免表单控件被拉满整屏；
+    // 竖屏手机宽度不足时约束不生效，表现不变。
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+              child: Column(
+                children: [
+                  const AppLogo(size: 96, radius: 24),
+                  const SizedBox(height: 12),
+                  Text(
+                    tr('弦予音乐'),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    tr('登录后同步你的音乐与设置'),
+                    style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                  ),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                tr('登录后同步你的音乐与设置'),
-                style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: Container(
-            decoration: BoxDecoration(
-              color: appCardFill(context, ref),
-              borderRadius: BorderRadius.circular(16),
             ),
-            padding: const EdgeInsets.all(4),
-            child: TabBar(
-              controller: _tab,
-              dividerColor: Colors.transparent,
-              indicatorSize: TabBarIndicatorSize.tab,
-              indicator: BoxDecoration(
-                color: scheme.primary,
-                borderRadius: BorderRadius.circular(12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: appCardFill(context, ref),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: TabBar(
+                  controller: _tab,
+                  dividerColor: Colors.transparent,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  labelColor: scheme.onPrimary,
+                  unselectedLabelColor: scheme.onSurfaceVariant,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  tabs: [
+                    Tab(text: tr('登录')),
+                    Tab(text: tr('注册')),
+                  ],
+                ),
               ),
-              labelColor: scheme.onPrimary,
-              unselectedLabelColor: scheme.onSurfaceVariant,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-              tabs: [
-                Tab(text: tr('登录')),
-                Tab(text: tr('注册')),
-              ],
             ),
-          ),
+            Expanded(
+              child: TabBarView(
+                controller: _tab,
+                children: [_loginForm(context, auth), _registerForm(context, auth)],
+              ),
+            ),
+          ],
         ),
-        Expanded(
-          child: TabBarView(
-            controller: _tab,
-            children: [_loginForm(context, auth), _registerForm(context, auth)],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -66,7 +73,9 @@ extension _AccountPageAuthForms on _AccountPageState {
     return _formScroll(
       children: [
         _loginMethodToggle(scheme),
-        if (!_loginByEmail) ...[
+        if (_loginMethod == 2) ...[
+          const _QrLoginView(),
+        ] else if (!_isEmailLogin) ...[
           _field(_idCtrl, tr('弦予号'), hint: tr('请输入弦予号'), icon: Icons.tag),
           _field(
             _passwordCtrl,
@@ -138,6 +147,8 @@ extension _AccountPageAuthForms on _AccountPageState {
     );
   }
 
+  bool get _isEmailLogin => _loginMethod == 1;
+
   Widget _loginMethodToggle(ColorScheme scheme) {
     Widget item(String label, bool selected, VoidCallback onTap) {
       return Expanded(
@@ -177,16 +188,22 @@ extension _AccountPageAuthForms on _AccountPageState {
         ),
         child: Row(
           children: [
-            item(tr('密码登录'), !_loginByEmail, () {
-              if (_loginByEmail) {
+            item(tr('密码登录'), _loginMethod == 0, () {
+              if (_loginMethod != 0) {
                 ref.read(authProvider.notifier).clearError();
-                setState(() => _loginByEmail = false);
+                setState(() => _loginMethod = 0);
               }
             }),
-            item(tr('邮箱验证码'), _loginByEmail, () {
-              if (!_loginByEmail) {
+            item(tr('邮箱验证码'), _isEmailLogin, () {
+              if (!_isEmailLogin) {
                 ref.read(authProvider.notifier).clearError();
-                setState(() => _loginByEmail = true);
+                setState(() => _loginMethod = 1);
+              }
+            }),
+            item(tr('扫码登录'), _loginMethod == 2, () {
+              if (_loginMethod != 2) {
+                ref.read(authProvider.notifier).clearError();
+                setState(() => _loginMethod = 2);
               }
             }),
           ],

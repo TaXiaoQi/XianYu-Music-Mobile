@@ -1681,17 +1681,26 @@ const Map<String, String> enDictManual = {
   '位置': 'Location',
   '扫描到二维码，确认后该设备将登录你的账号':
       'A sign-in was requested on this device. Confirm to sign in.',
-  '请登录你的弦予音乐账号后，再扫描桌面端二维码确认登录。':
-      'Sign in to your XianYu Music account, then scan the desktop QR code to confirm sign-in.',
+  '请登录你的弦予音乐账号后，再扫描待登录设备的二维码确认登录。':
+      'Sign in to your XianYu Music account, then scan the QR code on the device to confirm sign-in.',
   '扫码登录': 'Scan to sign in',
   '闪光灯': 'Flashlight',
-  '将桌面端登录页的二维码对准取景框':
-      'Point the viewfinder at the QR code on the desktop sign-in page',
+  '将待登录设备的二维码对准取景框':
+      'Point the viewfinder at the QR code on the device waiting for sign-in',
   '扫码失败': 'Scan failed',
   '二维码无效或已过期': 'Invalid or expired QR code',
   '登录成功': 'Sign-in successful',
-  '桌面端已登录你的弦予音乐账号。':
-      'The desktop app is signed in to your XianYu Music account.',
+  '该设备已登录你的弦予音乐账号。':
+      'That device is now signed in to your XianYu Music account.',
+  '扫码确认登录其他设备，需要先登录你的弦予音乐账号。':
+      'Sign in to your XianYu Music account first to confirm sign-in on another device.',
+  '使用已登录的弦予音乐 App 扫一扫快捷登录':
+      'Scan with a signed-in XianYu Music app for quick sign-in',
+  '已扫码，请在手机上确认登录': 'Scanned. Confirm the sign-in on your phone',
+  '二维码已过期，请重新生成': 'QR code expired. Generate a new one',
+  '重新生成': 'Regenerate',
+  '正在获取二维码...': 'Getting QR code...',
+  '二维码获取失败，请重试': 'Failed to get QR code. Please retry',
   '知道了': 'Got it',
   '弦予.桌面版': 'XianYu Desktop',
   '搜索设置': 'Search settings',

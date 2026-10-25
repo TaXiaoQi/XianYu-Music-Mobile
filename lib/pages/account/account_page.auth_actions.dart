@@ -25,7 +25,7 @@ extension _AccountPageAuthActions on _AccountPageState {
     );
     if (captcha == null || !mounted) return;
     final notifier = ref.read(authProvider.notifier);
-    final isEmailLogin = _tab.index == 0 && _loginByEmail;
+    final isEmailLogin = _tab.index == 0 && _loginMethod == 1;
     try {
       final msg = await notifier
           .sendCode(email, isEmailLogin ? 'login' : 'register', captcha: captcha);
@@ -63,7 +63,7 @@ extension _AccountPageAuthActions on _AccountPageState {
     if (captcha == null || !mounted) return;
 
     if (isLogin) {
-      if (_loginByEmail) {
+      if (_loginMethod == 1) {
         await notifier.loginByEmail(
           email: _emailCtrl.text,
           code: _codeCtrl.text,

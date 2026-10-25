@@ -128,6 +128,21 @@ class TvLoginScanInfo {
   }
 }
 
+/// 「被扫端」二维码登录：generate_tv_login_code 的返回（本机为车机/平板/
+/// 电视等输入不便的设备，由已登录的手机扫码确认）。
+class TvLoginCodeInfo {
+  final String code;
+  final int expireSeconds;
+  const TvLoginCodeInfo({required this.code, required this.expireSeconds});
+}
+
+/// 「被扫端」轮询结果：pending / scanned / logged_in。
+class TvLoginPollStatus {
+  final String status;
+  const TvLoginPollStatus({required this.status});
+  bool get isLoggedIn => status == 'logged_in';
+}
+
 class HumanCaptcha {
   final String captchaId;
   final String question;
@@ -563,6 +578,36 @@ class AuthNotifier extends StateNotifier<AuthState> {
       'code': code.trim(),
       'ciyuanxi_id': ciyuanxiId,
     });
+  }
+
+  /// 「被扫端」：生成本机登录二维码（与桌面端 generate_tv_login_code
+  /// 同一服务端接口，二维码内容由调用方拼 `xianyumusic://tvlogin/<code>`）。
+  Future<TvLoginCodeInfo> generateTvLoginCode() async {
+    final data = await requestAction('generate_tv_login_code', {
+      'device_id': await _deviceId(),
+      'location': '',
+    });
+    return TvLoginCodeInfo(
+      code: (data['code'] ?? '').toString(),
+      expireSeconds: (data['expire_seconds'] as num?)?.toInt() ?? 300,
+    );
+  }
+
+  /// 「被扫端」：轮询本机二维码登录状态；logged_in 时直接持久化登录态
+  /// （与 user_login 同一响应结构，复用 _saveAuth）。单次失败抛
+  /// AuthException，由调用方决定忽略（网络抖动）或判过期。
+  Future<TvLoginPollStatus> pollTvLoginStatus(String code) async {
+    final data = await requestAction('poll_tv_login_status', {
+      'code': code.trim(),
+      'device_id': await _deviceId(),
+    });
+    final status = (data['status'] ?? 'pending').toString();
+    if (status == 'logged_in') {
+      final token = (data['token'] ?? '').toString();
+      if (token.isEmpty) throw AuthException(tr('登录响应无效'));
+      await _saveAuth(token, data);
+    }
+    return TvLoginPollStatus(status: status);
   }
 
   void setError(String message) {
