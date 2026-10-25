@@ -211,18 +211,20 @@ class CloudLoginHintText extends StatelessWidget {
 }
 
 /// 横屏设置面板嵌入态骨架：整块表单收进玻璃胶囊卡片（反馈页 TabBar
-/// 带同款材质），标题由统一带 head 位承载。
+/// 带同款材质），标题由统一带 head 位承载。列表底部加键盘高度空白：
+/// 宿主面板不随键盘缩放，靠底部内边距让内容可滚出键盘遮挡。
 Widget cloudLoginEmbeddedCard({
   required BuildContext context,
   required WidgetRef ref,
   required Widget child,
 }) {
+  final mq = MediaQuery.of(context);
   return ListView(
     padding: EdgeInsets.fromLTRB(
       16,
       landscapePanelBand(context, ref) + 12,
       16,
-      24 + MediaQuery.of(context).padding.bottom,
+      24 + mq.padding.bottom + mq.viewInsets.bottom,
     ),
     children: [
       GlassBand(
@@ -239,19 +241,20 @@ Widget cloudLoginEmbeddedCard({
 }
 
 /// 全屏登录页骨架：毛玻璃顶栏 + 横屏表单收窄 560 居中（登录表单口径），
-/// 竖屏照旧全幅。
+/// 竖屏照旧全幅。键盘随 Scaffold 缩放（账号页同款避让：列表自动上移，
+/// 焦点框滚出键盘遮挡）。
 Widget cloudLoginScaffold({
   required BuildContext context,
   required WidgetRef ref,
   required String title,
   required Widget body,
-  List<Widget> actions = const [],
+  List<Widget>? actions,
 }) {
   final landscape =
       MediaQuery.of(context).orientation == Orientation.landscape;
   return Scaffold(
     backgroundColor: appScaffoldBackground(context, ref),
-    resizeToAvoidBottomInset: false,
+    resizeToAvoidBottomInset: true,
     body: Stack(
       children: [
         Align(
