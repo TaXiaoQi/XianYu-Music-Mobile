@@ -584,9 +584,13 @@ pub async fn sync_remote_source(
     let conn = open_conn(&db_path)?;
     let source = crate::remote::repository::get_source(&conn, &source_id)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let result =
-        crate::remote::scanner::sync_source(std::path::Path::new(&cache_root), db_conn, source)
-            .await?;
+    let result = crate::remote::scanner::sync_source(
+        std::path::Path::new(&cache_root),
+        &db_path,
+        db_conn,
+        source,
+    )
+    .await?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 

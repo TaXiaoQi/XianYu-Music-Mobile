@@ -451,7 +451,32 @@ pub(crate) async fn read_text_file(
 		.map_err(|error| error.to_string())
 }
 
-pub(crate) async fn download_file_to_path( 
+/// 下载小文件到内存（目录封面图专用）：非 2xx / 超 max_bytes 均返回 None，
+/// 调用方按候选序逐个探测，失败静默跳过。封面图一般几十 KB～1MB。
+pub(crate) async fn download_small_file(
+	source: &RemoteSourceCredentials,
+	remote_path: &str,
+	max_bytes: usize,
+) -> Option<Vec<u8>> {
+	let client = shared_client();
+	let request = client.get(build_url(source, remote_path));
+	let response = auth_request(request, source).send().await.ok()?;
+	if !response.status().is_success() {
+		return None;
+	}
+	if let Some(length) = response.content_length() {
+		if length as usize > max_bytes {
+			return None;
+		}
+	}
+	let bytes = response.bytes().await.ok()?;
+	if bytes.len() > max_bytes {
+		return None;
+	}
+	Some(bytes.to_vec())
+}
+
+pub(crate) async fn download_file_to_path(
 	source: &RemoteSourceCredentials,
 	remote_path: &str,
 	target_path: &Path,

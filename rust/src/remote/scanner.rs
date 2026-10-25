@@ -2,6 +2,7 @@ use super::cache;
 use super::repository::{replace_remote_files, update_song_cache_path, update_sync_status};
 use super::types::{RemoteFileEntry, RemoteSourceCredentials, RemoteSyncResult};
 use super::webdav;
+use crate::music::covers;
 use crate::music::scanner::{apply_scan_changes, parse_song_from_file};
 use crate::music::types::Song;
 use crate::music::utils::{i64_to_bool, i64_to_u64_opt, i64_to_u8_opt};
@@ -478,8 +479,64 @@ fn mark_remote_songs(
 	Ok(())
 }
 
+/// 目录封面候选名（声影 g13 同款：固定名优先，按此序首个命中即用）。
+const DIR_COVER_NAMES: [&str; 10] = [
+	"cover.jpg",
+	"cover.jpeg",
+	"cover.png",
+	"cover.webp",
+	"folder.jpg",
+	"folder.png",
+	"folder.webp",
+	"front.jpg",
+	"album.jpg",
+	"albumart.jpg",
+];
+
+/// 目录封面候选路径：固定名 + 「目录名.图扩展名」专辑同名词变体
+/// （remote_path 为 %XX 编码形态，目录末段解码后参与匹配）。
+fn dir_cover_candidates(dir_path: &str) -> Vec<String> {
+	let mut candidates: Vec<String> = DIR_COVER_NAMES
+		.iter()
+		.map(|name| format!("{dir_path}/{name}"))
+		.collect();
+	let dir_name = dir_path.rsplit('/').next().unwrap_or("").trim();
+	if !dir_name.is_empty() {
+		let decoded = percent_decode(dir_name);
+		if !decoded.is_empty() && decoded != dir_name {
+			for ext in ["jpg", "jpeg", "png", "webp"] {
+				candidates.push(format!("{dir_path}/{decoded}.{ext}"));
+			}
+		}
+	}
+	candidates
+}
+
+/// 探测并落盘目录封面（声影 g13 同款规则）：按候选序 GET 同目录图片，
+/// magic byte 校验 + 内容指纹共享缓存（save_embedded_cover_from_bytes，
+/// 同图跨曲/跨会话复用）落盘，返回值直接作 songs.cover_thumb_path。
+/// 无封面的目录由调用方按目录缓存只探测一轮，失败静默。
+async fn fetch_dir_cover(
+	source: &RemoteSourceCredentials,
+	dir_path: &str,
+	covers_dir: &Path,
+) -> Option<String> {
+	const MAX_COVER_BYTES: usize = 5 * 1024 * 1024;
+	for path in dir_cover_candidates(dir_path) {
+		if let Some(bytes) = webdav::download_small_file(source, &path, MAX_COVER_BYTES).await {
+			if let Some(cover_path) =
+				covers::save_embedded_cover_from_bytes(&bytes, covers_dir)
+			{
+				return Some(cover_path);
+			}
+		}
+	}
+	None
+}
+
 pub(crate) async fn sync_source( // 实现
 	cache_root: &Path,
+	db_path: &str,
 	db_conn: Arc<Mutex<rusqlite::Connection>>,
 	source: RemoteSourceCredentials,
 ) -> Result<RemoteSyncResult, String> { // 实现
@@ -505,6 +562,11 @@ pub(crate) async fn sync_source( // 实现
 
 	let mut songs = Vec::with_capacity(files.len());
 	let mut cache_updates = Vec::new();
+	// 目录封面（声影 g13 同款）：同目录歌曲共享一张封面，按目录缓存探测
+	// 结果——每目录至多一轮候选 GET（命中即停/全 404 放弃），不重复探测。
+	let covers_dir = crate::music::scanner::derive_cover_cache_dir(db_path)
+		.unwrap_or_else(|| cache_root.join("cover_cache"));
+	let mut dir_covers: HashMap<String, Option<String>> = HashMap::new();
 	for file in files.iter() {
 		let remote_uri = file.remote_uri(&source.id);
 		if let Some(snapshot) = snapshots.get(&remote_uri) {
@@ -515,9 +577,26 @@ pub(crate) async fn sync_source( // 实现
 				}
 			}
 		}
-		let (song, cache_path) = cache_and_parse_remote_song(cache_root, &source, file).await;
+		let (mut song, cache_path) = cache_and_parse_remote_song(cache_root, &source, file).await;
 		if let Some(cache_path) = cache_path {
 			cache_updates.push((remote_uri, cache_path));
+		}
+		if song.cover_thumb_path.is_none() {
+			let dir_path = file.remote_path.trim_end_matches('/');
+			let dir_path = match dir_path.rfind('/') {
+				Some(index) if index > 0 => &dir_path[..index],
+				_ => "/",
+			}
+			.to_string();
+			let cover = match dir_covers.get(&dir_path) {
+				Some(cached) => cached.clone(),
+				None => {
+					let found = fetch_dir_cover(&source, &dir_path, &covers_dir).await;
+					dir_covers.insert(dir_path.clone(), found.clone());
+					found
+				}
+			};
+			song.cover_thumb_path = cover;
 		}
 		songs.push(song);
 	}
@@ -561,6 +640,21 @@ pub(crate) async fn sync_source( // 实现
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn dir_cover_candidates_fixed_names_first_then_album_named() {
+		// 固定名优先（保持声明序），目录名非编码时不加同名词变体
+		let candidates = dir_cover_candidates("/music/叶惠敏精选");
+		assert_eq!(candidates.first().map(String::as_str), Some("/music/叶惠敏精选/cover.jpg"));
+		assert_eq!(candidates.len(), DIR_COVER_NAMES.len());
+		// 中文 %XX 编码目录：追加「目录名.扩展名」变体（声影同款）
+		let candidates = dir_cover_candidates("/music/%E5%8F%B6%E6%83%A0%E6%95%8F");
+		assert_eq!(candidates.len(), DIR_COVER_NAMES.len() + 4);
+		assert_eq!(
+			candidates.last().map(String::as_str),
+			Some("/music/%E5%8F%B6%E6%83%A0%E6%95%8F/叶惠敏.webp")
+		);
+	}
 
 	#[test]
 	fn album_falls_back_past_generic_folders_and_decodes_percent() {
