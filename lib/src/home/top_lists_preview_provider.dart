@@ -44,7 +44,9 @@ class TopListsPreviewNotifier extends StateNotifier<TopListsPreview> {
   final Ref _ref;
   String? _lastOrderSig;
   bool _running = false;
-  static const _previewCount = 8;
+  // 首页榜单行是横向滚动列表：预览条数按宽屏（平板/车机）一屏约 12 张
+  // 取 16，源数据够长即可顶满视口，多余部分滚动可见
+  static const _previewCount = 16;
 
   Future<void> _run() async {
     if (_running) return;

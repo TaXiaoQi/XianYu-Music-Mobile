@@ -10,6 +10,7 @@ import '../i18n/i18n.dart';
 import '../navigation/routes.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/press_scale.dart';
+import '../widgets/user_agreement.dart' show agreementDialogInsetPadding;
 import 'plugin_models.dart';
 import 'plugin_provider.dart';
 import 'plugin_updates.dart';
@@ -206,6 +207,8 @@ class _LxUpdateAlertDialogState extends ConsumerState<_LxUpdateAlertDialog> {
     final version = source?.version ?? '';
     final hasUrl = (widget.alert.updateUrl ?? '').isNotEmpty;
     return AlertDialog(
+      // 宽屏上钳制在 560dp 居中，避免更新日志被拉满整行
+      insetPadding: agreementDialogInsetPadding(context),
       title: Text(tr('「{name}」有新版本', {
         'name': name,
       })),

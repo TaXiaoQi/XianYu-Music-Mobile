@@ -39,7 +39,8 @@ class RecommendSheetsPreviewNotifier
   String? _lastOrderSig;
   bool _running = false;
   static const _cacheKey = 'recommend_sheets_preview_v1';
-  static const _previewCount = 8;
+  // 与榜单行同口径：预览条数覆盖宽屏一屏（约 12 张）并留余量
+  static const _previewCount = 16;
 
   Future<void> _init() async {
     // 缓存优先：先展示上次拉到的歌单卡片，后台再刷新覆盖

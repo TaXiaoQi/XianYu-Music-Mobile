@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -161,6 +163,17 @@ class _UserAgreementCheckboxState extends ConsumerState<UserAgreementCheckbox> {
   }
 }
 
+/// 协议类弹窗的 insetPadding：大屏（平板横屏）上限制弹窗最大宽度，
+/// 避免内容被拉满整屏；小屏尺寸不超过默认的 40 边距，表现不变。
+EdgeInsets agreementDialogInsetPadding(BuildContext context,
+    {double maxWidth = 560}) {
+  final screenW = MediaQuery.of(context).size.width;
+  return EdgeInsets.symmetric(
+    horizontal: math.max(40.0, (screenW - maxWidth) / 2),
+    vertical: 24,
+  );
+}
+
 Future<bool> showUserAgreementModal({
   required BuildContext context,
   required UserAgreement agreement,
@@ -237,6 +250,7 @@ class _AgreementDialogState extends State<_AgreementDialog> {
     final scheme = Theme.of(context).colorScheme;
     final enable = widget.requireScrollToBottom ? _atEnd : true;
     return AlertDialog(
+      insetPadding: agreementDialogInsetPadding(context),
       titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
       contentPadding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
