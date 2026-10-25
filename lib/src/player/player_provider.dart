@@ -291,6 +291,12 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   // 播放器 current 必须在队列内）。失败跳过/换源不消费，保留用户意图。
   final List<QueueItem> _tempQueue = [];
 
+  // playQueue 防抖：行点击各页均无去重，快速双击同一首歌会并发两条
+  // 解析链（日志表现为 150ms 间隔的同参 playQueue + 双 probe/双 DSP
+  // 接管）。300ms 内同参调用视为抖动忽略。
+  DateTime? _lastPlayQueueAt;
+  List<Object>? _lastPlayQueueSig;
+
   // ---- 随机播放三段式（对齐桌面端 playerQueue.ts）----
   // _shuffleRemaining：本轮洗牌后的待播 path 序列；_shuffleCyclePlayed：
   // 本轮已播集合；一轮播完自动清空重洗，保证随机模式一轮不重播。

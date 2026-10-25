@@ -4,6 +4,29 @@ extension PlayerNotifierQueue on PlayerNotifier {
   Future<void> playQueue(List<QueueItem> items,
       {int startIndex = 0, bool shareLinkPlayback = false}) async {
     if (items.isEmpty) return;
+    // 快速双击同一首歌的防抖：300ms 内同参（首曲 path/长度/起点）重复
+    // 调用直接忽略，避免并发两条解析链
+    final sig = <Object>[
+      items.first.path,
+      items.length,
+      startIndex,
+      shareLinkPlayback,
+    ];
+    final lastSig = _lastPlayQueueSig;
+    final lastAt = _lastPlayQueueAt;
+    if (lastSig != null &&
+        lastAt != null &&
+        lastSig.length == sig.length &&
+        lastSig.first == sig.first &&
+        lastSig[1] == sig[1] &&
+        lastSig[2] == sig[2] &&
+        lastSig[3] == sig[3] &&
+        DateTime.now().difference(lastAt) < const Duration(milliseconds: 300)) {
+      AppLog.debug('play', 'playQueue 300ms 内重复调用，忽略: ${items.first.path}');
+      return;
+    }
+    _lastPlayQueueAt = DateTime.now();
+    _lastPlayQueueSig = sig;
     AppLog.info('play', 'playQueue ${items.length} 首 startIndex=$startIndex');
     _shareLinkPlayback = shareLinkPlayback;
     _tempQueue.clear();
