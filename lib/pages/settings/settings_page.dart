@@ -20,12 +20,15 @@ import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/landscape_page_fade.dart';
 import '../../src/widgets/press_scale.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/cloud/cloud_registry.dart';
+import '../../src/cloud/cloud_types.dart';
 import '../../src/responsive/landscape.dart';
 import '../about/about_page.dart';
 import '../account/account_page.dart';
 import '../cloud/cloud_bind_page.dart';
 import '../cloud/cloud_folder_picker_page.dart';
 import '../cloud/cloud_password_login_page.dart';
+import '../cloud/cloud_webview_fields_login_page.dart';
 import '../feedback/feedback_page.dart';
 import '../tools/audio_convert_page.dart';
 import 'batch_rename_page.dart';
@@ -940,8 +943,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     // 参数化子面板：网盘登录 / 选择文件夹（provider、账号编码在 sel 里，
     // 由网盘面板内入口写入）
     if (path.startsWith('/cloud-login/')) {
+      final providerId = path.split('/')[2];
+      final p = cloudProviderById(providerId);
+      // 自绘账密 + WebView 过盾范式（UC CAS）用专用登录页。
+      if (p?.loginKind == CloudLoginKind.webviewFields) {
+        return CloudWebviewFieldsLoginPage(
+          providerId: providerId,
+          embedded: true,
+        );
+      }
       return CloudPasswordLoginPage(
-        providerId: path.split('/')[2],
+        providerId: providerId,
         embedded: true,
       );
     }

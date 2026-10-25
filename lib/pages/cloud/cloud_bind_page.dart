@@ -81,7 +81,8 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
 
   String _kindLabel(CloudLoginKind kind) => switch (kind) {
     CloudLoginKind.webviewCookie || CloudLoginKind.webviewToken => tr('网页登录'),
-    CloudLoginKind.httpPassword => tr('账号密码'),
+    CloudLoginKind.httpPassword ||
+    CloudLoginKind.webviewFields => tr('账号密码'),
     CloudLoginKind.smsPassword => tr('手机号 + 验证码'),
     CloudLoginKind.qrCode => tr('扫码登录'),
   };
@@ -91,7 +92,8 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
     if (widget.embedded &&
         ref.read(landscapeSettingsCategoryProvider) != null &&
         (kind == CloudLoginKind.httpPassword ||
-            kind == CloudLoginKind.smsPassword)) {
+            kind == CloudLoginKind.smsPassword ||
+            kind == CloudLoginKind.webviewFields)) {
       // 设置面板嵌入：账密/短信登录切到右侧容器子面板，成功后由登录页
       // 切回本面板。详情面板嵌入（设置面板未开）无子面板可切，落到底部
       // 全屏推登录页；扫码/网页登录两种语境均全屏推页
@@ -104,6 +106,9 @@ class _CloudBindPageState extends ConsumerState<CloudBindPage> {
         kind == CloudLoginKind.webviewToken) {
       // 网页登录为主，页内「填 Cookie」按钮兜底（与阿里同形态）。
       future = context.push('/cloud/webview-login/${p.id}');
+    } else if (kind == CloudLoginKind.webviewFields) {
+      // 自绘账密 + WebView 过盾执行（UC CAS 逆向通道）。
+      future = context.push('/cloud/fields-webview-login/${p.id}');
     } else if (kind == CloudLoginKind.qrCode) {
       future = context.push('/cloud/qrcode-login/${p.id}');
     } else {

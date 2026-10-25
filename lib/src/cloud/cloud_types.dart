@@ -21,6 +21,12 @@ enum CloudLoginKind {
 
   /// 扫码登录（123/百度/夸克/UC）
   qrCode,
+
+  /// 自绘账密表单 + WebView 过盾执行（UC CAS：账密/短信提交均强制
+  /// 阿里云盾，sig/captcha_data 由盾 SDK 在浏览器环境生成无法离线
+  /// 伪造，实测 50058/20180001 硬拒——自绘页收账密，WebView 加载
+  /// CAS 页自动填表过盾抓 service_ticket，再兑换种网盘 Cookie）。
+  webviewFields,
 }
 
 /// WebView 登录捕获规则（webviewCookie / webviewToken 两范式共用）。

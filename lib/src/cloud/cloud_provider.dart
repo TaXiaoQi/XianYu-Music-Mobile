@@ -56,6 +56,21 @@ abstract class CloudProvider {
   /// 视口宽度与幂等自守卫，通用登录页不感知其内容。
   String? get webviewInjectJs => null;
 
+  // ── webviewFields 组（自绘账密 + WebView 过盾执行）──────────
+
+  /// WebView 加载的 CAS 账密登录页地址（webviewFields；非该组为空串）。
+  String get webviewFieldsLoginUrl => '';
+
+  /// CAS 页加载后注入的执行脚本：填入账密 → 等盾回调就绪 → 触发
+  /// 提交 → hook 成功/失败回传（经 XianYuLogin channel 发
+  /// `TICKET:<data>` / `MSG:<message>`，登录页据此接管后续流程）。
+  /// 账密以 JSON 字面量嵌入，由实现侧负责转义。
+  String webviewFieldsScript(String account, String password) => '';
+
+  /// 登录成功（service_ticket 到手）后的兑换页地址：WebView 导航过去
+  /// 服务端 Set-Cookie 种网盘凭据（复用 captureRule 捕获链收尾）。
+  String ticketExchangeUrl(String ticket) => '';
+
   /// 账密/短信表单字段（httpPassword/smsPassword）。
   List<CloudLoginField> get loginFields => const [];
 

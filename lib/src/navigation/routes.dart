@@ -42,6 +42,7 @@ import '../../pages/cloud/cloud_folder_picker_page.dart';
 import '../../pages/cloud/cloud_link_import_page.dart';
 import '../../pages/cloud/cloud_password_login_page.dart';
 import '../../pages/cloud/cloud_qrcode_login_page.dart';
+import '../../pages/cloud/cloud_webview_fields_login_page.dart';
 import '../../pages/cloud/cloud_webview_login_page.dart';
 import '../../pages/player/player_page.dart';
 import '../../pages/account/account_page.dart';
@@ -50,7 +51,6 @@ import '../../pages/about/about_page.dart';
 import '../../pages/leaderboard/leaderboard_page.dart';
 import '../../pages/plugin/plugin_page.dart';
 import '../../pages/playlist/playlists_page.dart';
-import '../../pages/playlist/playlist_import_page.dart';
 import '../../pages/download/download_page.dart';
 import '../../pages/download/download_move_page.dart';
 import '../../pages/settings/batch_rename_page.dart';
@@ -274,6 +274,16 @@ final appRouter = GoRouter(
       ),
     ),
     GoRoute(
+      path: '/cloud/fields-webview-login/:id',
+      pageBuilder: (context, state) => _coverBackPage(
+        context,
+        (_) => CloudWebviewFieldsLoginPage(
+          providerId: state.pathParameters['id'] ?? '',
+        ),
+        key: state.pageKey,
+      ),
+    ),
+    GoRoute(
       path: '/cloud/password-login/:id',
       pageBuilder: (context, state) => _coverBackPage(
         context,
@@ -387,14 +397,6 @@ final appRouter = GoRouter(
             child: const PlaylistsPage(),
           ),
         ),
-        key: state.pageKey,
-      ),
-    ),
-    GoRoute(
-      path: '/playlist-import',
-      pageBuilder: (context, state) => _coverPage(
-        context,
-        (_) => const PlaylistImportPage(),
         key: state.pageKey,
       ),
     ),
