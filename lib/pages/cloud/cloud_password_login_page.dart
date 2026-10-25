@@ -65,6 +65,9 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   bool _obscure = true;
   bool _rememberPwd = false;
 
+  /// 已展开的 optional 字段（多通道二选一切换态，如 139 服务密码）。
+  final Set<String> _expandedFields = {};
+
   /// 登录提示落盘定位：首个非密码非验证码字段为账号，obscure 字段为密码。
   String? _accountKey;
   String? _passwordKey;
@@ -117,6 +120,8 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       if (hint.rememberPassword && pwdCtrl != null && pwdCtrl.text.isEmpty) {
         pwdCtrl.text = hint.password;
         _rememberPwd = true;
+        // 回填了记住的密码：自动展开密码通道，用户点登录即走账密。
+        _expandedFields.add(_passwordKey!);
       }
     });
   }
@@ -167,11 +172,11 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   Future<void> _submitFields() async {
     if (_submitting) return;
     final fields = _fields;
-    // 必填字段非空即可提交（optional 字段选填，多通道二选一由
-    // provider 自行分派）。
+    // 必填字段非空即可提交：optional 字段折叠时不校验（留空走另一通
+    // 道），展开即视为选择该通道、参与必填校验。
     final requiredKeys = {
       for (final f in _provider.loginFields)
-        if (!f.optional) f.key,
+        if (!f.optional || _expandedFields.contains(f.key)) f.key,
     };
     if (requiredKeys.any((k) => (fields[k] ?? '').isEmpty)) {
       showXianYuToast(context, tr('请填写完整'));
@@ -485,23 +490,49 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
   /// 账密 / 短信表单（httpPassword / smsPassword 范式，按 loginFields
   /// 动态渲染）：公共 kit 输入框（前图标 + 填充底色 + 16 圆角），
   /// 密码框小眼睛切换明文，下方「记住密码」勾选（账号默认记住）。
+  /// optional 字段（多通道二选一）默认折叠为切换入口，点击展开输入框
+  /// 并显示切回链接；展开即视为选择该通道，提交时参与必填校验。
   Widget _buildFieldsForm(ColorScheme scheme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final f in _provider.loginFields)
-          CloudLoginFieldBox(
-            _ctrls[f.key]!,
-            label: tr(f.label),
-            icon: _iconFor(f),
-            obscure: f.obscure ? _obscure : false,
-            keyboard: f.isPhone
-                ? TextInputType.phone
-                : (f.obscure
-                    ? TextInputType.visiblePassword
-                    : (f.isSmsCode ? TextInputType.number : TextInputType.text)),
-            suffixIcon: _suffixFor(f),
-          ),
+          if (_fieldCollapsed(f))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 26),
+              child: TextButton(
+                onPressed: () =>
+                    setState(() => _expandedFields.add(f.key)),
+                child: Text(tr(f.switchLabel!)),
+              ),
+            )
+          else ...[
+            CloudLoginFieldBox(
+              _ctrls[f.key]!,
+              label: tr(f.label),
+              icon: _iconFor(f),
+              obscure: f.obscure ? _obscure : false,
+              keyboard: f.isPhone
+                  ? TextInputType.phone
+                  : (f.obscure
+                      ? TextInputType.visiblePassword
+                      : (f.isSmsCode
+                          ? TextInputType.number
+                          : TextInputType.text)),
+              suffixIcon: _suffixFor(f),
+            ),
+            if (f.collapseLabel != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 26),
+                child: TextButton(
+                  onPressed: () {
+                    _ctrls[f.key]!.clear();
+                    setState(() => _expandedFields.remove(f.key));
+                  },
+                  child: Text(tr(f.collapseLabel!)),
+                ),
+              ),
+          ],
         CloudLoginRememberRow(
           value: _rememberPwd,
           onChanged: (v) => setState(() => _rememberPwd = v),
@@ -514,6 +545,10 @@ class _CloudPasswordLoginPageState extends ConsumerState<CloudPasswordLoginPage>
       ],
     );
   }
+
+  /// optional 字段是否处于折叠态（switchLabel 为空的不折叠）。
+  bool _fieldCollapsed(CloudLoginField f) =>
+      f.optional && f.switchLabel != null && !_expandedFields.contains(f.key);
 
   /// 字段前图标：密码锁、验证码短信、手机号、其余按账号处理。
   IconData _iconFor(CloudLoginField f) {

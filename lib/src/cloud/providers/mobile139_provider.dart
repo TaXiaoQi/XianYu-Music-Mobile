@@ -59,12 +59,15 @@ class Mobile139Provider extends CloudProvider {
   @override
   List<CloudLoginField> get loginFields => const [
         CloudLoginField(key: 'phone', label: '手机号', isPhone: true),
-        // 服务密码与短信二选一：填密码走 passPwd 通道，留空走短信弹窗。
+        // 默认短信登录（发码+公共弹窗收码）；点切换展开服务密码框走
+        // passPwd 通道，可随时切回。
         CloudLoginField(
           key: 'password',
-          label: '服务密码（与短信二选一）',
+          label: '服务密码',
           obscure: true,
           optional: true,
+          switchLabel: '使用服务密码登录',
+          collapseLabel: '使用短信验证码登录',
         ),
       ];
 
