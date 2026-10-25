@@ -50,6 +50,26 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
     );
   }
 
+  // 收起态展示：纯文本，与下方输入框风格一致；高亮圆角卡片只用于展开菜单。
+  // 不能直接复用 _sourceMenuRow——isExpanded 会把它的卡片样式撑满整个输入框
+  Widget _sourceButtonLabel(String label) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      alignment: AlignmentDirectional.centerStart,
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 14.5,
+          color: scheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   String? _selectedPluginId;
   PluginSource? _resolved;
   bool _searching = false;
@@ -415,6 +435,10 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
             items: [
               _sourceMenuRow(_autoKey, tr('自动识别'), selected),
               for (final p in plugins) _sourceMenuRow(p.id, p.name, selected),
+            ],
+            selectedItemBuilder: (context) => [
+              _sourceButtonLabel(tr('自动识别')),
+              for (final p in plugins) _sourceButtonLabel(p.name),
             ],
             onChanged: (v) => setState(() {
               _selectedPluginId = v;
