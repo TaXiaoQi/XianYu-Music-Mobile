@@ -76,9 +76,15 @@ abstract class QuarkUcBase extends CloudProvider {
         CloudLoginField(key: 'password', label: '密码', obscure: true),
       ];
 
-  /// CAS 页执行脚本：hook 成功/失败回传 → 填账密 → 轮询盾回调
-  /// （无痕自动通过约数秒；触发滑块时用户在 WebView 里拖动）→
-  /// 就绪后点击原生提交按钮。60 秒未就绪放弃（防僵尸轮询）。
+  /// CAS 页执行脚本 v3（真机逆向结论：CAS SSR 页按钮 onclick 的验证
+  /// 类型参数为空串，前端不做盾拦截；服务端风控要求图形验证码时报
+  /// 「验证码错误」且老版 zepto 页面成功响应因 transmission_mode 为空
+  /// 被静默丢弃）：
+  /// ① hook $.ajax 抓 status=20000 的 service_ticket（夸克老版页面）；
+  /// ② hook postMessagePrivate（UC 新版页面 pm 模式回调）；
+  /// ③ 填账密 → 5 秒后自动提交（UC 新版页面若有无感盾，就绪即提前提交）；
+  /// ④ 服务端报验证码错误 → 自动调 getCaptcha 拉图注入底部输入区，
+  ///    用户填码点确定后携带 captcha_id/captcha_val 重提交。
   @override
   String webviewFieldsScript(String account, String password) {
     final acc = jsonEncode(account);
@@ -89,15 +95,33 @@ abstract class QuarkUcBase extends CloudProvider {
     if (window.__xyCasHooked) return;
     window.__xyCasHooked = true;
     var post = function(m){ try { window.XianYuLogin.postMessage(m); } catch(e){} };
-    window.postMessagePrivate = function(data){
-      post('TICKET:' + (typeof data === 'string' ? data : JSON.stringify(data)));
+    var emitTicket = function(d){
+      post('TICKET:' + (typeof d === 'string' ? d : JSON.stringify(d)));
     };
-    var _sem = window.showErrorMessage;
-    window.showErrorMessage = function(m){ post('MSG:' + (m || '')); if (_sem) _sem(m); };
+    window.postMessagePrivate = function(data){ emitTicket(data); };
+    // zepto $.ajax hook：老版 SSR 页 transmission_mode 为空，成功响应
+    // 在页面回调里被静默丢弃——拦截 success 直接抓 ticket。
+    try {
+      if (window.$ && window.$.ajax && !window.$.__xyAjax) {
+        var _ajax = window.$.ajax;
+        window.$.__xyAjax = true;
+        window.$.ajax = function(o){
+          try {
+            if (o && o.success && !o.__xy) {
+              o.__xy = true;
+              var ok = o.success;
+              o.success = function(r){
+                try { if (r && r.status === 20000 && r.data) emitTicket(r.data); } catch(e){}
+                ok(r);
+              };
+            }
+          } catch(e){}
+          return _ajax.apply(window.$, arguments);
+        };
+      }
+    } catch(e){}
     var ACC = $acc, PWD = $pwd;
-    // 环境诊断（DIAG 由 App 落日志，不弹提示）：CSS/JS 是否加载、
-    // 盾 SDK 是否就绪、表单 id 是否存在——资源加载失败时 CSS/JS 计
-    // 数异常偏低，直接点提交时依赖此信息定位。
+    // 环境诊断（DIAG 由 App 落日志，不弹提示）。
     var diag = function(tag){
       var d = {t: tag, ready: document.readyState,
                css: document.querySelectorAll('link[rel=stylesheet]').length,
@@ -117,6 +141,80 @@ abstract class QuarkUcBase extends CloudProvider {
       if (b) { b.click(); return true; }
       post('MSG:提交入口缺失，请改用网页登录');
       return false;
+    };
+    // 图形验证码自闭合：服务端要求时响应报「验证码错误」而 SSR 页无
+    // 验证码 UI——自动拉图注入底部输入区，填码确定后重提交（4 秒节流
+    // 防连点；点图刷新）。
+    var capBusy = 0;
+    var drawCaptcha = function(){
+      if (!window.$ || !window.$.ajax) return;
+      var now = (new Date).getTime();
+      if (now - capBusy < 4000) return;
+      capBusy = now;
+      var base = (document.getElementById('base_uri')||{}).value || '';
+      window.$.ajax({
+        type: 'POST',
+        url: base + 'getCaptcha',
+        data: {
+          client_id: (document.getElementById('client_id')||{}).value || '',
+          display: (document.getElementById('display')||{}).value || '',
+          t: now
+        },
+        success: function(r){
+          if (!r || !r.data || !r.data.captchaImage) return;
+          var img = 'data:image/png;base64,' + r.data.captchaImage;
+          var f = document.querySelector('#u_form form') ||
+                  document.getElementById('u_form');
+          if (!f) return;
+          var idInp = document.getElementById('captcha_id');
+          if (idInp) { idInp.value = r.data.captchaId; }
+          else {
+            var mk = function(i, nm){
+              var el = document.createElement('input');
+              el.type = 'hidden'; el.id = i; el.name = nm;
+              f.appendChild(el); return el;
+            };
+            mk('captcha_id','captcha_id').value = r.data.captchaId;
+            mk('captcha_val','captcha_val').value = '';
+          }
+          var imgEl = document.getElementById('xy_cap_img');
+          if (imgEl) { imgEl.src = img; return; }
+          var box = document.createElement('div');
+          box.id = 'xy_cap';
+          box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;'
+            + 'background:#fff;padding:12px;border-top:1px solid #ddd;'
+            + 'z-index:99999;';
+          box.innerHTML = '<div style="font-size:13px;color:#333;'
+            + 'margin-bottom:8px;">请输入图形验证码</div>'
+            + '<img id="xy_cap_img" src="' + img
+            + '" style="width:110px;height:40px;vertical-align:middle;">'
+            + '<input id="xy_cap_val" type="text" maxlength="6" '
+            + 'placeholder="验证码" style="width:90px;height:38px;'
+            + 'margin-left:10px;padding:0 8px;vertical-align:middle;'
+            + 'border:1px solid #ccc;border-radius:4px;">'
+            + '<button id="xy_cap_ok" type="button" style="height:38px;'
+            + 'margin-left:10px;padding:0 14px;">确定</button>';
+          document.body.appendChild(box);
+          document.getElementById('xy_cap_img').onclick = function(){
+            capBusy = 0; drawCaptcha();
+          };
+          document.getElementById('xy_cap_ok').onclick = function(){
+            var v = (document.getElementById('xy_cap_val')||{}).value || '';
+            if (!v) { post('MSG:请输入图形验证码'); return; }
+            document.getElementById('captcha_val').value = v;
+            submit();
+          };
+          post('MSG:请输入图形验证码');
+        }
+      });
+    };
+    var _sem = window.showErrorMessage;
+    window.showErrorMessage = function(m){
+      post('MSG:' + (m || ''));
+      try {
+        if (String(m || '').indexOf('验证码') >= 0) drawCaptcha();
+      } catch(e){}
+      if (_sem) _sem(m);
     };
     diag('init');
     fill();
@@ -142,7 +240,8 @@ abstract class QuarkUcBase extends CloudProvider {
       } else if (n === 5) {
         // 无感验证形态：盾参数在提交瞬间由 SDK 内部生成、不暴露全局，
         // 等是等不到的——给 SDK 5 秒初始化后直接点提交（需滑块时会
-        // 弹出，用户页内拖动；盾缺失时服务端报验证码错误，页面内可见）。
+        // 弹出，用户页内拖动；服务端要求图形验证码时报「验证码错误」
+        // 触发底部注入的填码区）。
         submit();
         post('MSG:已提交，若出现滑块请在页面内拖动');
       } else if (n >= 25) {
