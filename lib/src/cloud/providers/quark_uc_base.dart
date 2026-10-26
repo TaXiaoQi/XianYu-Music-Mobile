@@ -139,12 +139,13 @@ abstract class QuarkUcBase extends CloudProvider {
       if (ready) {
         clearInterval(t);
         submit();
-      } else if (n === 15) {
+      } else if (n === 5) {
         // 无感验证形态：盾参数在提交瞬间由 SDK 内部生成、不暴露全局，
-        // 等是等不到的——直接点提交（需滑块时会弹出，用户页内拖动）。
+        // 等是等不到的——给 SDK 5 秒初始化后直接点提交（需滑块时会
+        // 弹出，用户页内拖动；盾缺失时服务端报验证码错误，页面内可见）。
         submit();
         post('MSG:已提交，若出现滑块请在页面内拖动');
-      } else if (n >= 45) {
+      } else if (n >= 25) {
         clearInterval(t);
         diag('timeout');
         post('MSG:安全验证未就绪，请重试或改用网页登录');
