@@ -89,7 +89,9 @@ abstract class QuarkUcBase extends CloudProvider {
   String webviewFieldsScript(String account, String password) {
     final acc = jsonEncode(account);
     final pwd = jsonEncode(password);
-    return '''
+    // raw 字符串：JS 里的 $（zepto 选择器）不能被 dart 当插值解析，
+    // 账密经占位符替换注入。
+    return r'''
 (function(){
   try {
     if (window.__xyCasHooked) return;
@@ -120,7 +122,7 @@ abstract class QuarkUcBase extends CloudProvider {
         };
       }
     } catch(e){}
-    var ACC = $acc, PWD = $pwd;
+    var ACC = __XY_ACC__, PWD = __XY_PWD__;
     // 环境诊断（DIAG 由 App 落日志，不弹提示）。
     var diag = function(tag){
       var d = {t: tag, ready: document.readyState,
@@ -254,7 +256,7 @@ abstract class QuarkUcBase extends CloudProvider {
     try { window.XianYuLogin.postMessage('MSG:' + e); } catch(_){}
   }
 })();
-''';
+'''.replaceAll('__XY_ACC__', acc).replaceAll('__XY_PWD__', pwd);
   }
 
   // 必须强制桌面 UA：移动 UA 下 pan.quark.cn / drive.uc.cn 一律
