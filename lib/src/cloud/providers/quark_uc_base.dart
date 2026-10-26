@@ -164,7 +164,9 @@ abstract class QuarkUcBase extends CloudProvider {
         },
         success: function(r){
           if (!r || !r.data || !r.data.captchaImage) return;
-          var img = 'data:image/png;base64,' + r.data.captchaImage;
+          var raw = String(r.data.captchaImage);
+          var img = raw.indexOf('data:') === 0 ? raw
+            : ('data:image/png;base64,' + raw);
           var f = document.querySelector('#u_form form') ||
                   document.getElementById('u_form');
           if (!f) return;
@@ -181,22 +183,28 @@ abstract class QuarkUcBase extends CloudProvider {
           }
           var imgEl = document.getElementById('xy_cap_img');
           if (imgEl) { imgEl.src = img; return; }
+          // 注入到错误提示（#message）后的文档流位置：华为老内核对
+          // fixed 定位兼容差（实测注入条不显示），文档流必可见。
           var box = document.createElement('div');
           box.id = 'xy_cap';
-          box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;'
-            + 'background:#fff;padding:12px;border-top:1px solid #ddd;'
-            + 'z-index:99999;';
+          box.style.cssText = 'margin:10px 0;padding:10px;'
+            + 'border:1px solid #ddd;background:#fff;';
           box.innerHTML = '<div style="font-size:13px;color:#333;'
-            + 'margin-bottom:8px;">请输入图形验证码</div>'
-            + '<img id="xy_cap_img" src="' + img
-            + '" style="width:110px;height:40px;vertical-align:middle;">'
+            + 'margin-bottom:6px;">请输入图形验证码（点图刷新）</div>'
+            + '<div><img id="xy_cap_img" src="' + img
+            + '" width="110" height="40" style="vertical-align:middle;">'
             + '<input id="xy_cap_val" type="text" maxlength="6" '
             + 'placeholder="验证码" style="width:90px;height:38px;'
             + 'margin-left:10px;padding:0 8px;vertical-align:middle;'
             + 'border:1px solid #ccc;border-radius:4px;">'
             + '<button id="xy_cap_ok" type="button" style="height:38px;'
-            + 'margin-left:10px;padding:0 14px;">确定</button>';
-          document.body.appendChild(box);
+            + 'margin-left:10px;padding:0 14px;">确定</button></div>';
+          var msg = document.getElementById('message');
+          if (msg && msg.parentNode) {
+            msg.parentNode.insertBefore(box, msg.nextSibling);
+          } else {
+            f.appendChild(box);
+          }
           document.getElementById('xy_cap_img').onclick = function(){
             capBusy = 0; drawCaptcha();
           };
@@ -206,6 +214,20 @@ abstract class QuarkUcBase extends CloudProvider {
             document.getElementById('captcha_val').value = v;
             submit();
           };
+          // 渲染诊断：注入结果落日志（图片加载失败/盒子不可见排查用）。
+          setTimeout(function(){
+            try {
+              var b = document.getElementById('xy_cap');
+              var i2 = document.getElementById('xy_cap_img');
+              var rc = b ? b.getBoundingClientRect() : null;
+              post('DIAG:' + JSON.stringify({
+                t: 'captcha_ui', box: b ? 1 : 0,
+                w: rc ? Math.round(rc.width) : -1,
+                h: rc ? Math.round(rc.height) : -1,
+                nw: i2 ? i2.naturalWidth : -1
+              }));
+            } catch(e){}
+          }, 800);
           post('MSG:请输入图形验证码');
         }
       });
