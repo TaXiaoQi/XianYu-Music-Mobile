@@ -312,6 +312,11 @@ class _CloudWebviewFieldsLoginPageState
       if (msg.contains('密码') && seq >= 2) {
         _backToForm(null);
       }
+      return;
+    }
+    if (raw.startsWith('DIAG:')) {
+      // 执行页环境诊断：仅落日志（CSS/JS 资源加载失败排查用）。
+      AppLog.warn('cloud', '${_provider.id} CAS 诊断: ${raw.substring(5)}');
     }
   }
 

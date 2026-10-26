@@ -95,12 +95,30 @@ abstract class QuarkUcBase extends CloudProvider {
     var _sem = window.showErrorMessage;
     window.showErrorMessage = function(m){ post('MSG:' + (m || '')); if (_sem) _sem(m); };
     var ACC = $acc, PWD = $pwd;
+    // 环境诊断（DIAG 由 App 落日志，不弹提示）：CSS/JS 是否加载、
+    // 盾 SDK 是否就绪、表单 id 是否存在——资源加载失败时 CSS/JS 计
+    // 数异常偏低，直接点提交时依赖此信息定位。
+    var diag = function(tag){
+      var d = {t: tag, ready: document.readyState,
+               css: document.querySelectorAll('link[rel=stylesheet]').length,
+               js: document.querySelectorAll('script').length,
+               sdk: (typeof AliyunCaptchaV2 !== 'undefined') ? 1 : 0,
+               form: document.getElementById('login_name') ? 1 : 0};
+      post('DIAG:' + JSON.stringify(d));
+    };
     var fill = function(){
       var a = document.getElementById('login_name');
       var p = document.getElementById('password');
       if (a) a.value = ACC;
       if (p) p.value = PWD;
     };
+    var submit = function(){
+      var b = document.getElementById('submit_btn');
+      if (b) { b.click(); return true; }
+      post('MSG:提交入口缺失，请改用网页登录');
+      return false;
+    };
+    diag('init');
     fill();
     var n = 0;
     var t = setInterval(function(){
@@ -120,10 +138,15 @@ abstract class QuarkUcBase extends CloudProvider {
       }
       if (ready) {
         clearInterval(t);
-        var b = document.getElementById('submit_btn');
-        if (b) b.click(); else post('MSG:提交入口缺失，请改用网页登录');
-      } else if (n >= 60) {
+        submit();
+      } else if (n === 15) {
+        // 无感验证形态：盾参数在提交瞬间由 SDK 内部生成、不暴露全局，
+        // 等是等不到的——直接点提交（需滑块时会弹出，用户页内拖动）。
+        submit();
+        post('MSG:已提交，若出现滑块请在页面内拖动');
+      } else if (n >= 45) {
         clearInterval(t);
+        diag('timeout');
         post('MSG:安全验证未就绪，请重试或改用网页登录');
       }
     }, 1000);
