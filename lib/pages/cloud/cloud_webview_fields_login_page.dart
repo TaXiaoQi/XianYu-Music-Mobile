@@ -80,6 +80,10 @@ class _CloudWebviewFieldsLoginPageState
   /// 的 MSG 不再触发（弹窗内自带发送提示）。
   bool _smsDialogShown = false;
 
+  /// WebView 当前挂载位置：短信二次验证流程中 WebView 嵌入弹窗小窗
+  ///（避免露出全屏官方页），页面 body 渲染进度占位。
+  bool _webviewInDialog = false;
+
   // CAS 页是 PC 排版且 viewport 禁缩放，手机上看不清滑块——解锁同
   // WebView 登录页的缩放改写。
   static const _unlockZoomJs = r'''
@@ -163,6 +167,19 @@ class _CloudWebviewFieldsLoginPageState
       f.optional && f.switchLabel != null && !_expandedFields.contains(f.key);
 
   // ── WebView 执行器 ────────────────────────────────────────
+
+  /// WebView 视图（Android 用 Hybrid Composition 承载：默认 TLHC
+  /// 纹理模式拖动滑块渲染滞后（抬手才刷新），HC 实时）。页面与二次
+  /// 验证弹窗小窗共用同一 controller。
+  Widget _webviewView(WebViewController controller) =>
+      Platform.isAndroid
+          ? WebViewWidget.fromPlatformCreationParams(
+              params: AndroidWebViewWidgetCreationParams(
+                controller: controller.platform as AndroidWebViewController,
+                displayWithHybridComposition: true,
+              ),
+            )
+          : WebViewWidget(controller: controller);
 
   void _startWebviewFlow() {
     setState(() {
@@ -332,35 +349,50 @@ class _CloudWebviewFieldsLoginPageState
     }
   }
 
-  /// 短信验证码弹窗（公共 kit，天翼同款）：弹窗驱动全流程——首次发码
-  /// 也由弹窗「发送验证码」触发（先启动 WebView 加载官方短信页自动填
-  /// 号，等执行脚本就绪后点页内发码按钮，盾失败时页内拖滑块）；确认
-  /// 后把验证码注入页面触发补盾提交（trySmsSubmit → commit → pm 回传
-  /// ticket → 兑换链照旧）。
+  /// 二次验证弹窗（公共 kit，滑块形态）：弹窗驱动全流程——打开前先
+  /// 就绪 WebView（加载官方短信页 + 自动填号），弹窗小窗内嵌官方页
+  /// （发码/盾区域，协议原样跑、视觉全自绘）；「发送验证码」点击页内
+  /// 发码按钮（触发无感盾/滑块），确认后把验证码注入页面触发补盾提交
+  /// （trySmsSubmit → commit → pm 回传 ticket → 兑换链照旧）。
   Future<void> _promptSmsDialog() async {
     if (_smsDialogShown) return;
     _smsDialogShown = true;
+    WebViewController? controller;
+    try {
+      controller = await _ensureSmsWebview();
+    } catch (e) {
+      _smsDialogShown = false;
+      if (!mounted) return;
+      _backToForm(
+          e is CloudException ? e.message : tr('安全验证页打开失败，请重试'));
+      return;
+    }
+    if (!mounted) {
+      _smsDialogShown = false;
+      return;
+    }
+    setState(() => _webviewInDialog = true);
     final code = await showCloudSmsCodeDialog(
       context,
-      onSend: () async {
-        final controller = await _ensureSmsWebview();
-        await controller.runJavaScript(
-            'window.__xyResendSms && window.__xyResendSms()');
-      },
-      hint: tr('验证码将发送至 {account}，请点击下方按钮发送', {
+      webviewHost: _webviewView(controller),
+      hint: tr('验证码将发送至 {account}；若出现滑块请在下方页面内拖动', {
         'account': _provider.loginFields.isEmpty
             ? ''
             : (_ctrls[_provider.loginFields.first.key]?.text.trim() ?? ''),
       }),
+      onSend: () async {
+        await controller!.runJavaScript(
+            'window.__xyResendSms && window.__xyResendSms()');
+      },
     );
     _smsDialogShown = false;
+    if (mounted) setState(() => _webviewInDialog = false);
     if (code == null || code.isEmpty) {
-      // 取消：已启动的 WebView 一并销毁回表单。
+      // 取消：销毁 WebView 回表单。
       if (_stage == _Stage.running) _backToForm(null);
       return;
     }
     try {
-      final controller = await _ensureSmsWebview();
       if (!mounted) return;
       setState(() => _hint = tr('正在提交验证码…'));
       await controller.runJavaScript(
@@ -643,21 +675,17 @@ class _CloudWebviewFieldsLoginPageState
           aspectRatio: 0.9,
           child: controller == null
               ? const Center(child: CircularProgressIndicator())
-              : Stack(
+              : _webviewInDialog
+                  // WebView 已挂进二次验证弹窗小窗：页面只留进度占位。
+                  ? const Center(
+                      child: Text('请在弹窗中完成安全验证',
+                          style: TextStyle(color: Colors.white54)),
+                    )
+                  : Stack(
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(16),
-                      // Android 用 Hybrid Composition 承载：默认 TLHC
-                      // 纹理模式拖动滑块渲染滞后（抬手才刷新），HC 实时。
-                      child: Platform.isAndroid
-                          ? WebViewWidget.fromPlatformCreationParams(
-                              params: AndroidWebViewWidgetCreationParams(
-                                controller:
-                                    controller.platform as AndroidWebViewController,
-                                displayWithHybridComposition: true,
-                              ),
-                            )
-                          : WebViewWidget(controller: controller),
+                      child: _webviewView(controller),
                     ),
                     if (!_pageLoaded)
                       const Center(child: CircularProgressIndicator()),

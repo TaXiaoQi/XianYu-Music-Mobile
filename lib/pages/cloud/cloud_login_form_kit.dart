@@ -320,15 +320,20 @@ Widget cloudLoginScaffold({
   );
 }
 
-/// 短信验证码输入弹窗（天翼 -133 风控同款，账密页与 WebView 字段页
-/// 共用）：打开时不自动发码，弹窗内「发送验证码」手动触发（[onSend]
-/// 由调用方接发码动作），60 秒冷却防连点；确认返回输入码（取消返回
-/// null），提交/后续动作由调用方执行。[hint] 覆盖默认「新设备登录」
-/// 说明行（139/夸克等主动短信登录盘用）。
+/// 短信验证码 / 二次验证弹窗（天翼 -133 风控同款，各手机号登录盘
+/// 统一交互）：打开时不自动发码，弹窗内「发送验证码」手动触发
+/// （[onSend] 由调用方接发码动作），60 秒冷却防连点；确认返回输入码
+/// （取消返回 null），提交/后续动作由调用方执行。
+///
+/// [webviewHost] 非空时升级为滑块二次验证形态：弹窗内嵌 WebView 小窗
+/// 承载官方盾/发码区域（需要滑块的盘把登录页 WebView 挂进来，协议原
+/// 样跑、视觉全自绘），下方仍是验证码输入行；null 为纯收码形态
+/// （139/天翼等纯 HTTP 盘）。[hint] 覆盖默认说明行。
 Future<String?> showCloudSmsCodeDialog(
   BuildContext context, {
   required Future<void> Function() onSend,
   String? hint,
+  Widget? webviewHost,
 }) async {
   final controller = TextEditingController();
   // 弹窗内状态放外层闭包：StatefulBuilder 重建不会重置。
@@ -375,17 +380,35 @@ Future<String?> showCloudSmsCodeDialog(
     return await showPredictiveDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(tr('输入短信验证码')),
+        title: Text(tr(webviewHost == null ? '输入短信验证码' : '完成安全验证')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(hint ??
-                tr('检测到新设备登录，验证码将发送至 {username}',
-                    {'username': ''})),
-            const SizedBox(height: 12),
+            if (webviewHost != null) ...[
+              Text(hint ?? tr('若出现滑块请在下方页面内拖动，然后发送验证码')),
+              const SizedBox(height: 10),
+              // 官方盾/发码区域小窗：脚本已缩放并滚动到发码/盾位置。
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 230,
+                  width: double.maxFinite,
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.black12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: webviewHost,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ] else
+              Text(hint ??
+                  tr('检测到新设备登录，验证码将发送至 {username}',
+                      {'username': ''})),
             TextField(
               controller: controller,
-              autofocus: true,
+              autofocus: webviewHost == null,
               keyboardType: TextInputType.number,
               maxLength: 6,
               decoration: InputDecoration(hintText: tr('短信验证码')),

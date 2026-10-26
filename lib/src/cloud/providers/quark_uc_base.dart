@@ -263,6 +263,20 @@ abstract class QuarkUcBase extends CloudProvider {
     };
     diag('init');
     fill();
+导入    // 短信模式：二次验证弹窗以小窗承载本页——缩放整页并滚动到发码
+    // 按钮（盾/发码区域在弹窗小窗内可见可拖）。每秒循环内执行以覆盖
+    // 页面重排。
+    var z = 0;
+    var t2 = setInterval(function(){
+      if (!SMS) { clearInterval(t2); return; }
+      var sb = document.getElementById('send_sms_btn') ||
+               document.getElementById('u_form');
+      if (!sb || z++ > 30) { clearInterval(t2); return; }
+      try {
+        if (z === 1) document.documentElement.style.zoom = '0.55';
+        sb.scrollIntoView({ block: 'center' });
+      } catch(e) {}
+    }, 1000);
     // 短信模式自动提交：页面验证码填满 4 位后触发——先补无感盾参数
     //（发码后 reset 清空过，commit 的 nvc 前端校验要求非空），再点登录。
     var trySmsSubmit = function(){
