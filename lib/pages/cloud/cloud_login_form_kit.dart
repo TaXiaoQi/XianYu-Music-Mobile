@@ -6,13 +6,19 @@
 // 嵌入态玻璃卡片与全屏页两套骨架。样式口径：填充底色 5% + 16
 // 圆角 + 聚焦主题色描边 + 20px 前图标 + 通栏「登录并绑定」按钮。
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../src/cloud/cloud_types.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/application_logger.dart';
 import '../../src/i18n/i18n.dart';
+import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
+import '../../src/widgets/predictive_dialog_route.dart';
 import '../../src/widgets/press_scale.dart';
 
 /// 登录输入框默认态边框：16 圆角无边框（填充底色裸露）。
@@ -312,4 +318,118 @@ Widget cloudLoginScaffold({
       ],
     ),
   );
+}
+
+/// 短信验证码输入弹窗（天翼 -133 风控同款，账密页与 WebView 字段页
+/// 共用）：打开时不自动发码，弹窗内「发送验证码」手动触发（[onSend]
+/// 由调用方接发码动作），60 秒冷却防连点；确认返回输入码（取消返回
+/// null），提交/后续动作由调用方执行。[hint] 覆盖默认「新设备登录」
+/// 说明行（139/夸克等主动短信登录盘用）。
+Future<String?> showCloudSmsCodeDialog(
+  BuildContext context, {
+  required Future<void> Function() onSend,
+  String? hint,
+}) async {
+  final controller = TextEditingController();
+  // 弹窗内状态放外层闭包：StatefulBuilder 重建不会重置。
+  var cooldown = 0;
+  var sending = false;
+  Timer? timer;
+  var setDlg = null as void Function(void Function())?;
+  void safeSet(void Function() fn) => setDlg?.call(fn);
+
+  Future<void> send() async {
+    if (sending || cooldown > 0) return;
+    safeSet(() => sending = true);
+    try {
+      await onSend();
+      if (!context.mounted) return;
+      showXianYuToast(context, tr('验证码已发送'));
+      safeSet(() => cooldown = 60);
+      timer?.cancel();
+      timer = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!context.mounted) {
+          t.cancel();
+          return;
+        }
+        safeSet(() {
+          if (--cooldown <= 0) {
+            cooldown = 0;
+            t.cancel();
+          }
+        });
+      });
+    } catch (e) {
+      AppLog.warn('cloud', '发送验证码失败: $e');
+      if (!context.mounted) return;
+      showXianYuToast(
+        context,
+        e is CloudException ? e.message : tr('验证码发送失败'),
+      );
+    } finally {
+      safeSet(() => sending = false);
+    }
+  }
+
+  try {
+    return await showPredictiveDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('输入短信验证码')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(hint ??
+                tr('检测到新设备登录，验证码将发送至 {username}',
+                    {'username': ''})),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              decoration: InputDecoration(hintText: tr('短信验证码')),
+              onSubmitted: (v) => Navigator.pop(ctx, v),
+            ),
+          ],
+        ),
+        actions: [
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(tr('取消')),
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: StatefulBuilder(
+              builder: (ctx, setSb) {
+                setDlg = setSb;
+                return TextButton(
+                  onPressed: (sending || cooldown > 0) ? null : send,
+                  child: Text(
+                    sending
+                        ? tr('发送中…')
+                        : (cooldown > 0
+                            ? tr('{s} 秒', {'s': '$cooldown'})
+                            : tr('发送验证码')),
+                  ),
+                );
+              },
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: Text(tr('确定')),
+            ),
+          ),
+        ],
+      ),
+    );
+  } finally {
+    timer?.cancel();
+  }
 }
