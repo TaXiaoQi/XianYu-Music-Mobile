@@ -6,9 +6,10 @@
 //      RSA 公钥；前端随机 16 位 AESKey 经 RSA-PKCS1(base64) 放 mcloud-skey
 //      header，服务端按 skey 无状态解密，会话可逐请求重建；
 //   ② 业务 payload JSON → AES-128-ECB/PKCS7(base64) 包 encryptMsg；
-//   ③ 短信登录（天翼同构弹窗范式）：getSmsVerifyCode{account,reqType:"1",
-//      mode:0} 自动发码（服务端回传 random）→ 抛 CloudSmsRequiredException
-//      → 公共收码弹窗填码（弹窗内可重发）→ verifySmsCode{account,random,
+//   ③ 短信登录（天翼同构弹窗范式）：表单提交开握手会话抛
+//      CloudSmsRequiredException，弹窗内点「发送验证码」才发码
+//      （getSmsVerifyCode{account,reqType:"1",mode:0}，服务端回传
+//      random）→ 填码 submitSmsCode verifySmsCode{account,random,
 //      verifyCode,recordID,reqType:"1",setCookie:0} → data.token；
 //   ④ authorization = "Basic " + base64("pc:手机号:token")，与网页登录
 //      同构，业务（rust 桥）零改动。
@@ -132,8 +133,9 @@ class Mobile139Provider extends CloudProvider {
 
   /// 天翼同构弹窗范式：表单收手机号 + 服务密码（选填）。密码非空走
   /// passPwd 通道（permission/login，dycPwd = SHA1(密码) 大写）；留空
-  /// 自动发码后抛 [CloudSmsRequiredException]，UI 复用公共收码弹窗
-  /// （弹窗内可重发，走 [resendDeviceSms]）。
+  /// 抛 [CloudSmsRequiredException] 打开公共收码弹窗，弹窗内点
+  /// 「发送验证码」才真正发码（走 [resendDeviceSms]，所有手机号登录
+  /// 盘统一交互）。
   @override
   Future<CloudAccount> loginWithFields(Map<String, String> fields) async {
     final phone = (fields['phone'] ?? '').trim();
@@ -145,18 +147,10 @@ class Mobile139Provider extends CloudProvider {
       return _loginByServicePassword(phone, password);
     }
     HttpLoginGate.instance.ensureAllowed(id);
-    HttpLoginGate.instance.recordAttempt(id);
     final sess = await _openSession();
-    try {
-      await _sendSms(sess, phone);
-    } on CloudException {
-      HttpLoginGate.instance.recordFailure(id);
-      rethrow;
-    }
-    _pendingSession = sess
-      ..random = '${sess.random}'
-      ..phone = phone;
-    // 已自动发码并暂存会话；公共收码弹窗内填码后走 submitSmsCode。
+    // 会话先行（加密握手可复用），发码推迟到弹窗「发送验证码」；
+    // random 由发码响应回填（submitSmsCode 前必经 resendDeviceSms）。
+    _pendingSession = sess..phone = phone;
     throw CloudSmsRequiredException(phone, hint: '验证码将发送至 $phone');
   }
 
@@ -226,14 +220,22 @@ class Mobile139Provider extends CloudProvider {
     }
   }
 
-  /// 弹窗内重发验证码（「发送验证码」按钮调用）。
+  /// 弹窗内发送/重发验证码（「发送验证码」按钮调用）：首次发码也从
+  /// 这里走（弹窗驱动，表单提交不再自动发码）。
   @override
   Future<void> resendDeviceSms(String username) async {
     final sess = _pendingSession;
     if (sess == null || username != sess.phone) {
       throw const CloudException('登录会话已失效，请重新登录');
     }
-    await _sendSms(sess, username);
+    HttpLoginGate.instance.ensureAllowed(id);
+    try {
+      await _sendSms(sess, username);
+      HttpLoginGate.instance.recordAttempt(id);
+    } on CloudException {
+      HttpLoginGate.instance.recordFailure(id);
+      rethrow;
+    }
   }
 
   /// 发码：getSmsVerifyCode；回传 random 暂存进会话（verifySmsCode 必须

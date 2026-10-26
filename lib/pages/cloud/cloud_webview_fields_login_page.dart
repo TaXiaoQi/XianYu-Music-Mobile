@@ -332,31 +332,37 @@ class _CloudWebviewFieldsLoginPageState
     }
   }
 
-  /// 短信验证码弹窗（公共 kit，天翼同款）：重发走 WebView 页内按钮
-  /// （[webviewFieldsIsSms] 的盘发码接口强制过盾，HTTP 通道不存在），
-  /// 确认后把验证码注入页面并触发补盾提交（trySmsSubmit → commit →
-  /// pm 回传 ticket → 兑换链照旧）。
+  /// 短信验证码弹窗（公共 kit，天翼同款）：弹窗驱动全流程——首次发码
+  /// 也由弹窗「发送验证码」触发（先启动 WebView 加载官方短信页自动填
+  /// 号，等执行脚本就绪后点页内发码按钮，盾失败时页内拖滑块）；确认
+  /// 后把验证码注入页面触发补盾提交（trySmsSubmit → commit → pm 回传
+  /// ticket → 兑换链照旧）。
   Future<void> _promptSmsDialog() async {
-    final controller = _controller;
-    if (controller == null) return;
+    if (_smsDialogShown) return;
     _smsDialogShown = true;
     final code = await showCloudSmsCodeDialog(
       context,
       onSend: () async {
+        final controller = await _ensureSmsWebview();
         await controller.runJavaScript(
             'window.__xyResendSms && window.__xyResendSms()');
       },
-      hint: tr('验证码短信已发送至 {account}，请输入后确认', {
+      hint: tr('验证码将发送至 {account}，请点击下方按钮发送', {
         'account': _provider.loginFields.isEmpty
             ? ''
             : (_ctrls[_provider.loginFields.first.key]?.text.trim() ?? ''),
       }),
     );
     _smsDialogShown = false;
-    if (code == null || code.isEmpty) return;
-    if (!mounted) return;
-    setState(() => _hint = tr('正在提交验证码…'));
+    if (code == null || code.isEmpty) {
+      // 取消：已启动的 WebView 一并销毁回表单。
+      if (_stage == _Stage.running) _backToForm(null);
+      return;
+    }
     try {
+      final controller = await _ensureSmsWebview();
+      if (!mounted) return;
+      setState(() => _hint = tr('正在提交验证码…'));
       await controller.runJavaScript(
           'window.__xyFillSms && window.__xyFillSms(${jsonEncode(code)})');
     } catch (e) {
@@ -364,6 +370,28 @@ class _CloudWebviewFieldsLoginPageState
       if (!mounted) return;
       _backToForm(tr('验证码提交失败，请重试'));
     }
+  }
+
+  /// 短信模式 WebView 就绪保障：未启动则启动（加载官方短信页 + 自动
+  /// 填号），轮询执行脚本挂载标记（__xyFillSms）就绪后返回控制器；
+  /// 发码/注码都必须等页面可执行。超时抛 [CloudException]（公共弹窗
+  /// 统一 toast）。
+  Future<WebViewController> _ensureSmsWebview() async {
+    if (_stage != _Stage.running || _controller == null) {
+      if (!mounted) throw const CloudException('页面已关闭');
+      _startWebviewFlow();
+    }
+    final controller = _controller;
+    if (controller == null) throw const CloudException('登录页启动失败');
+    for (var i = 0; i < 40; i++) {
+      try {
+        final r = await controller
+            .runJavaScriptReturningResult('!!window.__xyFillSms');
+        if (r.toString() == 'true') return controller;
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    throw const CloudException('登录页加载失败，请重试');
   }
 
   /// pm 模式回传的 data 兼容两种形态：纯 ticket 字符串（redirect 模式
@@ -441,6 +469,13 @@ class _CloudWebviewFieldsLoginPageState
     };
     if (requiredKeys.any((k) => (_ctrls[k]?.text.trim() ?? '').isEmpty)) {
       showXianYuToast(context, tr('请填写完整'));
+      return;
+    }
+    if (_provider.webviewFieldsIsSms) {
+      // 短信辅助模式（天翼同款交互）：表单提交直接弹收码弹窗，弹窗内
+      // 点「发送验证码」才启动 WebView 走官方页发码（首次发码也由弹窗
+      // 触发），确认后注入页面提交。
+      _promptSmsDialog();
       return;
     }
     _submitting = true;

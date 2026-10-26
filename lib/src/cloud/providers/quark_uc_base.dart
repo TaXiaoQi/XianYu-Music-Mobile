@@ -324,29 +324,18 @@ abstract class QuarkUcBase extends CloudProvider {
       if (ready) {
         clearInterval(t);
         if (!SMS) submit();
-      } else if (n === 5) {
+      } else if (n === 5 && !SMS) {
         // 无感验证形态：盾参数在提交瞬间由 SDK 内部生成、不暴露全局，
-        // 等是等不到的——给 SDK 5 秒初始化后点提交/发码（需滑块时会
-        // 弹出，用户页内拖动；服务端要求图形验证码时报「验证码错误」
-        // 触发底部注入的填码区）。
-        if (SMS) {
-          var sb = document.getElementById('send_sms_btn');
-          if (sb) {
-            sb.click();
-            post('MSG:正在发送验证码，若出现滑块请在页面内拖动');
-          } else {
-            post('MSG:发送验证码入口缺失，请手动点击页面发送按钮');
-          }
-        } else {
-          submit();
-          post('MSG:已提交，若出现滑块请在页面内拖动');
-        }
-      } else if (n >= 25) {
+        // 等是等不到的——给 SDK 5 秒初始化后点提交（需滑块时会弹出，
+        // 用户页内拖动；服务端要求图形验证码时报「验证码错误」触发
+        // 底部注入的填码区）。短信模式不自动发码：弹窗驱动（弹窗内
+        // 点「发送验证码」才点页内发码按钮）。
+        submit();
+        post('MSG:已提交，若出现滑块请在页面内拖动');
+      } else if (n >= 25 && !SMS) {
         clearInterval(t);
-        if (!SMS) {
-          diag('timeout');
-          post('MSG:安全验证未就绪，请重试或改用网页登录');
-        }
+        diag('timeout');
+        post('MSG:安全验证未就绪，请重试或改用网页登录');
       }
     }, 1000);
   } catch(e) {
