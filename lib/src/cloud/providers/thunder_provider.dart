@@ -72,9 +72,15 @@ class ThunderProvider extends CloudProvider {
   bool isWebviewFieldsLoginPage(Uri url) =>
       url.host == 'pan.xunlei.com' && url.path == '/login/';
 
+  /// 短信通道走二次验证弹窗（滑块/发码/输码全在弹窗内，官方页只以
+  /// 小窗呈现）；密码通道仍全屏 WebView（自动提交后若出滑块页内拖）。
+  @override
+  bool get webviewFieldsIsSms => true;
+
   /// 执行脚本：密码非空走账号密码通道（切 tab + 填账密 + 点登录），
-  /// 留空走短信通道（默认 tab + 填手机号 + 自动点「获取验证码」，
-  /// 用户在页面内收码填码）。React 受控输入用原生 setter 触发。
+  /// 留空走短信通道（默认 tab + 填手机号；发码由二次验证弹窗触发
+  /// [__xyXlResend]，收码经弹窗输入后 [__xyXlFillSms] 注入提交）。
+  /// React 受控输入用原生 setter 触发。
   @override
   String webviewFieldsScript(String account, String password) {
     final acc = jsonEncode(account);
@@ -112,6 +118,16 @@ class ThunderProvider extends CloudProvider {
       }
       return null;
     }
+    // 二次验证弹窗以小窗承载本页：缩放整页并滚动到登录框，保证发码
+    // 按钮/滑块在小窗内可见可拖。
+    function fitDialog(){
+      try {
+        document.documentElement.style.zoom = '0.6';
+        var i = document.querySelector('input[type="tel"],input[type="password"]');
+        var box = i ? (i.closest('form') || i.parentElement) : null;
+        if (box) box.scrollIntoView({ block: 'center' });
+      } catch (e) {}
+    }
     // 登录框若在跨域 iframe 内则无法自动填表，直接引导手填。
     var fr = document.querySelectorAll('iframe');
     for (var i = 0; i < fr.length; i++) {
@@ -119,6 +135,33 @@ class ThunderProvider extends CloudProvider {
         try { if (fr[i].contentDocument === null) { manual('登录框为独立面板'); return; } } catch (e2) {}
       }
     }
+    // 弹窗注入通道：发码（轮询发码按钮消失/变倒计时确认成功，被滑块
+    // 拦截时引导拖动后重试）+ 注码提交（找验证码输入框 setVal + 点登录）。
+    window.__xyXlResend = function(){
+      var b = findBtn('获取验证码') || findBtn('获取短信验证码');
+      if (!b) { post('MSG:未找到发送按钮，请在页面内手动点击发送'); return; }
+      b.click();
+      var n = 0;
+      var t = setInterval(function(){
+        n++;
+        var same = findBtn('获取验证码') || findBtn('获取短信验证码');
+        if (!same) { clearInterval(t); post('MSG:验证码已发送，请在弹窗输入'); return; }
+        if (n >= 12) {
+          clearInterval(t);
+          post('MSG:验证码未发出，若出现滑块请在下方页面拖动后重试');
+        }
+      }, 500);
+    };
+    window.__xyXlFillSms = function(code){
+      var i = findInput(function(el){
+        var lb = (el.placeholder || el.getAttribute('aria-label') || '');
+        return /验证码/.test(lb);
+      });
+      if (!i) { post('MSG:未找到验证码输入框，请在页面内手动输入'); return; }
+      setVal(i, code);
+      setTimeout(function(){ var b = findBtn('登录'); if (b) b.click(); }, 400);
+      post('MSG:验证码已提交，若有滑块请在下方页面拖动');
+    };
     if (PWD) {
       var tab = findBtn('账号密码登录') || findBtn('密码登录');
       if (tab) tab.click();
@@ -129,6 +172,7 @@ class ThunderProvider extends CloudProvider {
       }) || findInput(function(el){ return el.type === 'text' || el.type === 'tel'; });
       if (!phone) { manual('未找到手机号输入框'); return; }
       setVal(phone, ACC);
+      fitDialog();
       if (PWD) {
         var pwd = findInput(function(el){ return el.type === 'password'; });
         if (!pwd) { manual('未找到密码输入框'); return; }
@@ -136,11 +180,9 @@ class ThunderProvider extends CloudProvider {
         setTimeout(function(){ var b = findBtn('登录'); if (b) b.click(); }, 400);
         post('MSG:已自动填入账密，若有滑块请在页面内拖动');
       } else {
-        setTimeout(function(){
-          var b = findBtn('获取验证码') || findBtn('获取短信验证码');
-          if (b) b.click();
-          post('MSG:请在页面内输入收到的短信验证码并点击登录');
-        }, 400);
+        // 发码不在脚本内自动触发：二次验证弹窗内点「发送验证码」时
+        // 经 __xyXlResend 点击页内按钮（天翼同款交互）。
+        post('MSG:已自动填入手机号，请在弹窗中发送验证码');
       }
     }, 600);
   } catch (e) {

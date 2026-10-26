@@ -417,8 +417,8 @@ class _CloudWebviewFieldsLoginPageState
     if (controller == null) throw const CloudException('登录页启动失败');
     for (var i = 0; i < 40; i++) {
       try {
-        final r = await controller
-            .runJavaScriptReturningResult('!!window.__xyFillSms');
+        final r = await controller.runJavaScriptReturningResult(
+            '!!(window.__xyFillSms || window.__xyXlFillSms)');
         if (r.toString() == 'true') return controller;
       } catch (_) {}
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -503,10 +503,12 @@ class _CloudWebviewFieldsLoginPageState
       showXianYuToast(context, tr('请填写完整'));
       return;
     }
-    if (_provider.webviewFieldsIsSms) {
-      // 短信辅助模式（天翼同款交互）：表单提交直接弹收码弹窗，弹窗内
-      // 点「发送验证码」才启动 WebView 走官方页发码（首次发码也由弹窗
-      // 触发），确认后注入页面提交。
+    final usingPassword =
+        (_ctrls['password']?.text.trim() ?? '').isNotEmpty;
+    if (_provider.webviewFieldsIsSms && !usingPassword) {
+      // 短信辅助模式（天翼同款交互）：表单提交直接弹二次验证弹窗，弹窗
+      // 内点「发送验证码」才走官方页发码（首次发码也由弹窗触发），确认
+      // 后注入页面提交。账密通道仍全屏 WebView（自动提交，滑块页内拖）。
       _promptSmsDialog();
       return;
     }
