@@ -61,6 +61,14 @@ abstract class CloudProvider {
   /// WebView 加载的 CAS 账密登录页地址（webviewFields；非该组为空串）。
   String get webviewFieldsLoginUrl => '';
 
+  /// 短信验证码辅助模式：自绘表单只收手机号，验证码经收码弹窗输入
+  /// 后注入 WebView 页面提交（夸克：官方账密通道已下线，且发码接口
+  /// 强制过盾，纯 HTTP 发码不可行——只能页内过盾）。
+  bool get webviewFieldsIsSms => false;
+
+  /// WebView 阶段表单说明文案覆盖（短信模式盘告知验证码在弹窗输入）。
+  String? get webviewFieldsSmsHint => null;
+
   /// CAS 页加载后注入的执行脚本：填入账密 → 等盾回调就绪 → 触发
   /// 提交 → hook 成功/失败回传（经 XianYuLogin channel 发
   /// `TICKET:<data>` / `MSG:<message>`，登录页据此接管后续流程）。

@@ -76,6 +76,10 @@ class _CloudWebviewFieldsLoginPageState
   int _msgSeq = 0;
   int _finalizeRetries = 0;
 
+  /// 短信验证码弹窗防重入：发码成功 MSG 到达弹窗，弹窗开着时重发
+  /// 的 MSG 不再触发（弹窗内自带发送提示）。
+  bool _smsDialogShown = false;
+
   // CAS 页是 PC 排版且 viewport 禁缩放，手机上看不清滑块——解锁同
   // WebView 登录页的缩放改写。
   static const _unlockZoomJs = r'''
@@ -306,6 +310,14 @@ class _CloudWebviewFieldsLoginPageState
       final seq = _msgSeq;
       AppLog.warn('cloud', '${_provider.id} CAS 提示: $msg');
       if (!mounted) return;
+      // 短信模式：发码成功即弹天翼同款收码弹窗（验证码在弹窗输入，
+      // 确认后由脚本注入页面提交），不走 toast。
+      if (msg.contains('验证码已发送') && _provider.webviewFieldsIsSms) {
+        if (_smsDialogShown) return;
+        setState(() => _hint = tr('验证码已发送，请在弹窗输入'));
+        await _promptSmsDialog();
+        return;
+      }
       // 盾交互提示（如「请按住滑块」）不是失败，不打断流程；只 toast。
       showXianYuToast(context, msg);
       // 密码错误类提示出现两次以上大概率账密有误，提示可返回修改。
@@ -317,6 +329,40 @@ class _CloudWebviewFieldsLoginPageState
     if (raw.startsWith('DIAG:')) {
       // 执行页环境诊断：仅落日志（CSS/JS 资源加载失败排查用）。
       AppLog.warn('cloud', '${_provider.id} CAS 诊断: ${raw.substring(5)}');
+    }
+  }
+
+  /// 短信验证码弹窗（公共 kit，天翼同款）：重发走 WebView 页内按钮
+  /// （[webviewFieldsIsSms] 的盘发码接口强制过盾，HTTP 通道不存在），
+  /// 确认后把验证码注入页面并触发补盾提交（trySmsSubmit → commit →
+  /// pm 回传 ticket → 兑换链照旧）。
+  Future<void> _promptSmsDialog() async {
+    final controller = _controller;
+    if (controller == null) return;
+    _smsDialogShown = true;
+    final code = await showCloudSmsCodeDialog(
+      context,
+      onSend: () async {
+        await controller.runJavaScript(
+            'window.__xyResendSms && window.__xyResendSms()');
+      },
+      hint: tr('验证码短信已发送至 {account}，请输入后确认', {
+        'account': _provider.loginFields.isEmpty
+            ? ''
+            : (_ctrls[_provider.loginFields.first.key]?.text.trim() ?? ''),
+      }),
+    );
+    _smsDialogShown = false;
+    if (code == null || code.isEmpty) return;
+    if (!mounted) return;
+    setState(() => _hint = tr('正在提交验证码…'));
+    try {
+      await controller.runJavaScript(
+          'window.__xyFillSms && window.__xyFillSms(${jsonEncode(code)})');
+    } catch (e) {
+      AppLog.warn('cloud', '${_provider.id} 验证码注入失败: $e');
+      if (!mounted) return;
+      _backToForm(tr('验证码提交失败，请重试'));
     }
   }
 
@@ -447,8 +493,9 @@ class _CloudWebviewFieldsLoginPageState
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         CloudLoginHintText(
-          text: tr('登录{name}后即可播放网盘内的音乐',
-              {'name': _provider.displayName}),
+          text: _provider.webviewFieldsSmsHint ??
+              tr('登录{name}后即可播放网盘内的音乐',
+                  {'name': _provider.displayName}),
         ),
         const SizedBox(height: 20),
         for (final f in _provider.loginFields)

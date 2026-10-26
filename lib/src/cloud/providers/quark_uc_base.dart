@@ -64,6 +64,18 @@ abstract class QuarkUcBase extends CloudProvider {
   /// CAS 登录页 host（open.uc.cn / uop.quark.cn）。
   String get casPageHost => '';
 
+  /// 短信验证码辅助模式：自绘表单只收手机号，验证码在 WebView 页内
+  /// 输入（夸克账密通道已下线——官方登录面板仅剩短信/扫码，账密提交
+  /// 一律 50065；且发码接口强制无感盾校验，纯 HTTP 发码 20180001 被
+  /// 拒，只能页内过盾）。短信页 SSR 已配置 transmission_mode=pm，
+  /// postMessagePrivate hook 直接收 ticket。
+  @override
+  bool get webviewFieldsIsSms => false;
+
+  /// WebView 阶段说明文案（短信模式覆盖：告知验证码在弹窗输入）。
+  @override
+  String? get webviewFieldsSmsHint => null;
+
   @override
   bool isWebviewFieldsLoginPage(Uri url) =>
       url.host == casPageHost &&
@@ -89,6 +101,7 @@ abstract class QuarkUcBase extends CloudProvider {
   String webviewFieldsScript(String account, String password) {
     final acc = jsonEncode(account);
     final pwd = jsonEncode(password);
+    final sms = webviewFieldsIsSms;
     // raw 字符串：JS 里的 $（zepto 选择器）不能被 dart 当插值解析，
     // 账密经占位符替换注入。
     return r'''
@@ -113,7 +126,14 @@ abstract class QuarkUcBase extends CloudProvider {
               o.__xy = true;
               var ok = o.success;
               o.success = function(r){
-                try { if (r && r.status === 20000 && r.data) emitTicket(r.data); } catch(e){}
+                try {
+                  if (r && r.status === 20000 && r.data) emitTicket(r.data);
+                  if (r && o.url &&
+                      String(o.url).indexOf('sendSmsCode') >= 0 &&
+                      String(r.status) === '2000000') {
+                    post('MSG:验证码已发送，请在页面内输入');
+                  }
+                } catch(e){}
                 ok(r);
               };
             }
@@ -123,6 +143,7 @@ abstract class QuarkUcBase extends CloudProvider {
       }
     } catch(e){}
     var ACC = __XY_ACC__, PWD = __XY_PWD__;
+    var SMS = __XY_SMS__;
     // 环境诊断（DIAG 由 App 落日志，不弹提示）。
     var diag = function(tag){
       var d = {t: tag, ready: document.readyState,
@@ -242,6 +263,48 @@ abstract class QuarkUcBase extends CloudProvider {
     };
     diag('init');
     fill();
+    // 短信模式自动提交：页面验证码填满 4 位后触发——先补无感盾参数
+    //（发码后 reset 清空过，commit 的 nvc 前端校验要求非空），再点登录。
+    var trySmsSubmit = function(){
+      var cd = document.getElementById('captcha_data');
+      var inst = (typeof AliyunCaptchaV2 !== 'undefined')
+        ? AliyunCaptchaV2.captchaInstance : null;
+      var needCaptcha = (!cd || !cd.value) && inst &&
+        typeof inst.startTracelessVerification === 'function';
+      if (needCaptcha) {
+        try { inst.startTracelessVerification(); } catch(e){}
+        var w = 0;
+        var wt = setInterval(function(){
+          w++;
+          var c2 = document.getElementById('captcha_data');
+          if ((c2 && c2.value) || w >= 10) {
+            clearInterval(wt);
+            submit();
+          }
+        }, 300);
+      } else {
+        submit();
+      }
+    };
+    var smsT = setInterval(function(){
+      if (!SMS) { clearInterval(smsT); return; }
+      var sc = document.getElementById('sms_code');
+      if (sc && sc.value && String(sc.value).length >= 4) {
+        clearInterval(smsT);
+        trySmsSubmit();
+      }
+    }, 800);
+    // App 收码弹窗注入通道：确认后填码触发补盾提交；重发点击页内
+    // 发码按钮（发码接口强制过盾，弹窗内重发走同一盾流程）。
+    window.__xyFillSms = function(code){
+      var sc = document.getElementById('sms_code');
+      if (sc) sc.value = code;
+      trySmsSubmit();
+    };
+    window.__xyResendSms = function(){
+      var sb = document.getElementById('send_sms_btn');
+      if (sb) sb.click();
+    };
     var n = 0;
     var t = setInterval(function(){
       n++;
@@ -260,25 +323,39 @@ abstract class QuarkUcBase extends CloudProvider {
       }
       if (ready) {
         clearInterval(t);
-        submit();
+        if (!SMS) submit();
       } else if (n === 5) {
         // 无感验证形态：盾参数在提交瞬间由 SDK 内部生成、不暴露全局，
-        // 等是等不到的——给 SDK 5 秒初始化后直接点提交（需滑块时会
+        // 等是等不到的——给 SDK 5 秒初始化后点提交/发码（需滑块时会
         // 弹出，用户页内拖动；服务端要求图形验证码时报「验证码错误」
         // 触发底部注入的填码区）。
-        submit();
-        post('MSG:已提交，若出现滑块请在页面内拖动');
+        if (SMS) {
+          var sb = document.getElementById('send_sms_btn');
+          if (sb) {
+            sb.click();
+            post('MSG:正在发送验证码，若出现滑块请在页面内拖动');
+          } else {
+            post('MSG:发送验证码入口缺失，请手动点击页面发送按钮');
+          }
+        } else {
+          submit();
+          post('MSG:已提交，若出现滑块请在页面内拖动');
+        }
       } else if (n >= 25) {
         clearInterval(t);
-        diag('timeout');
-        post('MSG:安全验证未就绪，请重试或改用网页登录');
+        if (!SMS) {
+          diag('timeout');
+          post('MSG:安全验证未就绪，请重试或改用网页登录');
+        }
       }
     }, 1000);
   } catch(e) {
     try { window.XianYuLogin.postMessage('MSG:' + e); } catch(_){}
   }
 })();
-'''.replaceAll('__XY_ACC__', acc).replaceAll('__XY_PWD__', pwd);
+'''.replaceAll('__XY_ACC__', acc)
+   .replaceAll('__XY_PWD__', pwd)
+   .replaceAll('__XY_SMS__', sms ? 'true' : 'false');
   }
 
   // 必须强制桌面 UA：移动 UA 下 pan.quark.cn / drive.uc.cn 一律
