@@ -1,7 +1,10 @@
-// UC 网盘：继承 QuarkUcBase（接口与夸克同构），登录走 WebView 官方页
-// 读 Cookie——captureRule 全收登录链非空 Cookie（2026-10 凭据更名
-// kps/sign → __kps 系，同夸克 drive-web 体系），postLoginUrl 等齐
-// __puus 再收尾。
+// UC 网盘：继承 QuarkUcBase（接口与夸克同构），账密登录走 CAS 逆向。
+//
+// CAS 账密通道（2026-10 逆向实测）：drive.uc.cn 登录面板「密码登录」
+// tab 的 iframe 即 open.uc.cn/cas/custom/login（client_id=381），
+// 表单/盾/ticket hook 与夸克全同（共享实现见 QuarkUcBase），差异仅
+// host 与 client_id。service_ticket 经 GET
+// drive.uc.cn/account/info?st= 兑换种 __kps 系 Cookie。
 
 import '../cloud_types.dart';
 import 'quark_uc_base.dart';
@@ -46,4 +49,26 @@ class UcProvider extends QuarkUcBase {
         // 后才出现 __puus）——postLoginUrl 触发稳定性轮询等齐再收尾。
         postLoginUrl: 'https://drive.uc.cn/',
       );
+
+  // ── CAS 账密逆向通道（webviewFields）────────────────────
+
+  @override
+  CloudLoginKind get loginKind => CloudLoginKind.webviewFields;
+
+  @override
+  String get casPageHost => 'open.uc.cn';
+
+  /// CAS 账密登录页（登录面板 iframe 同款端点；display=pc 出账密
+  /// 表单，token/key 由页面下发且与 CAS 会话 Cookie 绑定）。
+  @override
+  String get webviewFieldsLoginUrl =>
+      'https://open.uc.cn/cas/custom/login'
+      '?custom_login_type=common&client_id=381&display=pc';
+
+  /// service_ticket 兑换页：GET account/info?st= 服务端校验通过即
+  /// Set-Cookie 种网盘凭据（boot.js doAuth 同款端点）。__puus 由
+  /// 随后的主站落地页 init 请求签发（captureRule.postLoginUrl 链）。
+  @override
+  String ticketExchangeUrl(String ticket) =>
+      'https://drive.uc.cn/account/info?st=${Uri.encodeComponent(ticket)}';
 }
