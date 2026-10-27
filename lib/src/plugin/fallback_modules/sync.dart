@@ -9,21 +9,23 @@ import 'registry.dart';
 
 // ==================== 兜底行为配置服务端同步 ====================
 // 启动即拉取一次，之后 30min 轮询；拉取失败保留本地缓存（启动时已验签清理）。
-// 服务端返回 { config: <配置 JSON 字符串>, signature: <ed25519 hex> }，
-// 客户端验签（xianyu-fallback-config-v1）通过才采纳。
+// 服务端返回 { config: <配置 JSON 字符串>, signature: <ed25519 hex>,
+// keyId?: <签发槽位> }，客户端验签（xianyu-fallback-config-v1，双公钥槽位）
+// 通过才采纳；keyId 缺失/未知时遍历槽位，命中但未知时上报事件。
 
 const _syncInterval = Duration(minutes: 30);
 
 Timer? _timer;
 var _syncing = false;
 
-/// 服务端响应条目 → (configJson, signature)；字段残缺返回 null
-(String, String)? normalizeServerFallbackConfig(Object? raw) {
+/// 服务端响应条目 → (configJson, signature, keyId?)；字段残缺返回 null
+(String, String, String?)? normalizeServerFallbackConfig(Object? raw) {
   if (raw is! Map) return null;
   final configJson = raw['config']?.toString() ?? '';
   final signature = raw['signature']?.toString().toLowerCase() ?? '';
   if (configJson.isEmpty || signature.isEmpty) return null;
-  return (configJson, signature);
+  final keyId = raw['keyId']?.toString();
+  return (configJson, signature, (keyId == null || keyId.isEmpty) ? null : keyId);
 }
 
 Future<bool> syncFallbackModules(AccountApi api) async {
@@ -36,7 +38,11 @@ Future<bool> syncFallbackModules(AccountApi api) async {
       // 服务端未配置/字段残缺：保持现状（本地缓存或默认行为）
       return true;
     }
-    await applyServerFallbackConfig(normalized.$1, normalized.$2);
+    await applyServerFallbackConfig(
+      normalized.$1,
+      normalized.$2,
+      keyId: normalized.$3,
+    );
     return true;
   } catch (e) {
     AppLog.warn('plugin', '[FallbackConfig] 拉取兜底配置失败（保留本地缓存）: $e');

@@ -218,33 +218,28 @@ mod tests {
 
     #[test]
     fn key_id_binding_semantics() {
-        // 未知 keyId + 有效签名（随机密钥即未知槽位）→ 采纳但 key_unknown
-        let key = SigningKey::from_bytes(&[7u8; 32]);
-        let sig = hex::encode(key.sign(&fallback_config_message("{\"version\":1}")).to_bytes());
-        let r = verify_fallback_config_signature("{\"version\":1}", &sig, Some("zzz-unknown")).unwrap();
-        assert!(r.valid && r.key_unknown);
-        // 无 keyId → 正常采纳
-        let r = verify_fallback_config_signature("{\"version\":1}", &sig, None).unwrap();
-        assert!(r.valid && !r.key_unknown);
-        // 已知 keyId（2026a）但签名来自其他密钥 → 严格绑定，直接拒绝
-        let r = verify_fallback_config_signature("{\"version\":1}", &sig, Some("2026a")).unwrap();
-        assert!(!r.valid && !r.key_unknown);
-        // 空 keyId 视同缺失
-        let r = verify_fallback_config_signature("{\"version\":1}", &sig, Some("")).unwrap();
-        assert!(r.valid && !r.key_unknown);
-    }
-
-    #[test]
-    fn known_key_id_strict_match_with_env_seed() {
         let Some(sig) = sign_of("{\"version\":1}") else {
             eprintln!("跳过：未设置 XY_FALLBACK_TEST_SEED");
             return;
         };
-        // 环境变量种子即 2026a 槽位私钥：已知 keyId 命中槽位 → valid
+        // 无 keyId / 空 keyId → 遍历槽位正常采纳
+        let r = verify_fallback_config_signature("{\"version\":1}", &sig, None).unwrap();
+        assert!(r.valid && !r.key_unknown);
+        let r = verify_fallback_config_signature("{\"version\":1}", &sig, Some("")).unwrap();
+        assert!(r.valid && !r.key_unknown);
+        // 已知 keyId（2026a 槽位）→ 严格命中采纳
         let r = verify_fallback_config_signature("{\"version\":1}", &sig, Some("2026a")).unwrap();
         assert!(r.valid && !r.key_unknown);
-        // keyId 未知（9999 不在槽位）→ 遍历命中 2026a 槽位 → 采纳并上报 key_unknown
+        // keyId 未知（9999 不在槽位）→ 遍历命中 2026a → 采纳并上报 key_unknown
         let r = verify_fallback_config_signature("{\"version\":1}", &sig, Some("9999")).unwrap();
         assert!(r.valid && r.key_unknown);
+        // 陌生密钥签名 + 已知 keyId → 严格绑定该槽位，直接拒绝（防密钥降级）
+        let rogue = SigningKey::from_bytes(&[7u8; 32]);
+        let rogue_sig = hex::encode(rogue.sign(&fallback_config_message("{\"version\":1}")).to_bytes());
+        let r = verify_fallback_config_signature("{\"version\":1}", &rogue_sig, Some("2026a")).unwrap();
+        assert!(!r.valid && !r.key_unknown);
+        // 陌生密钥签名 + 无 keyId → 遍历不命中 → 拒绝
+        let r = verify_fallback_config_signature("{\"version\":1}", &rogue_sig, None).unwrap();
+        assert!(!r.valid && !r.key_unknown);
     }
 }

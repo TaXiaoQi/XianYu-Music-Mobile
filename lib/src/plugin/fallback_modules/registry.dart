@@ -98,32 +98,26 @@ Future<void> _clearCachedConfig() async {
   } catch (_) {}
 }
 
-Future<bool> _verifySignature(String configJson, String signature) async {
+Future<({bool valid, bool keyUnknown})> _verifySignature(
+  String configJson,
+  String signature,
+  String? keyId,
+) async {
   try {
-    return await frb.verifyFallbackConfigSignature(
+    final result = await frb.verifyFallbackConfigSignature(
       configJson: configJson,
       signature: signature,
+      keyId: (keyId == null || keyId.isEmpty) ? null : keyId,
     );
+    return (valid: result.valid, keyUnknown: result.keyUnknown);
   } catch (e) {
     AppLog.warn('plugin', '[FallbackConfig] 验签命令不可用，按未通过处理: $e');
-    return false;
+    return (valid: false, keyUnknown: false);
   }
 }
 
-/// 应用一份已验签的配置（同步进内存）
-void _applyConfig(String configJson) {
-  final parsed = parseFallbackConfigJson(configJson);
-  if (parsed == null) {
-    AppLog.warn('plugin', '[FallbackConfig] 配置解析失败，忽略（沿用默认行为）');
-    return;
-  }
-  _config = parsed;
-  AppLog.info(
-      'plugin', '[FallbackConfig] 应用配置 v${parsed.version}，模块数=${parsed.modules.length}');
-}
-
-/// 启动/同步前清理：验签不过或解析失败的缓存直接清除（签名密钥轮换、
-/// 拉取失败后调用），回退全部默认行为。
+/// 启动/同步前清理：验签不过、解析失败或已过期的缓存直接清除（签名密钥
+/// 轮换、拉取失败后调用），回退全部默认行为。
 Future<int> sanitizeFallbackConfigCache() async {
   final cached = await _readCachedConfig();
   if (cached == null || cached.isEmpty) return 0;
@@ -137,42 +131,74 @@ Future<int> sanitizeFallbackConfigCache() async {
       decoded is Map ? (decoded['signature'] ?? '').toString() : '';
   final configJson =
       decoded is Map ? (decoded['config'] ?? '').toString() : '';
-  if (configJson.isEmpty ||
-      signature.isEmpty ||
-      !await _verifySignature(configJson, signature)) {
+  final keyId = decoded is Map ? decoded['keyId']?.toString() : null;
+  if (configJson.isEmpty || signature.isEmpty) {
+    await _clearCachedConfig();
+    _config = null;
+    AppLog.warn('plugin', '[FallbackConfig] 缓存结构残缺，已清除（回退默认行为）');
+    return 1;
+  }
+  final verify = await _verifySignature(configJson, signature, keyId);
+  if (!verify.valid) {
     await _clearCachedConfig();
     _config = null;
     AppLog.warn('plugin', '[FallbackConfig] 缓存配置验签失败，已清除（回退默认行为）');
     return 1;
   }
   final parsed = parseFallbackConfigJson(configJson);
-  if (parsed == null) {
+  if (parsed == null || isFallbackConfigExpired(parsed)) {
     await _clearCachedConfig();
     _config = null;
-    AppLog.warn('plugin', '[FallbackConfig] 缓存配置解析失败，已清除（回退默认行为）');
+    AppLog.warn('plugin', '[FallbackConfig] 缓存配置解析失败/已过期，已清除（回退默认行为）');
     return 1;
   }
   _config = parsed;
   return 0;
 }
 
-/// 服务端下发的整包配置（config JSON + 签名）验签后应用并缓存。
-/// 验签失败丢弃并清除旧缓存（fail closed：回退客户端默认行为）。
+/// 服务端下发的整包配置（config JSON + 签名 [+ keyId]）验签后应用并缓存。
+/// 验签失败/解析失败/已过期均丢弃并清除旧缓存（fail closed：过期处理等同
+/// 验签失败，回退客户端默认行为）；签名有效但 keyId 不在客户端已知槽位时
+/// 照常采纳，并上报 FallbackConfigKeyUnknown（疑似新公钥上线或密钥降级）。
 Future<void> applyServerFallbackConfig(
   String configJson,
-  String signature,
-) async {
+  String signature, {
+  String? keyId,
+}) async {
   if (configJson.isEmpty || signature.isEmpty) return;
-  if (!await _verifySignature(configJson, signature)) {
+  final verify = await _verifySignature(configJson, signature, keyId);
+  if (!verify.valid) {
     AppLog.warn('plugin', '[FallbackConfig] 服务端配置验签失败，已丢弃（回退默认行为）');
     _reportFallbackEvent('FallbackConfigVerifyFail', '配置验签失败已丢弃');
     await _clearCachedConfig();
     _config = null;
     return;
   }
-  await _writeCachedConfig(_wrapCache(configJson, signature));
-  _applyConfig(configJson);
+  if (verify.keyUnknown) {
+    AppLog.warn(
+        'plugin',
+        '[FallbackConfig] 配置签名有效但 keyId=${keyId ?? ''} 不在客户端已知槽位，'
+        '已采纳并上报（疑似新公钥上线/密钥降级）');
+    _reportFallbackEvent(
+        'FallbackConfigKeyUnknown', 'keyId=${keyId ?? ''} 不在已知槽位');
+  }
+  final parsed = parseFallbackConfigJson(configJson);
+  if (parsed == null || isFallbackConfigExpired(parsed)) {
+    AppLog.warn('plugin', '[FallbackConfig] 配置解析失败/已过期，已丢弃（回退默认行为）');
+    _reportFallbackEvent('FallbackConfigVerifyFail', '配置解析失败/已过期已丢弃');
+    await _clearCachedConfig();
+    _config = null;
+    return;
+  }
+  await _writeCachedConfig(_wrapCache(configJson, signature, keyId));
+  _config = parsed;
+  AppLog.info(
+      'plugin', '[FallbackConfig] 应用配置 v${parsed.version}，模块数=${parsed.modules.length}');
 }
 
-String _wrapCache(String configJson, String signature) =>
-    const JsonEncoder().convert({'config': configJson, 'signature': signature});
+String _wrapCache(String configJson, String signature, String? keyId) =>
+    const JsonEncoder().convert({
+      'config': configJson,
+      'signature': signature,
+      if (keyId != null && keyId.isNotEmpty) 'keyId': keyId,
+    });

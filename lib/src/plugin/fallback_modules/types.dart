@@ -65,11 +65,23 @@ class FallbackModuleConfig {
 class FallbackRemoteConfig {
   final int version;
   final Map<String, FallbackModuleConfig> modules;
+  /// 配置有效期（unix 秒，可选）；过期等同验签失败（清缓存回默认），
+  /// 防止服务端长期停摆/密钥轮换后旧配置被无限期沿用。
+  final int? expiresAt;
 
   const FallbackRemoteConfig({
     required this.version,
     required this.modules,
+    this.expiresAt,
   });
+}
+
+/// 配置是否已过期（expiresAt 缺失视为永不过期，兼容旧服务端）
+bool isFallbackConfigExpired(FallbackRemoteConfig config, {DateTime? now}) {
+  final expiresAt = config.expiresAt;
+  if (expiresAt == null || expiresAt <= 0) return false;
+  final seconds = (now ?? DateTime.now()).millisecondsSinceEpoch ~/ 1000;
+  return seconds >= expiresAt;
 }
 
 /// 解析服务端配置 JSON；结构非法/字段残缺返回 null，未知 key 与方法忽略。
@@ -117,5 +129,9 @@ FallbackRemoteConfig? parseFallbackConfigJson(String raw) {
       sources: sources,
     );
   }
-  return FallbackRemoteConfig(version: version, modules: modules);
+  return FallbackRemoteConfig(
+    version: version,
+    modules: modules,
+    expiresAt: (decoded['expiresAt'] as num?)?.toInt(),
+  );
 }
