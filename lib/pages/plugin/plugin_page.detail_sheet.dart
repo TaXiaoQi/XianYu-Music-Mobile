@@ -181,7 +181,8 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
               const Divider(height: 24),
               row(tr('版本'), source.version.isEmpty ? '—' : 'v${source.version}'),
               row(tr('作者'), source.author.isEmpty ? '—' : source.author),
-              if (source.description.isNotEmpty) row(tr('描述'), source.description),
+              if (source.description.isNotEmpty)
+                row(tr('插件来源'), source.description),
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Row(
@@ -222,7 +223,13 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Row(
+                child: Builder(builder: (context) {
+                  // 优先远程来源 URL；本地文件导入的插件回落显示存储路径
+                  // （与桌面端 filePath 语义对齐）
+                  final pluginLink = source.sourceUrl.isNotEmpty
+                      ? source.sourceUrl
+                      : source.filePath;
+                  return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     SizedBox(
@@ -232,12 +239,12 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                               fontSize: 13, color: scheme.onSurfaceVariant)),
                     ),
                     Expanded(
-                      child: source.sourceUrl.isEmpty
+                      child: pluginLink.isEmpty
                           ? const Text('—', style: TextStyle(fontSize: 13))
                           : InkWell(
                               onTap: () async {
                                 await Clipboard.setData(
-                                    ClipboardData(text: source.sourceUrl));
+                                    ClipboardData(text: pluginLink));
                                 if (context.mounted) {
                                   showXianYuToast(context, tr('插件链接已复制'));
                                 }
@@ -247,7 +254,7 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Flexible(
-                                    child: Text(source.sourceUrl,
+                                    child: Text(pluginLink,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -262,7 +269,8 @@ class _PluginDetailSheetState extends ConsumerState<_PluginDetailSheet> {
                             ),
                     ),
                   ],
-                ),
+                  );
+                }),
               ),
               if (!_loading && _vars.isNotEmpty) ...[
                 const Divider(height: 8),

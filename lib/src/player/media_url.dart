@@ -1,5 +1,39 @@
 
+import 'dart:convert';
+
+import '../core/application_logger.dart';
 import '../rust/api.dart';
+
+/// 汽水原生取流（lx://qs）：Rust 侧 track_v2 → 按品质选档 → PlayAuth→CEK，
+/// 绕过 lx 源脚本（脚本仅回 url，无 cek 通道）。加密流由播放器 CENC 通道解密。
+/// 解析失败返回 null（上层走 lx 脚本/换源）。
+Future<ResolvedMediaUrl?> resolveQsUrl(
+  String quality,
+  Map<String, dynamic> songInfo,
+) async {
+  final trackId = (songInfo['songmid'] ?? songInfo['id'] ?? '').toString();
+  if (trackId.isEmpty) return null;
+  try {
+    final raw = await resolveQsPlay(trackId: trackId, quality: quality)
+        .timeout(const Duration(seconds: 10));
+    final data = jsonDecode(raw) as Map<String, dynamic>;
+    final url = data['url'] as String?;
+    if (url == null || url.isEmpty) return null;
+    final h = data['headers'];
+    final cek = data['cek'] as String?;
+    AppLog.info(
+        'qs', '[qsResolve] track=$trackId q=${data['quality']} cek=${cek != null}');
+    return ResolvedMediaUrl(
+      url: url,
+      headers: h is Map ? h.cast<String, String>() : null,
+      quality: (data['quality'] as String?) ?? quality,
+      cek: (cek == null || cek.isEmpty) ? null : cek,
+    );
+  } catch (e) {
+    AppLog.warn('qs', '[qsResolve] track=$trackId 失败: $e');
+    return null;
+  }
+}
 
 bool _isTrailingDirtyChar(int code) {
   return code == 0x2c ||

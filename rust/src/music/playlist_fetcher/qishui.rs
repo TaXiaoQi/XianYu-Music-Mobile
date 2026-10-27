@@ -161,7 +161,7 @@ fn as_map_list(v: Option<&Value>) -> Vec<Value> {
 }
 
 /// 对齐 TS buildImageUrlFromCover：uri+template_prefix 拼静态图 URL，否则取 urls 首个
-fn build_image_url_from_cover(url_cover: Option<&Value>, size: &str) -> String {
+pub(crate) fn build_image_url_from_cover(url_cover: Option<&Value>, size: &str) -> String {
     let Some(v) = url_cover else {
         return String::new();
     };

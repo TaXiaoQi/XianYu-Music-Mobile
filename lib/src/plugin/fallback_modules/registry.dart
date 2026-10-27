@@ -3,37 +3,30 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../auth/account_api.dart' show appVersion;
 import '../../core/application_logger.dart';
 import '../../rust/api.dart' as frb;
 import 'types.dart';
 
-// ==================== 兜底模块注册表（移植自桌面端 fallbackModules/registry） ====================
-// 模块在移动端 Rust QuickJS 宿主执行：验签 + 编译 + 四条硬校验一体（load），
-// 调用走 fallback_module_call。_loaded 只保存「已加载标记 + 熔断状态」。
+// ==================== 兜底行为配置存取（签名配置下发，无可执行代码） ====================
+// 服务端下发整包配置 JSON + ed25519 签名；验签通过才缓存并应用到内存。
+// 全部逻辑固定在客户端原生实现（Rust builtin），配置只控制链路开关与
+// 平台来源，因此无需宿主加载/熔断链路：查询直接读内存，未同步前按默认放行。
 
-const _storageKey = 'xianyu_fallback_modules_v1';
+const _storageKey = 'xianyu_fallback_config_v2';
 
-const _maxConsecutiveErrors = 3;
-
-// ==================== 降级/熔断事件上报（statistics 通道） ====================
-// 走 reportError → 服务端 error_log，按 error_type 聚合即可量化热修效果；
-// 同事件 60s 去重，避免模块故障时刷屏。
+// ==================== 降级/异常事件上报（statistics 通道） ====================
+// 走 reportError → 服务端 error_log（验签失败/同步失败等配置层异常）；
+// 同事件 60s 去重，避免轮询失败时刷屏。
 const _eventReportDedup = Duration(minutes: 1);
 const _maxRecentEventReports = 32;
 
 final _recentEventReports = <String, DateTime>{};
 
-// dataDir 解析与事件上报由启动流程注入（initFallbackModuleSync），
-// 未注入时所有调用直接回退内置实现
-Future<String> Function()? _dataDirResolver;
 void Function(String eventType, String detail)? _eventReporter;
 
 void configureFallbackModules({
-  required Future<String> Function() dataDirResolver,
   void Function(String eventType, String detail)? reportEvent,
 }) {
-  _dataDirResolver = dataDirResolver;
   _eventReporter = reportEvent;
 }
 
@@ -56,313 +49,130 @@ void _reportFallbackEvent(String eventType, String detail) {
   }
 }
 
-/// 已加载标记 + 熔断状态
-class _LoadedModule {
-  final int version;
-  int consecutiveErrors = 0;
-  bool disabled = false;
+// ==================== 内存态配置 ====================
 
-  _LoadedModule(this.version);
+FallbackRemoteConfig? _config;
+
+/// 当前生效的整包配置（未同步/验签失败时为 null = 全部默认放行）
+FallbackRemoteConfig? get currentFallbackConfig => _config;
+
+/// 指定方法是否被服务端配置关闭。配置未同步时默认放行。
+bool fallbackMethodDisabled(String moduleKey, String method) =>
+    _config?.modules[moduleKey]?.disabledMethods.contains(method) ?? false;
+
+/// 服务端下发的平台来源白名单与顺序（仅榜单/推荐歌单模块）。
+/// 返回 null = 未配置（沿用调用方默认来源）；与调用方来源无交集时也返回
+/// null，避免配置把当前页面打空。
+List<String>? fallbackModuleSourceOrder(String moduleKey, List<String> wanted) {
+  final configured = _config?.modules[moduleKey]?.sources;
+  if (configured == null || wanted.isEmpty) return null;
+  final filtered = configured.where(wanted.contains).toList();
+  return filtered.isEmpty ? null : filtered;
 }
 
-final _loaded = <String, _LoadedModule>{};
+// ==================== 缓存读写与应用 ====================
 
-// 防预热/首调竞态：同 key 的 load 只发一次，其余等待同一 Future
-final _loadPromises = <String, Future<_LoadedModule?>>{};
-
-class _ModuleCache {
-  final int fetchedAt;
-  final Map<String, CachedFallbackModule> modules;
-
-  const _ModuleCache({required this.fetchedAt, required this.modules});
-}
-
-const _emptyCache = _ModuleCache(fetchedAt: 0, modules: {});
-
-Future<_ModuleCache> _readCache() async {
+Future<String?> _readCachedConfig() async {
   try {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
-    if (raw == null || raw.isEmpty) return _emptyCache;
-    final decoded = jsonDecode(raw);
-    if (decoded is! Map) return _emptyCache;
-    final modules = <String, CachedFallbackModule>{};
-    final rawModules = decoded['modules'];
-    if (rawModules is Map) {
-      for (final e in rawModules.entries) {
-        if (e.value is! Map) continue;
-        modules[e.key.toString()] =
-            CachedFallbackModule.fromJson(Map<String, dynamic>.from(e.value as Map));
-      }
-    }
-    return _ModuleCache(
-      fetchedAt: (decoded['fetchedAt'] as num?)?.toInt() ?? 0,
-      modules: modules,
-    );
+    return prefs.getString(_storageKey);
   } catch (e) {
-    AppLog.warn('plugin', '[FallbackModule] 读取本地缓存失败: $e');
-    return _emptyCache;
+    AppLog.warn('plugin', '[FallbackConfig] 读取本地缓存失败: $e');
+    return null;
   }
 }
 
-Future<void> _writeCacheModules(
-  int fetchedAt,
-  Map<String, CachedFallbackModule> modules,
-) async {
+Future<void> _writeCachedConfig(String configJson) async {
   try {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _storageKey,
-      jsonEncode({
-        'fetchedAt': fetchedAt,
-        'modules': modules.map((k, v) => MapEntry(k, v.toJson())),
-      }),
-    );
+    await prefs.setString(_storageKey, configJson);
   } catch (e) {
-    AppLog.warn('plugin', '[FallbackModule] 写入本地缓存失败: $e');
+    AppLog.warn('plugin', '[FallbackConfig] 写入本地缓存失败: $e');
   }
 }
 
-Future<bool> _verifySignature(
-  String moduleKey,
-  int version,
-  String code,
-  String signature,
-) async {
+Future<void> _clearCachedConfig() async {
   try {
-    return await frb.verifyFallbackModuleSignature(
-      moduleKey: moduleKey,
-      version: version,
-      code: code,
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_storageKey);
+  } catch (_) {}
+}
+
+Future<bool> _verifySignature(String configJson, String signature) async {
+  try {
+    return await frb.verifyFallbackConfigSignature(
+      configJson: configJson,
       signature: signature,
     );
   } catch (e) {
-    AppLog.warn('plugin', '[FallbackModule] $moduleKey 验签命令不可用，按未通过处理: $e');
+    AppLog.warn('plugin', '[FallbackConfig] 验签命令不可用，按未通过处理: $e');
     return false;
   }
 }
 
-/// 清除本地缓存中验签不过/字段残缺的模块（拉取失败、签名密钥轮换后调用）。
-/// 返回清除数量。
-Future<int> sanitizeFallbackModuleCache() async {
-  final cache = await _readCache();
-  var removed = 0;
-  final next = <String, CachedFallbackModule>{};
-  for (final e in cache.modules.entries) {
-    final m = e.value;
-    if (m.code.isEmpty || m.signature.isEmpty) {
-      removed += 1;
-      continue;
-    }
-    if (!await _verifySignature(e.key, m.version, m.code, m.signature)) {
-      removed += 1;
-      AppLog.warn('plugin',
-          '[FallbackModule] 缓存模块 ${e.key} v${m.version} 验签失败，已清除（回退内置实现）');
-      continue;
-    }
-    next[e.key] = m;
+/// 应用一份已验签的配置（同步进内存）
+void _applyConfig(String configJson) {
+  final parsed = parseFallbackConfigJson(configJson);
+  if (parsed == null) {
+    AppLog.warn('plugin', '[FallbackConfig] 配置解析失败，忽略（沿用默认行为）');
+    return;
   }
-  if (removed > 0) {
-    await _writeCacheModules(cache.fetchedAt, next);
-    _loaded.clear();
-  }
-  return removed;
+  _config = parsed;
+  AppLog.info(
+      'plugin', '[FallbackConfig] 应用配置 v${parsed.version}，模块数=${parsed.modules.length}');
 }
 
-void _printModuleLogs(String key, Object? logs) {
-  if (logs is! List) return;
-  for (final entry in logs) {
-    if (entry is! Map) continue;
-    final line =
-        '[FallbackModule] $key: ${entry['message']?.toString() ?? ''}';
-    final level = entry['level']?.toString() ?? '';
-    if (level == 'error') {
-      AppLog.error('plugin', line);
-    } else if (level == 'warn') {
-      AppLog.warn('plugin', line);
-    } else {
-      AppLog.debug('plugin', line);
-    }
-  }
-}
-
-Future<_LoadedModule?> _loadModuleFromCache(String key) async {
-  final cache = await _readCache();
-  final cached = cache.modules[key];
-  AppLog.info('plugin',
-      '[FallbackModule] load $key: cacheModules=${cache.modules.length} cached=${cached != null}');
-  if (cached == null || cached.code.isEmpty || cached.signature.isEmpty) {
-    AppLog.info('plugin', '[FallbackModule] load $key: 无有效缓存');
-    return null;
-  }
+/// 启动/同步前清理：验签不过或解析失败的缓存直接清除（签名密钥轮换、
+/// 拉取失败后调用），回退全部默认行为。
+Future<int> sanitizeFallbackConfigCache() async {
+  final cached = await _readCachedConfig();
+  if (cached == null || cached.isEmpty) return 0;
+  Object? decoded;
   try {
-    final dataDir =
-        _dataDirResolver == null ? null : await _dataDirResolver!();
-    if (dataDir == null || dataDir.isEmpty) return null;
-    // Dart 层超时兜底：Rust 内部有 7s 上界，但桥传输层挂起时 await 永不返回
-    final raw = await frb.fallbackModuleLoad(
-      dataDir: dataDir,
-      moduleKey: key,
-      version: cached.version,
-      code: cached.code,
-      signature: cached.signature,
-      appVersion: appVersion,
-    ).timeout(const Duration(seconds: 10));
-    AppLog.info('plugin', '[FallbackModule] load $key: bridge returned');
-    final res = jsonDecode(raw);
-    if (res is Map && res['ok'] == true) {
-      _printModuleLogs(key, res['logs']);
-      return _LoadedModule((res['version'] as num?)?.toInt() ?? cached.version);
-    }
-    // 验签/编译失败是确定性错误：本会话禁用，避免每次调用都重试
-    final error = res is Map ? res['error']?.toString() : raw;
-    _printModuleLogs(key, res is Map ? res['logs'] : null);
-    AppLog.warn('plugin',
-        '[FallbackModule] 模块 $key v${cached.version} 宿主加载失败，本会话回退内置实现: $error');
-    _reportFallbackEvent(
-        'FallbackModuleLoadFail', '$key v${cached.version} 宿主加载失败: $error');
-    return _LoadedModule(cached.version)..disabled = true;
-  } catch (e) {
-    // 桥接异常可能是暂时的：不缓存状态，下次调用重试 load
-    AppLog.warn('plugin', '[FallbackModule] $key 宿主加载命令不可用，本次回退内置实现: $e');
-    _reportFallbackEvent('FallbackModuleLoadFail', '$key 宿主加载命令不可用: $e');
-    return null;
+    decoded = const JsonDecoder().convert(cached);
+  } catch (_) {
+    decoded = null;
   }
-}
-
-Future<_LoadedModule?> _ensureModuleLoaded(String key) {
-  final existing = _loaded[key];
-  if (existing != null) return Future.value(existing);
-  var pending = _loadPromises[key];
-  if (pending == null) {
-    pending = _loadModuleFromCache(key).then((loaded) {
-      if (loaded != null) _loaded[key] = loaded;
-      return loaded;
-    }).whenComplete(() => _loadPromises.remove(key));
-    _loadPromises[key] = pending;
+  final signature =
+      decoded is Map ? (decoded['signature'] ?? '').toString() : '';
+  final configJson =
+      decoded is Map ? (decoded['config'] ?? '').toString() : '';
+  if (configJson.isEmpty ||
+      signature.isEmpty ||
+      !await _verifySignature(configJson, signature)) {
+    await _clearCachedConfig();
+    _config = null;
+    AppLog.warn('plugin', '[FallbackConfig] 缓存配置验签失败，已清除（回退默认行为）');
+    return 1;
   }
-  return pending;
-}
-
-/// 启动/同步后把缓存中的模块批量加载进 Rust 宿主，消除首次调用的 load 延迟
-Future<void> prewarmFallbackModules() async {
-  for (final key in (await _readCache()).modules.keys) {
-    unawaited(_ensureModuleLoaded(key));
+  final parsed = parseFallbackConfigJson(configJson);
+  if (parsed == null) {
+    await _clearCachedConfig();
+    _config = null;
+    AppLog.warn('plugin', '[FallbackConfig] 缓存配置解析失败，已清除（回退默认行为）');
+    return 1;
   }
+  _config = parsed;
+  return 0;
 }
 
-void _reportModuleError(String key, String method, Object? error) {
-  final loaded = _loaded[key];
-  if (loaded == null) return;
-  loaded.consecutiveErrors += 1;
-  AppLog.warn('plugin',
-      '[FallbackModule] 模块 $key.$method 第 ${loaded.consecutiveErrors} 次执行失败，本次回退内置实现: $error');
-  _reportFallbackEvent('FallbackModuleCallFail', '$key.$method: $error');
-  if (loaded.consecutiveErrors >= _maxConsecutiveErrors) {
-    loaded.disabled = true;
-    AppLog.warn('plugin',
-        '[FallbackModule] 模块 $key 连续失败 ${loaded.consecutiveErrors} 次，本会话内已禁用（等待服务器下发新版本）');
-    _reportFallbackEvent('FallbackModuleCircuitOpen',
-        '$key 连续失败 ${loaded.consecutiveErrors} 次已熔断（method=$method）');
-  }
-}
-
-/// 是否存在可用的下发模块缓存。调用方在无模块时可直接走 builtin，
-/// 跳过 dispatch 的加载/熔断链路（无模块时该链路纯属开销）。
-Future<bool> fallbackModuleCached(String key) async {
-  final m = (await _readCache()).modules[key];
-  return m != null && m.code.isNotEmpty && m.signature.isNotEmpty;
-}
-
-/// 分发到热修模块执行；模块未加载/被熔断/执行失败时回退 [builtin] 内置实现。
-/// [builtin] 与模块返回同构数据（模块侧经 JSON 还原）。
-Future<T> dispatchFallbackModule<T>(
-  String key,
-  String method,
-  Map<String, dynamic> args,
-  FutureOr<T> Function() builtin,
+/// 服务端下发的整包配置（config JSON + 签名）验签后应用并缓存。
+/// 验签失败丢弃并清除旧缓存（fail closed：回退客户端默认行为）。
+Future<void> applyServerFallbackConfig(
+  String configJson,
+  String signature,
 ) async {
-  AppLog.info('plugin', '[FallbackModule] dispatch $key.$method 进入');
-  // 无下发模块时直接走内置实现：跳过桥加载/调用链路（无模块时该链路
-  // 纯属开销，load 超时窗口还会让歌词等首调场景白转 10s+）
-  if (!await fallbackModuleCached(key)) {
-    return await builtin();
+  if (configJson.isEmpty || signature.isEmpty) return;
+  if (!await _verifySignature(configJson, signature)) {
+    AppLog.warn('plugin', '[FallbackConfig] 服务端配置验签失败，已丢弃（回退默认行为）');
+    _reportFallbackEvent('FallbackConfigVerifyFail', '配置验签失败已丢弃');
+    await _clearCachedConfig();
+    _config = null;
+    return;
   }
-  final loaded = await _ensureModuleLoaded(key);
-  AppLog.info('plugin',
-      '[FallbackModule] dispatch $key.$method: loaded=${loaded != null} disabled=${loaded?.disabled ?? false}');
-  if (loaded != null && !loaded.disabled) {
-    try {
-      final dataDir =
-          _dataDirResolver == null ? null : await _dataDirResolver!();
-      if (dataDir != null && dataDir.isNotEmpty) {
-        // Dart 层超时兜底：Rust 内部有 15s 上界，但桥传输层挂起时
-        // await 永不返回，上层会永久停留在加载态
-        final raw = await frb.fallbackModuleCall(
-          dataDir: dataDir,
-          moduleKey: key,
-          method: method,
-          argsJson: jsonEncode(args),
-        ).timeout(const Duration(seconds: 20));
-        AppLog.info('plugin',
-            '[FallbackModule] call $key.$method: bridge returned');
-        final res = jsonDecode(raw);
-        _printModuleLogs(key, res is Map ? res['logs'] : null);
-        if (res is Map && res['ok'] == true) {
-          loaded.consecutiveErrors = 0;
-          return res['data'] as T;
-        }
-        // Rust 侧超时/中断会销毁实例：删掉已加载标记，下次调用重新 load
-        if (res is Map &&
-            res['error']?.toString().contains('模块未加载') == true) {
-          _loaded.remove(key);
-        }
-        _reportModuleError(
-            key, method, res is Map ? (res['error'] ?? '模块调用失败') : '模块调用失败');
-      }
-    } catch (e) {
-      _reportModuleError(key, method, e);
-    }
-  }
-  return await builtin();
+  await _writeCachedConfig(_wrapCache(configJson, signature));
+  _applyConfig(configJson);
 }
 
-/// 用服务端下发的模块清单整包替换本地缓存（仅保留移动端已接入的 key）。
-/// 有增删/更新时清空已加载标记，下次调用按新版本重新 load。
-Future<void> applyServerFallbackModules(List<ServerFallbackModule> modules) async {
-  final prev = (await _readCache()).modules;
-  final next = <String, CachedFallbackModule>{};
-  var added = 0;
-
-  for (final item in modules) {
-    if (item.code.isEmpty) continue;
-    final expected = fallbackModuleMethods[item.moduleKey];
-    if (expected == null) continue;
-    final cached = prev[item.moduleKey];
-    final sameVerified = cached != null &&
-        cached.version == item.version &&
-        cached.digest == item.digest &&
-        cached.code == item.code &&
-        cached.signature == item.signature &&
-        cached.signature.isNotEmpty;
-    if (sameVerified) {
-      next[item.moduleKey] = cached;
-      continue;
-    }
-    next[item.moduleKey] = CachedFallbackModule(
-      version: item.version,
-      digest: item.digest,
-      code: item.code,
-      signature: item.signature,
-      name: item.name,
-      updatedAt: item.updatedAt,
-    );
-    added += 1;
-  }
-
-  final removed = prev.keys.where((k) => !next.containsKey(k)).length;
-  if (added > 0 || removed > 0) {
-    await _writeCacheModules(DateTime.now().millisecondsSinceEpoch, next);
-    _loaded.clear();
-  }
-}
+String _wrapCache(String configJson, String signature) =>
+    const JsonEncoder().convert({'config': configJson, 'signature': signature});

@@ -6,7 +6,7 @@ mod kg;
 mod kw;
 mod mg;
 mod orchestrator;
-mod qishui;
+pub(crate) mod qishui;
 mod tx;
 mod wy;
 

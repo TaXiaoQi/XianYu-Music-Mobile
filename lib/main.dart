@@ -183,7 +183,7 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
 
     ref.listenManual(rustInitProvider, (prev, next) {
       if (next.hasValue || next.hasError) _runStartupPluginAutoUpdate();
-      // Rust 就绪后挂载兜底模块同步（验签/load 依赖桥）
+      // Rust 就绪后挂载兜底配置同步（验签依赖桥）
       if (next.hasValue) {
         initFallbackModuleSync(ProviderScope.containerOf(context));
       }
@@ -195,8 +195,6 @@ class _AppWarmupRunnerState extends ConsumerState<AppWarmupRunner> {
         unawaited(container
             .read(dlnaCastProvider.notifier)
             .applyRendererSetting());
-        // 兜底模块配置快照变化推送（500ms 防抖）
-        scheduleFallbackModuleConfigPush(container);
       }
     });
   }

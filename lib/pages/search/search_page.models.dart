@@ -34,7 +34,7 @@ class _CloudSourceEntry {
   const _CloudSourceEntry({required this.sortIndex, required this.item});
 }
 
-const _validLxSources = {'kw', 'kg', 'tx', 'wy', 'mg'};
+const _validLxSources = {'kw', 'kg', 'tx', 'wy', 'mg', 'qs'};
 // 平台显示名与榜单页共用（lxPlatformDisplayNames），tr() 每次求值保运行时切语言
 Map<String, String> get _lxSourceNames => lxPlatformDisplayNames();
 

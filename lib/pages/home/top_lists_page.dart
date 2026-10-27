@@ -91,7 +91,7 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
         supported.add(_TopSource(s, null, s.name));
       }
     }
-    // LX 音源榜单由 lx_toplist 兜底模块保证能力，
+    // 榜单数据由 lx_toplist 元数据兜底模块保证能力，
     // 按内部平台拆分为多个来源（与搜索结果页同款）
     const lxKeys = {'wy', 'kg', 'kw', 'tx'};
     for (final s in catalog.lxToplistSources) {

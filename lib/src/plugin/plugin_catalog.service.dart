@@ -139,7 +139,8 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     }
   }
 
-  /// LX 音源榜单：走 lx_toplist 兜底模块（服务端下发 JS 优先、Rust builtin 兜底），
+  /// LX 榜单数据：走 lx_toplist 元数据链路（Rust 固定原生实现，签名配置可
+  /// 关闭/调整平台来源），
   /// 各平台分组扁平进单组。subtitle 取榜单 description（MfSheetItem.subtitle
   /// 首段为 artist，分组标题在榜单页无独立展示位，故不传 categoryTitle）。
   Future<List<MfSheetItem>> _getLxTopLists(
@@ -161,7 +162,7 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         if (e is! Map) continue;
         final m = Map<String, dynamic>.from(e);
         m['_isTopList'] = true;
-        // chip 即平台：条目缺 source（下发 JS 模块形状差异）时回退 chip 的 lxKey
+        // chip 即平台：条目缺 source 时回退 chip 的 lxKey
         final src = (m['source'] ?? '').toString();
         m['_lxSource'] = src.isNotEmpty
             ? src
@@ -347,8 +348,8 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     }
   }
 
-  /// LX 音源推荐歌单：走 lx_recommend_sheets 兜底模块（服务端下发 JS 优先、
-  /// Rust builtin 兜底）。取 pinned 首个标签（按其 source 平台）拉第一页；
+  /// LX 推荐歌单数据：走 lx_recommend_sheets 元数据链路（Rust 固定原生实现，
+  /// 签名配置可关闭/调整平台来源）。取 pinned 首个标签（按其 source 平台）拉第一页；
   /// 空结果且有标签时以 null 标签（各平台默认推荐）对首个平台重试一次。
   /// 指定 lxKey 时仅在该平台内取数，且只接受该平台的标签
   Future<List<MfSheetItem>> _getLxRecommendSheets(
@@ -402,7 +403,7 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         .whereType<Map>()
         .map((e) => e.cast<String, dynamic>())
         .map((m) {
-          // 条目缺 source（下发 JS 模块形状差异）时回退请求的平台键
+          // 条目缺 source 时回退请求的平台键
           final src = (m['source'] ?? '').toString();
           m['_lxSource'] = src.isNotEmpty ? src : fallbackSource;
           m['_lxPlaylistId'] = (m['id'] ?? '').toString();

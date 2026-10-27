@@ -189,7 +189,7 @@ class _HoldDragStartListenerState extends State<_HoldDragStartListener> {
   void _onDown(PointerDownEvent _) {
     _haptic?.cancel();
     _haptic = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) HapticFeedback.mediumImpact();
+      if (mounted) triggerHaptic(HapticStrength.normal);
     });
   }
 

@@ -136,6 +136,10 @@ extension PlayerNotifierQuality on PlayerNotifier {
     try {
       final engine = await _ref.read(pluginEngineProvider.future);
       final songInfo = jsonDecode(songInfoJson) as Map<String, dynamic>;
+      // qs 源走原生取流（带 CENC cek），不依赖 lx 源脚本
+      if (songInfo['source'] == 'qs') {
+        return await resolveQsUrl(quality, songInfo);
+      }
       final resolved = await engine
           .resolveLxUrl(songInfo, quality)
           .timeout(const Duration(seconds: 8));

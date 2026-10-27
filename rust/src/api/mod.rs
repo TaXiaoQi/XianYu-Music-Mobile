@@ -1262,6 +1262,27 @@ pub async fn download_online_song(
     crate::toolbox::download_online_song(url, dest_path, ekey, cek, Some(headers)).await
 }
 
+/// 汽水原生播放取流（lx://qs）：track_v2 → 按品质选档 → PlayAuth→CEK。
+/// 返回 JSON：{"url","quality","bitrate","size","headers":{"User-Agent"},"cek"?}
+/// （cek 解出失败时为 null，上层按普通直链处理/走换源）
+pub async fn resolve_qs_play(track_id: String, quality: String) -> Result<String, String> {
+    let payload = crate::music::lx_search::qs_resolve_play(&track_id, &quality).await?;
+    let cek = if payload.play_auth.is_empty() {
+        None
+    } else {
+        crate::music::lx_search::qs_play_auth_to_cek(&payload.play_auth).ok()
+    };
+    let result = serde_json::json!({
+        "url": payload.url,
+        "quality": payload.quality,
+        "bitrate": payload.bitrate,
+        "size": payload.size,
+        "headers": {"User-Agent": crate::music::lx_search::QS_UA},
+        "cek": cek,
+    });
+    Ok(result.to_string())
+}
+
 /// 独立解密 QMC 加密文件（用户手动选择文件的工具入口）。
 ///
 /// 支持三档策略：ekey 直供 / footer 自动提取 → QMC2；QMC1 老格式扩展名 → 固定密钥解密。
@@ -1337,7 +1358,7 @@ pub async fn remove_cached_background_video(cache_dir: String, path: String) -> 
 }
 
 // =========================================================================
-// 宿主端平台签名/加密 + 兜底模块验签（移植自桌面端 host_crypto / fallback_verify）
+// 宿主端平台签名/加密 + 兜底配置验签（移植自桌面端 host_crypto / fallback_verify）
 // 供插件脚本 / 前端调用，对齐桌面端同名 Tauri 命令。
 // =========================================================================
 
@@ -1378,19 +1399,16 @@ pub fn host_sha256_hex(text: String) -> String {
     crate::host_crypto::sha256_hex(&text)
 }
 
-/// 校验服务端下发的兜底模块签名（ed25519）。返回 true 表示签名有效可执行。
-pub fn verify_fallback_module_signature(
-    module_key: String,
-    version: i64,
-    code: String,
+/// 校验服务端下发的兜底配置签名（ed25519，双公钥槽位）。
+/// `key_id` 为响应携带的 keyId（可选）：已知 keyId 仅对该槽位严格验签，
+/// 缺失/未知则遍历槽位；签名有效且 keyId 未知时返回 key_unknown=true
+/// （Dart 层采纳配置并上报 FallbackConfigKeyUnknown 事件）。
+pub fn verify_fallback_config_signature(
+    config_json: String,
     signature: String,
-) -> Result<bool, String> {
-    crate::fallback_verify::verify_fallback_module_signature(
-        &module_key,
-        version,
-        &code,
-        &signature,
-    )
+    key_id: Option<String>,
+) -> Result<crate::fallback_verify::FallbackVerifyResult, String> {
+    crate::fallback_verify::verify_fallback_config_signature(&config_json, &signature, key_id.as_deref())
 }
 
 /// 校验服务端 check_beta_access 响应签名（ed25519）。返回 true 表示响应可信。
@@ -1408,66 +1426,6 @@ pub fn verify_beta_access_signature(
         exp,
         &signature,
     )
-}
-
-// =========================================================================
-// 兜底模块宿主（QuickJS 热修沙箱，移植自桌面端 fallback_host）
-// =========================================================================
-
-/// 加载兜底模块（验签 + 编译 + 硬校验一体），返回 `FallbackLoadResult` JSON。
-pub async fn fallback_module_load(
-    data_dir: String,
-    module_key: String,
-    version: i64,
-    code: String,
-    signature: String,
-    app_version: String,
-) -> Result<String, String> {
-    let engine = crate::fallback_host::global_engine(&data_dir);
-    let result = engine
-        .load(&module_key, version, &code, &signature, &app_version)
-        .await;
-    serde_json::to_string(&result).map_err(|e| e.to_string())
-}
-
-/// 调用兜底模块方法，返回 `FallbackCallResult` JSON（`ok`/`error`/`data`/`logs`）。
-pub async fn fallback_module_call(
-    data_dir: String,
-    module_key: String,
-    method: String,
-    args_json: String,
-    timeout_ms: Option<u64>,
-) -> Result<String, String> {
-    let engine = crate::fallback_host::global_engine(&data_dir);
-    let result = engine
-        .call(&module_key, &method, &args_json, timeout_ms.unwrap_or(0))
-        .await;
-    serde_json::to_string(&result).map_err(|e| e.to_string())
-}
-
-/// 保序逐项批量调用，返回 `FallbackCallManyResult` JSON；单项失败不影响后续。
-pub async fn fallback_module_call_many(
-    data_dir: String,
-    module_key: String,
-    method: String,
-    args_json_list: Vec<String>,
-    timeout_ms: Option<u64>,
-) -> Result<String, String> {
-    let engine = crate::fallback_host::global_engine(&data_dir);
-    let result = engine
-        .call_many(&module_key, &method, &args_json_list, timeout_ms.unwrap_or(0))
-        .await;
-    serde_json::to_string(&result).map_err(|e| e.to_string())
-}
-
-/// 整包替换配置快照，返回所存配置的 sha256-hex（对原始入参字符串取摘要）。
-pub fn fallback_module_update_config(data_dir: String, config_json: String) -> Result<String, String> {
-    crate::fallback_host::global_engine(&data_dir).update_config(&config_json)
-}
-
-/// 启动对账：返回当前已存配置的 hash（未推送过为空串），比对不一致即重推。
-pub fn fallback_module_config_hash(data_dir: String) -> Result<String, String> {
-    Ok(crate::fallback_host::global_engine(&data_dir).config_hash())
 }
 
 // =========================================================================

@@ -216,7 +216,7 @@ class AccountApi {
     }
   }
 
-  /// 拉取服务端下发的兜底（热修）模块清单
+  /// 拉取服务端下发的兜底行为配置（签名配置 JSON，无可执行代码）
   Future<Map<String, dynamic>> fetchFallbackModules() =>
       _action('get_fallback_modules', {}, fetchTimeoutMs: 15000);
 

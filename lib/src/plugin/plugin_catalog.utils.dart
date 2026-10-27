@@ -380,6 +380,7 @@ Map<String, String> lxPlatformDisplayNames() => <String, String>{
       'tx': tr('小秋音乐'),
       'wy': tr('小芸音乐'),
       'mg': tr('小蜜音乐'),
+      'qs': tr('汽水音乐'),
     };
 
 String lxPlatformDisplayName(String key) =>

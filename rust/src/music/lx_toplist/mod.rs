@@ -1,9 +1,9 @@
-// lx_toplist - LX 音源榜单（兜底模块 lx_toplist 的 Rust builtin 后端）
+// lx_toplist - LX 榜单数据（榜单元数据链路的固定原生实现）
 //
 // 聚合 wy/kg/kw/tx 四平台榜单：列表页各平台并发拉取（失败平台跳过、按入参
 // 顺序合并进单组），详情页返回与 lx_search::LxSearchItem 完全同构的条目。
-// Dart 侧经 lxToplistBoards/lxToplistBoardSongs 桥接；服务端下发的同名 JS
-// 模块优先于本实现执行（见 fallback_host 与 plugin_host_fallback）。
+// Dart 侧经 lxToplistBoards/lxToplistBoardSongs 桥接；平台来源/开关由服务端
+// 下发的签名配置调整（见 fallback_modules/registry 与 plugin_host_fallback）。
 
 pub(crate) mod kg;
 mod kw;

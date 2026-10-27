@@ -1,18 +1,20 @@
-// 兜底模块（fallback modules）共享类型（移植自桌面端 fallbackModules/types）。
+// 兜底行为配置（服务端签名下发）共享类型。
 //
-// 移动端接入五条链路：逐字歌词解码（lx_lyric）、插件宿主兜底（plugin_fallback）、
-// 歌单导入（playlist_import）、音源榜单（lx_toplist）与推荐歌单（lx_recommend_sheets），
-// key/方法白名单与 Rust 侧 FALLBACK_MODULE_METHODS（fallback_host/mod.rs）一致；
-// 新增 key 需两端同步。
+// 服务端只下发配置 JSON（各元数据链路的开关/平台来源），不含任何可执行代码；
+// 客户端 ed25519 验签（fallback_verify.rs，消息 xianyu-fallback-config-v1）通过
+// 后才采纳，全部逻辑固定在客户端原生实现中。模块 key 与服务端约定一致；
+// 未知 key / 未知方法在解析时忽略，新增 key 需两端同步。
 
-/// 服务端下发的兜底模块 key（移动端子集）
+import 'dart:convert';
+
+/// 兜底配置的模块 key（移动端接入的五条链路）
 const kFallbackModuleLxLyric = 'lx_lyric';
 const kFallbackModulePluginFallback = 'plugin_fallback';
 const kFallbackModulePlaylistImport = 'playlist_import';
 const kFallbackModuleLxToplist = 'lx_toplist';
 const kFallbackModuleLxRecommendSheets = 'lx_recommend_sheets';
 
-/// 各模块期望导出的方法
+/// 各模块客户端已知的方法白名单（disabledMethods 之外的方法名忽略）
 const fallbackModuleMethods = <String, List<String>>{
   kFallbackModuleLxLyric: ['fetchLyric'],
   kFallbackModuleLxToplist: ['getTopLists', 'getTopListDetail'],
@@ -21,11 +23,9 @@ const fallbackModuleMethods = <String, List<String>>{
     'getRecommendSheetsByTag',
   ],
   kFallbackModulePluginFallback: [
-    'isQqMusicPluginSource',
     'hostSearchFallback',
     'hostAlbumSearchFallback',
     'hostAlbumSongsFallback',
-    'isQqTrialMediaUrl',
     'fillSongDurations',
   ],
   kFallbackModulePlaylistImport: [
@@ -38,63 +38,84 @@ const fallbackModuleMethods = <String, List<String>>{
   ],
 };
 
-/// 本地缓存的已验签模块
-class CachedFallbackModule {
+/// 允许经 params.sources 下发平台来源的模块（wy/kg/kw/tx 子集）
+const fallbackModuleSourceKeys = <String>{
+  kFallbackModuleLxToplist,
+  kFallbackModuleLxRecommendSheets,
+};
+
+const _knownSourceKeys = {'wy', 'kg', 'kw', 'tx'};
+
+/// 单模块配置：version 用于服务端版本追踪，客户端行为只看开关与参数
+class FallbackModuleConfig {
   final int version;
-  final String digest;
-  final String code;
-  final String signature;
-  final String? name;
-  final String? updatedAt;
+  /// 服务端要求关闭的链路方法（命中后该链路返回空，不再走原生实现）
+  final Set<String> disabledMethods;
+  /// 平台来源白名单与顺序（仅榜单/推荐歌单模块生效；null = 不调整）
+  final List<String>? sources;
 
-  const CachedFallbackModule({
+  const FallbackModuleConfig({
     required this.version,
-    required this.digest,
-    required this.code,
-    required this.signature,
-    this.name,
-    this.updatedAt,
+    this.disabledMethods = const {},
+    this.sources,
   });
-
-  factory CachedFallbackModule.fromJson(Map<String, dynamic> j) =>
-      CachedFallbackModule(
-        version: (j['version'] as num?)?.toInt() ?? 0,
-        digest: (j['digest'] ?? '').toString(),
-        code: (j['code'] ?? '').toString(),
-        signature: (j['signature'] ?? '').toString(),
-        name: (j['name'] as String?)?.isEmpty ?? true ? null : j['name'] as String?,
-        updatedAt: (j['updatedAt'] as String?)?.isEmpty ?? true
-            ? null
-            : j['updatedAt'] as String?,
-      );
-
-  Map<String, dynamic> toJson() => {
-        'version': version,
-        'digest': digest,
-        'code': code,
-        'signature': signature,
-        if (name != null) 'name': name,
-        if (updatedAt != null) 'updatedAt': updatedAt,
-      };
 }
 
-/// 服务端下发的模块条目（经 normalizeModule 校验后）
-class ServerFallbackModule {
-  final String moduleKey;
+/// 解析后的整包兜底配置
+class FallbackRemoteConfig {
   final int version;
-  final String digest;
-  final String code;
-  final String signature;
-  final String? name;
-  final String? updatedAt;
+  final Map<String, FallbackModuleConfig> modules;
 
-  const ServerFallbackModule({
-    required this.moduleKey,
+  const FallbackRemoteConfig({
     required this.version,
-    required this.digest,
-    required this.code,
-    required this.signature,
-    this.name,
-    this.updatedAt,
+    required this.modules,
   });
+}
+
+/// 解析服务端配置 JSON；结构非法/字段残缺返回 null，未知 key 与方法忽略。
+FallbackRemoteConfig? parseFallbackConfigJson(String raw) {
+  Object? decoded;
+  try {
+    decoded = const JsonDecoder().convert(raw);
+  } catch (_) {
+    return null;
+  }
+  if (decoded is! Map) return null;
+  final version = (decoded['version'] as num?)?.toInt() ?? 0;
+  if (version < 1) return null;
+  final rawModules = decoded['modules'];
+  if (rawModules is! Map) return null;
+  final modules = <String, FallbackModuleConfig>{};
+  for (final entry in rawModules.entries) {
+    final key = entry.key.toString();
+    final knownMethods = fallbackModuleMethods[key];
+    if (knownMethods == null || entry.value is! Map) continue;
+    final m = entry.value as Map;
+    final disabled = <String>{};
+    final rawDisabled = m['disabledMethods'];
+    if (rawDisabled is List) {
+      for (final method in rawDisabled) {
+        final name = method.toString();
+        if (knownMethods.contains(name)) disabled.add(name);
+      }
+    }
+    List<String>? sources;
+    if (fallbackModuleSourceKeys.contains(key)) {
+      final rawSources = m['params'] is Map
+          ? (m['params'] as Map)['sources']
+          : null;
+      if (rawSources is List) {
+        final valid =
+            rawSources.map((s) => s.toString()).where(_knownSourceKeys.contains).toList();
+        // 至少保留一个有效来源才采纳，避免空列表把整条链路打空
+        if (valid.isNotEmpty) sources = valid;
+      }
+    }
+    modules[key] = FallbackModuleConfig(
+      version: (m['version'] as num?)?.toInt() ?? 0,
+      disabledMethods: disabled,
+      sources: sources,
+    );
+  }
+  return FallbackRemoteConfig(version: version, modules: modules);
 }

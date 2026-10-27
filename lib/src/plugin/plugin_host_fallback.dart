@@ -46,63 +46,6 @@ Map<String, dynamic> _lxItemToQqMusicFreeItem(Map<String, dynamic> item) {
   };
 }
 
-/// 热修模块回传桌面端 PluginSearchResult 形状（rawData 携带原始 MusicFree
-/// item）；内置路径回传本端 MusicFree item 形状——按 songmid 字段区分。
-PluginSearchResult _hostFallbackItemToResult(
-    Map<String, dynamic> m, PluginSource source) {
-  if (m['songmid'] != null) {
-    return PluginSearchResult(
-      name: (m['title'] ?? '').toString(),
-      singer: (m['artist'] ?? '').toString(),
-      albumName: (m['album'] ?? '').toString(),
-      songmid: m['songmid'].toString(),
-      source: source.name,
-      interval: (m['interval'] ?? '').toString(),
-      img: m['artwork']?.toString(),
-      rawData: m,
-    );
-  }
-  final raw = m['rawData'] is Map
-      ? Map<String, dynamic>.from(m['rawData'] as Map)
-      : null;
-  final durationMs = (m['duration'] as num?)?.toInt() ?? 0;
-  final rawInterval = raw == null ? '' : (raw['interval'] ?? '').toString();
-  return PluginSearchResult(
-    name: (m['title'] ?? m['name'] ?? raw?['title'] ?? '').toString(),
-    singer: (m['artist'] ?? raw?['artist'] ?? '').toString(),
-    albumName: (m['album'] ?? raw?['album'] ?? '').toString(),
-    songmid: ((raw?['songmid'] ?? m['id']) ?? '').toString(),
-    source: (m['platform'] ?? source.name).toString(),
-    interval: rawInterval.isNotEmpty
-        ? rawInterval
-        : durationMs > 0
-            ? _formatSeconds(durationMs ~/ 1000)
-            : '',
-    img: (m['coverUrl'] ?? raw?['artwork'])?.toString(),
-    rawData: raw,
-  );
-}
-
-Map<String, dynamic> _hostFallbackAlbumToItem(Map<String, dynamic> m) {
-  if (m['albumMID'] != null) return m;
-  final raw = m['rawData'] is Map
-      ? Map<String, dynamic>.from(m['rawData'] as Map)
-      : null;
-  if (raw != null && raw['albumMID'] != null) return raw;
-  final mid = ((m['platformId'] ?? m['id']) ?? '').toString();
-  return {
-    'id': m['id'],
-    'albumId': m['id'],
-    'albumMID': mid,
-    'title': m['name'],
-    'name': m['name'],
-    'artwork': m['coverUrl'],
-    'date': m['year'],
-    'artist': m['artist'],
-    'description': m['description'],
-  };
-}
-
 Future<List<Map<String, dynamic>>> _qqHostSearchBuiltinItems(
     PluginSource source, String keyword,
     {int limit = 30}) async {
@@ -126,19 +69,27 @@ Future<List<PluginSearchResult>> qqHostSearchFallback(
     String keyword, {
     int limit = 30,
   }) async {
-  Future<List<Map<String, dynamic>>> builtinItems() =>
-      _qqHostSearchBuiltinItems(source, keyword, limit: limit);
-  // 模块回传桌面端结果形状；ok:true 但 data 为空视为模块无结论，回退内置
-  final items = await dispatchFallbackModule<List<dynamic>?>(
-    kFallbackModulePluginFallback,
-    'hostSearchFallback',
-    {'source': source.toJson(), 'keyword': keyword, 'page': 1, 'limit': limit},
-    builtinItems,
+  // 服务端配置可整体关闭该链路（配置化下发，无可执行代码）
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'hostSearchFallback')) {
+    return const [];
+  }
+  final items = await _qqHostSearchBuiltinItems(source, keyword, limit: limit);
+  return items.map((m) => _qqItemToResult(m, source)).toList();
+}
+
+/// 内置 QQ 条目（MusicFree item 形状）→ PluginSearchResult
+/// （rawData 保留 lx 原始字段，播放链 getMusicFreeUrl 依赖）
+PluginSearchResult _qqItemToResult(Map<String, dynamic> m, PluginSource source) {
+  return PluginSearchResult(
+    name: (m['title'] ?? '').toString(),
+    singer: (m['artist'] ?? '').toString(),
+    albumName: (m['album'] ?? '').toString(),
+    songmid: m['songmid'].toString(),
+    source: source.name,
+    interval: (m['interval'] ?? '').toString(),
+    img: m['artwork']?.toString(),
+    rawData: m,
   );
-  return (items ?? await builtinItems())
-      .whereType<Map>()
-      .map((e) => _hostFallbackItemToResult(e.cast<String, dynamic>(), source))
-      .toList();
 }
 
 Map<String, dynamic> qqRawAlbumToMusicFreeItem(Map<String, dynamic> album) {
@@ -187,23 +138,10 @@ Future<List<Map<String, dynamic>>> qqHostAlbumSearchFallback(
     int page = 1,
     int limit = 30,
   }) async {
-  Future<List<Map<String, dynamic>>> builtinItems() =>
-      _qqHostAlbumSearchBuiltinItems(source, keyword, page: page, limit: limit);
-  final items = await dispatchFallbackModule<List<dynamic>?>(
-    kFallbackModulePluginFallback,
-    'hostAlbumSearchFallback',
-    {
-      'source': source.toJson(),
-      'keyword': keyword,
-      'page': page,
-      'limit': limit,
-    },
-    builtinItems,
-  );
-  return (items ?? await builtinItems())
-      .whereType<Map>()
-      .map((e) => _hostFallbackAlbumToItem(e.cast<String, dynamic>()))
-      .toList();
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'hostAlbumSearchFallback')) {
+    return const [];
+  }
+  return _qqHostAlbumSearchBuiltinItems(source, keyword, page: page, limit: limit);
 }
 
 Future<List<Map<String, dynamic>>> _qqHostAlbumSongsBuiltinItems(
@@ -231,23 +169,12 @@ Future<List<PluginSearchResult>> qqHostAlbumSongsFallback(
     int page = 1,
     int limit = 30,
   }) async {
-  Future<List<Map<String, dynamic>>> builtinItems() =>
-      _qqHostAlbumSongsBuiltinItems(source, albumMid, page: page, limit: limit);
-  final items = await dispatchFallbackModule<List<dynamic>?>(
-    kFallbackModulePluginFallback,
-    'hostAlbumSongsFallback',
-    {
-      'source': source.toJson(),
-      'albumMid': albumMid,
-      'page': page,
-      'limit': limit,
-    },
-    builtinItems,
-  );
-  return (items ?? await builtinItems())
-      .whereType<Map>()
-      .map((e) => _hostFallbackItemToResult(e.cast<String, dynamic>(), source))
-      .toList();
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'hostAlbumSongsFallback')) {
+    return const [];
+  }
+  final items =
+      await _qqHostAlbumSongsBuiltinItems(source, albumMid, page: page, limit: limit);
+  return items.map((m) => _qqItemToResult(m, source)).toList();
 }
 
 Future<List<PluginSearchResult>> qqFillSongDurations(
@@ -257,44 +184,10 @@ Future<List<PluginSearchResult>> qqFillSongDurations(
 ) async {
   if (!isQqMusicPluginSource(source, platform)) return results;
   if (results.isEmpty) return results;
-  // builtin 返回 null 仅作占位：本地实现在统一出口执行，避免网络调用重复发起
-  final updated = await dispatchFallbackModule<List<dynamic>?>(
-    kFallbackModulePluginFallback,
-    'fillSongDurations',
-    {
-      'source': source.toJson(),
-      'platform': platform,
-      'results': results.map(_resultWithDurationHint).toList(),
-    },
-    () async => null,
-  );
-  if (updated == null) return _fillSongDurationsBuiltin(source, results);
-  return updated.whereType<Map>().map((e) {
-    final m = Map<String, dynamic>.from(e);
-    final base = m['songmid'] != null
-        ? PluginSearchResult.fromJson(m)
-        : _hostFallbackItemToResult(m, source);
-    final raw = m['rawData'];
-    final secs = raw is Map ? raw['duration'] : null;
-    return secs is num && secs > 0
-        ? base.copyWith(interval: _formatSeconds(secs.toInt()))
-        : base;
-  }).toList();
-}
-
-/// 桌面端 fillSongDurations 契约：duration 为毫秒。已有 interval 的条目带上
-/// duration 提示，避免热修模块重复拉取全量时长。
-Map<String, dynamic> _resultWithDurationHint(PluginSearchResult r) {
-  final json = r.toJson();
-  final secs = _intervalToSecs(r.interval);
-  if (secs != null) json['duration'] = secs * 1000;
-  return json;
-}
-
-int? _intervalToSecs(String interval) {
-  final match = RegExp(r'^(\d{1,3}):(\d{1,2})$').firstMatch(interval.trim());
-  if (match == null) return null;
-  return int.parse(match.group(1)!) * 60 + int.parse(match.group(2)!);
+  if (fallbackMethodDisabled(kFallbackModulePluginFallback, 'fillSongDurations')) {
+    return results;
+  }
+  return _fillSongDurationsBuiltin(source, results);
 }
 
 Future<List<PluginSearchResult>> _fillSongDurationsBuiltin(
@@ -480,35 +373,29 @@ Future<List<PluginSearchResult>> lxHostPlaylistTracksFallback(
   }
 }
 
-/// LX 榜单分组兜底（lx_toplist 模块，服务端下发 JS 优先、Rust builtin 兜底）。
-/// 返回单分组 `[{ title, data: [board] }]`，与 JS 模块返回形状一致。
+/// LX 榜单分组兜底（lx_toplist 链路固定原生实现，服务端签名配置可关闭
+/// 或调整平台来源）。返回单分组 `[{ title, data: [board] }]`。
 Future<List<dynamic>> lxToplistBoardsFallback(List<String> sourceKeys) async {
   if (sourceKeys.isEmpty) return const [];
-  Future<List<dynamic>> builtin() async {
-    // Dart 层超时兜底：Rust 各平台请求有 6-8s 上界，但桥传输层挂起时 await
-    // 永不返回，列表页会永久转圈；异常上抛，由页面 catch 转「失败点击重试」态
-    AppLog.info('plugin',
-        '[lxToplistBoards] builtin 开始: sources=$sourceKeys');
-    final json = await frb.lxToplistBoards(sources: sourceKeys)
-        .timeout(const Duration(seconds: 12));
-    AppLog.info(
-        'plugin', '[lxToplistBoards] builtin 返回 ${json.length} 字节');
-    final boards = jsonDecode(json);
-    if (boards is! List) return const [];
-    return [
-      {'title': '音源榜单', 'data': boards},
-    ];
+  if (fallbackMethodDisabled(kFallbackModuleLxToplist, 'getTopLists')) {
+    return const [];
   }
-
-  return dispatchFallbackModule<List<dynamic>>(
-    kFallbackModuleLxToplist,
-    'getTopLists',
-    {'sources': sourceKeys},
-    builtin,
-  );
+  // Dart 层超时兜底：Rust 各平台请求有 6-8s 上界，但桥传输层挂起时 await
+  // 永不返回，列表页会永久转圈；异常上抛，由页面 catch 转「失败点击重试」态
+  AppLog.info('plugin', '[lxToplistBoards] 开始: sources=$sourceKeys');
+  final sources =
+      fallbackModuleSourceOrder(kFallbackModuleLxToplist, sourceKeys) ?? sourceKeys;
+  final json = await frb.lxToplistBoards(sources: sources)
+      .timeout(const Duration(seconds: 12));
+  AppLog.info('plugin', '[lxToplistBoards] 返回 ${json.length} 字节');
+  final boards = jsonDecode(json);
+  if (boards is! List) return const [];
+  return [
+    {'title': '音源榜单', 'data': boards},
+  ];
 }
 
-/// LX 榜单歌曲页兜底：模块/builtin 均返回 `{ list, isEnd }`，
+/// LX 榜单歌曲页兜底：固定原生实现返回 `{ list, isEnd }`，
 /// 统一取 list 过滤 songmid 非空；失败返回 const []。
 Future<List<Map<String, dynamic>>> lxToplistBoardSongsFallback(
   String sourceKey,
@@ -516,66 +403,56 @@ Future<List<Map<String, dynamic>>> lxToplistBoardSongsFallback(
   int page = 1,
   int limit = 30,
 }) async {
-  Future<Map<String, dynamic>?> builtin() async {
-    try {
-      // Dart 层超时兜底：Rust 内部有 8s+5s 封面上界，桥传输层挂起时 await 永不返回
-      final json = await frb.lxToplistBoardSongs(
-        source: sourceKey,
-        boardId: boardId,
-        page: page,
-        limit: limit,
-      ).timeout(const Duration(seconds: 15));
-      final result = jsonDecode(json);
-      return result is Map ? result.cast<String, dynamic>() : null;
-    } catch (e, st) {
-      AppLog.warn('plugin',
-          '[lxToplistBoardSongs] source=$sourceKey board=$boardId EXCEPTION: $e\n$st');
-      return null;
-    }
+  if (fallbackMethodDisabled(kFallbackModuleLxToplist, 'getTopListDetail')) {
+    return const [];
   }
-
-  final result = await dispatchFallbackModule<Map<String, dynamic>?>(
-    kFallbackModuleLxToplist,
-    'getTopListDetail',
-    {'source': sourceKey, 'id': boardId, 'page': page, 'limit': limit},
-    builtin,
-  );
-  final list = result?['list'];
-  if (list is! List) return const [];
-  return list
-      .whereType<Map>()
-      .map((e) => e.cast<String, dynamic>())
-      .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
-      .toList();
+  try {
+    // Dart 层超时兜底：Rust 内部有 8s+5s 封面上界，桥传输层挂起时 await 永不返回
+    final json = await frb.lxToplistBoardSongs(
+      source: sourceKey,
+      boardId: boardId,
+      page: page,
+      limit: limit,
+    ).timeout(const Duration(seconds: 15));
+    final result = jsonDecode(json);
+    final list = result is Map ? result['list'] : null;
+    if (list is! List) return const [];
+    return list
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .where((m) => (m['songmid'] ?? '').toString().isNotEmpty)
+        .toList();
+  } catch (e, st) {
+    AppLog.warn('plugin',
+        '[lxToplistBoardSongs] source=$sourceKey board=$boardId EXCEPTION: $e\n$st');
+    return const [];
+  }
 }
 
-/// LX 推荐歌单标签兜底（lx_recommend_sheets 模块，服务端下发 JS 优先、Rust
-/// builtin 兜底）。返回 `{pinned:[tag], data:[{title,data:[tag]}]}`，与 MF 插件
+/// LX 推荐歌单标签兜底（lx_recommend_sheets 链路固定原生实现，服务端签名
+/// 配置可关闭）。返回 `{pinned:[tag], data:[{title,data:[tag]}]}`，与 MF 插件
 /// getRecommendSheetTags 返回形状一致（tag 含 id/title/digest?/source）。
 Future<Map<String, dynamic>?> lxRecommendSheetTagsFallback(
   List<String> sourceKeys,
 ) async {
   if (sourceKeys.isEmpty) return null;
-  Future<Map<String, dynamic>?> builtin() async {
-    try {
-      // Dart 层超时兜底：Rust 四平台并发有 6s 上界，桥传输层挂起时 await 永不返回
-      final json = await frb.lxRecommendSheetTags(sources: sourceKeys)
-          .timeout(const Duration(seconds: 12));
-      final result = jsonDecode(json);
-      return result is Map ? result.cast<String, dynamic>() : null;
-    } catch (e, st) {
-      AppLog.warn('plugin',
-          '[lxRecommendSheetTags] sources=$sourceKeys EXCEPTION: $e\n$st');
-      return null;
-    }
+  if (fallbackMethodDisabled(kFallbackModuleLxRecommendSheets, 'getRecommendSheetTags')) {
+    return null;
   }
-
-  return dispatchFallbackModule<Map<String, dynamic>?>(
-    kFallbackModuleLxRecommendSheets,
-    'getRecommendSheetTags',
-    {'sources': sourceKeys},
-    builtin,
-  );
+  // 服务端签名配置可调整平台来源（顺序即配置顺序）
+  final ordered = fallbackModuleSourceOrder(kFallbackModuleLxRecommendSheets, sourceKeys) ??
+      sourceKeys;
+  try {
+    // Dart 层超时兜底：Rust 四平台并发有 6s 上界，桥传输层挂起时 await 永不返回
+    final json = await frb.lxRecommendSheetTags(sources: ordered)
+        .timeout(const Duration(seconds: 12));
+    final result = jsonDecode(json);
+    return result is Map ? result.cast<String, dynamic>() : null;
+  } catch (e, st) {
+    AppLog.warn('plugin',
+        '[lxRecommendSheetTags] sources=$ordered EXCEPTION: $e\n$st');
+    return null;
+  }
 }
 
 /// LX 按标签取推荐歌单兜底。返回 `{isEnd, data:[sheet]}`，与 MF 插件
@@ -585,28 +462,22 @@ Future<Map<String, dynamic>?> lxRecommendSheetsByTagFallback(
   Map<String, dynamic>? tag,
   int page,
 ) async {
-  Future<Map<String, dynamic>?> builtin() async {
-    try {
-      // Dart 层超时兜底：Rust 内部有 8s 上界，桥传输层挂起时 await 永不返回
-      final json = await frb.lxRecommendSheetsByTag(
-        source: sourceKey,
-        tagId: (tag?['id'] ?? '').toString(),
-        digest: (tag?['digest'] ?? '').toString(),
-        page: page,
-      ).timeout(const Duration(seconds: 15));
-      final result = jsonDecode(json);
-      return result is Map ? result.cast<String, dynamic>() : null;
-    } catch (e, st) {
-      AppLog.warn('plugin',
-          '[lxRecommendSheetsByTag] source=$sourceKey tag=${tag?['id']} page=$page EXCEPTION: $e\n$st');
-      return null;
-    }
+  if (fallbackMethodDisabled(kFallbackModuleLxRecommendSheets, 'getRecommendSheetsByTag')) {
+    return null;
   }
-
-  return dispatchFallbackModule<Map<String, dynamic>?>(
-    kFallbackModuleLxRecommendSheets,
-    'getRecommendSheetsByTag',
-    {'source': sourceKey, 'tag': tag, 'page': page},
-    builtin,
-  );
+  try {
+    // Dart 层超时兜底：Rust 内部有 8s 上界，桥传输层挂起时 await 永不返回
+    final json = await frb.lxRecommendSheetsByTag(
+      source: sourceKey,
+      tagId: (tag?['id'] ?? '').toString(),
+      digest: (tag?['digest'] ?? '').toString(),
+      page: page,
+    ).timeout(const Duration(seconds: 15));
+    final result = jsonDecode(json);
+    return result is Map ? result.cast<String, dynamic>() : null;
+  } catch (e, st) {
+    AppLog.warn('plugin',
+        '[lxRecommendSheetsByTag] source=$sourceKey tag=${tag?['id']} page=$page EXCEPTION: $e\n$st');
+    return null;
+  }
 }

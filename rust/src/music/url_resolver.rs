@@ -432,8 +432,8 @@ pub struct AlternativeSourceResult {
     pub lx_types: Option<HashMap<String, LxTypeEntry>>,
 }
 
-/// 平台尝试优先级（kw 优先，与落雪默认顺序一致）
-const SOURCE_PRIORITY: &[&str] = &["kw", "tx", "wy", "kg", "mg"];
+/// 平台尝试优先级（kw 优先，与落雪默认顺序一致；qs=汽水为聚合后端解析，置于末位兜底）
+const SOURCE_PRIORITY: &[&str] = &["kw", "tx", "wy", "kg", "mg", "qs"];
 
 /// 时长匹配容差（秒）
 const DURATION_TOLERANCE_SEC: f64 = 5.0;

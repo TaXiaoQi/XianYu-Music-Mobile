@@ -395,23 +395,18 @@ class LyricsRepository {
         return null;
       }
     }
-    AppLog.debug('lyric', '原生歌词兜底: sourceKey=$sourceKey');
     try {
-      // 先走服务端热修模块（lx_lyric/fetchLyric），未加载/失败回退 Rust 内置实现
-      final obj = await dispatchFallbackModule<Map<String, dynamic>?>(
-        kFallbackModuleLxLyric,
-        'fetchLyric',
-        {'source': sourceKey, 'songInfo': songInfo},
-        () async {
-          final raw = await fetchLyricFromSource(
-            source: sourceKey,
-            songInfoJson: jsonEncode(songInfo),
-          );
-          if (raw.isEmpty || raw == 'null') return null;
-          return jsonDecode(raw) as Map<String, dynamic>;
-        },
+      // lx_lyric 链路固定原生实现；服务端签名配置可关闭该链路
+      if (fallbackMethodDisabled(kFallbackModuleLxLyric, 'fetchLyric')) {
+        return null;
+      }
+      AppLog.debug('lyric', '原生歌词兜底: sourceKey=$sourceKey');
+      final raw = await fetchLyricFromSource(
+        source: sourceKey,
+        songInfoJson: jsonEncode(songInfo),
       );
-      if (obj == null) return null;
+      if (raw.isEmpty || raw == 'null') return null;
+      final obj = jsonDecode(raw) as Map<String, dynamic>;
       final lengths = obj.map(
         (k, v) => MapEntry(k, v is String ? v.length : 0),
       );

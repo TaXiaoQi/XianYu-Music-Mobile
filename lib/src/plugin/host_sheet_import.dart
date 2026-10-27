@@ -30,7 +30,8 @@ class HostSheetImportResult {
 String _methodSuffix(String platform) =>
     platform.isEmpty ? platform : platform[0].toUpperCase() + platform.substring(1);
 
-/// 经热修模块或 Rust 内置实现拉取歌单并映射为宿主导入结果；
+/// 拉取歌单（Rust playlist_fetcher 固定实现，服务端签名配置可关闭）并映射为
+/// 宿主导入结果；
 /// 空结果按 null 处理（与旧实现「不适用或失败返回 null」语义一致）
 Future<HostSheetImportResult?> _importViaRust(
   String platform,
@@ -39,21 +40,20 @@ Future<HostSheetImportResult?> _importViaRust(
   final t = keyword.trim();
   if (t.isEmpty) return null;
   try {
-    // 先走服务端热修模块（getListDetail{Platform}），未加载/失败回退 Rust 内置实现
-    final decoded = await dispatchFallbackModule<Map<String, dynamic>?>(
+    // 平台链路固定原生实现（Rust playlist_fetcher）；服务端签名配置可关闭
+    if (fallbackMethodDisabled(
       kFallbackModulePlaylistImport,
       'getListDetail${_methodSuffix(platform)}',
-      {'rawId': t},
-      () async {
-        final raw = await frb.fetchPlaylistFromSource(source: platform, rawId: t);
-        final obj = jsonDecode(raw);
-        return obj is Map ? Map<String, dynamic>.from(obj) : null;
-      },
-    );
-    if (decoded == null) return null;
-    final songs = decoded['songs'];
+    )) {
+      return null;
+    }
+    final raw = await frb.fetchPlaylistFromSource(source: platform, rawId: t);
+    final decoded = jsonDecode(raw);
+    final obj = decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    if (obj == null) return null;
+    final songs = obj['songs'];
     if (songs is! List || songs.isEmpty) return null;
-    final info = decoded['info'] is Map ? decoded['info'] as Map : const {};
+    final info = obj['info'] is Map ? obj['info'] as Map : const {};
     return HostSheetImportResult(
       tracks: songs
           .whereType<Map>()

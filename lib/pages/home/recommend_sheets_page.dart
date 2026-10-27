@@ -92,7 +92,7 @@ class _RecommendSheetsPageState extends ConsumerState<RecommendSheetsPage>
         supported.add(_RecSource(s, null, s.name));
       }
     }
-    // LX 音源推荐歌单由 lx_recommend_sheets 兜底模块保证能力，
+    // 推荐歌单数据由 lx_recommend_sheets 元数据兜底模块保证能力，
     // 按内部平台拆分为多个来源（与榜单页同款）
     const lxKeys = {'wy', 'kg', 'kw', 'tx'};
     for (final s in catalog.lxToplistSources) {

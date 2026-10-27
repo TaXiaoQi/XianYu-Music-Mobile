@@ -15,6 +15,10 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       String songInfoJson, List<String> candidates) async {
     final engine = await _ref.read(pluginEngineProvider.future);
     final songInfo = jsonDecode(songInfoJson) as Map<String, dynamic>;
+    // qs 源走原生取流（带 CENC cek），不依赖 lx 源脚本
+    if (songInfo['source'] == 'qs') {
+      return resolveQsUrl(candidates.first, songInfo);
+    }
     for (final quality in candidates) {
       try {
         final resolved = await engine.resolveLxUrl(songInfo, quality);

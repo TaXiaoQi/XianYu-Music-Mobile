@@ -1,9 +1,10 @@
-// lx_recommend_sheets - LX 音源推荐歌单（兜底模块 lx_recommend_sheets 的 Rust builtin 后端）
+// lx_recommend_sheets - LX 推荐歌单数据（推荐歌单元数据链路的固定原生实现）
 //
 // 与 MF 插件协议同名：getRecommendSheetTags / getRecommendSheetsByTag，聚合
 // wy/kg/kw/tx 四平台推荐歌单；标签列表并发拉取（失败平台跳过、按入参顺序合并、
 // 跨平台同名分组按 title 合并）。Dart 侧经 lxRecommendSheetTags/lxRecommendSheetsByTag
-// 桥接；服务端下发的同名 JS 模块优先于本实现执行（见 fallback_host 与 plugin_host_fallback）。
+// 桥接；平台来源/开关由服务端下发的签名配置调整（见 fallback_modules/registry
+// 与 plugin_host_fallback）。
 
 mod kg;
 mod kw;

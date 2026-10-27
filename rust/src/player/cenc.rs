@@ -230,53 +230,55 @@ fn parse_stsz(data: &[u8]) -> Vec<u32> {
     out
 }
 
-/// 解析 senc（sample encryption）得到每个样本的 IV。
-///
-/// 兼容两种布局：
-/// - 标准布局：每样本 = IV(iv_size) + num_subsamples(2) + subsamples(6 each)
-/// - 汽水变体：每样本仅 IV(iv_size)（无子样本信息，整样本加密）
-/// 通过 body 长度是否恰好等于 sample_count * iv_size 来区分。
-fn parse_senc_ivs(data: &[u8], iv_size: usize) -> Result<Vec<Vec<u8>>, String> {
+/// senc 单样本：IV + subsample 列表（(clear, encrypted) 字节数；空 = 全样本加密）
+#[derive(Clone, Debug)]
+pub struct SencSample {
+    pub iv: Vec<u8>,
+    pub subsamples: Vec<(u16, u32)>,
+}
+
+/// 解析 senc（sample encryption）得到每个样本的 IV + subsample 列表。
+fn parse_senc_ivs(data: &[u8], iv_size: usize) -> Result<Vec<SencSample>, String> {
     if data.len() < 8 {
         return Err("senc 盒过小".to_string());
     }
     let flags = ((data[1] as u32) << 16) | ((data[2] as u32) << 8) | (data[3] as u32);
     let sample_count = read_u32(data, 4) as usize;
+    let has_subsamples = flags & 0x2 != 0;
     let body = &data[8..];
-
-    // 常量 IV：所有样本共用 tenc 中的 constant_iv（由调用方处理）
-    if flags & 0x2 != 0 {
-        return Ok(Vec::new());
-    }
 
     if iv_size == 0 {
         return Err("senc 无 IV 且未使用常量 IV".to_string());
     }
 
-    let mut ivs = Vec::with_capacity(sample_count);
-    if body.len() == sample_count * iv_size {
-        // 汽水变体：每样本仅 IV
-        for i in 0..sample_count {
-            ivs.push(body[i * iv_size..(i + 1) * iv_size].to_vec());
+    let mut out = Vec::with_capacity(sample_count);
+    let mut off = 0usize;
+    for _ in 0..sample_count {
+        if off + iv_size > body.len() {
+            return Err("senc 标准布局数据不完整".to_string());
         }
-    } else {
-        // 标准布局
-        let mut off = 0usize;
-        for _ in 0..sample_count {
-            if off + iv_size + 2 > body.len() {
-                return Err("senc 标准布局数据不完整".to_string());
+        let iv = body[off..off + iv_size].to_vec();
+        off += iv_size;
+        let mut subsamples = Vec::new();
+        if has_subsamples {
+            if off + 2 > body.len() {
+                return Err("senc subsample 计数不完整".to_string());
             }
-            ivs.push(body[off..off + iv_size].to_vec());
-            off += iv_size;
             let num_sub = read_u16(body, off) as usize;
             off += 2;
-            off += num_sub * 6;
-            if off > body.len() {
+            if off + num_sub * 6 > body.len() {
                 return Err("senc 子样本数据越界".to_string());
             }
+            for j in 0..num_sub {
+                let clear = read_u16(body, off + j * 6);
+                let encrypted = read_u32(body, off + j * 6 + 2);
+                subsamples.push((clear, encrypted));
+            }
+            off += num_sub * 6;
         }
+        out.push(SencSample { iv, subsamples });
     }
-    Ok(ivs)
+    Ok(out)
 }
 
 /// tenc 解析结果：每样本 IV 大小 + 可选常量 IV（per_sample_iv_size==0 时使用）。
@@ -498,22 +500,28 @@ pub fn decrypt_cenc_in_place(data: &mut [u8], cek: &[u8]) -> Result<bool, String
         };
 
         // 确定每个样本的 IV：常量 IV 复用同一值，否则从 senc 读取
-        let ivs: Vec<Vec<u8>> = if let Some(ref c_iv) = tenc.constant_iv {
-            vec![c_iv.clone(); stsz.len()]
+        let sencs: Vec<SencSample> = if let Some(ref c_iv) = tenc.constant_iv {
+            vec![
+                SencSample {
+                    iv: c_iv.clone(),
+                    subsamples: Vec::new(),
+                };
+                stsz.len()
+            ]
         } else {
             let senc = match find_child_box(data, &stbl, b"senc") {
                 Some(b) => b,
                 None => return Err("CENC 文件缺少 senc".to_string()),
             };
-            let ivs = parse_senc_ivs(&data[senc.data_start..senc.data_end], tenc.iv_size)?;
-            if ivs.len() != stsz.len() {
+            let sencs = parse_senc_ivs(&data[senc.data_start..senc.data_end], tenc.iv_size)?;
+            if sencs.len() != stsz.len() {
                 return Err(format!(
                     "senc IV 数量({})与样本数量({})不一致",
-                    ivs.len(),
+                    sencs.len(),
                     stsz.len()
                 ));
             }
-            ivs
+            sencs
         };
 
         // 计算样本偏移并解密
@@ -531,7 +539,13 @@ pub fn decrypt_cenc_in_place(data: &mut [u8], cek: &[u8]) -> Result<bool, String
             if offset as usize + size > data.len() {
                 return Err(format!("样本 {} 越界 (offset={}, size={})", i, offset, size));
             }
-            aes_ctr_decrypt(cek, &ivs[i], &mut data[offset as usize..offset as usize + size]);
+            decrypt_range_in_sample(
+                cek,
+                &sencs[i].iv,
+                &mut data[offset as usize..offset as usize + size],
+                0,
+                &sencs[i].subsamples,
+            );
         }
 
         // 将 enca 补丁为 mp4a
@@ -548,12 +562,13 @@ pub fn decrypt_cenc_in_place(data: &mut [u8], cek: &[u8]) -> Result<bool, String
 
 use std::io::{Read, Seek, SeekFrom};
 
-/// 单个加密样本的元信息（绝对文件偏移、大小、IV）
+/// 单个加密样本的元信息（绝对文件偏移、大小、IV、subsample 区间）
 #[derive(Clone)]
 pub struct CencSampleInfo {
     pub offset: u64,
     pub size: u32,
     pub iv: Vec<u8>,
+    pub subsamples: Vec<(u16, u32)>,
 }
 
 /// 从已下载的字节片段中解析 CENC 元数据。
@@ -620,8 +635,14 @@ pub fn parse_cenc_metadata(data: &[u8], cek: &[u8]) -> Result<Option<CencMetadat
             None => return Err("CENC 文件缺少 stsz".to_string()),
         };
 
-        let ivs: Vec<Vec<u8>> = if let Some(ref c_iv) = tenc.constant_iv {
-            vec![c_iv.clone(); stsz.len()]
+        let sencs: Vec<SencSample> = if let Some(ref c_iv) = tenc.constant_iv {
+            vec![
+                SencSample {
+                    iv: c_iv.clone(),
+                    subsamples: Vec::new(),
+                };
+                stsz.len()
+            ]
         } else {
             let senc = match find_child_box(data, &stbl, b"senc") {
                 Some(b) => b,
@@ -635,7 +656,8 @@ pub fn parse_cenc_metadata(data: &[u8], cek: &[u8]) -> Result<Option<CencMetadat
             samples.push(CencSampleInfo {
                 offset,
                 size: stsz[i],
-                iv: ivs[i].clone(),
+                iv: sencs[i].iv.clone(),
+                subsamples: sencs[i].subsamples.clone(),
             });
         }
 
@@ -663,15 +685,8 @@ pub struct CencMetadata {
     pub enca_patch_offset: u64,
 }
 
-/// 对样本内指定偏移开始的数据做 AES-CTR 解密。
-///
-/// `byte_offset_in_sample` 是这段数据在样本中的起始字节偏移（可能非 16 对齐）。
-fn decrypt_range_in_sample(
-    cek: &[u8],
-    iv: &[u8],
-    data: &mut [u8],
-    byte_offset_in_sample: usize,
-) {
+/// 以 keystream 偏移 ks_offset（自 sample 起点计的加密字节序号）对 data 做 AES-CTR 异或
+fn xor_keystream_from(cek: &[u8], iv: &[u8], data: &mut [u8], ks_offset: usize) {
     let cipher = match Aes128::new_from_slice(cek) {
         Ok(c) => c,
         Err(_) => return,
@@ -681,7 +696,7 @@ fn decrypt_range_in_sample(
     counter[..iv_len].copy_from_slice(&iv[..iv_len]);
 
     // 将计数器推进到起始块
-    let start_block = byte_offset_in_sample / 16;
+    let start_block = ks_offset / 16;
     for _ in 0..start_block {
         for i in (0..16).rev() {
             counter[i] = counter[i].wrapping_add(1);
@@ -689,7 +704,7 @@ fn decrypt_range_in_sample(
         }
     }
 
-    let skip = byte_offset_in_sample % 16;
+    let skip = ks_offset % 16;
     let mut pos = 0usize;
 
     // 处理首个不完整块
@@ -720,6 +735,40 @@ fn decrypt_range_in_sample(
             counter[i] = counter[i].wrapping_add(1);
             if counter[i] != 0 { break; }
         }
+    }
+}
+
+/// 对样本内 [byte_offset_in_sample, +data.len()) 区间做解密。
+/// subsamples 为空 = 全样本加密（keystream 偏移即字节偏移）；
+/// 否则按 (clear, encrypted) 区间跳过 clear 字节，加密段共享自 sample 起点的连续计数流。
+fn decrypt_range_in_sample(
+    cek: &[u8],
+    iv: &[u8],
+    data: &mut [u8],
+    byte_offset_in_sample: usize,
+    subsamples: &[(u16, u32)],
+) {
+    if subsamples.is_empty() {
+        xor_keystream_from(cek, iv, data, byte_offset_in_sample);
+        return;
+    }
+    let w_start = byte_offset_in_sample;
+    let w_end = byte_offset_in_sample + data.len();
+    let mut seg_start = 0usize;
+    let mut ks_prefix = 0usize;
+    for &(clear, enc) in subsamples {
+        let enc_start = seg_start + clear as usize;
+        let enc_end = enc_start.saturating_add(enc as usize);
+        let ov_start = enc_start.max(w_start);
+        let ov_end = enc_end.min(w_end);
+        if ov_end > ov_start {
+            let ks_off = ks_prefix + (ov_start - enc_start);
+            let buf_start = ov_start - w_start;
+            let buf_len = ov_end - ov_start;
+            xor_keystream_from(cek, iv, &mut data[buf_start..buf_start + buf_len], ks_off);
+        }
+        ks_prefix += enc as usize;
+        seg_start = enc_end;
     }
 }
 
@@ -784,6 +833,7 @@ impl<R: Read + Seek> Read for CencDecryptReader<R> {
                 &sample.iv,
                 &mut buf[buf_start..buf_start + buf_len],
                 byte_offset_in_sample,
+                &sample.subsamples,
             );
         }
 
@@ -934,6 +984,100 @@ mod tests {
         let moov = make_box(b"moov", &trak);
 
         [ftyp, mdat, moov].concat()
+    }
+
+    /// subsample 加密流：clear 段跳过、加密段共享 sample 起点连续计数流（对齐 lyms decryptSencSample）
+    #[test]
+    fn test_decrypt_cenc_subsamples() {
+        use std::io::{Cursor, Seek, SeekFrom};
+
+        let cek = [0x2b; 16];
+        let iv = vec![0x77u8; 8];
+
+        // 样本 40B：16 clear + 20 enc + 2 clear + 2 enc
+        let mut plain = vec![0xAAu8; 40];
+        for (i, b) in plain[16..36].iter_mut().enumerate() {
+            *b = 0x40 + i as u8;
+        }
+        for (i, b) in plain[38..40].iter_mut().enumerate() {
+            *b = 0x80 + i as u8;
+        }
+        let mut encrypted = plain.clone();
+        xor_keystream_from(&cek, &iv, &mut encrypted[16..36], 0);
+        xor_keystream_from(&cek, &iv, &mut encrypted[38..40], 20);
+
+        let ftyp = make_box(b"ftyp", &[0u8; 8]);
+        let mdat = make_box(b"mdat", &encrypted);
+        let mdat_data_start = ftyp.len() + 8;
+
+        let mut tenc_payload = vec![0u8; 4];
+        tenc_payload.extend_from_slice(&[0, 0, 1, 8]);
+        tenc_payload.extend_from_slice(&[0u8; 16]);
+        let tenc = make_box(b"tenc", &tenc_payload);
+        let sinf = make_box(b"sinf", &make_box(b"schi", &tenc));
+        let mut enca_payload = Vec::new();
+        enca_payload.extend_from_slice(&[0u8; 28]);
+        enca_payload.extend_from_slice(&sinf);
+        let enca = make_box(b"enca", &enca_payload);
+        let mut stsd_payload = Vec::new();
+        stsd_payload.extend_from_slice(&1u32.to_be_bytes());
+        stsd_payload.extend_from_slice(&enca);
+        let stsd = make_fullbox(b"stsd", 0, &stsd_payload);
+
+        let mut stsc_payload = Vec::new();
+        stsc_payload.extend_from_slice(&1u32.to_be_bytes());
+        stsc_payload.extend_from_slice(&1u32.to_be_bytes());
+        stsc_payload.extend_from_slice(&1u32.to_be_bytes());
+        stsc_payload.extend_from_slice(&1u32.to_be_bytes());
+        let stsc = make_fullbox(b"stsc", 0, &stsc_payload);
+        let mut stco_payload = Vec::new();
+        stco_payload.extend_from_slice(&1u32.to_be_bytes());
+        stco_payload.extend_from_slice(&(mdat_data_start as u32).to_be_bytes());
+        let stco = make_fullbox(b"stco", 0, &stco_payload);
+        let mut stsz_payload = Vec::new();
+        stsz_payload.extend_from_slice(&0u32.to_be_bytes());
+        stsz_payload.extend_from_slice(&1u32.to_be_bytes());
+        stsz_payload.extend_from_slice(&40u32.to_be_bytes());
+        let stsz = make_fullbox(b"stsz", 0, &stsz_payload);
+
+        // senc flags=2（带 subsample）
+        let mut senc_payload = Vec::new();
+        senc_payload.extend_from_slice(&1u32.to_be_bytes());
+        senc_payload.extend_from_slice(&iv);
+        senc_payload.extend_from_slice(&2u16.to_be_bytes());
+        senc_payload.extend_from_slice(&16u16.to_be_bytes());
+        senc_payload.extend_from_slice(&20u32.to_be_bytes());
+        senc_payload.extend_from_slice(&2u16.to_be_bytes());
+        senc_payload.extend_from_slice(&2u32.to_be_bytes());
+        let senc = make_fullbox(b"senc", 2, &senc_payload);
+
+        let stbl = make_box(b"stbl", &[stsd, stsc, stco, stsz, senc].concat());
+        let minf = make_box(b"minf", &stbl);
+        let mdia = make_box(b"mdia", &minf);
+        let trak = make_box(b"trak", &mdia);
+        let moov = make_box(b"moov", &trak);
+        let mut file = [ftyp.clone(), mdat, moov].concat();
+        let key = cek_to_key("2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b").unwrap();
+
+        // 流式读取路径：clear 段不被改动，加密段按连续计数流解出
+        let meta = parse_cenc_metadata(&file, &key).unwrap().unwrap();
+        assert_eq!(meta.samples.len(), 1);
+        assert_eq!(
+            meta.samples[0].subsamples,
+            vec![(16u16, 20u32), (2u16, 2u32)]
+        );
+        let mut reader = CencDecryptReader::new(Cursor::new(file.clone()), key.clone(), meta);
+        reader.seek(SeekFrom::Start(mdat_data_start as u64)).unwrap();
+        let mut out = vec![0u8; 40];
+        reader.read_exact(&mut out).unwrap();
+        assert_eq!(out, plain);
+        drop(reader);
+
+        // 整文件路径
+        let decrypted = decrypt_cenc_in_place(&mut file, &key).unwrap();
+        assert!(decrypted);
+        let ds = ftyp.len() + 8;
+        assert_eq!(&file[ds..ds + 40], &plain[..]);
     }
 
     #[test]

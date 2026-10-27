@@ -610,12 +610,88 @@ class PluginEngine {
     }
   }
 
+  // ==================== kg 分档 hash（对齐桌面端 lxUrlResolver.withKgQualityHash） ====================
+
+  String _kgHashField(Map<String, dynamic> songInfo, String field) {
+    final v = songInfo[field];
+    return v is String ? v.trim() : '';
+  }
+
+  /// kg 源按请求档位改写 hash：优先 _types 中该档位的 hash（搜索结果自带），
+  /// 否则按档位取顶层字段（320k→320hash、flac→sqhash、扩展档→ResFileHash 回落）。
+  /// 选中档同时写入 hash 与对应档位字段并清掉更高档字段，防止插件误选（对齐 baka）。
+  Map<String, dynamic> _kgQualityHashSongInfo(
+      Map<String, dynamic> songInfo, String quality) {
+    String selected = '';
+    final types = songInfo['_types'];
+    if (types is Map) {
+      final entry = types[lxQualityKeyFor(quality)];
+      if (entry is Map) {
+        final hash = entry['hash'];
+        if (hash is String && hash.trim().isNotEmpty) selected = hash.trim();
+      }
+    }
+    if (selected.isEmpty) {
+      switch (quality) {
+        case '320k':
+          selected = _kgHashField(songInfo, '320hash');
+          break;
+        case 'flac':
+          selected = _kgHashField(songInfo, 'sqhash');
+          if (selected.isEmpty) selected = _kgHashField(songInfo, 'SQFileHash');
+          break;
+        case 'flac24bit':
+        case 'hires':
+        case 'master':
+        case 'vinyl':
+        case 'dolby':
+        case 'atmos':
+        case 'atmos_plus':
+          selected = _kgHashField(songInfo, 'ResFileHash');
+          if (selected.isEmpty) selected = _kgHashField(songInfo, 'origin_hash');
+          if (selected.isEmpty) selected = _kgHashField(songInfo, 'sqhash');
+          if (selected.isEmpty) selected = _kgHashField(songInfo, 'SQFileHash');
+          break;
+        default:
+          // 128k/192k/mgg 走默认 hash，无需改写
+          return songInfo;
+      }
+    }
+    if (selected.isEmpty) return songInfo;
+
+    final adapted = Map<String, dynamic>.of(songInfo);
+    adapted['hash'] = selected;
+    switch (quality) {
+      case '128k':
+      case '192k':
+      case 'mgg':
+        adapted['sqhash'] = null;
+        adapted['ResFileHash'] = null;
+        break;
+      case '320k':
+        adapted['320hash'] = selected;
+        adapted['sqhash'] = null;
+        adapted['ResFileHash'] = null;
+        break;
+      case 'flac':
+        adapted['sqhash'] = selected;
+        break;
+      default:
+        adapted['ResFileHash'] = selected;
+        adapted['sqhash'] = selected;
+    }
+    return adapted;
+  }
+
   Future<Map<String, dynamic>?> resolveLxUrl(
     Map<String, dynamic> songInfo,
     String quality,
   ) async {
     final source = songInfo['source']?.toString() ?? '';
-    final songId = _lxCacheSongId(songInfo, quality);
+    // kg 源按请求档位改写 hash（扩展档走 ResFileHash 等，不再共用默认 hash）
+    final effectiveSongInfo =
+        source == 'kg' ? _kgQualityHashSongInfo(songInfo, quality) : songInfo;
+    final songId = _lxCacheSongId(effectiveSongInfo, quality);
     if (source.isEmpty || songId.isEmpty) return null;
     final cacheKey = '$source/$songId/$quality';
 
@@ -630,7 +706,7 @@ class PluginEngine {
     final inflight = _lxUrlInflight[cacheKey];
     if (inflight != null) return inflight;
 
-    final task = _resolveLxUrlInner(songInfo, source, quality, cacheKey);
+    final task = _resolveLxUrlInner(effectiveSongInfo, source, quality, cacheKey);
     _lxUrlInflight[cacheKey] = task;
     try {
       return await task;

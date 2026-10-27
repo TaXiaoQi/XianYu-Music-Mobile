@@ -94,7 +94,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     }
 
     // 歌手/专辑/歌单统一网格（与桌面端搜索目录网格对齐）：歌手圆形头像居中，
-    // 专辑/歌单方形封面卡片，与音源榜单页同款
+    // 专辑/歌单方形封面卡片，与榜单页同款
     return _buildCatalogGrid(
       scheme,
       bottomInset: 92.0 + MediaQuery.of(context).padding.bottom,
@@ -102,7 +102,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
     );
   }
 
-  /// 搜索目录网格：歌手圆形头像居中，专辑/歌单方形封面卡片，与音源榜单页同款
+  /// 搜索目录网格：歌手圆形头像居中，专辑/歌单方形封面卡片，与榜单页同款
   Widget _buildCatalogGrid(
     ColorScheme scheme, {
     required double bottomInset,
@@ -125,7 +125,7 @@ class _CatalogTabState extends ConsumerState<_CatalogTab>
               MediaQuery.of(context).orientation == Orientation.landscape;
           final cols = landscape ? (cons.maxWidth / 92).ceil().clamp(1, 8) : 3;
           return GridView.builder(
-            // 水平 14 的页边距与音源榜单页一致，保证 3 列下卡片宽度和间距相同
+            // 水平 14 的页边距与榜单页一致，保证 3 列下卡片宽度和间距相同
             padding: EdgeInsets.fromLTRB(
               14,
               _ContentTopInsetScope.of(context),

@@ -1,6 +1,6 @@
 // lx_search.rs - LX 音源搜索（Rust 实现）
 //
-// 将前端 lxMusicSdk.ts 中的搜索逻辑迁移到 Rust，支持 kw / kg / tx / wy / mg 五个音源。
+// 将前端 lxMusicSdk.ts 中的搜索逻辑迁移到 Rust，支持 kw / kg / tx / wy / mg / qs 六个音源。
 // 搜索结果带 5 分钟缓存，供 find_alternative_lx_source 换源命令使用。
 //
 // 与前端搜索保持一致的字段解析和音质映射，确保换源匹配结果与前端搜索结果兼容。
@@ -14,11 +14,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-// 拆分说明：各音源见 kw/kg/tx/wy/mg.rs，共享工具与签名见本文件。
+// 拆分说明：各音源见 kw/kg/tx/wy/mg/qs.rs，共享工具与签名见本文件。
 
 mod kg;
 mod kw;
 mod mg;
+mod qs;
 mod tx;
 mod wy;
 
@@ -29,6 +30,8 @@ pub(crate) use tx::tx_handle_result;
 use kg::*;
 use kw::*;
 use mg::*;
+pub(crate) use qs::{qs_play_auth_to_cek, qs_resolve_play, QS_UA};
+use qs::*;
 use tx::*;
 use wy::*;
 
@@ -547,6 +550,7 @@ pub async fn lx_search(
         "tx" => search_tx(keyword, actual_limit).await,
         "wy" => search_wy(keyword, actual_limit).await,
         "mg" => search_mg(keyword, actual_limit).await,
+        "qs" => search_qs(keyword, actual_limit).await,
         _ => Err(format!("Unknown LX source: {}", source)),
     }?;
 

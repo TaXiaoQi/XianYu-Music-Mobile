@@ -18,6 +18,7 @@ List<OnlineSource> get kOnlineSources => <OnlineSource>[
   OnlineSource('kg', tr('酷狗')),
   OnlineSource('tx', tr('QQ音乐')),
   OnlineSource('mg', tr('咪咕')),
+  OnlineSource('qs', tr('汽水')),
 ];
 
 class OnlineTrack {

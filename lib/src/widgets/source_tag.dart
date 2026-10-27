@@ -260,6 +260,8 @@ String? _shortSourceName(String lower, {bool showReal = false}) {
       return showReal ? '网易云' : tr('小芸');
     case 'mg':
       return showReal ? '咪咕' : tr('小蜜');
+    case 'qs':
+      return showReal ? '汽水音乐' : tr('汽水');
     case 'bilibili':
     case 'bili':
       return showReal ? '哔哩哔哩' : tr('哔哩');
