@@ -142,6 +142,16 @@ if (-not (Test-Path (Join-Path $LibclangDir 'libclang.dll'))) {
 }
 Set-Item -Path 'env:LIBCLANG_PATH' -Value $LibclangDir
 
+# 16 KB page size 对齐：与 Android 端 gradle-rust-hook.ps1 同理，显式钉死 LOAD 段
+# 16KB 对齐，不依赖工具链默认值；对 4KB 内核设备完全兼容（仅段填充变大）。
+# RUSTFLAGS 环境变量优先级高于 cargo config；已设置时追加而非覆盖。
+$alignFlag = "-C link-arg=-Wl,-z,max-page-size=16384"
+if ([string]::IsNullOrEmpty($env:RUSTFLAGS)) {
+    Set-Item -Path 'env:RUSTFLAGS' -Value $alignFlag
+} elseif ($env:RUSTFLAGS -notlike "*max-page-size*") {
+    Set-Item -Path 'env:RUSTFLAGS' -Value "$($env:RUSTFLAGS) $alignFlag"
+}
+
 # ---- 3. per-arch build ----
 # map: rust arch triple -> clang target triple / env suffix / libs dir name
 $ArchMap = @{

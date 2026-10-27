@@ -179,6 +179,18 @@ if ($needSo) {
                 }
             }
         }
+        # Google Play 16 KB page size（targetSdk 35+ 硬性要求）：显式钉死 LOAD 段
+        # 16KB 对齐，不依赖 NDK r27+ 的默认行为（ascii-env 的 ndk-copy 等旧版工具链
+        # 会回退 4KB 对齐导致 Play 拒审）。对 4KB 内核设备完全兼容，仅段填充变大。
+        # RUSTFLAGS 环境变量优先级高于 cargo config；已设置时追加而非覆盖。
+        $alignFlag = "-C link-arg=-Wl,-z,max-page-size=16384"
+        if ($pInfo.EnvironmentVariables.ContainsKey("RUSTFLAGS")) {
+            if ($pInfo.EnvironmentVariables["RUSTFLAGS"] -notlike "*max-page-size*") {
+                $pInfo.EnvironmentVariables["RUSTFLAGS"] += " $alignFlag"
+            }
+        } else {
+            $pInfo.EnvironmentVariables["RUSTFLAGS"] = $alignFlag
+        }
         $p = [System.Diagnostics.Process]::Start($pInfo)
         $tOut = $p.StandardOutput.ReadToEndAsync()
         $tErr = $p.StandardError.ReadToEndAsync()
