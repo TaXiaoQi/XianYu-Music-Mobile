@@ -10,6 +10,8 @@ import 'package:go_router/go_router.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/favorites/favorites_delete.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/page_sort_prefs.dart';
+import '../../src/core/pinyin_key.dart';
 import '../../src/core/settings.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/theme/theme_tint.dart';
@@ -28,8 +30,9 @@ import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/mini_player_bar.dart';
+import '../../src/widgets/floating_letter_index.dart';
 import '../../src/widgets/online_cover.dart';
-import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/sort_dropdown.dart';
 import '../../src/widgets/song_actions_sheet.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
@@ -71,6 +74,7 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
   Timer? _debounce;
   int _req = 0;
   _FavSort _sort = _FavSort.none;
+  bool _sortAsc = true;
 
   @override
   void initState() {
@@ -78,6 +82,24 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
     _tab = TabController(length: 3, vsync: this);
     _tab.index = widget.initialTab.clamp(0, 2);
     _batch.addListener(_onBatchChanged);
+    // 恢复上次排序档/方向（退出页面不再回落默认）
+    unawaited(_loadSortPrefs());
+  }
+
+  Future<void> _loadSortPrefs() async {
+    final (idx, asc) = await PageSortPrefs.load('favorites');
+    if (!mounted) return;
+    final sort = _FavSort.values[idx.clamp(0, _FavSort.values.length - 1)];
+    setState(() {
+      _sort = sort;
+      _sortAsc = asc;
+    });
+    // 收藏可能尚未加载完：非默认展示先算一次，数据到达后由既有
+    // favoritesProvider listen 重算兜底
+    if ((sort != _FavSort.none || !asc) &&
+        ref.read(favoritesProvider).entries.isNotEmpty) {
+      _runFilter();
+    }
   }
 
   @override
@@ -100,6 +122,18 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
         : '';
     final notifier = ref.read(favoritesProvider.notifier);
     final showBatch = fav.entries.isNotEmpty && _tab.index == 0;
+    // 面板态搜索词来自壳层全局顶栏：变化即重跑 filter+sort 管线
+    ref.listen(landscapeLibraryQueryProvider, (_, _) {
+      if (widget.paneEmbedded || ref.read(landscapeLibraryProvider) != null) {
+        _onCriteriaChanged();
+      }
+    });
+    // 过滤/排序生效期间收藏列表变化：重算结果集防止陈旧（移除后行仍显示）
+    ref.listen(favoritesProvider, (_, _) {
+      if (_sort != _FavSort.none || !_sortAsc || _query.isNotEmpty) {
+        _runFilter();
+      }
+    });
     final tabBar = TabBar(
       controller: _tab,
       onTap: (_) => setState(() {}),
@@ -118,10 +152,11 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
         ? Row(
             children: [
               Expanded(child: tabBar),
-              Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: _batchToggle(context, floating: floating),
-              ),
+              // 面板态与网盘/本地页统一：tab 右侧带批量 + 排序入口
+              // 面板 tab 行已内嵌玻璃面，批量钮用普通图标（不加气泡）
+              _batchToggle(context),
+              _paneSortToggle(context),
+              const SizedBox(width: 4),
             ],
           )
         : tabBar;
@@ -164,16 +199,19 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage>
                       controller: _tab,
                       children: [
                         _SongsTab(
-                            fav: fav,
-                            notifier: notifier,
-                            batch: _batch,
-                            filter: filter,
-                            topInset: topInset,
-                            query: inMusicPane ? '' : _query,
-                            sort: inMusicPane ? _FavSort.none : _sort,
-                            result: inMusicPane ? null : _result,
-                            showControls: !inMusicPane,
-                            onOpenSort: () => _openSortMenu(context)),
+                    fav: fav,
+                    notifier: notifier,
+                    batch: _batch,
+                    filter: filter,
+                    topInset: topInset,
+                    query: inMusicPane ? '' : _query,
+                    // 面板态排序同样生效（头部下拉入口）：结果集由 _runFilter
+                    // 以壳层搜索词 + 排序档统一计算
+                    sort: _sort,
+                    sortAsc: _sortAsc,
+                    result: _result,
+                    showControls: !inMusicPane,
+                    onSortChanged: _applySort),
                         _CollectionsTab(
                             fav: fav,
                             kind: 'playlist',
@@ -291,8 +329,10 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
         final batch = widget.batch;
         final inBatch = batch.batchMode;
         final filter = widget.filter;
-        final filtering =
-            widget.query.isNotEmpty || widget.sort != _FavSort.none;
+        final filtering = widget.query.isNotEmpty ||
+            widget.sort != _FavSort.none ||
+            // 默认排序降序（倒序展示）同样走 _runFilter 结果集
+            !widget.sortAsc;
         final songs = filtering ? (widget.result ?? entries) : entries;
         if (entries.isEmpty) {
           return Center(
@@ -339,9 +379,14 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: InkWell(
-                  onTap: widget.onOpenSort,
-                  borderRadius: BorderRadius.circular(8),
+                // 桌面端同款锚定排序下拉（非居中弹窗）
+                child: SortMenuButton<_FavSort>(
+                  options: _favSortOptions(),
+                  current: widget.sort,
+                  ascending: widget.sortAsc,
+                  isDirectional: _favSortDirectional,
+                  defaultAscending: _favSortDefaultAsc,
+                  onChanged: widget.onSortChanged,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 11),
@@ -424,7 +469,12 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
           );
         }
 
-        if (filter.isNotEmpty) {
+        // 面板态简易过滤（编号行 + 悬浮跳转）仅在未选排序且默认升序时走；
+        // 已选排序或默认降序则交由下方 filtering 分支（_runFilter 结果集：
+        // 搜索词 + 排序合并计算）
+        if (filter.isNotEmpty &&
+            widget.sort == _FavSort.none &&
+            widget.sortAsc) {
           final visible = entries
               .where((e) =>
                   e.title.toLowerCase().contains(filter) ||
@@ -551,6 +601,65 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                       ),
                     );
                   },
+                )
+              else if (_FavSort.values[widget.sort.index] == _FavSort.title ||
+                  widget.sort == _FavSort.artist ||
+                  widget.sort == _FavSort.album)
+                // A-Z 排序视图：右侧悬浮字母索引（滑动滑入，停 2s 滑出）
+                FloatingLetterIndex(
+                  controller: _controller,
+                  itemExtent: rowExtent,
+                  topInset: widget.topInset + toolPad,
+                  letters: [
+                    for (final e in visible)
+                      letterOfPinyinKey(
+                        widget.sort == _FavSort.artist
+                            ? e.artist
+                            : widget.sort == _FavSort.album
+                                ? e.album
+                                : e.title,
+                      ),
+                  ],
+                  child: ListView.builder(
+                    controller: _controller,
+                    padding: EdgeInsets.only(
+                        top: widget.topInset + toolPad, bottom: bottomPad),
+                    itemExtent: rowExtent,
+                    addAutomaticKeepAlives: false,
+                    itemCount: visible.length,
+                    itemBuilder: (context, i) {
+                      final entry = visible[i];
+                      final orig = entries.indexOf(entry);
+                      return _stagger.wrap(
+                        i,
+                        Stack(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 34),
+                              child: _FavoriteTile(
+                                entry: entry,
+                                onPlay: () => widget.notifier.play(orig),
+                                onRemove: () =>
+                                    widget.notifier.remove(entry.path),
+                              ),
+                            ),
+                            Positioned(
+                              left: 8,
+                              top: 0,
+                              bottom: 0,
+                              width: 36,
+                              child: Center(
+                                child: SongRowLeading(
+                                  index: i,
+                                  songPath: entry.path,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 )
               else
                 ListView.builder(

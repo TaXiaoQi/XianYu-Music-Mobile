@@ -18,12 +18,16 @@ Future<String?> _promptName(BuildContext context, String title) {
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLength: 40,
-        decoration:   InputDecoration(hintText: tr('歌单名称')),
-        onSubmitted: (v) => Navigator.pop(ctx, v),
+      content: ConstrainedBox(
+        // 撑到标准弹窗宽（与 Dialog 系弹窗一致，防内容短时收缩）
+        constraints: const BoxConstraints(minWidth: double.infinity),
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: InputDecoration(hintText: tr('歌单名称')),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
       ),
       actions: [
         PressableScale(
@@ -128,9 +132,9 @@ extension _PlaylistDetailActions on _PlaylistDetailPageState {
       listenable: _batch,
       builder: (context, _) {
         final active = _batch.batchMode;
-        final icon = active
-            ? Icons.check_rounded
-            : Icons.library_add_check_outlined;
+        // 与网盘/本地/收藏页面板批量钮统一（checklist/check 切换）
+        final icon =
+            active ? Icons.check_rounded : Icons.checklist_rounded;
         final tip = active ? tr('完成') : tr('批量');
         void onTap() => active ? _batch.exit() : _batch.enter();
         if (floating) {
@@ -153,6 +157,43 @@ extension _PlaylistDetailActions on _PlaylistDetailPageState {
           ),
         );
       },
+    );
+  }
+
+  /// 面板态排序入口（与网盘/本地/收藏面板同款锚定下拉）：_PlaylistSort
+  /// 全档带方向，归并为五个维度档供下拉展示，改向时映射回完整档
+  Widget _sortToggle(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SortMenuButton<_PlaylistSort>(
+      options: [
+        SortOption(value: _PlaylistSort.titleAsc, label: tr('歌曲名')),
+        SortOption(value: _PlaylistSort.nameAsc, label: tr('文件名')),
+        SortOption(value: _PlaylistSort.artistAsc, label: tr('歌手')),
+        SortOption(value: _PlaylistSort.addedAtAsc, label: tr('添加时间')),
+        SortOption(value: _PlaylistSort.custom, label: tr('自定义')),
+      ],
+      current: _playlistSortDimension(_sort),
+      ascending: !_playlistSortIsDesc(_sort),
+      isDirectional: (s) => s != _PlaylistSort.custom,
+      defaultAscending: (s) => s != _PlaylistSort.addedAtAsc,
+      onChanged: (dim, asc) =>
+          _selectSort(_playlistSortFromDimension(dim, asc)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.sort, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 2),
+            if (_sort != _PlaylistSort.custom)
+              Icon(
+                Icons.arrow_drop_down,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
+          ],
+        ),
+      ),
     );
   }
 

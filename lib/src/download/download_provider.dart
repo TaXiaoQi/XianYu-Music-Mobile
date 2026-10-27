@@ -1047,9 +1047,13 @@ class DownloadManager extends StateNotifier<DownloadState> {
   }
 
   Future<ResolvedMediaUrl?> _resolveLxUrl(String songJson, String quality) async {
+    final info = (jsonDecode(songJson) as Map).cast<String, dynamic>();
+    // qs 源走原生取流（带 CENC cek），不依赖 lx 源脚本
+    if (info['source'] == 'qs') {
+      return resolveQsUrl(quality, info);
+    }
     final engine = await _ref.read(pluginEngineProvider.future);
-    final resolved = await engine
-        .resolveLxUrl((jsonDecode(songJson) as Map).cast<String, dynamic>(), quality);
+    final resolved = await engine.resolveLxUrl(info, quality);
     final url = resolved?['url'] as String?;
     return (url == null || url.isEmpty) ? null : ResolvedMediaUrl(url: url);
   }
@@ -1090,21 +1094,14 @@ class DownloadManager extends StateNotifier<DownloadState> {
   Future<String?> _fetchLxLyric(String source, String songInfoJson,
       {required bool wordByWord}) async {
     if (songInfoJson.isEmpty) return null;
-    // 先走服务端热修模块（lx_lyric/fetchLyric），未加载/失败回退 Rust 内置实现
-    final obj = await dispatchFallbackModule<Map<String, dynamic>?>(
-      kFallbackModuleLxLyric,
-      'fetchLyric',
-      {'source': source, 'songInfo': jsonDecode(songInfoJson)},
-      () async {
-        final raw = await fetchLyricFromSource(
-          source: source,
-          songInfoJson: songInfoJson,
-        );
-        if (raw.isEmpty || raw == 'null') return null;
-        return jsonDecode(raw) as Map<String, dynamic>;
-      },
+    // lx_lyric 链路固定原生实现；服务端签名配置可关闭该链路
+    if (fallbackMethodDisabled(kFallbackModuleLxLyric, 'fetchLyric')) return null;
+    final raw = await fetchLyricFromSource(
+      source: source,
+      songInfoJson: songInfoJson,
     );
-    if (obj == null) return null;
+    if (raw.isEmpty || raw == 'null') return null;
+    final obj = jsonDecode(raw) as Map<String, dynamic>;
     final text = wordByWord
         ? (obj['lxlyric'] ?? obj['yrc'] ?? obj['qrc'] ?? obj['lyric'])
             as String? ?? ''

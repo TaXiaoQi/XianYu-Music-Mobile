@@ -78,6 +78,29 @@ class CloudPlayContext {
       return null;
     }
   }
+
+  /// 仅凭 cloud:// path 反解上下文（歌单条目等只存 path 的场景）。
+  /// 分享上下文（share）无法从 path 恢复，恒为 null。
+  static CloudPlayContext? fromPath(String path) {
+    if (!path.startsWith('cloud://')) return null;
+    final rest = path.substring('cloud://'.length);
+    final p1 = rest.indexOf('/');
+    if (p1 <= 0) return null;
+    final p2 = rest.indexOf('/', p1 + 1);
+    if (p2 <= 0) return null;
+    try {
+      return CloudPlayContext(
+        provider: rest.substring(0, p1),
+        accountId: rest.substring(p1 + 1, p2),
+        file: CloudFile.fromJson(
+          jsonDecode(Uri.decodeComponent(rest.substring(p2 + 1)))
+              as Map<String, dynamic>,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// 网盘浏览页/链接导入页构造可播放队列条目（时长由播放器实测回填）。

@@ -148,6 +148,8 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
   int? _currentBytes;
   int? _maxBytes;
   bool _busy = false;
+  RemoteCacheUsageInfo? _remoteUsage;
+  bool _clearingRemote = false;
 
   @override
   void initState() {
@@ -166,6 +168,13 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
       });
     } catch (e) {
       AppLog.warn('settings', '读取播放缓存大小失败: $e');
+    }
+    try {
+      final usage = await ref.read(remoteLibraryServiceProvider).cacheUsage();
+      if (!mounted) return;
+      setState(() => _remoteUsage = usage);
+    } catch (e) {
+      AppLog.warn('settings', '读取远程缓存大小失败: $e');
     }
   }
 
@@ -239,6 +248,46 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
     }
   }
 
+  Future<void> _clearRemote() async {
+    if (_clearingRemote) return;
+    final confirmed = await showPredictiveDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(tr('清理远程缓存')),
+        content: Text(
+          tr('将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。'),
+        ),
+        actions: [
+          PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(tr('取消')),
+            ),
+          ),
+          PressableScale(
+            pressScale: 0.92,
+            child: FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(tr('确定')),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _clearingRemote = true);
+    try {
+      await ref.read(remoteLibraryProvider.notifier).clearCache();
+      await _refresh();
+      if (mounted) showXianYuToast(context, tr('远程缓存已清理'));
+    } catch (e) {
+      if (mounted) showXianYuToast(context, tr('清理失败：{e}', {'e': e}));
+    } finally {
+      if (mounted) setState(() => _clearingRemote = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(settingsProvider).valueOrNull;
@@ -280,6 +329,25 @@ class _StorageSettingsGroupState extends ConsumerState<_StorageSettingsGroup> {
             child: TextButton(
               onPressed: (cur ?? 0) == 0 ? null : _clear,
               child: Text(_busy ? tr('清理中…') : tr('清理')),
+            ),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.cached_outlined),
+          title: Text(tr('远程音频缓存')),
+          subtitle: Text(
+            _remoteUsage == null
+                ? tr('读取中…')
+                : tr('当前 {cur} / 上限 {max}', {
+                    'cur': _remoteUsage!.bytesText,
+                    'max': '2 GB',
+                  }),
+          ),
+          trailing: PressableScale(
+            pressScale: 0.92,
+            child: TextButton(
+              onPressed: (_remoteUsage?.bytes ?? 0) == 0 ? null : _clearRemote,
+              child: Text(_clearingRemote ? tr('清理中…') : tr('清理')),
             ),
           ),
         ),

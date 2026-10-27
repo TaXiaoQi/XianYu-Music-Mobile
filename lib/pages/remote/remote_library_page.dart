@@ -50,8 +50,6 @@ class RemoteLibraryPage extends ConsumerWidget {
                 _buildEmptyHint(context, ref, scheme)
               else
                 for (final source in state.sources) _SourceCard(source: source),
-              const SizedBox(height: 20),
-              _buildCacheCard(context, ref, state),
             ],
           ),
         ],
@@ -124,75 +122,6 @@ class RemoteLibraryPage extends ConsumerWidget {
     ),
   );
 
-  Widget _buildCacheCard(
-    BuildContext context,
-    WidgetRef ref,
-    RemoteLibraryState state,
-  ) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-      decoration: BoxDecoration(
-        color: appCardFill(context, ref),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.cached_outlined),
-            title: Text(
-              tr('远程音频缓存'),
-              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '${state.cacheUsage.bytesText} · ${state.cacheUsage.files} 个文件（上限 2GB，超出自动淘汰）',
-              style: const TextStyle(fontSize: 12),
-            ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              PressableScale(
-                pressScale: 0.92,
-                child: TextButton.icon(
-                  onPressed: state.cacheUsage.bytes <= 0
-                      ? null
-                      : () async {
-                          final ok = await _confirm(
-                            context,
-                            title: tr('清理远程缓存'),
-                            message: tr(
-                              '将删除全部已缓存的远程音频文件（不影响远程源配置与曲库记录），正在播放的远程歌曲可能中断。',
-                            ),
-                          );
-                          if (ok != true) return;
-                          try {
-                            await ref
-                                .read(remoteLibraryProvider.notifier)
-                                .clearCache();
-                            if (context.mounted) {
-                              showXianYuToast(context, tr('远程缓存已清理'));
-                            }
-                          } catch (e) {
-                            if (context.mounted) {
-                              showXianYuToast(
-                                context,
-                                tr('清理失败：{e}', {'e': e}),
-                              );
-                            }
-                          }
-                        },
-                  icon: const Icon(Icons.delete_sweep_outlined, size: 18),
-                  label: Text(tr('清理缓存')),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _showSourceEditor(
     BuildContext context,
     WidgetRef ref, {
@@ -201,36 +130,6 @@ class RemoteLibraryPage extends ConsumerWidget {
     return showSheetDialog<void>(
       context,
       (_) => _SourceEditorSheet(editing: editing),
-    );
-  }
-
-  Future<bool?> _confirm(
-    BuildContext context, {
-    required String title,
-    required String message,
-  }) {
-    return showPredictiveDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          PressableScale(
-            pressScale: 0.92,
-            child: TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text(tr('取消')),
-            ),
-          ),
-          PressableScale(
-            pressScale: 0.92,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(tr('确定')),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

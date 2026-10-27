@@ -1,13 +1,9 @@
 // 夸克网盘：继承 QuarkUcBase，仅声明品牌与登录页常量。
 //
-// 登录走 CAS 短信逆向（webviewFields 辅助型，2026-10）：官方账密
-// 通道已下线（登录面板仅剩短信/扫码，账密提交一律 50065），自绘
-// 表单收手机号，WebView 打开官方短信页自动填号+触发发码（发码
-// 接口强制过无感盾），验证码在 App 收码弹窗（天翼同款）输入后注入
-// 页面提交，postMessagePrivate hook 收 ticket；service_ticket 经
-// GET pan.quark.cn/account/info?st= 兑换种 Cookie（假票实测返回
-// AUTH_ERROR:50051 Invalid service ticket，端点在且与 UC 同码同
-// 体系）。表单/盾/脚本共享实现见 QuarkUcBase。
+// 登录：WebView 打开官方网盘页（桌面 UA）捕获 Cookie——captureRule
+// 全收登录链非空 Cookie（2026-10 凭据更名 kps/sign → __kps 系，
+// drive-pc 风控依赖完整 Cookie 链），postLoginUrl 触发稳定性轮询
+// 等齐 __puus 再收尾。
 
 import '../cloud_types.dart';
 import 'quark_uc_base.dart';
@@ -55,50 +51,4 @@ class QuarkProvider extends QuarkUcBase {
         // 同 UC：__puus 由落地页 init 请求后补签发，稳定性轮询等齐再收尾。
         postLoginUrl: 'https://pan.quark.cn/',
       );
-
-  // ── CAS 短信逆向通道（webviewFields 辅助型）────────────────
-
-  @override
-  CloudLoginKind get loginKind => CloudLoginKind.webviewFields;
-
-  @override
-  String get casPageHost => 'uop.quark.cn';
-
-  // 官方账密通道已下线（登录面板仅剩短信/扫码，账密提交一律
-  // 50065「账号或者密码不匹配」）；切短信辅助：自绘表单收手机号，
-  // WebView 打开官方短信页自动填号+触发发码（发码接口强制过无感
-  // 盾，纯 HTTP 发码 20180001 被拒），验证码在 App 收码弹窗输入后
-  // 注入页面提交。短信页 SSR 已配 transmission_mode=pm，
-  // postMessagePrivate hook 直接收 ticket。
-  @override
-  bool get webviewFieldsIsSms => true;
-
-  @override
-  String? get webviewFieldsSmsHint =>
-      '验证码短信将发送至手机号，请留意弹窗输入';
-
-  /// CAS 短信登录页（custom_login_type=mobile：login_name/sms_code
-  /// 表单 + send_sms_btn，token/key 由页面下发且与 CAS 会话 Cookie
-  /// 绑定）。
-  @override
-  String get webviewFieldsLoginUrl =>
-      'https://uop.quark.cn/cas/custom/login'
-      '?custom_login_type=mobile&client_id=532&display=pc';
-
-  // 自绘表单仅手机号：验证码不经 App 表单（收码弹窗承担）。
-  @override
-  List<CloudLoginField> get loginFields => const [
-        CloudLoginField(
-          key: 'account',
-          label: '手机号',
-          isPhone: true,
-        ),
-      ];
-
-  /// service_ticket 兑换页：GET account/info?st= 服务端校验通过即
-  /// Set-Cookie 种网盘凭据。__puus 由随后的主站落地页 init 请求
-  /// 签发（captureRule.postLoginUrl 链）。
-  @override
-  String ticketExchangeUrl(String ticket) =>
-      'https://pan.quark.cn/account/info?st=${Uri.encodeComponent(ticket)}';
 }

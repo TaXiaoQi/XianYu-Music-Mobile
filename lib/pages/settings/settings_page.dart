@@ -945,7 +945,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     if (path.startsWith('/cloud-login/')) {
       final providerId = path.split('/')[2];
       final p = cloudProviderById(providerId);
-      // 自绘账密 + WebView 过盾范式（UC CAS）用专用登录页。
+      // 自绘账密 + WebView 页内提交范式（迅雷）用专用登录页。
       if (p?.loginKind == CloudLoginKind.webviewFields) {
         return CloudWebviewFieldsLoginPage(
           providerId: providerId,

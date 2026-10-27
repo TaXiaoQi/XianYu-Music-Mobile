@@ -24,12 +24,17 @@ import '../../src/widgets/glass_settings.dart';
 /// 路径语义与 [CloudBrowserPage] 一致：path 型盘存条目绝对路径，
 /// id 型盘回退存目录 id。勾选跨目录累积，保存时整体覆盖写入
 /// [CloudFolderSelectionStore]。
+///
+/// 复用形态（[returnSelection]）：歌单「网盘文件夹导入」等场景打开本页
+/// 只为挑选文件夹——确认后不写播放范围 store，直接出栈返回所选
+/// (key, 名称) 列表与账号 id。
 class CloudFolderPickerPage extends ConsumerStatefulWidget {
   const CloudFolderPickerPage({
     super.key,
     required this.providerId,
     required this.accountId,
     this.embedded = false,
+    this.returnSelection = false,
   });
 
   final String providerId;
@@ -37,6 +42,9 @@ class CloudFolderPickerPage extends ConsumerStatefulWidget {
 
   /// 横屏设置面板嵌入：不画自身 Scaffold/顶栏，保存后回网盘面板
   final bool embedded;
+
+  /// 选取模式：确认后 pop 返回选择而不是写入播放文件夹范围
+  final bool returnSelection;
 
   @override
   ConsumerState<CloudFolderPickerPage> createState() =>
@@ -235,6 +243,14 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
 
   Future<void> _save() async {
     if (_saving) return;
+    // 选取模式：不写播放范围 store，带 (key, 可读名) 与账号出栈返回
+    if (widget.returnSelection) {
+      final picked = [
+        for (final k in _selected) (k, _dirNameOf(k)),
+      ];
+      context.pop((accountId: _accountId, folders: picked));
+      return;
+    }
     setState(() => _saving = true);
     await CloudFolderSelectionStore.instance.setPaths(
       _provider.id,
@@ -658,7 +674,7 @@ class _CloudFolderPickerPageState extends ConsumerState<CloudFolderPickerPage> {
           const SizedBox(width: 8),
           FilledButton(
             onPressed: _saving ? null : _save,
-            child: Text(tr('确认保存')),
+            child: Text(widget.returnSelection ? tr('确定') : tr('确认保存')),
           ),
         ],
       ),

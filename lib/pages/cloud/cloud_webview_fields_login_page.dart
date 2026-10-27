@@ -21,13 +21,12 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/press_scale.dart';
 import 'cloud_login_form_kit.dart';
 
-/// 自绘账密登录页（webviewFields 范式：UC CAS 逆向通道）。
+/// 自绘账密登录页（webviewFields 范式，现役迅雷预填辅助通道）。
 ///
 /// 表单阶段：原生账密表单收账密（凭据不经网页表单）。提交后切换
-/// WebView 执行器：加载 provider 声明的 CAS 登录页 → 注入脚本自动
-/// 填表、等阿里云盾回调（无痕自动过；触发滑块时用户直接在 WebView
-/// 内拖动）→ hook 抓 service_ticket → 导航兑换页种网盘 Cookie →
-/// 复用捕获链收尾落库。
+/// WebView 执行器：加载 provider 声明的登录页 → 注入脚本自动填表
+/// 提交（滑块等验证由用户在页内完成）→ hook 回传进度/结果 →
+/// 复用 provider 捕获链收尾落库。
 class CloudWebviewFieldsLoginPage extends ConsumerStatefulWidget {
   const CloudWebviewFieldsLoginPage({
     super.key,
@@ -58,8 +57,8 @@ class _CloudWebviewFieldsLoginPageState
   bool _pageLoaded = false;
   String _hint = '';
 
-  // 表单字段按 provider.loginFields 泛化（UC/夸克=账密两字段；迅雷=
-  // 手机号 + 服务密码选填切换）。首个非 obscure 字段为账号、obscure
+  // 表单字段按 provider.loginFields 泛化（迅雷=手机号 + 服务密码
+  // 选填切换）。首个非 obscure 字段为账号、obscure
   // 字段为密码，凭据经 webviewFieldsScript(account, password) 传入。
   final Map<String, TextEditingController> _ctrls = {};
   String? _accountKey;
@@ -84,7 +83,7 @@ class _CloudWebviewFieldsLoginPageState
   ///（避免露出全屏官方页），页面 body 渲染进度占位。
   bool _webviewInDialog = false;
 
-  // CAS 页是 PC 排版且 viewport 禁缩放，手机上看不清滑块——解锁同
+  // 登录页是 PC 排版且 viewport 禁缩放，手机上看不清滑块——解锁同
   // WebView 登录页的缩放改写。
   static const _unlockZoomJs = r'''
 (function(){
@@ -211,7 +210,7 @@ class _CloudWebviewFieldsLoginPageState
     try {
       await controller.loadRequest(Uri.parse(_provider.webviewFieldsLoginUrl));
     } catch (e) {
-      AppLog.warn('cloud', '${_provider.id} CAS 页加载失败: $e');
+      AppLog.warn('cloud', '${_provider.id} 登录页加载失败: $e');
       if (!mounted) return;
       _backToForm(tr('安全验证页打开失败，请重试'));
     }
@@ -289,7 +288,7 @@ class _CloudWebviewFieldsLoginPageState
         _backToForm(tr('登录态写入失败，请重试'));
       }
     } catch (e) {
-      AppLog.warn('cloud', '${_provider.id} CAS 登录捕获失败: $e');
+      AppLog.warn('cloud', '${_provider.id} 登录捕获失败: $e');
       if (!mounted) return;
       _backToForm(tr('登录态写入失败，请重试'));
     }

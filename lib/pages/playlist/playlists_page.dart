@@ -37,6 +37,7 @@ import '../../src/widgets/press_scale.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/song_list_view.dart';
+import '../../src/widgets/sort_dropdown.dart';
 import '../../src/widgets/stagger_in.dart';
 import '../../src/widgets/source_tag.dart';
 import '../../src/widgets/song_actions_sheet.dart';
@@ -388,10 +389,19 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
                         favState.isCollectionFavorite(_collectionKey(playlist)),
                     onToggleFavorite:
                         () => _toggleCollectionFavorite(playlist),
-                    currentSort: _sort,
-                    onSelectSort: _selectSort,
+                    // 面板态排序入口上移 trailing 集群（与网盘/本地/收藏面板
+                    // 同款锚定下拉），旧 PopupMenuButton 仅竖屏路由态显示
+                    currentSort: widget.embedded ? null : _sort,
+                    onSelectSort: widget.embedded ? null : _selectSort,
                     trailing: widget.embedded && showBatch
-                        ? _batchToggle(context, floating: floating)
+                        ? Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // 内嵌面板不加气泡，批量/排序均为普通图标
+                              _batchToggle(context),
+                              _sortToggle(context),
+                            ],
+                          )
                         : null,
                   ),
                   const Divider(height: 1),

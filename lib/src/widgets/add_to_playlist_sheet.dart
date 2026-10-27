@@ -38,7 +38,11 @@ ImportedSong importedSongFromQueueItem(QueueItem item) {
       // 解析失败按默认值处理
     }
   }
-  final isLocal = infoJson == null || infoJson.isEmpty;
+  // 网盘条目：path 是 cloud:// 播放标识，不能当本地文件存（isLocal 会让
+  // 播放走本地管线失败）；localPath 置空，歌单重建时按 cloud:// 分支还原
+  final isCloudPath = item.path.startsWith('cloud://');
+  final isLocal =
+      !isCloudPath && (infoJson == null || infoJson.isEmpty);
   return ImportedSong(
     title: item.title,
     artist: item.artist,
@@ -214,11 +218,15 @@ Future<String?> _promptName(
     context: context,
     builder: (context) => AlertDialog(
       title: Text(title, style: const TextStyle(fontSize: 16)),
-      content: TextField(
-        controller: ctrl,
-        autofocus: true,
-        maxLength: 30,
-        decoration: InputDecoration(hintText: tr('歌单名称')),
+      content: ConstrainedBox(
+        // 撑到标准弹窗宽（与 Dialog 系弹窗一致，防内容短时收缩）
+        constraints: const BoxConstraints(minWidth: double.infinity),
+        child: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLength: 30,
+          decoration: InputDecoration(hintText: tr('歌单名称')),
+        ),
       ),
       actions: [
         PressableScale(

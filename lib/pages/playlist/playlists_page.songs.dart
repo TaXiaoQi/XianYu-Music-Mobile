@@ -25,6 +25,32 @@ bool _playlistSortIsDesc(_PlaylistSort sort) => switch (sort) {
       _ => false,
     };
 
+/// 排序档归并为排序下拉的维度档（升序作代表）
+_PlaylistSort _playlistSortDimension(_PlaylistSort sort) => switch (sort) {
+      _PlaylistSort.titleAsc || _PlaylistSort.titleDesc =>
+        _PlaylistSort.titleAsc,
+      _PlaylistSort.nameAsc || _PlaylistSort.nameDesc => _PlaylistSort.nameAsc,
+      _PlaylistSort.artistAsc || _PlaylistSort.artistDesc =>
+        _PlaylistSort.artistAsc,
+      _PlaylistSort.addedAtAsc || _PlaylistSort.addedAtDesc =>
+        _PlaylistSort.addedAtAsc,
+      _PlaylistSort.custom => _PlaylistSort.custom,
+    };
+
+/// 下拉维度档 + 方向 → 完整排序档（自定义档无方向）
+_PlaylistSort _playlistSortFromDimension(_PlaylistSort dim, bool asc) =>
+    switch (dim) {
+      _PlaylistSort.titleAsc =>
+        asc ? _PlaylistSort.titleAsc : _PlaylistSort.titleDesc,
+      _PlaylistSort.nameAsc =>
+        asc ? _PlaylistSort.nameAsc : _PlaylistSort.nameDesc,
+      _PlaylistSort.artistAsc =>
+        asc ? _PlaylistSort.artistAsc : _PlaylistSort.artistDesc,
+      _PlaylistSort.addedAtAsc =>
+        asc ? _PlaylistSort.addedAtAsc : _PlaylistSort.addedAtDesc,
+      _ => _PlaylistSort.custom,
+    };
+
 int _playlistSortCompare(_PlaylistSort sort, ImportedSong a, ImportedSong b) {
   switch (sort) {
     case _PlaylistSort.titleAsc || _PlaylistSort.titleDesc:
@@ -235,6 +261,14 @@ class _AlbumHeader extends StatelessWidget {
                       PopupMenuButton<_PlaylistSort>(
                         tooltip: tr('排序方式'),
                         onSelected: onSelectSort,
+                        // 实底：scaffoldBackground 是全局透明，不能作菜单底
+                        color: Theme.of(context).dialogTheme.backgroundColor,
+                        surfaceTintColor: Colors.transparent,
+                        shadowColor: Colors.black26,
+                        elevation: 8,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                         icon: Icon(Icons.swap_vert,
                             size: 18, color: scheme.primary),
                         style: IconButton.styleFrom(

@@ -320,6 +320,8 @@ final appRouter = GoRouter(
         (_) => CloudFolderPickerPage(
           providerId: state.pathParameters['id'] ?? '',
           accountId: state.uri.queryParameters['account'] ?? '',
+          // pick=1：歌单网盘文件夹导入等场景的选取模式，确认后带值出栈
+          returnSelection: state.uri.queryParameters['pick'] == '1',
         ),
         key: state.pageKey,
       ),

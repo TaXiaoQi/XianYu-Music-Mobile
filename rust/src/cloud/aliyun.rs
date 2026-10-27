@@ -4,6 +4,8 @@
 // 单次有效，每次刷新 access_token 后必须把新凭据带回调用方落盘——
 // 通过 CloudOut.rotated_cred 传递，由 Dart 侧 updateCred 回写本地。
 
+use std::sync::{Mutex, OnceLock};
+
 use serde_json::{json, Value};
 
 use super::http;
@@ -133,7 +135,18 @@ async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, Str
     Ok((access, Some(new_cred)))
 }
 
+/// drive_id 每 token 缓存：网盘页全量遍历是几十上百次并发 list_dir，
+/// 每次都带一发 /v2/user/get 会把请求量翻倍、放大触发限流的概率。
+/// access_token 未变时直接复用上次结果（token 轮换后键不匹配即重取）。
+static DRIVE_ID_CACHE: OnceLock<Mutex<(String, String)>> = OnceLock::new();
+
 async fn drive_id(at: &str) -> Result<String, (i32, String)> {
+    let cache = DRIVE_ID_CACHE.get_or_init(|| Mutex::new((String::new(), String::new())));
+    if let Ok(guard) = cache.lock() {
+        if guard.0 == at && !guard.1.is_empty() {
+            return Ok(guard.1.clone());
+        }
+    }
     // 2026-10 阿里下线 /adrive/v2/user/getInfo（404 NotFound），取 drive_id
     // 改用 web 端现役的 /v2/user/get（响应字段顶层平铺，pick 兼容 data 包裹）。
     let resp = http::post_json(
@@ -169,6 +182,9 @@ async fn drive_id(at: &str) -> Result<String, (i32, String)> {
         let body = serde_json::to_string(&j).unwrap_or_default();
         let head: String = body.chars().take(160).collect();
         return Err((412, format!("网盘信息获取失败，响应: {head}")));
+    }
+    if let Ok(mut guard) = cache.lock() {
+        *guard = (at.to_string(), id.clone());
     }
     Ok(id)
 }

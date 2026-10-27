@@ -11,6 +11,8 @@ import 'package:go_router/go_router.dart';
 import '../../src/navigation/shell.dart';
 import '../../src/cloud/cloud_filename.dart';
 import '../../src/core/app_colors.dart';
+import '../../src/core/page_sort_prefs.dart';
+import '../../src/core/pinyin_key.dart';
 import '../../src/core/settings.dart';
 import '../../src/responsive/landscape.dart';
 import '../../src/theme/theme_tint.dart';
@@ -23,7 +25,8 @@ import '../../src/widgets/flying_cover.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/list_metrics.dart';
 import '../../src/widgets/stagger_in.dart';
-import '../../src/widgets/sheet_dialog.dart';
+import '../../src/widgets/floating_letter_index.dart';
+import '../../src/widgets/sort_dropdown.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/song_list_scroll_fabs.dart';
 import '../../src/widgets/source_tag.dart';
@@ -49,6 +52,29 @@ class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
   Timer? _debounce;
   int _req = 0;
   _RecentSort _sort = _RecentSort.none;
+  bool _sortAsc = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // 恢复上次排序档/方向（退出页面不再回落默认）
+    unawaited(_loadSortPrefs());
+  }
+
+  Future<void> _loadSortPrefs() async {
+    // 默认排序 = 播放时间新→旧（降序），与列表源序一致
+    final (idx, asc) = await PageSortPrefs.load('recent', defaultAsc: false);
+    if (!mounted) return;
+    setState(() {
+      _sort = _RecentSort.values[idx.clamp(0, _RecentSort.values.length - 1)];
+      _sortAsc = asc;
+    });
+    // 记录可能尚未加载完：非默认展示先算一次，数据到达后由 build 内
+    // listen 重算兜底
+    if (_filtering && ref.read(recentProvider).entries.isNotEmpty) {
+      _runFilter();
+    }
+  }
 
   @override
   void dispose() {
@@ -57,7 +83,10 @@ class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
     super.dispose();
   }
 
-  bool get _filtering => _query.isNotEmpty || _sort != _RecentSort.none;
+  /// 走 filter+sort 管线的条件：默认排序（none）降序与升序展示不同
+  ///（升序 = 旧→新），也需管线计算
+  bool get _filtering =>
+      _query.isNotEmpty || _sort != _RecentSort.none || !_sortAsc;
 
   void _onSearchChanged(String v) {
     setState(() => _query = v.trim().toLowerCase());
@@ -81,7 +110,10 @@ class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
           playedAt: e.playedAt,
         ),
     ];
-    final out = await compute(_filterSortRecent, (rows, _query, _sort.index));
+    final out = await compute(
+      _filterSortRecent,
+      (rows, _query, _sort.index, _sortAsc),
+    );
     if (!mounted || gen != _req) return;
     setState(() {
       _result = [for (final i in out) entries[i]];
@@ -147,46 +179,21 @@ class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
     );
   }
 
-  Future<void> _openSortMenu(BuildContext context) async {
-    final v = await showSheetDialog<_RecentSort>(
-      context,
-      (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-              child: Text(
-                tr('排序方式'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            for (final s in _RecentSort.values)
-              _SortItem(
-                label: _recentSortLabel(s),
-                selected: s == _sort,
-                onTap: () => Navigator.pop(ctx, s),
-              ),
-            const SizedBox(height: 4),
-          ],
-        ),
-      ),
-      maxWidth: 240,
-    );
-    if (v != null) {
-      _sort = v;
-      _onCriteriaChanged();
-    }
+  void _applySort(_RecentSort type, bool asc) {
+    _sort = type;
+    _sortAsc = asc;
+    unawaited(PageSortPrefs.save('recent', type.index, asc));
+    _onCriteriaChanged();
   }
 
   @override
   Widget build(BuildContext context) {
     final recent = ref.watch(recentProvider);
+    // 排序/过滤生效期间记录数据到达（或变化）：重算结果集防止陈旧
+    //（initState 恢复排序档时记录可能尚未加载完）
+    ref.listen(recentProvider, (_, _) {
+      if (_filtering) _runFilter();
+    });
     final inMusicPane =
         widget.paneEmbedded || ref.watch(landscapeLibraryProvider) != null;
     final filter = inMusicPane
@@ -234,7 +241,8 @@ class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
                   items: items,
                   showSortBar: showControls,
                   sort: _sort,
-                  onOpenSort: () => _openSortMenu(context),
+                  sortAsc: _sortAsc,
+                  onSortChanged: _applySort,
                 ),
               )
             else
@@ -276,7 +284,8 @@ class _RecentPageState extends ConsumerState<RecentPage> with HidesShellChrome {
                         items: items,
                         showSortBar: showControls,
                         sort: _sort,
-                        onOpenSort: () => _openSortMenu(context),
+                        sortAsc: _sortAsc,
+                        onSortChanged: _applySort,
                       ),
               ),
             if (inMusicPane)
@@ -370,7 +379,8 @@ class _RecentList extends ConsumerStatefulWidget {
     this.items,
     this.showSortBar = false,
     this.sort = _RecentSort.none,
-    required this.onOpenSort,
+    this.sortAsc = true,
+    required this.onSortChanged,
   });
 
   final RecentState recent;
@@ -386,7 +396,10 @@ class _RecentList extends ConsumerStatefulWidget {
 
   final _RecentSort sort;
 
-  final VoidCallback onOpenSort;
+  /// 排序方向（true=升序）
+  final bool sortAsc;
+
+  final void Function(_RecentSort type, bool asc) onSortChanged;
 
   @override
   ConsumerState<_RecentList> createState() => _RecentListState();
@@ -472,42 +485,99 @@ class _RecentListState extends ConsumerState<_RecentList> {
 
     return Stack(
       children: [
-        ListView.builder(
-          controller: _controller,
-          padding: EdgeInsets.only(top: topExtent + sortPad, bottom: bottomPad),
-          itemExtent: rowExtent,
-          scrollCacheExtent: ScrollCacheExtent.pixels(500),
-          addAutomaticKeepAlives: false,
-          itemCount: visible.length,
-          itemBuilder: (context, i) {
-            final entry = visible[i];
-            final orig = all.indexOf(entry);
-            return _stagger.wrap(
-              i,
-              Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 34),
-                    child: _RecentTile(
-                      entry: entry,
-                      onPlay: () => widget.notifier.play(orig),
-                      onRemove: () => widget.notifier.remove(entry.songPath),
-                    ),
+        if (widget.sort == _RecentSort.title ||
+            widget.sort == _RecentSort.artist)
+          // A-Z 排序视图：右侧悬浮字母索引（滑动滑入，停 2s 滑出）
+          FloatingLetterIndex(
+            controller: _controller,
+            itemExtent: rowExtent,
+            topInset: topExtent + sortPad,
+            letters: [
+              for (final e in visible)
+                letterOfPinyinKey(
+                  widget.sort == _RecentSort.artist
+                      ? _recentArtist(e)
+                      : _recentTitle(e),
+                ),
+            ],
+            child: ListView.builder(
+              controller: _controller,
+              padding: EdgeInsets.only(
+                  top: topExtent + sortPad, bottom: bottomPad),
+              itemExtent: rowExtent,
+              scrollCacheExtent: ScrollCacheExtent.pixels(500),
+              addAutomaticKeepAlives: false,
+              itemCount: visible.length,
+              itemBuilder: (context, i) {
+                final entry = visible[i];
+                final orig = all.indexOf(entry);
+                return _stagger.wrap(
+                  i,
+                  Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 34),
+                        child: _RecentTile(
+                          entry: entry,
+                          onPlay: () => widget.notifier.play(orig),
+                          onRemove: () =>
+                              widget.notifier.remove(entry.songPath),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8,
+                        top: 0,
+                        bottom: 0,
+                        width: 36,
+                        child: Center(
+                          child: SongRowLeading(
+                              index: i, songPath: entry.songPath),
+                        ),
+                      ),
+                    ],
                   ),
-                  Positioned(
-                    left: 8,
-                    top: 0,
-                    bottom: 0,
-                    width: 36,
-                    child: Center(
-                      child: SongRowLeading(index: i, songPath: entry.songPath),
+                );
+              },
+            ),
+          )
+        else
+          ListView.builder(
+            controller: _controller,
+            padding:
+                EdgeInsets.only(top: topExtent + sortPad, bottom: bottomPad),
+            itemExtent: rowExtent,
+            scrollCacheExtent: ScrollCacheExtent.pixels(500),
+            addAutomaticKeepAlives: false,
+            itemCount: visible.length,
+            itemBuilder: (context, i) {
+              final entry = visible[i];
+              final orig = all.indexOf(entry);
+              return _stagger.wrap(
+                i,
+                Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(left: 34),
+                      child: _RecentTile(
+                        entry: entry,
+                        onPlay: () => widget.notifier.play(orig),
+                        onRemove: () => widget.notifier.remove(entry.songPath),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+                    Positioned(
+                      left: 8,
+                      top: 0,
+                      bottom: 0,
+                      width: 36,
+                      child: Center(
+                        child: SongRowLeading(index: i, songPath: entry.songPath),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
         SongListScrollFabs(
           controller: _controller,
           paths: visible.map((e) => e.songPath).toList(),
@@ -535,9 +605,17 @@ class _RecentListState extends ConsumerState<_RecentList> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
         child: Align(
           alignment: Alignment.centerLeft,
-          child: InkWell(
-            onTap: widget.onOpenSort,
-            borderRadius: BorderRadius.circular(8),
+          // 桌面端同款锚定排序下拉（非居中弹窗）
+          child: SortMenuButton<_RecentSort>(
+            options: [
+              for (final s in _RecentSort.values)
+                SortOption(value: s, label: _recentSortLabel(s)),
+            ],
+            current: widget.sort,
+            ascending: widget.sortAsc,
+            isDirectional: _recentSortDirectional,
+            defaultAscending: _recentSortDefaultAsc,
+            onChanged: widget.onSortChanged,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
               child: Row(
@@ -703,8 +781,9 @@ class _RecentTile extends ConsumerWidget {
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     if (diff == 0) return tr('今天 {hm}', {'hm': hm});
     if (diff == 1) return tr('昨天 {hm}', {'hm': hm});
-    if (diff < 7)
+    if (diff < 7) {
       return tr('{m}月{d}日 {hm}', {'m': dt.month, 'd': dt.day, 'hm': hm});
+    }
     return tr('{y}年{m}月{d}日', {'y': dt.year, 'm': dt.month, 'd': dt.day});
   }
 }
@@ -714,7 +793,7 @@ enum _RecentSort { none, title, artist, time }
 String _recentSortLabel(_RecentSort s) => switch (s) {
   _RecentSort.none => tr('默认排序'),
   _RecentSort.time => tr('按播放时间'),
-  _RecentSort.title => tr('按标题'),
+  _RecentSort.title => tr('按 A-Z'),
   _RecentSort.artist => tr('按歌手'),
 };
 
@@ -730,9 +809,9 @@ String _recentTitle(RecentEntry e) {
 String _recentArtist(RecentEntry e) => e.toQueueItem()?.artist ?? '';
 
 List<int> _filterSortRecent(
-  (List<({String title, String artist, int playedAt})>, String, int) args,
+  (List<({String title, String artist, int playedAt})>, String, int, bool) args,
 ) {
-  final (rows, query, sortIdx) = args;
+  final (rows, query, sortIdx, asc) = args;
   final indices = List<int>.generate(rows.length, (i) => i);
   List<int> result = indices;
   if (query.isNotEmpty) {
@@ -742,57 +821,42 @@ List<int> _filterSortRecent(
           r.artist.toLowerCase().contains(query);
     }).toList();
   }
+  // 排序键预计算：中文按拼音 A-Z（索引 → key）
+  final titleKeys = [for (final r in rows) pinyinSortKey(r.title)];
+  final artistKeys = [for (final r in rows) pinyinSortKey(r.artist)];
   result.sort((a, b) {
     final A = rows[a];
     final B = rows[b];
     switch (_RecentSort.values[sortIdx]) {
       case _RecentSort.title:
-        return A.title.compareTo(B.title);
+        return asc
+            ? titleKeys[a].compareTo(titleKeys[b])
+            : titleKeys[b].compareTo(titleKeys[a]);
       case _RecentSort.artist:
-        final c = A.artist.compareTo(B.artist);
-        return c != 0 ? c : A.title.compareTo(B.title);
+        final c = asc
+            ? artistKeys[a].compareTo(artistKeys[b])
+            : artistKeys[b].compareTo(artistKeys[a]);
+        return c != 0
+            ? c
+            : (asc ? titleKeys[a].compareTo(titleKeys[b]) : titleKeys[b].compareTo(titleKeys[a]));
       case _RecentSort.time:
       case _RecentSort.none:
-        final c = B.playedAt.compareTo(A.playedAt);
-        return c != 0 ? c : A.title.compareTo(B.title);
+        // 默认新→旧（desc）；翻转后旧→新
+        final c = asc
+            ? A.playedAt.compareTo(B.playedAt)
+            : B.playedAt.compareTo(A.playedAt);
+        return c != 0
+            ? c
+            : (asc ? titleKeys[a].compareTo(titleKeys[b]) : titleKeys[b].compareTo(titleKeys[a]));
     }
   });
   return result;
 }
 
-class _SortItem extends StatelessWidget {
-  const _SortItem({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
+/// 有方向语义的排序类型（默认排序 = 播放时间序，降序即新→旧）
+bool _recentSortDirectional(_RecentSort s) => true;
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: selected ? scheme.primary : scheme.onSurface,
-                ),
-              ),
-            ),
-            if (selected) Icon(Icons.check, size: 18, color: scheme.primary),
-          ],
-        ),
-      ),
-    );
-  }
-}
+/// 播放时间与默认排序（同为时间序）默认新→旧（desc），其余默认升序
+bool _recentSortDefaultAsc(_RecentSort s) =>
+    s == _RecentSort.time || s == _RecentSort.none ? false : true;

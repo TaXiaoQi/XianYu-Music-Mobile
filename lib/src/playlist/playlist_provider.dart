@@ -143,6 +143,20 @@ class PlaylistManager extends StateNotifier<ImportedPlaylistState> {
 /// ImportedSong → QueueItem 公开转换：播放器媒体会话（Android Auto 浏览树）
 /// 与歌单 UI 共用，保证线上歌渲染元数据口径一致。
 QueueItem importedSongToQueueItem(ImportedSong song) {
+  // 网盘条目：path 自描述（cloud://盘/账号/文件），反解出播放上下文即可
+  // 复用网盘播放管线；封面沿用入库时的远端地址
+  if (song.path.startsWith('cloud://')) {
+    final ctx = CloudPlayContext.fromPath(song.path);
+    return QueueItem(
+      path: song.path,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      durationMs: song.duration * 1000,
+      coverUrl: song.coverUrl,
+      cloudInfoJson: ctx == null ? null : jsonEncodeSafe(ctx.toJson()),
+    );
+  }
   if (song.isLocal) {
     return QueueItem(
       path: song.path,

@@ -82,28 +82,44 @@ Future<List<CloudFile>> scopedSearchAudio({
     if (viaApi != null) return viaApi;
     // 回落通用遍历
   }
-  return _walkAudioDirs(
+  final outcome = await _walkAudioDirs(
       provider: provider, cred: cred, roots: roots, keyword: kw);
+  return outcome.files;
 }
 
 /// 网盘页全量音频列举：遍历 [selectedRoots]（空 = 从全盘根目录起）收集
 /// 全部音频文件，无关键词过滤；BFS/并发/容错语义与 scopedSearchAudio 一致。
+/// 一个文件都没拿到且有目录失败时抛错（带末次错误），避免「静默 0 首」。
 Future<List<CloudFile>> cloudListAllAudio({
   required CloudProvider provider,
   required Map<String, String> cred,
   required List<String> selectedRoots,
-}) {
-  return _walkAudioDirs(
+}) async {
+  final outcome = await _walkAudioDirs(
     provider: provider,
     cred: cred,
     roots: selectedRoots.isNotEmpty ? selectedRoots : [provider.rootPath],
     keyword: null,
   );
+  if (outcome.files.isEmpty && outcome.failedDirs > 0) {
+    throw StateError('遍历目录失败 ${outcome.failedDirs} 个：${outcome.lastError}');
+  }
+  return outcome.files;
 }
 
 /// 目录树 BFS 遍历收集音频：[keyword] 为空时全量收集（网盘页），
 /// 否则按文件名 contains 过滤（忽略大小写，scope 搜索）。
-Future<List<CloudFile>> _walkAudioDirs({
+/// 返回收集结果与失败目录统计：全量场景「一个文件都没有且有目录失败」
+/// 时上层据此抛错给出可见提示，而不是静默展示 0 首。
+class WalkOutcome {
+  WalkOutcome(this.files, this.failedDirs, this.lastError);
+
+  final List<CloudFile> files;
+  final int failedDirs;
+  final String lastError;
+}
+
+Future<WalkOutcome> _walkAudioDirs({
   required CloudProvider provider,
   required Map<String, String> cred,
   required List<String> roots,
@@ -114,22 +130,38 @@ Future<List<CloudFile>> _walkAudioDirs({
   final out = <CloudFile>[];
   final queue = <String>[...roots];
   var active = 0;
-  // 百度回落遍历用更低并发（2）：百度网页 API 对高频敏感，并发 4 的
-  // listDir 连击实测触发风控（连带播放直链 403）。
-  final dirConcurrency = provider.id == 'baidu' ? 2 : _dirConcurrency;
+  var failedDirs = 0;
+  var lastError = '';
+  // 并发上限：百度（网页 API 高频触发风控，连带播放直链 403）、
+  // 阿里（v2/file/list 对并发连击限流）收紧到 2，其余 4。
+  final dirConcurrency = (provider.id == 'baidu' || provider.id == 'aliyun')
+      ? 2
+      : _dirConcurrency;
+  // 自适应并发：起步 1（与文件夹浏览串行同节奏——串行从未被拦），
+  // 连续 4 个目录成功才 +1 档提速；任一目录失败立即退回 1 并退避重试。
+  var currentLimit = 1;
+  var successStreak = 0;
 
-  // 单个目录：整页拉完（翻页串行），发现的子目录入共享队列
-  Future<void> scanDir(String cur) async {
+  // 单个目录：整页拉完（翻页串行），发现的子目录入共享队列；返回是否成功
+  Future<bool> scanDir(String cur) async {
     String? cursor; // 首页为 null，有 nextCursor 才翻页
     while (true) {
-      final CloudListResult r;
+      CloudListResult r;
       try {
         r = await provider.listDir(cred, cur, cursor: cursor);
       } catch (e) {
-        // 单文件夹失败不影响其余范围；留痕便于诊断遍历断链
-        AppLog.warn('cloud',
-            '[walkAudio] ${provider.id} 列目录失败 dir=$cur cursor=$cursor: $e');
-        break;
+        // 限流/抖动常为瞬态：退避后重试一次再放弃
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        try {
+          r = await provider.listDir(cred, cur, cursor: cursor);
+        } catch (e2) {
+          // 与桌面端 walkAudio 日志对齐：失败目录留痕便于诊断遍历断链
+          failedDirs += 1;
+          lastError = '$e2';
+          AppLog.warn('cloud',
+              '[walkAudio] ${provider.id} 列目录失败 dir=$cur cursor=$cursor: $e2');
+          return false;
+        }
       }
       var hits = 0;
       for (final f in r.files) {
@@ -151,6 +183,7 @@ Future<List<CloudFile>> _walkAudioDirs({
       cursor = r.nextCursor;
       if (cursor == null || cursor.isEmpty) break;
     }
+    return true;
   }
 
   final done = Completer<void>();
@@ -159,10 +192,23 @@ Future<List<CloudFile>> _walkAudioDirs({
       if (!done.isCompleted) done.complete();
       return;
     }
-    while (active < dirConcurrency && queue.isNotEmpty) {
+    while (active < currentLimit && queue.isNotEmpty) {
       final dir = queue.removeAt(0);
       active++;
-      scanDir(dir).whenComplete(() {
+      scanDir(dir).then((ok) {
+        if (ok) {
+          successStreak++;
+          // 连续成功 4 个目录提一档并发，直到该盘上限
+          if (successStreak >= 4 && currentLimit < dirConcurrency) {
+            successStreak = 0;
+            currentLimit += 1;
+          }
+        } else {
+          // 一失败立即退回串行节奏（文件夹浏览同款），成功后再逐步恢复
+          successStreak = 0;
+          currentLimit = 1;
+        }
+      }).whenComplete(() {
         active--;
         pump();
       });
@@ -171,7 +217,7 @@ Future<List<CloudFile>> _walkAudioDirs({
 
   pump();
   await done.future;
-  return out;
+  return WalkOutcome(out, failedDirs, lastError);
 }
 
 /// 网盘关键词搜索统一入口（搜索结果页 / 日推共用）：

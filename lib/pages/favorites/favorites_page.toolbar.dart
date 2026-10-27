@@ -14,9 +14,9 @@ extension _FavoritesPageToolbar on _FavoritesPageState {
       listenable: _batch,
       builder: (context, _) {
         final active = _batch.batchMode;
-        final icon = active
-            ? Icons.check_rounded
-            : Icons.library_add_check_outlined;
+        // 与网盘/本地页面板批量钮统一（checklist/check 切换）
+        final icon =
+            active ? Icons.check_rounded : Icons.checklist_rounded;
         final tip = active ? tr('完成') : tr('批量');
         void onTap() => active ? _batch.exit() : _batch.enter();
         if (floating) {
@@ -33,6 +33,35 @@ extension _FavoritesPageToolbar on _FavoritesPageState {
           onPressed: onTap,
         );
       },
+    );
+  }
+
+  /// 面板态排序入口（tab 行图标式，与网盘/本地页面板同款锚定下拉）
+  Widget _paneSortToggle(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return SortMenuButton<_FavSort>(
+      options: _favSortOptions(),
+      current: _sort,
+      ascending: _sortAsc,
+      isDirectional: _favSortDirectional,
+      defaultAscending: _favSortDefaultAsc,
+      onChanged: _applySort,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.sort, size: 18, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 2),
+            if (_sort != _FavSort.none)
+              Icon(
+                Icons.arrow_drop_down,
+                size: 18,
+                color: scheme.onSurfaceVariant,
+              ),
+          ],
+        ),
+      ),
     );
   }
 

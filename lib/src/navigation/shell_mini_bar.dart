@@ -57,7 +57,7 @@ mixin HideMiniBar<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   /// 本页被上层路由覆盖（push 了详情/子页）时是否继续压住播放条。
   /// 默认 true 维持整树隐藏（设置体系等依赖父级计数连坐）；
-  /// 音源榜单等"详情页应恢复播放条"的页面覆写为 false。
+  /// 榜单页等"详情页应恢复播放条"的页面覆写为 false。
   bool get hideMiniBarWhenCovered => true;
 
   @override

@@ -25,8 +25,8 @@ class BaiduProvider extends CloudProvider {
   // redirect_uri 无需真实可达——授权完成后 WebView 重定向到
   // `<redirect_uri>?code=xxx`，页面 404 无妨，URL 已带 code，
   // pollScript 从 location.href 抽取。
-  static const _clientId = '__BAIDU_APPKEY__';
-  static const _clientSecret = '__BAIDU_APPSECRET__';
+  static const _clientId = 'WzEEfe8MMzVlPqzpBB2r1hn0CKPrcDyt';
+  static const _clientSecret = 'a4MUtVIlPuQiRPGBFCAHwz2bmLv2bunE';
   static const _redirectUri = 'https://xianyu-music.github.io/oauth/baidu';
 
   // 统一移动 UA：网页 Cookie 轨（分享/转存）的会话与创建环境 UA 绑定

@@ -812,12 +812,16 @@ Future<String?> _promptPlaylistName(BuildContext context, String title) {
     context: context,
     builder: (ctx) => AlertDialog(
       title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLength: 40,
-        decoration: InputDecoration(hintText: tr('歌单名称')),
-        onSubmitted: (v) => Navigator.pop(ctx, v),
+      content: ConstrainedBox(
+        // 撑到标准弹窗宽（与 Dialog 系弹窗一致，防内容短时收缩）
+        constraints: const BoxConstraints(minWidth: double.infinity),
+        child: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 40,
+          decoration: InputDecoration(hintText: tr('歌单名称')),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: Text(tr('取消'))),

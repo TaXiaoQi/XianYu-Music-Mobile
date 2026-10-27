@@ -14,6 +14,7 @@ import 'package:collection/collection.dart';
 import '../core/application_logger.dart';
 import '../core/secure_store.dart';
 import 'cloud_credentials_store.dart';
+import 'cloud_scan_cache_store.dart';
 
 const String _kFolderSelKey = 'xianyu.cloud.folder_sel.v1';
 
@@ -275,6 +276,8 @@ class CloudFolderSelectionStore {
       }
     }
     await _persist();
+    // 扫描范围变了：该账号的网盘页全量扫描缓存作废，下次进入重扫
+    await CloudScanCacheStore.instance.invalidate(providerId, accountId: accountId);
     // 用户勾选变更并入共享同步时钟（凭据与目录选择同载荷上传）
     await CloudCredentialsStore.instance.noteLocalChange();
     onPersisted?.call();

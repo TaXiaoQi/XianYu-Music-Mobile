@@ -6,15 +6,15 @@ enum _FavSort { none, title, artist, album, addedAt }
 
 String _favSortLabel(_FavSort s) => switch (s) {
       _FavSort.none => tr('默认排序'),
-      _FavSort.title => tr('按标题'),
+      _FavSort.title => tr('按 A-Z'),
       _FavSort.artist => tr('按歌手'),
       _FavSort.album => tr('按专辑'),
       _FavSort.addedAt => tr('按添加时间'),
     };
 
 List<FavoriteEntry> _filterSortFavorites(
-    (List<FavoriteEntry>, String, int) args) {
-  final (entries, query, sortIdx) = args;
+    (List<FavoriteEntry>, String, int, bool) args) {
+  final (entries, query, sortIdx, asc) = args;
   List<FavoriteEntry> result = entries;
   if (query.isNotEmpty) {
     result = result
@@ -25,63 +25,52 @@ List<FavoriteEntry> _filterSortFavorites(
         .toList();
   }
   final copy = [...result];
+  // 排序键预计算：中文按拼音 A-Z
+  final titleKeys = {for (final e in copy) e.path: pinyinSortKey(e.title)};
+  final artistKeys = {for (final e in copy) e.path: pinyinSortKey(e.artist)};
+  final albumKeys = {for (final e in copy) e.path: pinyinSortKey(e.album)};
   switch (_FavSort.values[sortIdx]) {
     case _FavSort.title:
-      copy.sort((a, b) => a.title.compareTo(b.title));
+      copy.sort((a, b) =>
+          asc ? titleKeys[a.path]!.compareTo(titleKeys[b.path]!) : titleKeys[b.path]!.compareTo(titleKeys[a.path]!));
     case _FavSort.artist:
       copy.sort((a, b) {
-        final c = a.artist.compareTo(b.artist);
-        return c != 0 ? c : a.title.compareTo(b.title);
+        final c = asc
+            ? artistKeys[a.path]!.compareTo(artistKeys[b.path]!)
+            : artistKeys[b.path]!.compareTo(artistKeys[a.path]!);
+        return c != 0
+            ? c
+            : (asc
+                  ? titleKeys[a.path]!.compareTo(titleKeys[b.path]!)
+                  : titleKeys[b.path]!.compareTo(titleKeys[a.path]!));
       });
     case _FavSort.album:
       copy.sort((a, b) {
-        final c = a.album.compareTo(b.album);
-        return c != 0 ? c : a.title.compareTo(b.title);
+        final c = asc
+            ? albumKeys[a.path]!.compareTo(albumKeys[b.path]!)
+            : albumKeys[b.path]!.compareTo(albumKeys[a.path]!);
+        return c != 0
+            ? c
+            : (asc
+                  ? titleKeys[a.path]!.compareTo(titleKeys[b.path]!)
+                  : titleKeys[b.path]!.compareTo(titleKeys[a.path]!));
       });
     case _FavSort.addedAt:
-      copy.sort((a, b) => b.addedAt.compareTo(a.addedAt));
+      // 默认新→旧（desc）；翻转后旧→新
+      copy.sort((a, b) =>
+          asc ? a.addedAt.compareTo(b.addedAt) : b.addedAt.compareTo(a.addedAt));
     case _FavSort.none:
-      break;
+      // 默认排序反向：收藏序倒序展示
+      if (!asc) {
+        // 原地倒序（兼容未提供 List.reverse 的 Dart SDK）
+        for (var i = 0, j = copy.length - 1; i < j; i++, j--) {
+          final tmp = copy[i];
+          copy[i] = copy[j];
+          copy[j] = tmp;
+        }
+      }
   }
   return copy;
-}
-
-class _SortItem extends StatelessWidget {
-  const _SortItem({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: selected ? scheme.primary : scheme.onSurface,
-                ),
-              ),
-            ),
-            if (selected)
-              Icon(Icons.check, size: 18, color: scheme.primary),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 extension _FavoritesPageSearchSort on _FavoritesPageState {
@@ -91,12 +80,26 @@ extension _FavoritesPageSearchSort on _FavoritesPageState {
     _debounce = Timer(const Duration(milliseconds: 160), _runFilter);
   }
 
+  void _applySort(_FavSort type, bool asc) {
+    _sort = type;
+    _sortAsc = asc;
+    unawaited(PageSortPrefs.save('favorites', type.index, asc));
+    _onCriteriaChanged();
+  }
+
   Future<void> _runFilter() async {
     final gen = ++_req;
     final entries = ref.read(favoritesProvider).entries;
+    // 面板态搜索词来自壳层全局顶栏（竖屏路由态用页内搜索框 _query），
+    // 头部排序下拉与壳层搜索词统一走 filter+sort 合并管线
+    final paneMode = widget.paneEmbedded ||
+        ref.read(landscapeLibraryProvider) != null;
+    final q = paneMode
+        ? ref.read(landscapeLibraryQueryProvider).trim().toLowerCase()
+        : _query;
     final out = await compute(
       _filterSortFavorites,
-      (entries, _query, _sort.index),
+      (entries, q, _sort.index, _sortAsc),
     );
     if (!mounted || gen != _req) return;
     setState(() => _result = out);
@@ -153,41 +156,16 @@ extension _FavoritesPageSearchSort on _FavoritesPageState {
       ),
     );
   }
-
-  Future<void> _openSortMenu(BuildContext context) async {
-    final v = await showSheetDialog<_FavSort>(
-      context,
-      (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-              child: Text(
-                tr('排序方式'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            for (final s in _FavSort.values)
-              _SortItem(
-                label: _favSortLabel(s),
-                selected: s == _sort,
-                onTap: () => Navigator.pop(ctx, s),
-              ),
-            const SizedBox(height: 4),
-          ],
-        ),
-      ),
-      maxWidth: 240,
-    );
-    if (v != null) {
-      _sort = v;
-      _onCriteriaChanged();
-    }
-  }
 }
+
+/// 有方向语义的排序类型（默认排序 = 收藏序，降序即倒序展示）
+bool _favSortDirectional(_FavSort s) => true;
+
+/// 添加时间默认新→旧（desc），其余默认升序
+bool _favSortDefaultAsc(_FavSort s) => s == _FavSort.addedAt ? false : true;
+
+/// 排序下拉选项（锚定菜单用）
+List<SortOption<_FavSort>> _favSortOptions() => [
+      for (final s in _FavSort.values)
+        SortOption(value: s, label: _favSortLabel(s)),
+    ];

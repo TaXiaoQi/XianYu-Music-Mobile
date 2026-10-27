@@ -35,6 +35,21 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
   int _parsed = 0;
   int _total = 0;
 
+  // 网盘导入（与本地文件夹互斥，后选的生效）：选中后「读取并创建」走
+  // 网盘收集，歌曲以 cloud:// 引用入库，播放走网盘直链管线
+  CloudProvider? _cloudProvider;
+  String _cloudAccountId = '';
+  List<(String, String)> _cloudFolders = const []; // (存储键, 可读名)
+
+  bool get _isCloudImport => _cloudFolders.isNotEmpty;
+
+  String get _cloudLabel {
+    final folders = _cloudFolders;
+    if (folders.isEmpty) return '';
+    if (folders.length == 1) return folders.first.$2;
+    return tr('已选 {n} 个文件夹', {'n': '${folders.length}'});
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -51,6 +66,8 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       setState(() {
         _treeUri = uri;
         _folderName = name;
+        _cloudFolders = const []; // 与网盘文件夹互斥
+        _cloudProvider = null;
       });
       if (_nameCtrl.text.trim().isEmpty) _nameCtrl.text = name;
       return;
@@ -68,6 +85,8 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     setState(() {
       _treeUri = uri;
       _folderName = name;
+      _cloudFolders = const []; // 与网盘文件夹互斥
+      _cloudProvider = null;
     });
     if (_nameCtrl.text.trim().isEmpty) {
       final segments = name
@@ -78,9 +97,54 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     }
   }
 
+  /// 选择网盘文件夹：复用「指定播放文件夹」选择器页（pick=1 选取模式，
+  /// 不写播放范围 store）。多盘绑定时先选盘，账号由选择器自解析首账号。
+  Future<void> _pickCloudFolder(List<CloudProvider> providers) async {
+    CloudProvider? provider = providers.first;
+    if (providers.length > 1) {
+      provider = await showModalBottomSheet<CloudProvider>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final p in providers)
+                ListTile(
+                  leading: const Icon(Icons.cloud_outlined),
+                  title: Text(p.displayName),
+                  onTap: () => Navigator.pop(ctx, p),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (provider == null || !mounted) return;
+    final picked =
+        await context.push<({String accountId, List<(String, String)> folders})>(
+      '/cloud/folder-picker/${provider.id}?pick=1',
+    );
+    if (picked == null || picked.folders.isEmpty || !mounted) return;
+    setState(() {
+      _cloudProvider = provider;
+      _cloudAccountId = picked.accountId;
+      _cloudFolders = picked.folders;
+      _treeUri = null; // 与本地文件夹互斥
+      _folderName = '';
+    });
+    if (_nameCtrl.text.trim().isEmpty) {
+      _nameCtrl.text = picked.folders.first.$2;
+    }
+  }
+
   Future<void> _import() async {
+    if (_importing) return;
+    if (_isCloudImport) {
+      await _importFromCloud();
+      return;
+    }
     final treeUri = _treeUri;
-    if (treeUri == null || _importing) return;
+    if (treeUri == null) return;
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
       showXianYuToast(context, tr('请输入歌单名称'));
@@ -232,6 +296,70 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     return songs;
   }
 
+  /// 网盘导入：递归收集所选文件夹（含子目录）音频，歌曲以 cloud:// 引用
+  /// 入库（不落盘、不进本地库），播放走网盘直链管线。大文件夹遍历可能
+  /// 花较长时间；个别子目录失败会被跳过，全部失败才报错。
+  Future<void> _importFromCloud() async {
+    final provider = _cloudProvider;
+    final folders = _cloudFolders;
+    if (provider == null || folders.isEmpty || _importing) return;
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      showXianYuToast(context, tr('请输入歌单名称'));
+      return;
+    }
+    setState(() {
+      _importing = true;
+      _parsed = 0;
+      _total = 0;
+    });
+    try {
+      final accountId = _cloudAccountId;
+      var cred = await CloudCredentialsStore.instance.credFor(
+        provider.id,
+        accountId,
+      );
+      cred ??= await CloudCredentialsStore.instance.soleCredFor(provider.id);
+      if (cred == null || cred.isEmpty) {
+        if (!mounted) return;
+        _finish(false, tr('网盘账号未绑定或已失效'));
+        return;
+      }
+      final files = await cloudListAllAudio(
+        provider: provider,
+        cred: cred,
+        selectedRoots: [for (final f in folders) f.$1],
+      );
+      if (files.isEmpty) {
+        if (!mounted) return;
+        _finish(false, tr('所选文件夹中没有支持的音乐文件'));
+        return;
+      }
+      final songs = <ImportedSong>[];
+      for (final f in files) {
+        // 文件名拆「歌手 - 歌名」；无时长（播放器起播实测回填）
+        final parts = parseCloudFileName(f.name);
+        songs.add(
+          importedSongFromQueueItem(
+            cloudPlayQueueItem(
+              CloudPlayContext(
+                provider: provider.id,
+                accountId: accountId,
+                file: f,
+              ),
+              title: parts.title,
+              artist: parts.artist ?? '',
+            ),
+          ),
+        );
+      }
+      await _saveImported(name, songs);
+    } catch (e) {
+      if (!mounted) return;
+      _finish(false, tr('导入失败：{e}', {'e': e}));
+    }
+  }
+
   Future<void> _saveImported(String name, List<ImportedSong> songs) async {
     final manager = ref.read(playlistManagerProvider.notifier);
     await manager.create(name);
@@ -257,6 +385,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // 已绑定网盘才提供网盘文件夹导入入口
+    final boundProviders =
+        ref.watch(boundCloudProvidersProvider).valueOrNull ??
+        const <CloudProvider>[];
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
@@ -337,9 +469,75 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           ),
           ),
         ),
+        if (boundProviders.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          PressableScale(
+            child: InkWell(
+              onTap: _importing ? null : () => _pickCloudFolder(boundProviders),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                height: 92,
+                decoration: BoxDecoration(
+                  color: appCardFill(context, ref),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _isCloudImport
+                        ? scheme.primary.withValues(alpha: 0.5)
+                        : scheme.outlineVariant.withValues(alpha: 0.5),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: !_isCloudImport
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_outlined,
+                            size: 30,
+                            color: scheme.outline,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            tr('选择网盘文件夹'),
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_rounded,
+                            size: 30,
+                            color: scheme.primary,
+                          ),
+                          const SizedBox(height: 6),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              _cloudLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
         Text(
-          tr('将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入本地库扫描目录。'),
+          _isCloudImport
+              ? tr('将递归读取所选网盘文件夹（含子文件夹）中的音频文件并创建为独立歌单，歌曲保留网盘引用，播放时在线获取。')
+              : tr('将递归读取所选文件夹中的音乐文件并创建为独立歌单，不会加入本地库扫描目录。'),
           style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
         ),
         if (_importing) ...[
@@ -347,7 +545,11 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
           LinearProgressIndicator(value: _total > 0 ? _parsed / _total : null),
           const SizedBox(height: 6),
           Text(
-            _total > 0 ? '正在解析 $_parsed / $_total …' : tr('正在读取文件夹…'),
+            _total > 0
+                ? '正在解析 $_parsed / $_total …'
+                : _isCloudImport
+                    ? tr('正在读取网盘文件夹…')
+                    : tr('正在读取文件夹…'),
             style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
           ),
         ],
@@ -355,7 +557,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         PressableScale(
           pressScale: 0.92,
           child: FilledButton.icon(
-            onPressed: (_importing || _treeUri == null) ? null : _import,
+            onPressed:
+                (_importing || (_treeUri == null && !_isCloudImport))
+                    ? null
+                    : _import,
             icon: _importing
                 ? const SizedBox(
                     width: 16,

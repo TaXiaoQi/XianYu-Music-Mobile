@@ -11,9 +11,10 @@ class _SongsTab extends ConsumerStatefulWidget {
     this.topInset = 0,
     this.query = '',
     this.sort = _FavSort.none,
+    this.sortAsc = true,
     this.result,
     this.showControls = false,
-    required this.onOpenSort,
+    required this.onSortChanged,
   });
 
   final FavoritesState fav;
@@ -28,11 +29,14 @@ class _SongsTab extends ConsumerStatefulWidget {
 
   final _FavSort sort;
 
+  /// 排序方向（true=升序）
+  final bool sortAsc;
+
   final List<FavoriteEntry>? result;
 
   final bool showControls;
 
-  final VoidCallback onOpenSort;
+  final void Function(_FavSort type, bool asc) onSortChanged;
 
   @override
   ConsumerState<_SongsTab> createState() => _SongsTabState();

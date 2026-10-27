@@ -19,7 +19,10 @@ import '../../src/widgets/app_toast.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/online_cover.dart';
 
-/// 网盘浏览页：我的网盘目录浏览 + 点播音频文件。
+/// 网盘浏览页：我的网盘目录浏览 + 下载音频文件。
+///
+/// 播放业务归网盘音乐页（cloud_disk_page），本页音频行只读，
+/// 仅行尾下载按钮可点，避免两页业务重叠。
 ///
 /// 路径语义各盘不同（fid / 真实路径 / folderId），导航键取
 /// 「条目 path 非空且不等于当前目录时用 path，否则用 id」——覆盖
@@ -209,17 +212,6 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
       }
     }
     return null;
-  }
-
-  Future<void> _play(CloudFile f) async {
-    final ctx = _contextFor(f);
-    if (ctx == null) {
-      showXianYuToast(context, tr('网盘账号未绑定或已失效'));
-      return;
-    }
-    await ref.read(playerProvider.notifier).playQueue([
-      cloudPlayQueueItem(ctx, artist: _provider.displayName),
-    ], startIndex: 0);
   }
 
   Future<void> _download(CloudFile f) async {
@@ -484,13 +476,8 @@ class _CloudBrowserPageState extends ConsumerState<CloudBrowserPage> {
                         ),
                 )
               : null,
-          onTap: () {
-            if (f.isDir) {
-              _enter(f);
-            } else if (f.isAudio) {
-              _play(f);
-            }
-          },
+          // 仅目录可点进入；音频行只读（播放归网盘音乐页），下载走行尾按钮
+          onTap: f.isDir ? () => _enter(f) : null,
         );
       },
     );

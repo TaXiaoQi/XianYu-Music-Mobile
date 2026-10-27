@@ -7,6 +7,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../src/core/app_colors.dart';
 import '../../src/core/platform_caps.dart';
+import '../../src/core/page_sort_prefs.dart';
+import '../../src/core/pinyin_key.dart';
 import '../../src/core/settings.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/favorites/favorites_provider.dart';
@@ -26,6 +28,7 @@ import '../../src/widgets/batch_action_bar.dart';
 import '../../src/widgets/sheet_dialog.dart';
 import '../../src/widgets/song_list_view.dart';
 import '../../src/widgets/letter_index_song_list.dart';
+import '../../src/widgets/sort_dropdown.dart';
 import '../download/download_page.dart';
 import 'song_list_page.dart';
 import '../../src/i18n/i18n.dart';
@@ -61,6 +64,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   int _searchReq = 0;
 
   _SongSort _sort = _SongSort.none;
+  bool _sortAsc = true;
   bool _hideDuplicates = false;
 
   // 顶栏「本地/下载」主切换：0=本地曲库，1=下载（下载管理内容内嵌本页）。
@@ -102,6 +106,24 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     _tab.addListener(_onTabChanged);
     _mainTabCtrl = TabController(length: 2, vsync: this);
     _batch.addListener(_onBatchChanged);
+    // 恢复上次排序档/方向（退出页面不再回落默认）
+    unawaited(_loadSortPrefs());
+  }
+
+  Future<void> _loadSortPrefs() async {
+    final (idx, asc) = await PageSortPrefs.load('library');
+    if (!mounted) return;
+    final sort = _SongSort.values[idx.clamp(0, _SongSort.values.length - 1)];
+    setState(() {
+      _sort = sort;
+      _sortAsc = asc;
+    });
+    // 曲库可能尚未加载完：非默认档先算一次，数据到达后由 build 内
+    // listen 重算兜底
+    if ((sort != _SongSort.none || _hideDuplicates) &&
+        ref.read(libraryProvider).songs.isNotEmpty) {
+      _runFilter();
+    }
   }
 
   void _onBatchChanged() {
@@ -143,46 +165,17 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       '',
       _sort.index,
       _hideDuplicates,
+      _sortAsc,
     ));
     if (!mounted || gen != _req) return;
     setState(() => _result = out);
   }
 
-  Future<void> _openSortMenu(BuildContext context) async {
-    final v = await showSheetDialog<_SongSort>(
-      context,
-      (ctx) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-              child: Text(
-                tr('排序方式'),
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            for (final s in _SongSort.values)
-              _SortItem(
-                label: _songSortLabel(s),
-                selected: s == _sort,
-                onTap: () => Navigator.pop(ctx, s),
-              ),
-            const SizedBox(height: 4),
-          ],
-        ),
-      ),
-      maxWidth: 240,
-    );
-    if (v != null) {
-      _sort = v;
-      _onCriteriaChanged();
-    }
+  void _applySort(_SongSort type, bool asc) {
+    _sort = type;
+    _sortAsc = asc;
+    unawaited(PageSortPrefs.save('library', type.index, asc));
+    _onCriteriaChanged();
   }
 
   void _showStats(BuildContext context, LibraryState lib) {
@@ -252,7 +245,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
 
   Widget _buildSongsActions(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final inBatch = _batch.batchMode;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -285,19 +277,37 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           tooltip: tr('曲库统计'),
           onPressed: () => _showStats(context, ref.read(libraryProvider)),
         ),
-        IconButton(
-          icon: Icon(
-            inBatch ? Icons.check_rounded : Icons.library_add_check_outlined,
-            size: 22,
-            color: inBatch ? scheme.primary : null,
-          ),
-          tooltip: inBatch ? tr('完成') : tr('批量'),
-          onPressed: () => inBatch ? _batch.exit() : _batch.enter(),
+        // ListenableBuilder 跟随批量控制器：enter/exit 不走页面 setState，
+        // 按钮图标与回调需自行监听刷新，否则闭包持旧 inBatch 再点只会
+        // 重复 enter（批量无法点击退出）
+        ListenableBuilder(
+          listenable: _batch,
+          builder: (context, _) {
+            final inBatch = _batch.batchMode;
+            return IconButton(
+              // 图标与网盘页面板 tab 行批量钮统一（checklist/check 切换）
+              icon: Icon(
+                inBatch ? Icons.check_rounded : Icons.checklist_rounded,
+                size: 22,
+                color: inBatch ? scheme.primary : null,
+              ),
+              tooltip: inBatch ? tr('完成') : tr('批量'),
+              onPressed: () => inBatch ? _batch.exit() : _batch.enter(),
+            );
+          },
         ),
         const SizedBox(width: 2),
-        InkWell(
-          onTap: () => _openSortMenu(context),
-          borderRadius: BorderRadius.circular(8),
+        // 桌面端同款锚定排序下拉（非居中弹窗）
+        SortMenuButton<_SongSort>(
+          options: [
+            for (final s in _SongSort.values)
+              SortOption(value: s, label: _songSortLabel(s)),
+          ],
+          current: _sort,
+          ascending: _sortAsc,
+          isDirectional: _songSortDirectional,
+          defaultAscending: _songSortDefaultAsc,
+          onChanged: _applySort,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
@@ -338,6 +348,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       q,
       _SongSort.none.index,
       false,
+      true,
     ));
     if (!mounted || gen != _searchReq) return;
     setState(() => _searchResult = out);
@@ -431,6 +442,15 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
   @override
   Widget build(BuildContext context) {
     final lib = ref.watch(libraryProvider);
+    // 排序/去重生效期间曲库数据到达（或变化）：重算结果集防止陈旧
+    //（initState 恢复排序档时曲库可能尚未加载完）
+    ref.listen(libraryProvider, (prev, next) {
+      if ((_sort != _SongSort.none || _hideDuplicates) &&
+          _query.isEmpty &&
+          !next.loading) {
+        _runFilter();
+      }
+    });
     final floating = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
     );
@@ -476,18 +496,6 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
         Tab(text: '专辑 ${fmt(lib.albums.length)}'),
       ],
     );
-    final paneTabBar = TabBar(
-      controller: _tab,
-      isScrollable: true,
-      tabAlignment: TabAlignment.start,
-      indicatorSize: TabBarIndicatorSize.label,
-      labelPadding: const EdgeInsets.symmetric(horizontal: 10),
-      tabs: [
-        Tab(text: '全部 ${fmt(lib.songs.length)}'),
-        Tab(text: '歌手 ${fmt(lib.artists.length)}'),
-        Tab(text: '专辑 ${fmt(lib.albums.length)}'),
-      ],
-    );
 
     final paneTop = (inMusicPane && floating) ? statusBar + 66 : 0.0;
 
@@ -497,7 +505,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
       headerTop = paneTop;
       header = _buildPaneHeader(
         context,
-        paneTabBar,
+        tabBar,
         floating,
         showSwitch: showSwitch,
         inDownloadTab: inDownloadTab,
@@ -630,6 +638,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                       _AllSongsTab(
                         topInset: topInset,
                         sort: _sort,
+                        ascending: _sortAsc,
                         hideDuplicates: _hideDuplicates,
                         result: _result,
                         batch: _batch,
@@ -638,7 +647,7 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
                           _hideDuplicates = !_hideDuplicates;
                           _onCriteriaChanged();
                         },
-                        onOpenSort: () => _openSortMenu(context),
+                        onSortChanged: _applySort,
                         onShowStats: _showStats,
                       ),
                       _ArtistsTab(topInset: topInset),
@@ -667,66 +676,40 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
     required bool inDownloadTab,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final tabRow = SizedBox(
-      height: _kPaneHeaderHeight,
-      child: Row(
-        children: [
-          Expanded(
-            child: Theme(
-              data: Theme.of(context).copyWith(
-                tabBarTheme: TabBarThemeData(dividerColor: Colors.transparent),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.only(left: 4, right: 8),
-                child: tabBar,
-              ),
+    // 行内容（不带高度）：悬浮态交给 FloatingTabPill 控高并注入胶囊指示
+    // 块主题，内层严禁再包 Theme 覆盖 tabBarTheme——copyWith 传 tabBarTheme
+    // 是整体替换、且 Theme.of 在外层 context 立即求值，会抹掉胶囊回落
+    // 下划线；固定态无胶囊可保，仅去 divider
+    Widget themed(Widget child) => floating
+        ? child
+        : Theme(
+            data: Theme.of(context).copyWith(
+              tabBarTheme: Theme.of(context).tabBarTheme.copyWith(
+                    dividerColor: Colors.transparent,
+                  ),
             ),
-          ),
-          _buildSongsActions(context),
-          const SizedBox(width: 6),
-        ],
-      ),
+            child: child,
+          );
+    final switchRow = themed(_buildMainSwitchTabBar());
+    final tabRow = Row(
+      children: [
+        Expanded(child: themed(tabBar)),
+        _buildSongsActions(context),
+        const SizedBox(width: 4),
+      ],
     );
-    // 有插件/网盘时切换行垫在 tab 行上方（与竖屏固定态同序）；切到下载时
-    // tab 行（含曲库动作）整行隐藏，右容器内嵌下载管理
-    final switchRow = SizedBox(
-      height: _kPaneHeaderHeight,
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          tabBarTheme: TabBarThemeData(dividerColor: Colors.transparent),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.only(left: 4, right: 8),
-          child: _buildMainSwitchTabBar(),
-        ),
-      ),
-    );
-    final Widget content = showSwitch
-        ? Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [switchRow, if (!inDownloadTab) tabRow],
-          )
-        : tabRow;
     if (floating) {
-      // 悬浮态两行各套独立气泡（与竖屏悬浮的分段 pill/tab pill 同款），
-      // 行间留 10 间距；单行时直接套一层
-      if (showSwitch) {
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FloatingGlassSurface(child: switchRow),
-            if (!inDownloadTab) ...[
-              const SizedBox(height: 10),
-              FloatingGlassSurface(child: tabRow),
-            ],
+      // 悬浮态两行各套收藏页同款玻璃胶囊条，行间留 10 间距；
+      // 切到下载时 tab 行（含曲库动作）整行隐藏，右容器内嵌下载管理
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSwitch) ...[
+            FloatingTabPill(child: switchRow),
+            if (!inDownloadTab) const SizedBox(height: 10),
           ],
-        );
-      }
-      return FloatingGlassSurface(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 0),
-          child: content,
-        ),
+          if (!inDownloadTab) FloatingTabPill(child: tabRow),
+        ],
       );
     }
     return Container(
@@ -735,7 +718,14 @@ class _LibraryPageState extends ConsumerState<LibraryPage>
           bottom: BorderSide(color: scheme.onSurface.withValues(alpha: 0.06)),
         ),
       ),
-      child: content,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showSwitch) SizedBox(height: _kPaneHeaderHeight, child: switchRow),
+          if (!inDownloadTab)
+            SizedBox(height: _kPaneHeaderHeight, child: tabRow),
+        ],
+      ),
     );
   }
 }
@@ -766,8 +756,8 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
-  final (songs, query, sortIdx, hideDuplicates) = args;
+List<Song> _filterSortSongs((List<Song>, String, int, bool, bool) args) {
+  final (songs, query, sortIdx, hideDuplicates, asc) = args;
   List<Song> result = songs;
   if (query.isNotEmpty) {
     result = result
@@ -789,29 +779,57 @@ List<Song> _filterSortSongs((List<Song>, String, int, bool) args) {
     }).toList();
   }
   final copy = [...result];
+  // 排序键预计算：中文按拼音 A-Z（compute 隔离内运行，不卡 UI）
+  final titleKeys = {for (final s in copy) s.path: pinyinSortKey(s.title)};
+  final artistKeys = {for (final s in copy) s.path: pinyinSortKey(s.artist)};
+  final albumKeys = {for (final s in copy) s.path: pinyinSortKey(s.album)};
+
   switch (_SongSort.values[sortIdx]) {
     case _SongSort.title:
-      copy.sort((a, b) => a.title.compareTo(b.title));
+      copy.sort(
+        (a, b) => asc
+            ? titleKeys[a.path]!.compareTo(titleKeys[b.path]!)
+            : titleKeys[b.path]!.compareTo(titleKeys[a.path]!),
+      );
     case _SongSort.artist:
       copy.sort((a, b) {
-        final c = a.artist.compareTo(b.artist);
-        return c != 0 ? c : a.title.compareTo(b.title);
+        final c = asc
+            ? artistKeys[a.path]!.compareTo(artistKeys[b.path]!)
+            : artistKeys[b.path]!.compareTo(artistKeys[a.path]!);
+        return c != 0
+            ? c
+            : (asc
+                  ? titleKeys[a.path]!.compareTo(titleKeys[b.path]!)
+                  : titleKeys[b.path]!.compareTo(titleKeys[a.path]!));
       });
     case _SongSort.album:
       copy.sort((a, b) {
-        final c = a.album.compareTo(b.album);
-        return c != 0 ? c : a.title.compareTo(b.title);
+        final c = asc
+            ? albumKeys[a.path]!.compareTo(albumKeys[b.path]!)
+            : albumKeys[b.path]!.compareTo(albumKeys[a.path]!);
+        return c != 0
+            ? c
+            : (asc
+                  ? titleKeys[a.path]!.compareTo(titleKeys[b.path]!)
+                  : titleKeys[b.path]!.compareTo(titleKeys[a.path]!));
       });
     case _SongSort.addedAt:
-    case _SongSort.none:
       break;
+    case _SongSort.none:
+      // 默认排序反向：手动/扫描序倒序展示
+      if (!asc) {
+        final reversed = copy.reversed.toList();
+        copy
+          ..clear()
+          ..addAll(reversed);
+      }
   }
   return copy;
 }
 
 String _songSortLabel(_SongSort s) => switch (s) {
   _SongSort.none => tr('默认排序'),
-  _SongSort.title => tr('按标题'),
+  _SongSort.title => tr('按 A-Z'),
   _SongSort.artist => tr('按歌手'),
   _SongSort.album => tr('按专辑'),
   _SongSort.addedAt => tr('按添加时间'),
@@ -821,18 +839,20 @@ class _AllSongsTab extends ConsumerStatefulWidget {
   const _AllSongsTab({
     required this.topInset,
     required this.sort,
+    required this.ascending,
     required this.hideDuplicates,
     required this.result,
     required this.batch,
     required this.inPane,
     required this.onToggleDedup,
-    required this.onOpenSort,
+    required this.onSortChanged,
     required this.onShowStats,
   });
 
   final double topInset;
 
   final _SongSort sort;
+  final bool ascending;
   final bool hideDuplicates;
 
   final List<Song>? result;
@@ -842,7 +862,7 @@ class _AllSongsTab extends ConsumerStatefulWidget {
   final bool inPane;
 
   final VoidCallback onToggleDedup;
-  final VoidCallback onOpenSort;
+  final void Function(_SongSort type, bool asc) onSortChanged;
   final void Function(BuildContext, LibraryState) onShowStats;
 
   @override
@@ -956,9 +976,17 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: InkWell(
-                            onTap: widget.onOpenSort,
-                            borderRadius: BorderRadius.circular(8),
+                          // 桌面端同款锚定排序下拉（非居中弹窗）
+                          child: SortMenuButton<_SongSort>(
+                            options: [
+                              for (final s in _SongSort.values)
+                                SortOption(value: s, label: _songSortLabel(s)),
+                            ],
+                            current: widget.sort,
+                            ascending: widget.ascending,
+                            isDirectional: _songSortDirectional,
+                            defaultAscending: _songSortDefaultAsc,
+                            onChanged: widget.onSortChanged,
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -1064,42 +1092,11 @@ class _AllSongsTabState extends ConsumerState<_AllSongsTab> {
   }
 }
 
-class _SortItem extends StatelessWidget {
-  const _SortItem({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
+/// 有方向语义的排序类型（默认排序 = 库序，降序即倒序展示；按添加时间
+/// 沿用库序无方向）
+bool _songSortDirectional(_SongSort s) => s != _SongSort.addedAt;
 
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: selected ? scheme.primary : scheme.onSurface,
-                ),
-              ),
-            ),
-            if (selected) Icon(Icons.check, size: 18, color: scheme.primary),
-          ],
-        ),
-      ),
-    );
-  }
-}
+bool _songSortDefaultAsc(_SongSort s) => true;
 
 enum _SongSort { none, title, artist, album, addedAt }
 

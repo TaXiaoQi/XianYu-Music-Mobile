@@ -460,6 +460,8 @@ String _qualityLabel(String? q) {
       return 'Atmos+';
     case 'master':
       return 'Master';
+    case 'spatial':
+      return tr('空间音频');
     default:
       return q.toUpperCase();
   }
