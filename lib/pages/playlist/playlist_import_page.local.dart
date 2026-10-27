@@ -105,8 +105,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       provider = await showModalBottomSheet<CloudProvider>(
         context: context,
         builder: (ctx) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          // ListView.shrinkWrap：高度随条目自适应，超出屏高可滚动
+          //（绑定盘多时 Column 硬排会溢出）。
+          child: ListView(
+            shrinkWrap: true,
             children: [
               for (final p in providers)
                 ListTile(
