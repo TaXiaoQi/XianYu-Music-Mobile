@@ -38,6 +38,7 @@ class WatchCloudChannel {
     required String url,
     required String key,
     String name = '弦予音乐',
+    String? token,
   }) async {
     await close();
     _closed = false;
@@ -47,12 +48,15 @@ class WatchCloudChannel {
             onTimeout: () => throw TimeoutException('relay connect timeout'),
           );
       _ws = ws;
-      ws.add(jsonEncode({
+      final hello = <String, dynamic>{
         'op': 'hello',
         'role': 'phone',
         'key': key,
         'name': name,
-      }));
+      };
+      // 用户 token：服务端据此校验并绑定房间归属（渗透 V-08），未登录不携带。
+      if (token != null && token.isNotEmpty) hello['token'] = token;
+      ws.add(jsonEncode(hello));
       _sub = ws.listen(
         (data) {
           if (data is String) {

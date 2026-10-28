@@ -232,6 +232,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   AuthState get currentState => state;
 
+  /// 当前登录态 token（未登录为 null）。
+  /// 供云端手表链路 relay 在 hello 帧绑定房间归属（渗透 V-08）。
+  String? get authToken => _token;
+
   Future<String> _dataDir() => _ref.read(appDataDirProvider.future);
 
   Future<String> _deviceId() async {

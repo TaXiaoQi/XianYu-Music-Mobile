@@ -64,7 +64,9 @@ extension WatchLinkControllerConnection on WatchLinkController {
     _cloudReconnect?.cancel();
     _cloudWatchOnline = false;
     _container.read(watchLinkCloudOnlineProvider.notifier).state = false;
-    _cloud.connect(url: kWatchCloudRelayUrl, key: _cloudKeyOf());
+    // hello 携带登录 token，服务端绑定房间归属（渗透 V-08）；未登录为 null。
+    final token = _container.read(authProvider.notifier).authToken;
+    _cloud.connect(url: kWatchCloudRelayUrl, key: _cloudKeyOf(), token: token);
   }
 
   String _cloudKeyOf() =>
