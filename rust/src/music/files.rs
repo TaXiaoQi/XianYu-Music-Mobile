@@ -6,8 +6,7 @@ use super::types::{SaveArtistAvatarResponse, SaveSongInfoResponse, SongDetail, S
 use super::utils::normalize_path;
 use crate::remote::cache::is_remote_uri;
 use crate::security::path_validator;
-use lofty::config::WriteOptions;
-use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::file::TaggedFileExt;
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::tag::{ItemKey, Tag};
 use rusqlite::{params, OptionalExtension};
@@ -65,7 +64,7 @@ fn write_song_info_tags(path_obj: &Path, payload: &SongInfoEditPayload) -> Resul
         return Err("歌名不能为空".to_string());
     }
 
-    let mut tagged_file = read_tagged_file_from_path(path_obj).map_err(|e| e.to_string())?;
+    super::tags::edit_tags(path_obj, |tagged_file| {
     let tag_type = tagged_file.primary_tag_type();
 
     if tagged_file.tag_mut(tag_type).is_none() {
@@ -104,9 +103,8 @@ fn write_song_info_tags(path_obj: &Path, payload: &SongInfoEditPayload) -> Resul
         tag.push_picture(picture);
     }
 
-    tagged_file
-        .save_to_path(path_obj, WriteOptions::default())
-        .map_err(|e| e.to_string())
+    Ok(())
+    })
 }
 
 fn build_song_detail_from_file(path_obj: &Path, normalized_path: &str) -> SongDetail {
@@ -634,7 +632,7 @@ pub fn save_artist_avatar(
                     continue;
                 }
 
-                if let Ok(mut tagged_file) = read_tagged_file_from_path(path_obj) {
+                let _ = super::tags::edit_tags(path_obj, |tagged_file| {
                     let tag_type = tagged_file.primary_tag_type();
                     if tagged_file.tag_mut(tag_type).is_none() {
                         tagged_file.insert_tag(Tag::new(tag_type));
@@ -648,9 +646,9 @@ pub fn save_artist_avatar(
                         );
                         tag.remove_picture_type(PictureType::Artist);
                         tag.push_picture(picture);
-                        let _ = tagged_file.save_to_path(path_obj, WriteOptions::default());
                     }
-                }
+                    Ok(())
+                });
             }
         }
     }
