@@ -119,15 +119,12 @@ class AccountApi {
     return LatestVersion.fromJson(Map<String, dynamic>.from(data));
   }
 
-  Future<(bool, bool)> checkBetaAccess() async {
-    final data = await _auth.requestActionList('check_beta_access', {
-      'device_id': await _auth.deviceId(),
-    }, fetchTimeoutMs: 15000);
-    if (data is! Map) return (true, false);
-    final allowed = (data['allowed'] as bool?) ?? false;
-    final pending = (data['pending'] as bool?) ?? false;
-    return (allowed, pending);
-  }
+  /// 内测资格查询（feedback 页使用）：复用启动锁的签名验证链路
+  /// （ed25519 验签 + device_id 绑定 + 过期校验 + 本地缓存兜底）。
+  /// 不可信时 fail-closed 返回 (false, false)——修复点：旧实现直接读未签名
+  /// 响应且 `data is! Map` 时放行（fail-open），构成 UI 旁路。
+  Future<(bool, bool)> checkBetaAccess() async =>
+      await verifyBetaAccess() ?? (false, false);
 
   /// 内测资格验证（fail-closed，供启动锁使用）：
   /// 1) 联网请求 check_beta_access 并验签（ed25519，绑定 device_id + 过期时间），
