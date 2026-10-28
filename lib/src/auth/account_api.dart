@@ -138,6 +138,9 @@ class AccountApi {
     try {
       final data = await _auth.requestActionList('check_beta_access', {
         'device_id': deviceId,
+        // 账号维度判定：携带登录 token（服务端按账号白名单 + 活跃设备数上限校验；
+        // 未登录/旧客户端为空，服务端回退设备白名单，向后兼容）
+        'token': await _auth.authToken ?? '',
       }, fetchTimeoutMs: 15000);
       if (data is Map) {
         final payload = Map<String, dynamic>.from(data);
