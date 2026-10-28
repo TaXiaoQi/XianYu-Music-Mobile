@@ -15,7 +15,19 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 /// 默认 API 签名密钥。自建后端可在客户端账号设置页覆盖。
-const DEFAULT_API_SECRET: &str = "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3";
+/// 2026-10-28 轮换（渗透报告 V-01：旧密钥随源码泄露），服务端过渡期双钥兼容。
+const DEFAULT_API_SECRET: &str = "a27202b5acbd9b277a15ccbfb9d7b9232599842b7d08d66d";
+
+/// 历史内置默认密钥：落盘文件中检测到这些值时视为过期，迁移为当前默认。
+const LEGACY_DEFAULT_API_SECRETS: [&str; 1] = ["acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3"];
+
+/// api_secret.txt 的残留值是否应被忽略（空白、当前默认或历史默认）。
+fn is_stale_saved_secret(saved: &str) -> bool {
+    let saved = saved.trim();
+    saved.is_empty()
+        || saved == DEFAULT_API_SECRET
+        || LEGACY_DEFAULT_API_SECRETS.contains(&saved)
+}
 
 /// 官方后端地址
 const OFFICIAL_AUTH_BASE_URL: &str = "https://api.xianyumusic.cn/api";
@@ -192,8 +204,10 @@ fn read_api_secret(data_dir: &Path) -> String {
                     .unwrap_or_default()
                     .trim()
                     .to_string();
-                if saved.is_empty() || saved == DEFAULT_API_SECRET {
-                    if saved == DEFAULT_API_SECRET {
+                if is_stale_saved_secret(&saved) {
+                    // 历史版本会把内置默认密钥写入文件（明文落盘）；
+                    // 检测到文件内容为默认值或历史默认值时删除文件迁移为内置默认
+                    if saved != DEFAULT_API_SECRET {
                         let _ = fs::remove_file(&path);
                     }
                     DEFAULT_API_SECRET.to_string()
