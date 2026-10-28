@@ -312,6 +312,89 @@ pub async fn signed_post_json(
     do_signed_post(data_dir, &url, "signedPostJson", body, fetch_timeout_ms, &api_secret).await
 }
 
+/// 需要 PoW 工作量证明的动作（V-05 加固）：
+/// - email_*：服务端从未随客户端发布，强制校验无兼容影响
+/// - username 流程：服务端 `pow_required` 开启后强制，旧版客户端需升级
+const POW_ACTIONS: &[&str] = &[
+    "user_login",
+    "register",
+    "send_verify_code",
+    "reset_password",
+    "email_send_code",
+    "email_register",
+    "email_login",
+    "email_reset_password",
+];
+
+/// V-05 加固：取 PoW 挑战并求解。挑战获取/求解失败（旧服务端、网络抖动、
+/// 频控）时静默跳过——是否强制由服务端 `pow_required` 配置决定。
+async fn fetch_and_solve_pow(
+    client: &reqwest::Client,
+    request_url: &str,
+    timeout_ms: u64,
+) -> Option<serde_json::Value> {
+    // request_url 形如 {base}/?action={action}，挑战接口与应用 API 同源
+    let base_url = request_url.split("/?action=").next()?;
+    let challenge_url = format!("{}/?action=get_pow_challenge", base_url);
+
+    let resp = client
+        .post(&challenge_url)
+        .timeout(Duration::from_millis(timeout_ms.min(8000)))
+        .header("Content-Type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .ok()?;
+    let text = resp.text().await.ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    if value.get("code").and_then(|c| c.as_i64()) != Some(200) {
+        return None;
+    }
+    let data = value.get("data")?;
+    let challenge_id = data.get("challenge_id")?.as_str()?.to_string();
+    let salt = data.get("salt")?.as_str()?.to_string();
+    let difficulty = data.get("difficulty")?.as_u64()?;
+    if challenge_id.is_empty() || salt.is_empty() || difficulty == 0 || difficulty > 32 {
+        return None;
+    }
+    let nonce = solve_pow(&salt, difficulty as u32)?;
+    Some(
+        serde_json::json!({ "challenge_id": challenge_id, "nonce": nonce, "algorithm": "sha256" }),
+    )
+}
+
+/// 暴力求解：找 nonce 使 sha256(salt ++ nonce) 的前 difficulty 个二进制位为 0。
+/// difficulty=20 时期望 2^20 次哈希：桌面端毫秒级、移动端约 0.1-0.5s，无感。
+fn solve_pow(salt: &str, difficulty: u32) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let salt_bytes = salt.as_bytes();
+    // 迭代上限：2^32 已远超 difficulty ≤ 28 的期望解（平均 2^28），防死循环
+    for nonce in 0u64..(1u64 << 32) {
+        let nonce_str = nonce.to_string();
+        let mut hasher = Sha256::new();
+        hasher.update(salt_bytes);
+        hasher.update(nonce_str.as_bytes());
+        let digest = hasher.finalize();
+        if leading_zero_bits(&digest) >= difficulty {
+            return Some(nonce_str);
+        }
+    }
+    None
+}
+
+fn leading_zero_bits(digest: &[u8]) -> u32 {
+    let mut bits = 0u32;
+    for &b in digest {
+        if b == 0 {
+            bits += 8;
+        } else {
+            bits += b.leading_zeros();
+            break;
+        }
+    }
+    bits
+}
+
 /// 内部：执行带签名的 POST 请求。
 ///
 /// - 签名 timestamp = 本地时钟 + 持久化的服务器时间偏移。部分网络（运营商热点/
@@ -328,9 +411,21 @@ async fn do_signed_post(
     fetch_timeout_ms: Option<u64>,
     api_secret: &str,
 ) -> Result<Value, String> {
-    let body_str = serde_json::to_string(&body).unwrap_or_default();
     let timeout_ms = fetch_timeout_ms.unwrap_or(DEFAULT_FETCH_TIMEOUT_MS);
     let client = http_client().as_ref().map_err(|e| e.clone())?;
+
+    // V-05 加固：敏感动作先取 PoW 挑战并求解，注入 body["pow"] 后再签名。
+    // 挑战获取失败时静默跳过（旧服务端兼容），强制与否由服务端配置决定。
+    let mut body = body;
+    if POW_ACTIONS.contains(&action) {
+        if let Some(pow) = fetch_and_solve_pow(client, url, timeout_ms).await {
+            if let Some(obj) = body.as_object_mut() {
+                obj.insert("pow".into(), pow);
+            }
+        }
+    }
+
+    let body_str = serde_json::to_string(&body).unwrap_or_default();
     let mut offset = read_time_offset(data_dir);
 
     for attempt in 0..2 {
