@@ -11,6 +11,8 @@ pub(crate) use std::path::Path;
 
 mod salvage;
 mod write;
+mod transactional;
+pub(crate) use transactional::edit_tags;
 
 pub use write::*;
 use salvage::*;

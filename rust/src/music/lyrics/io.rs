@@ -10,8 +10,7 @@ use crate::remote::cache::is_remote_uri;
 use crate::remote::repository::{get_song_cache_path, get_source_for_remote_uri};
 use crate::remote::webdav;
 use encoding_rs::{GBK, UTF_16BE, UTF_16LE};
-use lofty::config::WriteOptions;
-use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::file::TaggedFileExt;
 use lofty::tag::{ItemKey, ItemValue, Tag, TagItem};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -133,8 +132,8 @@ fn write_tag_item(tag: &mut Tag, key: ItemKey, description: String, lyrics: Stri
 }
 
 fn write_embedded_lyrics(path_obj: &Path, lyrics: String) -> Result<String, String> {
-    let mut tagged_file = read_tagged_file_from_path(path_obj).map_err(|e| e.to_string())?;
-    let current_lyrics = extract_embedded_lyrics_match(&tagged_file);
+    crate::music::tags::edit_tags(path_obj, |tagged_file| {
+    let current_lyrics = extract_embedded_lyrics_match(tagged_file);
     let tag_type = current_lyrics
         .as_ref()
         .map(|lyrics_match| lyrics_match.tag_type)
@@ -156,9 +155,8 @@ fn write_embedded_lyrics(path_obj: &Path, lyrics: String) -> Result<String, Stri
         let _ = tag.insert_text(ItemKey::Lyrics, lyrics);
     }
 
-    tagged_file
-        .save_to_path(path_obj, WriteOptions::default())
-        .map_err(|e| e.to_string())?;
+    Ok(())
+    })?;
 
     Ok(normalize_path(&path_obj.to_string_lossy()))
 }
