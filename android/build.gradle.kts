@@ -57,7 +57,6 @@ subprojects {
             val stubJar = rootProject.file("stubs/android-support-v4-fragment.jar")
             if (stubJar.exists()) {
                 dependencies.add("vendorImplementation", files(stubJar))
-                println("[stub] injected android.support.v4.app.Fragment stub into tencent_kit")
             }
         }
     }
