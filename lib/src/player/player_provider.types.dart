@@ -15,6 +15,9 @@ class QueueItem {
   final bool fromDailyRecommend;
   /// DLNA 直传歌词地址（桌面端经 httpd 伺服的 xianyu:lyric），仅被投曲目携带
   final String? lyricUrl;
+  /// 本地导入曲目内嵌歌词原文（歌单导入期提取，SAF content URI 播放期
+  /// 无法按路径直读内嵌标签，随队列兜底展示）
+  final String? localLyricsRaw;
   /// 网盘播放上下文（CloudPlayContext JSON），仅网盘曲目携带
   final String? cloudInfoJson;
   const QueueItem({
@@ -31,6 +34,7 @@ class QueueItem {
     this.onlineInfoJson,
     this.fromDailyRecommend = false,
     this.lyricUrl,
+    this.localLyricsRaw,
     this.cloudInfoJson,
   });
 
@@ -73,6 +77,7 @@ class QueueItem {
         onlineInfoJson: onlineInfoJson,
         fromDailyRecommend: fromDailyRecommend,
         lyricUrl: lyricUrl,
+        localLyricsRaw: localLyricsRaw,
         cloudInfoJson: cloudInfoJson,
       );
 

@@ -224,10 +224,16 @@ class _LyricPreviewState extends ConsumerState<_LyricPreview>
         }
       } else {
         final dbPath = await ref.read(dbPathProvider.future);
-        final jsonStr = await getSongLyricsPayload(
+        var jsonStr = await getSongLyricsPayload(
           dbPath: dbPath,
           path: item.path,
         );
+        // 本地导入曲目（SAF content URI）DB 查不到内嵌歌词，回落导入期
+        // 提取的原文
+        if ((jsonStr.isEmpty || jsonStr == 'null') &&
+            (item.localLyricsRaw?.trim().isNotEmpty ?? false)) {
+          jsonStr = await parseLyrics(rawLyrics: item.localLyricsRaw!);
+        }
         final parsed = (jsonStr.isNotEmpty && jsonStr != 'null')
             ? await compute(_parseLyricsJson, jsonStr)
             : const <_LyricLineItem>[];

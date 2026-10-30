@@ -44,6 +44,8 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   // 校验失败后的自动重采轮数上限：捕获早于登录完成时（jar 残留旧
   // Cookie 提前齐活），用户此刻正在输账密，重试轮询等真登录落定。
   int _finalizeRetries = 0;
+  // 首页 storage 清理已执行（只清一次，防误删登录后写入的新凭据）。
+  bool _storageCleared = false;
 
   /// 解锁双指缩放：部分登录页（UC 桌面登录面板、百度 wappass 等）
   /// viewport 声明 user-scalable=no / maximum-scale=1，手机上无法
@@ -65,6 +67,14 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
 })();
 ''';
 
+  /// 清当前 origin 的 storage（仅首页加载执行一次）：token 型凭据存于
+  /// localStorage（迅雷 credentials_*、阿里壳页 token 桥），不清会在
+  /// 「添加其他账号」时被轮询脚本直接抓到上一账号。只在登录开始前清——
+  /// 登录完成后写入的新凭据绝不能再清（跳转链后续页不清 storage）。
+  static const _clearStorageJs = r'''
+(function(){try{localStorage.clear();sessionStorage.clear();}catch(e){}})();
+''';
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +88,12 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
         onPageFinished: (url) {
           if (mounted) setState(() => _pageLoaded = true);
           _controller.runJavaScript(_unlockZoomJs).catchError((_) {});
+          // 首页加载即清 storage 残留（此后不再清），再注入轮询脚本——
+          // 保证 pollScript 从干净状态开始轮询。
+          if (!_storageCleared) {
+            _storageCleared = true;
+            _controller.runJavaScript(_clearStorageJs).catchError((_) {});
+          }
           final inject = _provider.webviewInjectJs;
           if (inject != null) {
             _controller.runJavaScript(inject).catchError((_) {});
@@ -112,6 +128,15 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   /// 壳页盘（阿里）渲染 provider 提供的 HTML（内嵌 OAuth iframe +
   /// postMessage 桥），baseUrl 决定壳页 origin。
   Future<void> _bootstrap() async {
+    // 开页前清全局 Cookie（等效桌面端登录窗 incognito 隐身模式）：
+    // WebView Cookie 全局持久，上次绑定账号的登录态残留会让「添加其他
+    // 账号」时页面直接进已登录态、轮询脚本立刻抓到旧账号。清掉后本轮
+    // 会话从未登录开始；本会话内新种的 Cookie 不受影响。
+    try {
+      await WebViewCookieManager().clearCookies();
+    } catch (_) {
+      // 鸿蒙 fork 等 platform 实现缺失时兜底跳过，退回旧行为。
+    }
     final ua = _provider.webviewUserAgent;
     if (ua != null) {
       try {
@@ -354,59 +379,70 @@ class _CloudWebviewLoginPageState extends State<CloudWebviewLoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Column(
-        children: [
-          GlassTopBar(
-            leading: const BackButton(),
-            title: Text(_provider.displayName),
-            actions: [
-              PressableScale(
-                pressScale: 0.92,
-                child: TextButton(
-                  onPressed: _finishing ? null : _manualCookie,
-                  child: Text(tr(_provider.manualTokenInput
-                      ? '填 Token'
-                      : '填 Cookie')),
-                ),
-              ),
-              PressableScale(
-                pressScale: 0.92,
-                child: TextButton(
-                  onPressed: _finishing ? null : _forceCapture,
-                  child: Text(tr('我已登录完成')),
-                ),
-              ),
-            ],
-          ),
-          Expanded(
-            child: Stack(
-              children: [
-                // Android 用 Hybrid Composition 承载：默认 TLHC 纹理模式
-                // 拖动滑块渲染滞后（抬手才刷新），HC 实时。
-                Platform.isAndroid
-                    ? WebViewWidget.fromPlatformCreationParams(
-                        params: AndroidWebViewWidgetCreationParams(
-                          controller:
-                              _controller.platform as AndroidWebViewController,
-                          displayWithHybridComposition: true,
-                        ),
-                      )
-                    : WebViewWidget(controller: _controller),
-                if (!_pageLoaded)
-                  const Center(child: CircularProgressIndicator()),
-                if (_finishing)
-                  Positioned.fill(
-                    child: ColoredBox(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      child: const Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                    ),
+      // 键盘 inset 不压缩 body：压缩会让 HC 模式 WebView 平台视图在键盘
+      // 动画期间逐帧 relayout——部分机型上 WebView 因此失焦（输入法弹出
+      // 即收起），全程逐帧全树重排也造成输入法明显卡顿。
+      resizeToAvoidBottomInset: false,
+      // 进一步隔绝子树对 viewInsets 的依赖：键盘动画逐帧上报 inset 不再
+      // 触发 WebView 任何 rebuild/relayout，输入法悬浮在 WebView 上方，
+      // 焦点输入框由网页自身 scrollIntoView 保证可见。
+      body: MediaQuery.removeViewInsets(
+        removeBottom: true,
+        context: context,
+        child: Column(
+          children: [
+            GlassTopBar(
+              leading: const BackButton(),
+              title: Text(_provider.displayName),
+              actions: [
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton(
+                    onPressed: _finishing ? null : _manualCookie,
+                    child: Text(tr(_provider.manualTokenInput
+                        ? '填 Token'
+                        : '填 Cookie')),
                   ),
+                ),
+                PressableScale(
+                  pressScale: 0.92,
+                  child: TextButton(
+                    onPressed: _finishing ? null : _forceCapture,
+                    child: Text(tr('我已登录完成')),
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
+            Expanded(
+              child: Stack(
+                children: [
+                  // Android 用 Hybrid Composition 承载：默认 TLHC 纹理模式
+                  // 拖动滑块渲染滞后（抬手才刷新），HC 实时。
+                  Platform.isAndroid
+                      ? WebViewWidget.fromPlatformCreationParams(
+                          params: AndroidWebViewWidgetCreationParams(
+                            controller:
+                                _controller.platform as AndroidWebViewController,
+                            displayWithHybridComposition: true,
+                          ),
+                        )
+                      : WebViewWidget(controller: _controller),
+                  if (!_pageLoaded)
+                    const Center(child: CircularProgressIndicator()),
+                  if (_finishing)
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.35),
+                        child: const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

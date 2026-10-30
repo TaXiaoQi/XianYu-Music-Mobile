@@ -631,6 +631,12 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
       } else {
         final dbPath = await ref.read(dbPathProvider.future);
         jsonStr = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+        // 本地导入曲目（SAF content URI）DB 查不到内嵌歌词，回落导入期
+        // 提取的原文
+        if ((jsonStr.isEmpty || jsonStr == 'null') &&
+            (item.localLyricsRaw?.trim().isNotEmpty ?? false)) {
+          jsonStr = await parseLyrics(rawLyrics: item.localLyricsRaw!);
+        }
       }
 
       if (jsonStr.isNotEmpty && jsonStr != 'null') {

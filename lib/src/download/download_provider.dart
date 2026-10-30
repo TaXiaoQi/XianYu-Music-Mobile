@@ -24,6 +24,7 @@ import '../player/media_url.dart';
 import '../player/mv_source.dart';
 import '../player/online_quality_probe.dart';
 import '../plugin/plugin_engine.dart';
+import '../plugin/plugin_backup_import.dart' show lxSourceKeyForPlatform;
 import '../plugin/fallback_modules/registry.dart';
 import '../plugin/fallback_modules/types.dart';
 import '../plugin/plugin_models.dart';
@@ -1079,16 +1080,39 @@ class DownloadManager extends StateNotifier<DownloadState> {
       );
     }
 
-    final result =
-        await engine.getMusicUrl(source.first, sourceKey, musicInfo, quality);
-    final url = result?['url'] as String? ?? '';
-    if (url.isEmpty || !RegExp(r'^https?://').hasMatch(url)) return null;
-    final type = result?['type'];
-    final reported =
-        type is String && type.isNotEmpty
-            ? PluginEngine.normalizeQualityKey(type)
-            : null;
-    return ResolvedMediaUrl(url: url, quality: reported);
+    // 存量导入歌单的 songJson 缺顶层 source：LX 聚合源取链依赖平台键。
+    // 曲目 platform/source 归一化优先，仍无则按插件声明平台逐个兜底
+    var platformCandidates = <String>[];
+    final mapped = lxSourceKeyForPlatform(sourceKey);
+    if (mapped.isNotEmpty) {
+      platformCandidates = [mapped];
+    } else {
+      platformCandidates = {
+        for (final v in [
+          musicInfo['source']?.toString() ?? '',
+          musicInfo['platform']?.toString() ?? '',
+        ])
+          lxSourceKeyForPlatform(v),
+      }.toList()
+        ..remove('');
+      if (platformCandidates.isEmpty) {
+        platformCandidates = source.first.sources.toList();
+      }
+    }
+
+    for (final cand in platformCandidates) {
+      final result =
+          await engine.getMusicUrl(source.first, cand, musicInfo, quality);
+      final url = result?['url'] as String? ?? '';
+      if (url.isEmpty || !RegExp(r'^https?://').hasMatch(url)) continue;
+      final type = result?['type'];
+      final reported =
+          type is String && type.isNotEmpty
+              ? PluginEngine.normalizeQualityKey(type)
+              : null;
+      return ResolvedMediaUrl(url: url, quality: reported);
+    }
+    return null;
   }
 
   Future<String?> _fetchLxLyric(String source, String songInfoJson,

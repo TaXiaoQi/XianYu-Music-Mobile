@@ -215,7 +215,13 @@ class LyricsRepository {
       return '';
     }
     final dbPath = await _ref.read(dbPathProvider.future);
-    return getSongLyricsPayload(dbPath: dbPath, path: item.path);
+    final payload = await getSongLyricsPayload(dbPath: dbPath, path: item.path);
+    if (payload.isNotEmpty && payload != 'null') return payload;
+    // 本地导入曲目（SAF content URI）按路径读不到内嵌歌词，回落导入期
+    // 提取的原文
+    final localRaw = item.localLyricsRaw?.trim() ?? '';
+    if (localRaw.isEmpty) return payload;
+    return parseLyrics(rawLyrics: localRaw);
   }
 
   /// 拉取 DLNA 直传歌词原文（桌面端 httpd 伺服的纯文本）。

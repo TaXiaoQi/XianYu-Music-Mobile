@@ -193,6 +193,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     }
     setState(() => _total = files.length);
 
+    final cacheRoot = await ref.read(coverCacheRootProvider.future);
     final songs = <ImportedSong>[];
     for (final f in files) {
       final path = SafChannel.songPath(treeUri, f.docId);
@@ -207,6 +208,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
         );
         final parsed = jsonDecode(songJson) as Map<String, dynamic>;
         if ((parsed['duration'] as num? ?? 0) > 0) {
+          // 封面/内嵌歌词趁 fd 打开时提取（content URI 播放期无法按
+          // 路径直读），随 ImportedSong 持久化，列表与播放页直接可用
+          final coverPath = await _extractCoverFromFd(path, fd, cacheRoot);
+          final lyricsRaw = await _extractLyricsFromFd(fd);
           songs.add(
             ImportedSong(
               title: (parsed['title'] as String? ?? '').isNotEmpty
@@ -215,6 +220,8 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
               artist: parsed['artist'] as String? ?? '',
               album: parsed['album'] as String? ?? '',
               duration: (parsed['duration'] as num?)?.toInt() ?? 0,
+              coverThumbPath: coverPath,
+              lyricsRaw: lyricsRaw,
               localPath: path,
               path: path,
             ),
@@ -258,6 +265,7 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
     );
 
     final songs = <ImportedSong>[];
+    final cacheRoot = await ref.read(coverCacheRootProvider.future);
     for (final f in files) {
       final file = File(p.join(
         destDir.path,
@@ -285,6 +293,10 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
               artist: parsed['artist'] as String? ?? '',
               album: parsed['album'] as String? ?? '',
               duration: (parsed['duration'] as num?)?.toInt() ?? 0,
+              coverThumbPath: await _extractCoverFromPath(
+                file.path,
+                cacheRoot,
+              ),
               localPath: file.path,
               path: file.path,
             ),
@@ -296,6 +308,53 @@ class _LocalFolderTabState extends ConsumerState<_LocalFolderTab> {
       if (mounted) setState(() => _parsed = songs.length);
     }
     return songs;
+  }
+
+  /// fd 打开期间提取内嵌封面缩略图：缓存别名按 source path（SAF content
+  /// URI / 沙盒真实路径）哈希，展示时 `get_song_cover_thumbnail` 同键命中。
+  /// 失败（无内嵌图等）返回 null，歌曲照常入库。
+  Future<String?> _extractCoverFromFd(String path, int fd, String cacheRoot) async {
+    try {
+      final p = await extractSongCoverThumbnailFromFd(
+        cacheRoot: cacheRoot,
+        path: path,
+        fd: fd,
+      );
+      return p.isEmpty ? null : p;
+    } catch (e) {
+      AppLog.debug('playlist', '提取歌曲封面失败: $e');
+      return null;
+    }
+  }
+
+  /// 从已物化的真实文件路径提取内嵌封面缩略图（鸿蒙导入用），失败返回 null。
+  Future<String?> _extractCoverFromPath(String realPath, String cacheRoot) async {
+    try {
+      final p = await extractSongCoverThumbnailFromPath(
+        cacheRoot: cacheRoot,
+        sourceKey: realPath,
+        realPath: realPath,
+      );
+      return p.isEmpty ? null : p;
+    } catch (e) {
+      AppLog.debug('playlist', '提取歌曲封面失败: $e');
+      return null;
+    }
+  }
+
+  /// SAF content URI 播放期无法按路径读内嵌歌词（Rust 歌词读取只认真实
+  /// 文件路径），借 `/proc/self/fd/<fd>` 在 fd 打开期间读取内嵌歌词原文，
+  /// 随 ImportedSong 持久化兜底。侧车 LRC 在临时目录语义下不可能命中，
+  /// 只取内嵌结果。失败返回 null。
+  Future<String?> _extractLyricsFromFd(int fd) async {
+    try {
+      final editJson = await getSongLyricsForEdit(path: '/proc/self/fd/$fd');
+      final edit = jsonDecode(editJson) as Map<String, dynamic>;
+      final lyrics = (edit['lyrics'] as String?)?.trim() ?? '';
+      return lyrics.isEmpty ? null : lyrics;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 网盘导入：递归收集所选文件夹（含子目录）音频，歌曲以 cloud:// 引用

@@ -8,6 +8,7 @@ import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../rust/api.dart';
 import 'host_sheet_import.dart';
+import 'plugin_backup_import.dart' show lxSourceKeyForPlatform;
 import 'plugin_engine.dart';
 import 'plugin_host_fallback.dart';
 import 'plugin_models.dart';
@@ -136,9 +137,20 @@ class PluginCatalogService {
   // ==================== 队列项转换 ====================
 
   static QueueItem toQueueItem(PluginSource source, PluginSearchResult r) {
+    // LX 聚合源取链依赖平台键（kg/kw/…），songJson 缺顶层 source 时插件必报
+    // 「无支持的音乐平台」。曲目自带 platform/source（宿主导入）优先归一化，
+    // 否则回退插件唯一声明平台
+    String? sourceKey;
+    if (source.format == PluginFormat.lx) {
+      sourceKey = lxSourceKeyForPlatform(r.source);
+      if (sourceKey.isEmpty && source.sources.length == 1) {
+        sourceKey = source.sources.first;
+      }
+    }
     final songJson = jsonEncode({
       'pluginId': source.id,
       'format': source.format.value,
+      if (sourceKey != null && sourceKey.isNotEmpty) 'source': sourceKey,
       'musicInfo': r.toJson(),
     });
     return QueueItem(

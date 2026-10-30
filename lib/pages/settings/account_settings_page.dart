@@ -604,6 +604,12 @@ Future<void> _confirmOverwriteSync(
   Future<List<OverwriteStatRow>> Function()? compare,
   bool sourceIsCloud = false,
 }) async {
+  // Future 必须在 builder 外创建：弹窗路由的 widget 子树可能因
+  // PredictiveBack 事件、MediaQuery 抖动等因素被重建，每次重建
+  // 会重新调用 builder，compare?.call() 若在 builder 内会生成
+  // 全新的 Future 对象，导致 FutureBuilder 从 done 重置回 waiting
+  // —— 用户看到的就是「正在获取…」和覆盖文案之间疯狂来回抽搐。
+  final compareFuture = compare?.call();
   final ok = await showPredictiveDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -611,10 +617,7 @@ Future<void> _confirmOverwriteSync(
       content: SingleChildScrollView(
         child: _OverwriteConfirmBody(
           message: message,
-          // Future 只在这里取一次：弹窗内任何重建都复用同一 Future，
-          // 否则 FutureBuilder 每次重建清零回「获取中」造成反复抽搐，
-          // 还会反复打云端接口触发限流
-          compareFuture: compare?.call(),
+          compareFuture: compareFuture,
           sourceIsCloud: sourceIsCloud,
         ),
       ),

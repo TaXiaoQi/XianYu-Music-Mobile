@@ -300,11 +300,16 @@ code{background:#f2f2f2;border-radius:4px;padding:1px 5px;font-size:13px}
             };
       final CloudHttpResponse resp;
       try {
-        resp = await cloudPostForm(
-          'https://openapi.baidu.com/oauth/2.0/token',
-          body,
-          headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
-        );
+        // 百度 OAuth token 接口只从 URL query 取参：POST form body 里的
+        // grant_type 会被无视，报 unsupported_grant_type（2026-10-29
+        // 用户日志实测：授权成功 code 已下发，交换环节 400）。参数全部
+        // 拼 query 走 GET（百度官方文档形态）。
+        final q = body.entries
+            .map((e) =>
+                '${Uri.encodeQueryComponent(e.key)}='
+                '${Uri.encodeQueryComponent(e.value)}')
+            .join('&');
+        resp = await cloudGet('https://openapi.baidu.com/oauth/2.0/token?$q');
       } catch (e) {
         AppLog.warn('cloud', '百度OAuth换token请求异常: $e');
         throw const CloudException('授权凭据交换失败，请重试');
@@ -319,7 +324,13 @@ code{background:#f2f2f2;border-radius:4px;padding:1px 5px;font-size:13px}
           'cloud',
           '百度OAuth换token失败 status=${resp.status} body=${resp.body.length > 200 ? resp.body.substring(0, 200) : resp.body}',
         );
-        throw const CloudException('授权凭据无效或已过期，请重新登录');
+        // 带上百度返回的 error_description（如 invalid_grant），用户反馈
+        // 截图即含真实原因，免再导日志定位
+        final reason =
+            (j?['error_description'] ?? j?['error'] ?? '').toString();
+        throw CloudException(
+          '授权凭据无效或已过期${reason.isEmpty ? '' : '（$reason）'}，请重新登录',
+        );
       }
       accessToken = j['access_token'].toString();
       refreshToken = (j['refresh_token'] ?? refreshToken)?.toString();

@@ -111,15 +111,18 @@ async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, Str
     if refresh_token.is_empty() {
         return Err(biz_err("登录凭据缺失，请重新绑定"));
     }
-    let resp = http::post_form(
-        "https://openapi.baidu.com/oauth/2.0/token",
+    // 百度 OAuth token 接口只从 URL query 取参：POST form body 里的
+    // grant_type 会被无视，报 unsupported_grant_type（与 Dart 侧登录
+    // 交换同款问题，2026-10-29 实测）。参数全部拼 query 走 GET。
+    let q = format!(
+        "grant_type=refresh_token&refresh_token={}&client_id={}&client_secret={}",
+        http::url_encode(&refresh_token),
+        http::url_encode(OAUTH_CLIENT_ID),
+        http::url_encode(OAUTH_CLIENT_SECRET),
+    );
+    let resp = http::get(
+        &format!("https://openapi.baidu.com/oauth/2.0/token?{q}"),
         &[("User-Agent".into(), UA.into())],
-        vec![
-            ("grant_type".into(), "refresh_token".into()),
-            ("refresh_token".into(), refresh_token.clone()),
-            ("client_id".into(), OAUTH_CLIENT_ID.into()),
-            ("client_secret".into(), OAUTH_CLIENT_SECRET.into()),
-        ],
     )
     .await
     .map_err(biz_err)?;

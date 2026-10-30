@@ -7,6 +7,9 @@ class ImportedSong {
   final int duration;
   final String? coverUrl;
   final String? coverThumbPath;
+  /// 导入期从音频内嵌标签提取的歌词原文（本地文件导入专用）：
+  /// SAF content URI 播放期无法按路径读内嵌歌词，随歌单持久化兜底
+  final String? lyricsRaw;
   final String? localPath;
   final String? pluginId;
   final String? source;
@@ -23,6 +26,7 @@ class ImportedSong {
     required this.duration,
     this.coverUrl,
     this.coverThumbPath,
+    this.lyricsRaw,
     this.localPath,
     this.pluginId,
     this.source,
@@ -42,6 +46,7 @@ class ImportedSong {
         'duration': duration,
         'coverUrl': coverUrl,
         'coverThumbPath': coverThumbPath,
+        'lyricsRaw': lyricsRaw,
         'localPath': localPath,
         'pluginId': pluginId,
         'source': source,
@@ -59,6 +64,7 @@ class ImportedSong {
         duration: (j['duration'] as num?)?.toInt() ?? 0,
         coverUrl: j['coverUrl'] as String?,
         coverThumbPath: j['coverThumbPath'] as String?,
+        lyricsRaw: j['lyricsRaw'] as String?,
         localPath: j['localPath'] as String?,
         pluginId: j['pluginId'] as String?,
         source: j['source'] as String?,
@@ -79,6 +85,7 @@ class ImportedSong {
     String? pluginId,
     String? source,
     String? format,
+    String? lyricsRaw,
     Map<String, dynamic>? musicInfo,
     bool? addedInApp,
     DateTime? addedAt,
@@ -89,6 +96,7 @@ class ImportedSong {
         duration: duration,
         coverUrl: coverUrl,
         coverThumbPath: coverThumbPath,
+        lyricsRaw: lyricsRaw ?? this.lyricsRaw,
         localPath: localPath,
         pluginId: pluginId ?? this.pluginId,
         source: source ?? this.source,

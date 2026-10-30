@@ -606,6 +606,30 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         }
       }
 
+      // 存量导入歌单的 songJson 缺顶层 source：LX 聚合源取链依赖平台键，
+      // 缺了插件必报「无支持的音乐平台」。曲目 platform/source 归一化优先，
+      // 仍无则按插件声明平台逐个兜底（错误平台在插件侧秒拒，无网络消耗）
+      var platformCandidates = <String>[];
+      if (!isMfFormatValue(format)) {
+        final mapped = lxSourceKeyForPlatform(sourceKey);
+        if (mapped.isNotEmpty) {
+          platformCandidates = [mapped];
+        } else {
+          platformCandidates = {
+            for (final v in [
+              musicInfo['source']?.toString() ?? '',
+              musicInfo['platform']?.toString() ?? '',
+            ])
+              lxSourceKeyForPlatform(v),
+          }.toList()
+            ..remove('');
+          if (platformCandidates.isEmpty && source.isNotEmpty) {
+            platformCandidates = source.first.sources.toList();
+          }
+        }
+        if (platformCandidates.isNotEmpty) sourceKey = platformCandidates.first;
+      }
+
       ResolvedMediaUrl? resolved;
       if (isMfFormatValue(format)) {
         resolved = await engine
@@ -617,22 +641,34 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
             )
             .timeout(const Duration(seconds: 8));
       } else {
-        final result = await engine
-            .getMusicUrl(source.first, sourceKey, musicInfo, quality)
-            .timeout(const Duration(seconds: 8));
-        final url = result?['url'] as String?;
-        if (result != null && PlayerNotifier._isPlayableUrl(url)) {
-          final h = result['headers'];
-          final reportedRaw = result['type'];
-          final reportedQuality = reportedRaw is String
-              ? PluginEngine.normalizeQualityKey(reportedRaw)
-              : null;
-          resolved = ResolvedMediaUrl(
-            url: url!,
-            headers: h is Map ? h.cast<String, String>() : null,
-            quality: reportedQuality ?? quality,
-          );
-        } else {
+        final candidates = platformCandidates.isEmpty
+            ? <String>[sourceKey]
+            : platformCandidates;
+        for (final cand in candidates) {
+          final Map<String, dynamic>? result;
+          try {
+            result = await engine
+                .getMusicUrl(source.first, cand, musicInfo, quality)
+                .timeout(const Duration(seconds: 8));
+          } catch (e) {
+            AppLog.debug('player',
+                '[resolvePluginUrl] 平台 $cand q=$quality 取链失败: $e');
+            continue;
+          }
+          final url = result?['url'] as String?;
+          if (result != null && PlayerNotifier._isPlayableUrl(url)) {
+            final h = result['headers'];
+            final reportedRaw = result['type'];
+            final reportedQuality = reportedRaw is String
+                ? PluginEngine.normalizeQualityKey(reportedRaw)
+                : null;
+            resolved = ResolvedMediaUrl(
+              url: url!,
+              headers: h is Map ? h.cast<String, String>() : null,
+              quality: reportedQuality ?? quality,
+            );
+            break;
+          }
         }
       }
       if (resolved != null) return resolved;

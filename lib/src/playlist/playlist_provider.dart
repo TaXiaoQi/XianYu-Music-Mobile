@@ -164,6 +164,10 @@ QueueItem importedSongToQueueItem(ImportedSong song) {
       artist: song.artist,
       album: song.album,
       durationMs: song.duration * 1000,
+      // 导入期提取的封面缩略图/内嵌歌词：SAF content URI 播放期无法按
+      // 路径直读，靠这里透传给播放页与歌词管线兜底
+      coverPath: song.coverThumbPath,
+      localLyricsRaw: song.lyricsRaw,
     );
   }
   final songJson = <String, dynamic>{
