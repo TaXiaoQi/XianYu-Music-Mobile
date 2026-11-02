@@ -124,3 +124,6 @@ third_party/*/ohos/build/
 
 # 百度 OAuth 密钥本地注入（含真实密钥，永不入 git）
 rust/.cargo/config.toml
+
+# iOS Rust 构建产物（ios-rust-hook.sh 生成，不入库）
+ios/Frameworks/

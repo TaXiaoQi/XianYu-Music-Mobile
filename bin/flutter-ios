@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# flutter ios — iOS 开发调试入口（Flutter CLI 命令扩展：本文件命名 flutter-ios，
+# 加入 PATH 后即可用 `flutter ios` 调用，透传参数原样转给 flutter run）。
+#
+# 职责：
+#   - 自检工具链：flutter / cargo / rustup 的 iOS 目标三元组
+#   - 首次自动 pod install（Podfile.lock 缺失时；其余交给 flutter 自动补）
+#   - 启动 flutter run（默认 debug 模式，真机/模拟器由 -d 或交互选择）
+#
+# 正式版打包不走这里：直接 `flutter build ios`（Rust 由 Podfile 钩子自动编译）。
+#
+# PATH 接入（一次性，二选一）：
+#   ln -sf "$(pwd)/bin/flutter-ios" /usr/local/bin/flutter-ios
+#   export PATH="$PATH:<项目根>/bin"
+set -euo pipefail
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+[ "$(uname -s)" = "Darwin" ] || { echo "[flutter-ios] 仅支持 macOS（iOS 构建依赖 Xcode 工具链）" >&2; exit 1; }
+command -v flutter >/dev/null 2>&1 || { echo "[flutter-ios] flutter 未安装或不在 PATH" >&2; exit 1; }
+command -v cargo >/dev/null 2>&1 || { echo "[flutter-ios] cargo 未安装或不在 PATH" >&2; exit 1; }
+
+# Rust 目标自检：模拟器（必装）+ 真机（缺则一并补上）
+missing_targets=""
+for t in aarch64-apple-ios-sim aarch64-apple-ios; do
+  rustup target list --installed 2>/dev/null | grep -q "^$t$" || missing_targets="$missing_targets $t"
+done
+if [ -n "$missing_targets" ]; then
+  echo "[flutter-ios] rustup target add$missing_targets"
+  rustup target add$missing_targets
+fi
+
+# 首次运行补 CocoaPods 依赖；后续 pod install 由 flutter 工具自动接管
+if [ ! -f "$SRC/ios/Podfile.lock" ]; then
+  echo "[flutter-ios] pod install (first run)"
+  (cd "$SRC/ios" && pod install)
+fi
+
+cd "$SRC"
+echo "[flutter-ios] flutter run $*"
+exec flutter run "$@"

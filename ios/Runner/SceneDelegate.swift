@@ -20,6 +20,9 @@ class SceneDelegate: FlutterSceneDelegate {
   /// 冷启动暂存的深链 URL（通道就绪后投递并清空）。
   static var pendingURL: String?
 
+  /// xianyu/device_info 通道只注册一次（多 scene 场景防重复挂 handler）。
+  static var deviceInfoChannelRegistered = false
+
   private var channel: FlutterMethodChannel?
 
   override func scene(
@@ -136,20 +139,24 @@ class SceneDelegate: FlutterSceneDelegate {
     }
   }
 
-  /// 取 FlutterViewController：优先窗口根控制器，退回场景 keyWindow。
+  /// 取 FlutterViewController：优先窗口根控制器，退回前台 scene 的 keyWindow。
+  /// （iOS 27 SDK 下 UIResponder.scene 与 UIScene 协议存在同名歧义，
+  /// 故不走 scene 属性，改从 connectedScenes 取 UIWindowScene。）
   private func flutterViewController() -> FlutterViewController? {
     if let vc = window?.rootViewController as? FlutterViewController {
       return vc
     }
-    return (scene as? UIWindowScene)?.keyWindow?.rootViewController
-        as? FlutterViewController
+    let windowScene = UIApplication.shared.connectedScenes
+        .compactMap { $0 as? UIWindowScene }
+        .first { $0.activationState == .foregroundActive }
+    return windowScene?.keyWindow?.rootViewController as? FlutterViewController
   }
 
   /// 注册 xianyu/device_info 通道（与 Android 端同名通道协议一致），
   /// 提供 Keychain 持久化的设备稳定 ID 与设备信息：卸载重装不变（仅抹机才清除）。
   private func ensureDeviceInfoChannel() {
-    guard !deviceInfoChannelRegistered, let vc = flutterViewController() else { return }
-    deviceInfoChannelRegistered = true
+    guard !Self.deviceInfoChannelRegistered, let vc = flutterViewController() else { return }
+    Self.deviceInfoChannelRegistered = true
     let ch = FlutterMethodChannel(name: "xianyu/device_info", binaryMessenger: vc.binaryMessenger)
     ch.setMethodCallHandler { call, result in
       switch call.method {

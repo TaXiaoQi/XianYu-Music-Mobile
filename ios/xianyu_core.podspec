@@ -21,11 +21,11 @@ Pod::Spec.new do |s|
 
   s.vendored_frameworks = 'Frameworks/xianyu_core.framework'
 
-  # 编译前钩子：$PODS_ROOT = ios/Pods，向上一级即项目根的 scripts/。
+  # 编译前钩子：$PODS_ROOT = ios/Pods，向上一级是 ios/，再向上一级才是项目根 scripts/。
   s.script_phases = [
     {
       :name => 'Build Rust Core',
-      :script => '"$PODS_ROOT/../scripts/ios-rust-hook.sh"',
+      :script => '"$PODS_ROOT/../../scripts/ios-rust-hook.sh"',
       :execution_position => :before_compile,
     }
   ]

@@ -22,8 +22,7 @@ final class IosWidgetPlugin: NSObject, FlutterPlugin {
     @available(iOS 16.1, *)
     private static var activity: Activity<PlaybackActivityAttributes>?
 
-    static func register(with registry: FlutterPluginRegistry) {
-        let registrar = registry.registrar(forPlugin: "IosWidgetPlugin")
+    static func register(with registrar: any FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
             name: channelName, binaryMessenger: registrar.messenger())
         let instance = IosWidgetPlugin(channel: channel)

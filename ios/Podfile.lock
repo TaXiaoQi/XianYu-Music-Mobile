@@ -1,0 +1,30 @@
+PODS:
+  - Flutter (1.0.0)
+  - tencent_kit (6.2.0):
+    - Flutter
+    - tencent_kit/vendor (= 6.2.0)
+  - tencent_kit/vendor (6.2.0):
+    - Flutter
+  - xianyu_core (0.1.0)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - tencent_kit (from `.symlinks/plugins/tencent_kit/ios`)
+  - xianyu_core (from `./`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  tencent_kit:
+    :path: ".symlinks/plugins/tencent_kit/ios"
+  xianyu_core:
+    :path: "./"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  tencent_kit: 6c75fb074b891a9151d53d0f3d335a3033d5d674
+  xianyu_core: 362c8d39d773f7469adb61b6f9c7d7bf23bfef16
+
+PODFILE CHECKSUM: 54c770531d2a011261c3c91d34b4ef22d2ac1f1e
+
+COCOAPODS: 1.17.0
