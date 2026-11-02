@@ -482,6 +482,17 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     if (!PlatformCaps.supportsInAppUpdate && item.label == '检测更新模式') {
       return false;
     }
+    // 预测返回为 Android 专属；USB 独占簇依赖 USB 主机音频，iOS 无等价 API
+    if (!PlatformCaps.isAndroid && item.label == '预测返回手势') {
+      return false;
+    }
+    if (PlatformCaps.isIOS &&
+        (item.label == '输出设备' ||
+            item.label == 'USB 独占输出 (Bit-perfect)' ||
+            item.label == 'Bit-perfect 直出' ||
+            item.label == 'DSD 原生直出')) {
+      return false;
+    }
     return true;
   }
 
@@ -1187,7 +1198,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
         _CategoryEntry(
           tr('高级设置'),
           Icons.settings_suggest_outlined,
-          tr('应用备份、日志、预测返回'),
+          // iOS 无预测返回手势（系统接管侧滑返回），副标题不提
+          tr(PlatformCaps.isAndroid ? '应用备份、日志、预测返回' : '应用备份、日志'),
           '/settings/advanced',
         ),
         _CategoryEntry(

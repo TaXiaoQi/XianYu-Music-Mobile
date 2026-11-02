@@ -733,6 +733,9 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
   }
 
   Future<Duration?> _setLocalSource(String path) async {
+    // iOS：起播前按源采样率提交 AVAudioSession 偏好（Apple Music 路线，
+    // 见 ios_audio_session.dart）；安卓/鸿蒙无此概念，空操作。
+    await _applyIosPreferredSampleRate(path);
     var target = path;
     if (target.startsWith('http://') || target.startsWith('https://')) {
       return _player.setUrl(target);
@@ -746,6 +749,30 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       return _player.setUrl(target);
     }
     return _player.setFilePath(target);
+  }
+
+  /// iOS 采样率跟随：本地曲目取扫描入库的 sampleRate（曲库按路径线性查，
+  /// 万首级毫秒内完成），网盘曲目取直链探测所得 cloudSourceRate。
+  /// 网盘探测发生在首包之后，首轮可能拿到 0（跳过），后续起播即生效。
+  Future<void> _applyIosPreferredSampleRate(String path) async {
+    if (!PlatformCaps.isIOS) return;
+    var rate = 0;
+    if (state.current?.isOnline ?? false) {
+      rate = state.cloudSourceRate;
+    } else {
+      final songs = _ref.read(libraryProvider).songs;
+      for (final song in songs) {
+        if (song.path == path) {
+          rate = song.sampleRate;
+          break;
+        }
+      }
+    }
+    if (rate <= 0) return;
+    final out = await setIosPreferredSampleRate(rate);
+    if (out > 0 && out != rate) {
+      AppLog.info('ios-audio', '系统输出 $out Hz ≠ 源 $rate Hz（系统重采样，属预期）');
+    }
   }
 
   Future<void> _updateRgGain(String? path) async {

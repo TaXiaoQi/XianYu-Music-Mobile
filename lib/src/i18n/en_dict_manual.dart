@@ -153,6 +153,9 @@ const Map<String, String> enDictManual = {
   'qq音乐': 'QQ Music',
   'Rust 引擎初始化失败，无法播放分享歌曲':
       'Rust engine failed to initialize; cannot play the shared song',
+  '系统输出（iOS）': 'System output (iOS)',
+  '输出路由由 iOS 系统统一接管：接入外接 DAC / AirPlay 自动切换，起播时按源采样率向系统提交偏好，尽力贴近源规格（系统重采样，无 bit-perfect 保证）':
+      'Output routing is fully managed by iOS: external DACs / AirPlay switch automatically; the source sample rate is submitted as a preference on playback start to get as close to the source spec as possible (system resampling, no bit-perfect guarantee)',
   '独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式':
       'Exclusive / shared DSP pipeline outputs to the selected device; supported formats are shown',
   'USB 独占输出 (Bit-perfect)': 'USB exclusive output (Bit-perfect)',
@@ -1044,6 +1047,7 @@ const Map<String, String> enDictManual = {
   '语言、反馈、常亮、存储': 'Language, feedback, keep awake, storage',
   '音量、双击播放、播放行为、输出': 'Volume, double-tap play, playback behavior, output',
   '应用备份、日志、预测返回': 'App backup, logs, predictive back',
+  '应用备份、日志': 'App backup, logs',
   '手表遥控、云端兜底、传递策略': 'Watch remote, cloud fallback, transfer policy',
   '投放歌曲到电视、音箱等 DLNA 设备': 'Cast songs to TVs, speakers and other DLNA devices',
   '选择设备投放': 'Choose a device to cast',

@@ -898,51 +898,67 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       _sectionHeader(context, tr('输出')),
       _CardGroup(
         children: [
-          _tile(
-            context,
-            icon: Icons.speaker_outlined,
-            title: tr('输出设备'),
-            subtitle: tr('独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式'),
-            trailing: Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
-            onTap: () => _pickOutputDevice(context, ref),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.usb_outlined,
-            title: tr('USB 独占输出 (Bit-perfect)'),
-            subtitle: PlatformCaps.isOhos
-                ? tr(
-                  '鸿蒙：经 usbManager 独占驱动 DAC（v1 支持 16bit PCM；无 DAC 或格式不支持自动回退）',
-                )
-                : tr(
-                  '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
-                ),
-            value: s?.usbExclusiveOutput ?? false,
-            onChanged: (v) => n.setUsbExclusiveOutput(v),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.high_quality,
-            title: tr('Bit-perfect 直出'),
-            subtitle: tr(
-              'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+          // USB 独占簇仅安卓/鸿蒙：iOS 无 USB 主机音频与设备独占 API，
+          // 输出路由由系统接管（AVAudioSession），相关开关一律不展示
+          if (!PlatformCaps.isIOS) ...[
+            _tile(
+              context,
+              icon: Icons.speaker_outlined,
+              title: tr('输出设备'),
+              subtitle: tr('独占 / 共享 DSP 管线输出到所选设备，可查看设备支持格式'),
+              trailing: Text(_outputDeviceLabel(s?.usbExclusiveDeviceId ?? -1)),
+              onTap: () => _pickOutputDevice(context, ref),
             ),
-            value: s?.bitPerfectOutput ?? false,
-            onChanged: (v) => n.setBitPerfectOutput(v),
-          ),
-          _switchTile(
-            context,
-            icon: Icons.graphic_eq_outlined,
-            title: tr('DSD 原生直出'),
-            subtitle: PlatformCaps.isOhos
-                ? tr('依赖 USB 独占输出（鸿蒙版暂不支持 DoP 直通）')
-                : tr(
-                  'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
-                ),
-            value: s?.dsdNativePassthrough ?? false,
-            enabled: !PlatformCaps.isOhos,
-            onChanged: (v) => n.setDsdNativePassthrough(v),
-          ),
+            _switchTile(
+              context,
+              icon: Icons.usb_outlined,
+              title: tr('USB 独占输出 (Bit-perfect)'),
+              subtitle: PlatformCaps.isOhos
+                  ? tr(
+                    '鸿蒙：经 usbManager 独占驱动 DAC（v1 支持 16bit PCM；无 DAC 或格式不支持自动回退）',
+                  )
+                  : tr(
+                    '绕过系统混音器直达 USB DAC，仅本地音乐生效；均衡器与音效走原生 DSP 管线，无 USB DAC 或启动失败时自动回退',
+                  ),
+              value: s?.usbExclusiveOutput ?? false,
+              onChanged: (v) => n.setUsbExclusiveOutput(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.high_quality,
+              title: tr('Bit-perfect 直出'),
+              subtitle: tr(
+                'USB 独占输出时按源位深整数直出 DAC：绕过响度归一化/均衡器/音效/音量，仅保留安全限幅；DSD 仍需开启上方「DSD 原生直出」',
+              ),
+              value: s?.bitPerfectOutput ?? false,
+              onChanged: (v) => n.setBitPerfectOutput(v),
+            ),
+            _switchTile(
+              context,
+              icon: Icons.graphic_eq_outlined,
+              title: tr('DSD 原生直出'),
+              subtitle: PlatformCaps.isOhos
+                  ? tr('依赖 USB 独占输出（鸿蒙版暂不支持 DoP 直通）')
+                  : tr(
+                    'dsf/dff 本地文件按 DoP 打包直送 DSD-DAC，绕过解码与所有音效；需 USB DSD-DAC 支持，失败自动回退普通播放，直出时音量与均衡器自动锁定',
+                  ),
+              value: s?.dsdNativePassthrough ?? false,
+              enabled: !PlatformCaps.isOhos,
+              onChanged: (v) => n.setDsdNativePassthrough(v),
+            ),
+          ],
+          // iOS 说明条：替代安卓/鸿蒙的独占簇，管理用户预期（Apple Music 路线）
+          if (PlatformCaps.isIOS)
+            _tile(
+              context,
+              icon: Icons.speaker_outlined,
+              title: tr('系统输出（iOS）'),
+              trailing: const SizedBox.shrink(),
+              subtitle: tr(
+                '输出路由由 iOS 系统统一接管：接入外接 DAC / AirPlay 自动切换，'
+                '起播时按源采样率向系统提交偏好，尽力贴近源规格（系统重采样，无 bit-perfect 保证）',
+              ),
+            ),
           _switchTile(
             context,
             icon: Icons.link,
@@ -1203,19 +1219,22 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       const _AppBackupGroup(),
       _sectionHeader(context, tr('日志')),
       const _LogGroup(),
-      _sectionHeader(context, tr('导航')),
-      _CardGroup(
-        children: [
-          _switchTile(
-            context,
-            icon: Icons.arrow_back_outlined,
-            title: tr('预测返回手势'),
-            subtitle: tr('开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）'),
-            value: s?.enablePredictiveBack ?? false,
-            onChanged: (v) => _togglePredictiveBack(context, v, n),
-          ),
-        ],
-      ),
+      // 预测返回为 Android 13+ 专属（iOS 侧滑返回由系统接管，无对应开关）
+      if (PlatformCaps.isAndroid) ...[
+        _sectionHeader(context, tr('导航')),
+        _CardGroup(
+          children: [
+            _switchTile(
+              context,
+              icon: Icons.arrow_back_outlined,
+              title: tr('预测返回手势'),
+              subtitle: tr('开启后所有页面支持安卓系统预测返回动画（需 Android 13+ 手势导航）'),
+              value: s?.enablePredictiveBack ?? false,
+              onChanged: (v) => _togglePredictiveBack(context, v, n),
+            ),
+          ],
+        ),
+      ],
     ];
   }
 

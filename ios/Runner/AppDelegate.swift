@@ -27,5 +27,9 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IosWidgetPlugin") {
       IosWidgetPlugin.register(with: registrar)
     }
+    // 音频会话偏好桥：按源采样率向 AVAudioSession 提交偏好（Apple Music 路线）。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IosAudioSessionPlugin") {
+      IosAudioSessionPlugin.register(with: registrar)
+    }
   }
 }

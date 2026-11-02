@@ -26,6 +26,7 @@
 		XYW000000000000000000016 /* PlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000007 /* PlaybackIntents.swift */; };
 		XYW000000000000000000017 /* PlaybackAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000003 /* PlaybackAttributes.swift */; };
 		XYW000000000000000000018 /* IosWidgetPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW00000000000000000000B /* IosWidgetPlugin.swift */; };
+		XYW000000000000000000028 /* IosAudioSessionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW00000000000000000002B /* IosAudioSessionPlugin.swift */; };
 		XYW000000000000000000019 /* XianYuWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000001 /* XianYuWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		XYW00000000000000000001A /* PlaybackIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000007 /* PlaybackIntents.swift */; };
 		XYW00000000000000000001B /* PlaybackStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = XYW000000000000000000004 /* PlaybackStateStore.swift */; };
@@ -109,6 +110,7 @@
 		XYW000000000000000000009 /* XianYuWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = XianYuWidget.entitlements; sourceTree = "<group>"; };
 		XYW00000000000000000000A /* Runner.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Runner.entitlements; sourceTree = "<group>"; };
 		XYW00000000000000000000B /* IosWidgetPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosWidgetPlugin.swift; sourceTree = "<group>"; };
+		XYW00000000000000000002B /* IosAudioSessionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IosAudioSessionPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -216,6 +218,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				XYW00000000000000000000B /* IosWidgetPlugin.swift */,
+				XYW00000000000000000002B /* IosAudioSessionPlugin.swift */,
 				XYW00000000000000000000A /* Runner.entitlements */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
@@ -492,6 +495,7 @@
 				XYW00000000000000000001B /* PlaybackStateStore.swift in Sources */,
 				XYW00000000000000000001A /* PlaybackIntents.swift in Sources */,
 				XYW000000000000000000018 /* IosWidgetPlugin.swift in Sources */,
+				XYW000000000000000000028 /* IosAudioSessionPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
