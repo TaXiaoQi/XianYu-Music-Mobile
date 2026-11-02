@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# flutter 子命令分发器 — 承接主 README「运行与调试 / 构建安装包」中的项目扩展命令：
+#   flutter ios        → bin/flutter-ios（iOS 调试，含 Rust 目标自检 / 首次 pod install）
+#   flutter dev        → 等价 flutter run（Android；Rust 编译由 gradle 钩子自动完成）
+#   flutter hap        → 鸿蒙调试（目前仅提供 Windows 工作流 scripts/ohos/*.ps1）
+#   flutter build ios  → 重映射为 build ipa --release --obfuscate --split-debug-info（正式安装包，
+#                        对齐安卓「裸命令即正式构建」：混淆参数与归档在此层注入，产物归档 releases/ios/）
+#
+# 生效机制：~/.zshrc 已将 <项目根>/bin 置于 PATH 前列，名为 flutter 的请求
+# 会先命中本文件；其余子命令（pub get / build apk / run …）原样透传官方 flutter。
+set -euo pipefail
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJ="$(cd "$DIR/.." && pwd)"
+REAL_FLUTTER="${XIANMU_FLUTTER_REAL:-$HOME/flutter/bin/flutter}"
+
+[ -x "$REAL_FLUTTER" ] || { echo "[flutter] 未找到官方 flutter：$REAL_FLUTTER" >&2; exit 1; }
+
+cmd="${1:-}"
+case "$cmd" in
+  ios)
+    shift
+    exec "$DIR/flutter-ios" "$@"
+    ;;
+  dev)
+    shift
+    exec "$REAL_FLUTTER" run "$@"
+    ;;
+  hap)
+    echo "[flutter] 鸿蒙调试暂仅提供 Windows 工作流（scripts/ohos/*.ps1），macOS 侧请用 DevEco 打开 ohos/ 工程" >&2
+    exit 1
+    ;;
+  build)
+    shift
+    sub="${1:-}"
+    shift || true
+    if [ "$sub" != "ios" ]; then
+      exec "$REAL_FLUTTER" build ${sub:+"$sub"} "$@"
+    fi
+    # --- flutter build ios：正式构建安装包（对齐安卓/鸿蒙裸命令出正式包） ---
+    cd "$PROJ"
+    flags=(--release --obfuscate "--split-debug-info=$PROJ/build/symbols")
+    for a in "$@"; do
+      if [ "$a" = "--no-codesign" ]; then
+        # 未签名校验包（CI 同款）：无 ipa 导出环节，维持 build ios 行为
+        exec "$REAL_FLUTTER" build ios "${flags[@]}" "$@"
+      fi
+    done
+    status=0
+    "$REAL_FLUTTER" build ipa "${flags[@]}" "$@" || status=$?
+    if [ "$status" -ne 0 ]; then exit "$status"; fi
+    # 归档正式安装包到 releases/ios/（对齐安卓 archiveReleaseApk）
+    ipa="$(ls -t "$PROJ"/build/ios/ipa/*.ipa 2>/dev/null | head -1 || true)"
+    if [ -n "$ipa" ]; then
+      ver="$(grep -m1 '^version:' "$PROJ/pubspec.yaml" | sed 's/version:[[:space:]]*//;s/+.*//')"
+      dest_dir="$PROJ/releases/ios"
+      mkdir -p "$dest_dir"
+      dest="$dest_dir/弦予音乐v$ver-Mobile-arm64.ipa"
+      cp -f "$ipa" "$dest"
+      echo "[flutter] 已归档正式安装包: $dest ($(du -h "$dest" | cut -f1))"
+    else
+      echo "[flutter] 未发现导出的 .ipa（免费开发者账号无法导出分发包），归档产物见 build/ios/archive/Runner.xcarchive" >&2
+    fi
+    exit 0
+    ;;
+  *)
+    exec "$REAL_FLUTTER" "$@"
+    ;;
+esac
