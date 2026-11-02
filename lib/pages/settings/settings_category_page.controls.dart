@@ -124,6 +124,9 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
       showChevron: false,
       trailing: Switch.adaptive(
         value: value,
+        // iOS 的 CupertinoSwitch 默认激活色是系统绿，不吃 Material 主题，
+        // 需显式指定品牌色轨道（安卓侧 Material Switch 同参数保持一致）
+        activeTrackColor: Theme.of(context).colorScheme.primary,
         onChanged: enabled && onChanged != null ? onChanged : null,
       ),
       onTap: enabled && onChanged != null ? () => onChanged(!value) : null,

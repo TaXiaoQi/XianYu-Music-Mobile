@@ -1360,6 +1360,8 @@ class _TraditionalPlayerLayoutState
                 value: value,
                 onChanged: enabled ? onChanged : null,
                 activeThumbColor: const Color(0xFFEC4141),
+                // iOS：CupertinoSwitch 默认轨道为系统绿，补齐品牌色
+                activeTrackColor: const Color(0xFFEC4141),
               ),
             ],
           ),
