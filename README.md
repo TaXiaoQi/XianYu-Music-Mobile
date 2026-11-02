@@ -127,14 +127,13 @@ flutter pub get
 
 flutter dev          # Android 调试（自动同步版本号 + 预生成 Rust 绑定与 .so，绑定更新不再断一次）
 flutter run          # 同上（等价 flutter dev）
-flutter ios          # iOS 调试（真机/模拟器 debug 运行，首次自动补 pod install 与 Rust 目标）
+flutter ios          # iOS 调试（与 dev/hap 对齐：Rust 源变更自动重生成 Dart 绑定 + 首次自动补 pod install 与 Rust 目标）
 flutter hap          # 鸿蒙调试运行
 ```
 
-> `flutter ios` 经 Flutter CLI 命令扩展实现（PATH 上的 `bin/flutter-ios`），首次使用接入一次：
-> `ln -sf "$(pwd)/bin/flutter-ios" /usr/local/bin/flutter-ios`（或 `export PATH="$PATH:<项目根>/bin"`），透传参数原样转给 `flutter run`（如 `flutter ios -d`）。
+> `flutter ios` / `flutter dev` / `flutter hap` 经 `bin/flutter` 分发器实现（macOS）：将 `<项目根>/bin` 加入 PATH 即生效（`export PATH="$PATH:<项目根>/bin"`，需排在 Flutter SDK 之前），`ios` 分发到 `bin/flutter-ios`（透传参数，如 `flutter ios -d`），`dev` 等价 `flutter run`，其余子命令原样透传官方 flutter。
 
-> `flutter dev` / `flutter run`（Android）/ `flutter hap` / `flutter build` 均自动检测并编译 Rust（`XIANMU_SKIP_RUST=1` 跳过）；Rust 绑定更新随当轮构建直接生效，无需重跑。热重载按 `r`，热重启按 `R`。
+> `flutter dev` / `flutter run`（Android）/ `flutter ios` / `flutter hap` / `flutter build` 均自动检测并编译 Rust（`XIANMU_SKIP_RUST=1` 跳过）；Rust 绑定更新随当轮构建直接生效，无需重跑。热重载按 `r`，热重启按 `R`。
 
 ### 构建各平台安装包
 
@@ -142,12 +141,14 @@ flutter hap          # 鸿蒙调试运行
 # Android（.apk）
 flutter build apk --release
 
-# iOS 正式版（release；Rust 由 Podfile 钩子自动编译，签名走 Xcode 本地配置）
+# iOS 正式安装包（.ipa）：与安卓/鸿蒙对齐，裸命令直接出正式构建
+# 自动注入 --release --obfuscate --split-debug-info（混淆瘦身，符号落 build/symbols/），
+# 产物归档 releases/ios/弦予音乐v<版本>-Mobile-arm64.ipa（免费开发者账号无法导出 .ipa 时提示查看 xcarchive）
 flutter build ios
 
 # iOS 未签名校验包（CI 同款，归档/签名走 Xcode；无需签名环境时用这条）
 cd ios && pod install && cd ..
-flutter build ios --release --no-codesign
+flutter build ios --no-codesign
 
 # 鸿蒙（.hap / .app）
 flutter build hap                        # 安装包（真机/模拟器通吃）
