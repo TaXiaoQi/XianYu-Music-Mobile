@@ -30,6 +30,26 @@ if [ -n "$missing_targets" ]; then
   rustup target add$missing_targets
 fi
 
+# 绑定对齐（与安卓 gradle 钩子同职责）：Rust 源/配置比现有 Dart 绑定新时，
+# 先重新生成 frb 绑定再启动 run——本轮直接生效，无需重跑（iOS 侧 Podfile
+# 钩子只编 xianyu_core.framework，不含 codegen）。
+BINDINGS="$SRC/lib/src/rust/frb_generated.dart"
+need_codegen=0
+if [ ! -e "$BINDINGS" ]; then
+  need_codegen=1
+elif [ -n "$(find "$SRC/rust/src" -type f -name '*.rs' ! -name 'frb_generated.rs' -newer "$BINDINGS" -print -quit 2>/dev/null)" ] \
+  || [ "$SRC/rust/Cargo.toml" -nt "$BINDINGS" ] \
+  || [ "$SRC/flutter_rust_bridge.yaml" -nt "$BINDINGS" ]; then
+  need_codegen=1
+fi
+if [ "$need_codegen" = 1 ]; then
+  command -v flutter_rust_bridge_codegen >/dev/null 2>&1 \
+    || { echo "[flutter-ios] flutter_rust_bridge_codegen 未安装（cargo install flutter_rust_bridge_codegen）" >&2; exit 1; }
+  echo "[flutter-ios] flutter_rust_bridge_codegen generate（Rust 源有更新，重新生成 Dart 绑定）"
+  (cd "$SRC" && flutter_rust_bridge_codegen generate \
+    --rust-root "$SRC/rust" --rust-output "$SRC/rust/src/frb_generated.rs")
+fi
+
 # 首次运行补 CocoaPods 依赖；后续 pod install 由 flutter 工具自动接管
 if [ ! -f "$SRC/ios/Podfile.lock" ]; then
   echo "[flutter-ios] pod install (first run)"

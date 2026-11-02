@@ -1,2 +1,3 @@
 rust_input: crate::api
-dart_output: lib\src\rust
+# 正斜杠路径：Windows / macOS / Linux 通用（反斜杠仅 Windows 可解析，macOS 侧 codegen 会写错目录）
+dart_output: lib/src/rust
