@@ -225,24 +225,9 @@ ui.Image? _captureSync(
   try {
     builder.pushTransform(
         Matrix4.diagonal3Values(dpr, dpr, 1).storage);
-    if (region != null) {
-      builder.pushClipRect(region);
-      // toImageSync 的图像原点=场景原点（LayerTree 光栅化只按 frame_size
-      // 裁剪，不平移原点），pushClipRect 只裁不挪——不补这个平移的话，
-      // 区域帧里装的是场景左上角内容而非 region 局部内容，消费端按
-      // 「面静止原点 − region.topLeft」采样会把玻璃内容整体错位
-      // region.topLeft（底栏离并集区域左上角最远，歪得最明显）。
-      builder.pushTransform(Matrix4.translationValues(
-        -region.left,
-        -region.top,
-        0,
-      ).storage);
-      layer.addToScene(builder);
-      builder.pop();
-      builder.pop();
-    } else {
-      layer.addToScene(builder);
-    }
+    if (region != null) builder.pushClipRect(region);
+    layer.addToScene(builder);
+    if (region != null) builder.pop();
     builder.pop();
     final scene = builder.build();
     try {

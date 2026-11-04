@@ -2,8 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart'
-    show kDebugMode, defaultTargetPlatform;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -18,13 +17,6 @@ part 'bilipai_glass.rim.dart';
 
 typedef BackingOverlayCallback =
     void Function(PaintingContext context, Offset offset);
-
-/// 安卓 live shader 的 backdrop 采样偏差补偿（逻辑像素，仅 Y 向）。
-/// 安卓 Impeller 下 ImageFilter.shader 的快照内容相对绘制位置整体上移
-/// ~17dp（真机 1280x2800@密度476 实测 50 物理像素，水平无偏差；iOS Metal
-/// 无此偏差故为 0）。shader 入口 p += bias 对齐采样与透镜几何。
-final double kGlassBackdropBiasY =
-    defaultTargetPlatform == TargetPlatform.android ? 17.0 : 0.0;
 
 class BiliPaiGlass extends StatefulWidget {
   const BiliPaiGlass({

@@ -55,12 +55,6 @@ uniform float uDepthEffect;
 // 自身始终带轻微液态流动（静止/拖拽/滚动皆可见），不是单纯停在模糊上。
 uniform float uTime;
 
-// 槽 20-21：uSampleBias —— 安卓 Impeller 的 backdrop 快照内容相对绘制
-// 位置存在整体平移偏差（真机实测：shader 输出（采样内容+透镜几何）整体
-// 上移 ~50 物理像素/18dp，水平无偏差；iOS Metal 无此偏差）。采样坐标与
-// 玻璃几何共用同一空间，统一在入口处向下补偿即可同时对齐两者。
-uniform vec2 uSampleBias;
-
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
 
@@ -75,7 +69,7 @@ vec3 tapRGB(vec2 screenPos) {
 }
 
 void main() {
-  vec2 p = FlutterFragCoord().xy + uSampleBias;
+  vec2 p = FlutterFragCoord().xy;
 
   // 玻璃局部坐标（中心为原点）——BiliPai 的 p = fragCoord - center 语义。
   vec2 c = p - (uGlassOrigin + uGlassSize * 0.5);
