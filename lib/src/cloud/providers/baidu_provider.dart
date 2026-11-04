@@ -25,8 +25,10 @@ class BaiduProvider extends CloudProvider {
   // redirect_uri 无需真实可达——授权完成后 WebView 重定向到
   // `<redirect_uri>?code=xxx`，页面 404 无妨，URL 已带 code，
   // pollScript 从 location.href 抽取。
-  static const _clientId = 'WzEEfe8MMzVlPqzpBB2r1hn0CKPrcDyt';
-  static const _clientSecret = 'a4MUtVIlPuQiRPGBFCAHwz2bmLv2bunE';
+  // 2026-11-04 换发为公开发布类型应用（AppID 124618998）：旧个人使用
+  // 应用仅沙箱权限，公开发布应用才有资格申请全盘/下载能力。
+  static const _clientId = 'JjhLTPweQ6XbEwzwXCWc1jrMcbJRXG5v';
+  static const _clientSecret = 'PG5YoxcztBCtzf6ZgFuBazTcjcQc3K6a';
   static const _redirectUri = 'https://xianyu-music.github.io/oauth/baidu';
 
   // 统一移动 UA：网页 Cookie 轨（分享/转存）的会话与创建环境 UA 绑定
