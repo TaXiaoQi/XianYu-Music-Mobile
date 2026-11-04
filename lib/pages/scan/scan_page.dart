@@ -42,7 +42,7 @@ class _ScanPageState extends ConsumerState<ScanPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(authProvider).user != null) _initCamera();
     });
-    ref.listen(authProvider, (prev, next) {
+    ref.listenManual(authProvider, (prev, next) {
       final wasIn = prev?.user != null;
       final nowIn = next.user != null;
       if (nowIn && !wasIn) _initCamera();
