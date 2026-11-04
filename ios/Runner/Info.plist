@@ -175,6 +175,14 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- ATS 全局豁免：音源/插件直链来自第三方 CDN，普遍为 http 明文，
+	     无法穷举白名单域名（Apple Music 风格播放器的通行做法）。
+	     上架审核备注需说明「音频流媒体播放需要加载第三方 http 音源」。 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>用于扫描二维码登录桌面端</string>
 	<key>NSLocalNetworkUsageDescription</key>
