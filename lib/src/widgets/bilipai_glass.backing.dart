@@ -660,7 +660,10 @@ class RenderLiquidBacking extends RenderBox {
         )
         ..setFloat(17, 1.0 + (_saturation - 1.0) * boot)
         ..setFloat(18, _depthEffect * boot)
-        ..setFloat(19, uiTime);
+        ..setFloat(19, uiTime)
+        // 安卓快照映射偏差补偿：uSampleBias（逻辑 px → 物理 px）
+        ..setFloat(20, 0.0)
+        ..setFloat(21, kGlassBackdropBiasY * dpr);
       shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
       shaderLayer.filter = ui.ImageFilter.shader(_shader);
     } else {
