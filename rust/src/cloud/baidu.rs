@@ -864,7 +864,12 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             .unwrap_or("")
             .to_string();
         if dlink.is_empty() {
-            return Err(biz_err("直链获取失败"));
+            // 沙箱外文件/应用缺下载权限时 filemetas 常以 errno=0 + 空 list
+            // 或无 dlink 字段返回（2026-10-31 用户日志实测），与 errno 12/2
+            // 同因，统一给可行动提示而非裸“直链获取失败”。
+            return Err(biz_err(
+                "文件不在应用可访问范围内或应用无下载权限（开放平台沙箱/权限限制，需申请全盘权限；可先转存到 /apps 目录）",
+            ));
         }
         // dlink 下载校验 UA 为 netdisk 系；跟随 302 归一到下载边缘终态。
         let dlink =
