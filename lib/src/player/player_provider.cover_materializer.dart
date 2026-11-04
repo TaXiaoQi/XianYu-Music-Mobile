@@ -96,9 +96,11 @@ class CoverMaterializer {
   }
 
   /// 拉取在线封面并落盘。返回**新落盘**的文件路径供调用方重推通知；
-  /// 无需物化（已缓存/物化中/无 URL/非 Android）或失败时返回 null。
+  /// 无需物化（已缓存/物化中/无 URL）或失败时返回 null。
+  /// Android 通知与 iOS 播控（darwin 侧只认 extras['artCacheFile'] 本地
+  /// 路径加载 MPMediaItemArtwork）都依赖本地文件，桌面端无媒体会话不物化。
   Future<String?> materializeOnlineArt(QueueItem item) async {
-    if (!Platform.isAndroid) return null;
+    if (!Platform.isAndroid && !Platform.isIOS) return null;
     final url = item.coverUrl;
     if (url == null || url.isEmpty) return null;
     final cached = artFileCache[url];

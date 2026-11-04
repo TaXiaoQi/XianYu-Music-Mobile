@@ -1,5 +1,8 @@
 part of 'bilipai_glass.dart';
 
+// 诊断节流：live 路径打印间隔（id -> 上次打印毫秒）
+final Map<int, int> _liveDiagLast = <int, int>{};
+
 class _LiquidBacking extends SingleChildRenderObjectWidget {
   const _LiquidBacking({
     required this.shader,
@@ -20,6 +23,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     this.useChromeFrame = false,
     this.frozenIsChromeFrame = false,
     this.frozenChromeRegion,
+    this.frozenDpr = 0,
   });
 
   final ui.FragmentShader shader;
@@ -51,6 +55,10 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
   /// _frozen 为 chrome 缓存帧时该帧的抓取区域（null=整屏）
   final Rect? frozenChromeRegion;
 
+  /// _frozen 对应缓存帧的抓取 dpr：src 映射必须用帧自己的 dpr，
+  /// 不能用本地 MediaQuery 的（UI 缩放时两者不同，见 _paintChromeFrame）
+  final double frozenDpr;
+
   @override
   RenderObject createRenderObject(BuildContext context) {
     return RenderLiquidBacking(
@@ -73,6 +81,12 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       frozenIsChromeFrame: frozenIsChromeFrame,
       frozenChromeRegion: frozenChromeRegion,
       dpr: MediaQuery.devicePixelRatioOf(context),
+      // 采样坐标基准必须用真实视图 dpr：UI 缩放（FittedBox）会让内层
+      // MediaQuery 的 dpr 被乘上缩放系数，而 localToGlobal 已包含缩放、
+      // backdrop 纹理又是真实物理分辨率——用假 dpr 会让采样偏移随坐标
+      // 距离线性放大（顶栏微偏、底栏大偏）
+      viewDpr: View.of(context).devicePixelRatio,
+      frozenDpr: frozenDpr,
     );
   }
 
@@ -99,7 +113,9 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     ..useChromeFrame = useChromeFrame
     ..frozenIsChromeFrame = frozenIsChromeFrame
     ..frozenChromeRegion = frozenChromeRegion
-    ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    ..devicePixelRatio = MediaQuery.devicePixelRatioOf(context)
+    ..viewDpr = View.of(context).devicePixelRatio
+    ..frozenDpr = frozenDpr;
   }
 }
 
@@ -124,6 +140,8 @@ class RenderLiquidBacking extends RenderBox {
     required bool frozenIsChromeFrame,
     Rect? frozenChromeRegion,
     required double dpr,
+    required double viewDpr,
+    double frozenDpr = 0,
   }) : _shader = shader,
        _radius = radius,
        _refract = refract,
@@ -142,7 +160,9 @@ class RenderLiquidBacking extends RenderBox {
        _useChromeFrame = useChromeFrame,
        _frozenIsChromeFrame = frozenIsChromeFrame,
        _frozenChromeRegion = frozenChromeRegion,
-       _devicePixelRatio = dpr;
+       _devicePixelRatio = dpr,
+       _viewDpr = viewDpr,
+       _frozenDpr = frozenDpr;
 
   ui.FragmentShader _shader;
   ui.FragmentShader get shader => _shader;
@@ -299,11 +319,12 @@ class RenderLiquidBacking extends RenderBox {
   }
 
   // chrome 缓存帧当前是否可用作本面的裁剪源：
-  // 存在、抓帧 dpr 与当前一致、抓帧逻辑尺寸与当前屏一致（旋转/分屏后失效）
+  // 存在、抓帧 dpr 与真实视图 dpr 一致（抓帧侧用真实 dpr）、抓帧逻辑
+  // 尺寸与当前屏一致（旋转/分屏后失效）
   bool _chromeFrameUsable() {
     final frame = chromeGlassFrame.value;
     if (frame == null) return false;
-    if ((frame.dpr - _devicePixelRatio).abs() > 0.01) return false;
+    if ((frame.dpr - _viewDpr).abs() > 0.01) return false;
     final screen = _screenSize;
     if ((frame.logicalSize.width - screen.width).abs() > 0.5 ||
         (frame.logicalSize.height - screen.height).abs() > 0.5) {
@@ -319,6 +340,26 @@ class RenderLiquidBacking extends RenderBox {
   set devicePixelRatio(double value) {
     if (_devicePixelRatio == value) return;
     _devicePixelRatio = value;
+    markNeedsPaint();
+  }
+
+  /// 真实视图 dpr（不受 UI 缩放 MediaQuery 覆盖影响）：采样原点与
+  /// 全屏物理尺寸的换算基准。localToGlobal 与 backdrop 纹理都在真实
+  /// 坐标系里，只有面自身局部尺寸（FittedBox 内逻辑值）才用缩放 dpr
+  double _viewDpr;
+  double get viewDpr => _viewDpr;
+  set viewDpr(double value) {
+    if (_viewDpr == value) return;
+    _viewDpr = value;
+    markNeedsPaint();
+  }
+
+  /// 当前 _frozen 缓存帧的抓取 dpr（chrome 帧裁剪 src 映射用）
+  double _frozenDpr = 0;
+  double get frozenDpr => _frozenDpr;
+  set frozenDpr(double value) {
+    if (_frozenDpr == value) return;
+    _frozenDpr = value;
     markNeedsPaint();
   }
 
@@ -420,12 +461,18 @@ class RenderLiquidBacking extends RenderBox {
     // 上次观感，无任何采样。优先级最高（覆盖兜底/交叉淡入分支）
     if (_useChromeFrame && !_liveUseShader && _chromeFrameUsable()) {
       final frame = chromeGlassFrame.value!;
-      _paintChromeFrame(
+      if (_paintChromeFrame(
         context,
         offset,
         frame.image,
         region: frame.region,
-      );
+        frameDpr: frame.dpr,
+      )) {
+        return;
+      }
+      // 缓存帧裁剪不可用（见 _paintChromeFrame 内守卫）时退回实时渲染，
+      // 宁可短暂毛玻璃也不把转场中的脏坐标烙进采样
+      _paintLive(context, offset);
       return;
     }
     if (frozen != null && fade > 0.001) {
@@ -449,24 +496,41 @@ class RenderLiquidBacking extends RenderBox {
     }
   }
 
-  // 画缓存帧中本面区域的裁剪：源矩形按静止布局位置×抓帧 dpr 映射（区域
-  // 帧先减去抓取区域原点），裁剪到圆角矩形（缓存帧里圆角外是旧页面像
-  // 素，不能带出来）。纯 drawImageRect，无 backdrop 层无采样。alpha 供
-  // 落定交叉淡回叠加用
-  void _paintChromeFrame(
+  /// 画缓存帧中本面区域的裁剪。返回 false 表示本次不应画缓存帧
+  /// （原点未登记且正处于转场/换页中），调用方应退回实时渲染。
+  ///
+  /// 采样原点只信抓帧时登记的静止布局位置（chromeFaceStaticOrigin）：
+  /// 新挂载的面登记表为 null 时，若在转场中现测 localToGlobal，会被
+  /// 壳层 ±0.25W 平移与 AnimatedScale 0.92 的祖先变换污染——且转场
+  /// 上升沿刻意不触发重绘，这个脏坐标会被永久复用，表现为折射内容
+  /// 随页面不同向右/右下偏移。静止时现测无变换污染，可以安全回退。
+  bool _paintChromeFrame(
     PaintingContext context,
     Offset offset,
     ui.Image image, {
     double alpha = 1.0,
     Rect? region,
+    required double frameDpr,
   }) {
-    final dpr = _devicePixelRatio;
-    // 采样原点取抓帧时登记的静止布局位置（chromeFaceStaticOrigin）：
-    // 转场中 localToGlobal 会被底栏 hidden 动画（AnimatedScale 0.92⇄1.0）
-    // 的祖先变换污染，源矩形算偏后裁剪内容与实时渲染错位成双影
+    // src 映射必须用缓存帧自己的抓取 dpr：UI 缩放时本地 MediaQuery dpr
+    // 被乘上缩放系数（3.105），帧却按真实视图 dpr 抓取（3.0）——混用会
+    // 让采样偏移随坐标距离线性放大
+    final dpr = frameDpr;
+    final staticOrigin = chromeFaceStaticOrigin(this);
+    if (staticOrigin == null &&
+        (globalIsTransitioning.value || globalIsTabSwitching.value)) {
+      return false;
+    }
     final globalPos =
-        (chromeFaceStaticOrigin(this) ?? localToGlobal(Offset.zero)) -
+        (staticOrigin ?? localToGlobal(Offset.zero)) -
             (region?.topLeft ?? Offset.zero);
+    if (kDebugMode) {
+      debugPrint(
+        '[XYGlassDiag] chromeFrame id=${identityHashCode(this)} '
+        'staticOrigin=$staticOrigin live=${localToGlobal(Offset.zero)} '
+        'region=${region?.topLeft} size=$size dpr=$dpr',
+      );
+    }
     final src = Rect.fromLTWH(
       globalPos.dx * dpr,
       globalPos.dy * dpr,
@@ -480,7 +544,7 @@ class RenderLiquidBacking extends RenderBox {
       image.height.toDouble(),
     );
     final clipped = src.intersect(imgRect);
-    if (clipped.isEmpty) return;
+    if (clipped.isEmpty) return false;
     final canvas = context.canvas;
     canvas.save();
     canvas.clipRRect(
@@ -500,6 +564,7 @@ class RenderLiquidBacking extends RenderBox {
         ..color = Colors.white.withValues(alpha: alpha),
     );
     canvas.restore();
+    return true;
   }
 
   void _paintFrozen(
@@ -508,13 +573,15 @@ class RenderLiquidBacking extends RenderBox {
     ui.Image image,
   ) {
     // chrome 缓存帧可能是区域图（滚动补帧）：画本面区域裁剪，整图缩进
-    // 玻璃矩形会串页
+    // 玻璃矩形会串页。裁剪不可用时直接不画（实时层已在其下），不能走
+    // 整图缩进兜底
     if (_frozenIsChromeFrame) {
       _paintChromeFrame(
         context,
         offset,
         image,
         region: _frozenChromeRegion,
+        frameDpr: _frozenDpr > 0 ? _frozenDpr : _viewDpr,
       );
       return;
     }
@@ -545,7 +612,8 @@ class RenderLiquidBacking extends RenderBox {
   ) {
     _paintLive(context, offset, overlay: (context, offset) {
       // chrome 缓存帧可能是区域图：叠加必须裁剪到本面区域——原实现把整图
-      // 无裁剪画在玻璃原点上，上一页整屏叠在当前页上
+      // 无裁剪画在玻璃原点上，上一页整屏叠在当前页上。裁剪不可用则跳过
+      // 叠加（实时层已完整呈现）
       if (_frozenIsChromeFrame) {
         _paintChromeFrame(
           context,
@@ -553,6 +621,7 @@ class RenderLiquidBacking extends RenderBox {
           image,
           alpha: fade,
           region: _frozenChromeRegion,
+          frameDpr: _frozenDpr > 0 ? _frozenDpr : _viewDpr,
         );
         return;
       }
@@ -578,7 +647,24 @@ class RenderLiquidBacking extends RenderBox {
     final screen = _screenSize;
 
     final globalPos = localToGlobal(Offset.zero);
-    final glassOrigin = Offset(globalPos.dx * dpr, globalPos.dy * dpr);
+    if (kDebugMode) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final last = _liveDiagLast[identityHashCode(this)] ?? 0;
+      if (now - last > 3000) {
+        _liveDiagLast[identityHashCode(this)] = now;
+        debugPrint(
+          '[XYGlassDiag] live id=${identityHashCode(this)} '
+          'origin=$globalPos size=$size screen=$_screenSize '
+          'dpr=$_devicePixelRatio viewDpr=$_viewDpr '
+          'scroll=${globalScrollOffset.value}',
+        );
+      }
+    }
+    // 采样原点用真实视图 dpr：localToGlobal 已包含 FittedBox 缩放，
+    // backdrop 纹理是真实物理分辨率——用缩放 dpr 会双重缩放，偏移随
+    // 坐标距离线性放大
+    final glassOrigin = Offset(globalPos.dx * _viewDpr, globalPos.dy * _viewDpr);
+    // 面尺寸在 FittedBox 内的逻辑值，物理尺寸 = 逻辑 × 缩放 dpr
     final glassSize = Size(size.width * dpr, size.height * dpr);
 
     final bg = _backgroundColor;
@@ -636,8 +722,9 @@ class RenderLiquidBacking extends RenderBox {
     final BackdropFilterLayer? shaderLayer;
     if (useShader) {
       _shader
-        ..setFloat(0, screen.width * dpr)
-        ..setFloat(1, screen.height * dpr)
+        // 全屏物理尺寸用真实视图 dpr（backdrop 纹理的真实分辨率）
+        ..setFloat(0, screen.width * _viewDpr)
+        ..setFloat(1, screen.height * _viewDpr)
         ..setFloat(2, globalScrollOffset.value)
         ..setFloat(3, refractPx * boot)
         ..setFloat(4, _chroma)

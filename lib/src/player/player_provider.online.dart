@@ -246,7 +246,9 @@ extension PlayerNotifierOnline on PlayerNotifier {
         return;
       }
     }
-    final playUrl = AudioProxyServer.instance.playUrlFor(clean);
+    // EXPERIMENT(ios-flac): 临时绕过本地代理直连，对照验证 AVPlayer -11828
+    // 根因（FLAC 流式支持 vs 代理响应头）。验证后必须还原！
+    final playUrl = clean;
     final setUrlAt = DateTime.now();
     final loadFuture = _player.setUrl(playUrl,
         headers: h,

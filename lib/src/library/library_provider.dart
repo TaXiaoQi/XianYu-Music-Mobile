@@ -13,6 +13,7 @@ import '../player/player_provider.dart';
 import '../plugin/plugin_backup_import.dart';
 import '../playlist/playlist_provider.dart';
 import '../rust/api.dart';
+import 'ios_folder_channel.dart';
 import 'saf_channel.dart';
 
 class FolderUnauthorizedException implements Exception {
@@ -236,6 +237,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         loading: false,
       );
       await checkSafFolderAuthorization();
+      // iOS 书签目录：冷启动后按登记路径重建访问授权（后台执行不阻塞，
+      // 保证未先扫描就播放沙盒外歌曲也可读）
+      if (Platform.isIOS && folders.isNotEmpty) {
+        IosFolderChannel.instance.restoreAccess(folders);
+      }
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
     }
@@ -378,9 +384,19 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (SafChannel.isSafTree(folder)) {
       return _scanSafTree(dbPath, folder, allowed, minDuration);
     }
+    // iOS 书签目录：扫描前拉起访问授权；解析出的真实路径可能与登记
+    // 路径不同（iCloud 重新挂载），按解析路径扫描。失败 → 目录失效。
+    var scanPath = folder;
+    if (Platform.isIOS) {
+      final resolved = await IosFolderChannel.instance.ensureAccess(folder);
+      if (resolved == null) {
+        throw FolderUnauthorizedException(folder);
+      }
+      scanPath = resolved;
+    }
     final songsJson = await scanMusicFolder(
       dbPath: dbPath,
-      folderPath: folder,
+      folderPath: scanPath,
       minimumDurationSeconds: minDuration > 0 ? minDuration : null,
       allowedFormats: allowed,
     );

@@ -216,6 +216,12 @@ class FloatingLyricsController with WidgetsBindingObserver {
     switch (call.method) {
       case 'onTogglePlayback':
         _container.read(playerProvider.notifier).toggle(origin: 'lyricsOverlay');
+      case 'onClosed':
+        // iOS PiP：用户在悬浮窗上点了关闭，跟随关闭设置开关
+        // （Android 悬浮窗关闭走系统停止服务，同理回写）
+        await _container
+            .read(settingsProvider.notifier)
+            .setFloatingLyricsEnabled(false);
       case 'onPrevious':
         _container.read(playerProvider.notifier).previous();
       case 'onNext':

@@ -588,8 +588,14 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                   Theme.of(context).scaffoldBackgroundColor,
                 );
               }
-              // 全局按压缩放宿主：罩住全部路由与系统 chrome
-              return PressScaleHost(
+              // 全局按压缩放宿主：罩住全部路由与系统 chrome。
+              // 全局点空白失焦：iOS 键盘无返回键/完成键兜底收起路径
+              //（安卓靠返回手势），点输入框以外一律收起键盘。手势
+              // 竞技场里按钮/滑杆等已认领的手势优先，空白处无人认领
+              // 才走这里，不影响既有点击交互
+              return GestureDetector(
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                child: PressScaleHost(
                 child: MediaQuery(
                 data: baseMq.copyWith(textScaler: textScaler),
                 child: NotificationListener<NavigationNotification>(
@@ -706,6 +712,7 @@ class _XianYuAppState extends ConsumerState<XianYuApp> with WidgetsBindingObserv
                       ],
                     ),
                   ],
+                ),
                 ),
                 ),
                 ),

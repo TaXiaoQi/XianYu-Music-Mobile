@@ -66,8 +66,12 @@ Future<void> main() async {
     container.read(floatingLyricsControllerProvider).init();
   }
 
-  if (PlatformCaps.supportsStatusBarLyrics) {
+  if (PlatformCaps.supportsStatusBarLyrics ||
+      PlatformCaps.supportsBluetoothLyrics) {
     container.read(statusBarLyricsControllerProvider).init();
+  }
+
+  if (PlatformCaps.supportsBluetoothLyrics) {
     container.read(bluetoothAudioWatcherProvider).init();
   }
 

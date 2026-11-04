@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -261,7 +262,9 @@ Future<void> _capture() async {
   final box = ctx?.findRenderObject();
   if (ctx == null || box is! RenderRepaintBoundary) return;
   if (box.size.isEmpty || !box.attached) return;
-  final dpr = MediaQuery.devicePixelRatioOf(ctx);
+  // 用真实视图 dpr：UI 缩放（FittedBox）会覆写内层 MediaQuery 的 dpr，
+  // 而帧的消费端采样坐标在真实物理空间——两侧必须同基准
+  final dpr = View.of(ctx).devicePixelRatio;
   _capturing = true;
   try {
     // 滚动补帧只抓 chrome 玻璃面并集区域：整屏 toImageSync 全场景重渲染
@@ -284,6 +287,12 @@ Future<void> _capture() async {
     _chromeFaceOrigins.removeWhere((face, _) => !face.attached);
     for (final face in _chromeFaceOrigins.keys.toList()) {
       _chromeFaceOrigins[face] = face.localToGlobal(Offset.zero);
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[XYGlassDiag] capture region=${region?.topLeft} boxSize=${box.size} '
+        'dpr=$dpr origins=${_chromeFaceOrigins.values.toList()}',
+      );
     }
     final old = chromeGlassFrame.value;
     chromeGlassFrame.value = ChromeGlassFrame(

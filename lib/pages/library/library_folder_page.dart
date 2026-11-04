@@ -18,6 +18,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/platform_caps.dart';
 import '../../src/core/settings.dart';
+import '../../src/library/ios_folder_channel.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/library/ohos_folder_channel.dart';
 import '../../src/library/saf_channel.dart';

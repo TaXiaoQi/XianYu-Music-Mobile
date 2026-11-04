@@ -75,13 +75,10 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           lost: lost,
                           adding: _adding,
                           importMode: PlatformCaps.supportsSandboxLibrary,
-                          onAddFolder: PlatformCaps.supportsSandboxLibrary
-                              ? _importFolder
-                              : null,
                           onAdd: _adding
                               ? null
                               : (PlatformCaps.supportsSandboxLibrary
-                                    ? _importFiles
+                                    ? _importFolder
                                     : _addFolder),
                           onRemove: _removeFolder,
                           onReauthorize: _reauthorize,
@@ -236,13 +233,10 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                               lost: lost,
                               adding: _adding,
                               importMode: PlatformCaps.supportsSandboxLibrary,
-                              onAddFolder: PlatformCaps.supportsSandboxLibrary
-                                  ? _importFolder
-                                  : null,
                               onAdd: _adding
                                   ? null
                                   : (PlatformCaps.supportsSandboxLibrary
-                                        ? _importFiles
+                                        ? _importFolder
                                         : _addFolder),
                               onRemove: _removeFolder,
                               onReauthorize: _reauthorize,

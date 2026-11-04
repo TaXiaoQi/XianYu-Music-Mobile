@@ -472,8 +472,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> with HideMiniBar {
     if (!PlatformCaps.supportsFloatingLyrics && item.section == '桌面歌词') {
       return false;
     }
-    if (!PlatformCaps.supportsStatusBarLyrics &&
-        (item.section == '通知栏歌词' || item.section == '车机歌词')) {
+    if (!PlatformCaps.supportsStatusBarLyrics && item.section == '通知栏歌词') {
+      return false;
+    }
+    if (!PlatformCaps.supportsBluetoothLyrics && item.section == '车机歌词') {
       return false;
     }
     if (!PlatformCaps.supportsCustomDownloadDir && item.label == '下载路径') {

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/platform_caps.dart';
 import '../core/settings.dart';
 import '../player/player_provider.dart';
 import 'lyric_model.dart';
@@ -70,7 +71,9 @@ class StatusBarLyricsController {
     } else if (_enabled) {
       // 两个出口单独关闭时也要收回对应的展示（通知栏/媒体会话标题）
       if (!s.statusBarLyricsEnabled) {
-        _channel.invokeMethod('cancel');
+        if (PlatformCaps.supportsStatusBarLyrics) {
+          _channel.invokeMethod('cancel');
+        }
         _clearNotifLyric();
       }
       if (!s.bluetoothLyricsEnabled) _restoreTitle();
@@ -139,7 +142,10 @@ class StatusBarLyricsController {
 
   void _push(String line, QueueItem item) {
     final s = _container.read(settingsProvider).valueOrNull;
-    if (s?.statusBarLyricsEnabled == true) {
+    // 状态栏歌词出口仅 Android（原生通道仅注册于 Android；iOS 上该
+    // 设置项隐藏，蓝牙歌词走媒体会话标题，无原生通道依赖）
+    if (s?.statusBarLyricsEnabled == true &&
+        PlatformCaps.supportsStatusBarLyrics) {
       _channel.invokeMethod('show', {
         'title': item.title,
         'artist': item.artist,
@@ -174,7 +180,9 @@ class StatusBarLyricsController {
   }
 
   void _cancel() {
-    _channel.invokeMethod('cancel');
+    if (PlatformCaps.supportsStatusBarLyrics) {
+      _channel.invokeMethod('cancel');
+    }
     _restoreTitle();
     _clearNotifLyric();
   }

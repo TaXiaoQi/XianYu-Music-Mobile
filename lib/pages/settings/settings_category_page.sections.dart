@@ -670,67 +670,75 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
                   ? (v) => n.setFloatingLyricsHideWhenPaused(v)
                   : null,
             ),
-            _switchTile(
-              context,
-              icon: Icons.screen_lock_landscape_outlined,
-              title: tr('横屏时隐藏'),
-              value: s?.floatingLyricsHideInLandscape ?? false,
-              onChanged: (s?.floatingLyricsEnabled ?? false)
-                  ? (v) => n.setFloatingLyricsHideInLandscape(v)
-                  : null,
-            ),
-            _tile(
-              context,
-              icon: Icons.width_full_outlined,
-              title: tr('宽度'),
-              trailing: _floatingLyricsWidthSlider(s, n),
-            ),
-            _tile(
-              context,
-              icon: Icons.swap_horiz_outlined,
-              title: tr('水平位置'),
-              trailing: _floatingLyricsXSlider(context, s, n),
-            ),
-            _tile(
-              context,
-              icon: Icons.swap_vert_outlined,
-              title: tr('垂直位置'),
-              trailing: _floatingLyricsYSlider(context, s, n),
-            ),
-            _switchTile(
-              context,
-              icon: Icons.lock_outline,
-              title: tr('锁定位置'),
-              subtitle: tr('锁定后不可拖动，通知栏解锁'),
-              value: s?.floatingLyricsLocked ?? false,
-              onChanged: (s?.floatingLyricsEnabled ?? false)
-                  ? (v) => n.setFloatingLyricsLocked(v)
-                  : null,
-            ),
-            _tile(
-              context,
-              icon: Icons.center_focus_strong_outlined,
-              title: tr('重置位置'),
-              trailing: const SizedBox.shrink(),
-              onTap: (s?.floatingLyricsEnabled ?? false)
-                  ? () => _resetFloatingLyricsPosition()
-                  : null,
-            ),
+            // 以下位置类设置仅 Android 系统悬浮窗适用；iOS 走画中画
+            // 小窗，位置/尺寸由系统与用户手势管理
+            if (PlatformCaps.isAndroid) ...[
+              _switchTile(
+                context,
+                icon: Icons.screen_lock_landscape_outlined,
+                title: tr('横屏时隐藏'),
+                value: s?.floatingLyricsHideInLandscape ?? false,
+                onChanged: (s?.floatingLyricsEnabled ?? false)
+                    ? (v) => n.setFloatingLyricsHideInLandscape(v)
+                    : null,
+              ),
+              _tile(
+                context,
+                icon: Icons.width_full_outlined,
+                title: tr('宽度'),
+                trailing: _floatingLyricsWidthSlider(s, n),
+              ),
+              _tile(
+                context,
+                icon: Icons.swap_horiz_outlined,
+                title: tr('水平位置'),
+                trailing: _floatingLyricsXSlider(context, s, n),
+              ),
+              _tile(
+                context,
+                icon: Icons.swap_vert_outlined,
+                title: tr('垂直位置'),
+                trailing: _floatingLyricsYSlider(context, s, n),
+              ),
+              _switchTile(
+                context,
+                icon: Icons.lock_outline,
+                title: tr('锁定位置'),
+                subtitle: tr('锁定后不可拖动，通知栏解锁'),
+                value: s?.floatingLyricsLocked ?? false,
+                onChanged: (s?.floatingLyricsEnabled ?? false)
+                    ? (v) => n.setFloatingLyricsLocked(v)
+                    : null,
+              ),
+              _tile(
+                context,
+                icon: Icons.center_focus_strong_outlined,
+                title: tr('重置位置'),
+                trailing: const SizedBox.shrink(),
+                onTap: (s?.floatingLyricsEnabled ?? false)
+                    ? () => _resetFloatingLyricsPosition()
+                    : null,
+              ),
+            ],
           ],
         ),
       ],
-      if (PlatformCaps.supportsStatusBarLyrics) ...[
+      // 车机歌词：歌词行写入媒体会话标题走蓝牙 AVRCP，Android/iOS 通用。
+      // 通知栏歌词 tile 仅 Android（iOS 锁屏由播控卡片承担）
+      if (PlatformCaps.supportsStatusBarLyrics ||
+          PlatformCaps.supportsBluetoothLyrics) ...[
         _sectionHeader(context, tr('车机歌词')),
         _CardGroup(
           children: [
-            _switchTile(
-              context,
-              icon: Icons.notifications_active_outlined,
-              title: tr('通知栏歌词'),
-              subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
-              value: s?.statusBarLyricsEnabled ?? false,
-              onChanged: (v) => n.setStatusBarLyricsEnabled(v),
-            ),
+            if (PlatformCaps.supportsStatusBarLyrics)
+              _switchTile(
+                context,
+                icon: Icons.notifications_active_outlined,
+                title: tr('通知栏歌词'),
+                subtitle: tr('把当前歌词行推送到系统通知栏 / 锁屏展示'),
+                value: s?.statusBarLyricsEnabled ?? false,
+                onChanged: (v) => n.setStatusBarLyricsEnabled(v),
+              ),
             _switchTile(
               context,
               icon: Icons.bluetooth_audio_outlined,
@@ -1071,7 +1079,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       _sectionHeader(context, tr('下载')),
       _CardGroup(
         children: [
-          if (PlatformCaps.supportsSandboxLibrary)
+          if (PlatformCaps.supportsBatchMoveToPublicDir)
             _tile(
               context,
               icon: Icons.drive_file_move_outline,

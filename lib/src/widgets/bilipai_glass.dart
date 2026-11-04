@@ -98,6 +98,9 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
   // 更新：滚动补帧只抓 chrome 面并集区域，裁剪源矩形须减区域原点
   Rect? _frozenRegion;
 
+  /// _frozen 对应 chrome 缓存帧的抓取 dpr（裁剪 src 映射基准）
+  double _frozenDpr = 0;
+
   bool _idle = false;
 
   bool _routeTransition = false;
@@ -204,6 +207,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
       if (frame != null) {
         _frozen = frame.image.clone();
         _frozenRegion = frame.region;
+        _frozenDpr = frame.dpr;
         _frozenIsChromeFrame = true;
         _fade.value = 1;
         _fade.reverse();
@@ -252,6 +256,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
           final old = _frozen;
           _frozen = frame.image.clone();
           _frozenRegion = frame.region;
+        _frozenDpr = frame.dpr;
           _frozenIsChromeFrame = true;
           _fade.stop();
           _fade.value = 1;
@@ -282,6 +287,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
           final old = _frozen;
           _frozen = frame.image.clone();
           _frozenRegion = frame.region;
+        _frozenDpr = frame.dpr;
           _frozenIsChromeFrame = true;
           _fade.stop();
           _fade.value = 1;
@@ -312,6 +318,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
     final old = _frozen;
     _frozen = frame.image.clone();
     _frozenRegion = frame.region;
+    _frozenDpr = frame.dpr;
     setState(() {});
     if (old != null) {
       SchedulerBinding.instance.addPostFrameCallback((_) => old.dispose());
@@ -556,6 +563,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               useChromeFrame: widget.useChromeFrame,
               frozenIsChromeFrame: _frozenIsChromeFrame,
               frozenChromeRegion: _frozenRegion,
+              frozenDpr: _frozenDpr,
             ),
           ),
         ),

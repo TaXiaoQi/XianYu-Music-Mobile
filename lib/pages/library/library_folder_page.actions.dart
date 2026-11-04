@@ -29,54 +29,39 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
     }
   }
 
-  Future<void> _importFiles() async {
-    setState(() => _adding = true);
-    try {
-      final files = await FilePicker.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: _LibraryFolderPageState._audioExts,
-        // ignore: deprecated_member_use
-        allowMultiple: true,
-      );
-      if (files.isEmpty) return;
-      if (!mounted) return;
-      final docs = await getApplicationDocumentsDirectory();
-      final destDir = Directory(p.join(docs.path, 'Music'));
-      if (!destDir.existsSync()) destDir.createSync(recursive: true);
-      var imported = 0;
-      for (final f in files) {
-        final src = f.path;
-        if (src == null) continue;
-        final srcFile = File(src);
-        if (!srcFile.existsSync()) continue;
-        await srcFile.copy(p.join(destDir.path, p.basename(src)));
-        imported++;
-      }
-      if (!mounted) return;
-      if (imported == 0) {
-        _toast(tr('未选择有效音频文件'));
-        return;
-      }
-      _toast(tr('{n} 个文件已导入，开始扫描', {'n': imported}));
-      await _startScan();
-    } catch (e) {
-      _toast(_importErrorText(e));
-    } finally {
-      if (mounted) setState(() => _adding = false);
-    }
-  }
-
   void _toast(String msg) {
     if (!mounted) return;
     showXianYuToast(context, msg, duration: const Duration(seconds: 2));
   }
 
-  /// 鸿蒙「导入文件夹」：系统 folder picker 临时授权 → 递归列音频 →
-  /// 复制进沙盒 `Music/<folderName>/` → 加入扫描目录并扫描。授权不持久化，
-  /// 重启后扫描的是沙盒副本（与 _importFiles 单文件导入同一物化模型）。
+  /// 「导入文件夹」：
+  /// - 鸿蒙：系统 folder picker 临时授权 → 递归列音频 → 复制进沙盒
+  ///   `Music/<folderName>/`
+  /// - iOS：目录选择器选一次 → 原生生成 security-scoped bookmark（持久
+  ///   授权凭证）→ 登记扫描目录（直接扫原目录，不复制、不占双份空间）；
+  ///   扫描/播放前按书签拉起访问授权，冷启动时自动恢复。
   Future<void> _importFolder() async {
     setState(() => _adding = true);
     try {
+      if (Platform.isIOS) {
+        final picked = await IosFolderChannel.instance.pickFolder();
+        if (picked == null || !mounted) return;
+        // 先登记书签再拉起授权（ensureAccess 依赖书签存在）；解析出的
+        // 真实路径可能与所选路径不同（iCloud 挂载点），书签同步到新 key
+        await IosFolderChannel.instance
+            .setBookmark(picked.path, picked.bookmark);
+        final resolved =
+            await IosFolderChannel.instance.ensureAccess(picked.path) ??
+                picked.path;
+        if (resolved != picked.path) {
+          await IosFolderChannel.instance
+              .setBookmark(resolved, picked.bookmark);
+        }
+        _toast(tr('已添加扫描目录，开始扫描'));
+        await ref.read(scanFoldersProvider.notifier).addFolder(resolved);
+        await _startScan();
+        return;
+      }
       final uri = await OhosFolderChannel.pickFolder();
       if (uri == null || !mounted) return;
       final docs = await getApplicationDocumentsDirectory();
@@ -239,6 +224,9 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
       await ref.read(scanFoldersProvider.notifier).removeFolder(path);
       if (SafChannel.isSafTree(path)) {
         await SafChannel.releasePermission(path);
+      }
+      if (Platform.isIOS) {
+        await IosFolderChannel.instance.removeBookmark(path);
       }
       _toast(tr('已移除'));
     } catch (e) {

@@ -235,6 +235,11 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
     final notifLyric = _notifLyric != null && item.path == _notifLyricPath
         ? _notifLyric
         : null;
+    // iOS（darwin 侧 setMediaItem）只认 extras['artCacheFile'] 本地路径
+    // 加载 MPMediaItemArtwork，file:// artUri 不生效——播控中心/锁屏封面
+    // 必须随 extras 下发。Android 走 artUri file://，两条路互不影响
+    final artCacheFile =
+        artUri?.scheme == 'file' ? artUri!.toFilePath() : null;
     return as_pkg.MediaItem(
       id: item.path,
       album: item.album.isEmpty ? tr('弦予音乐') : item.album,
@@ -245,9 +250,12 @@ class XianYuAudioHandler extends as_pkg.BaseAudioHandler with as_pkg.SeekHandler
       artUri: artUri,
       // audio_service 序列化：字符串 extras 落 MediaMetadataCompat.putString，
       // 原生经 mediaMetadata.getString 直读
-      extras: notifLyric == null
+      extras: (notifLyric == null && artCacheFile == null)
           ? null
-          : <String, dynamic>{'NOTIF_LYRICS_LINE': notifLyric},
+          : <String, dynamic>{
+              if (notifLyric != null) 'NOTIF_LYRICS_LINE': notifLyric,
+              if (artCacheFile != null) 'artCacheFile': artCacheFile,
+            },
     );
   }
 

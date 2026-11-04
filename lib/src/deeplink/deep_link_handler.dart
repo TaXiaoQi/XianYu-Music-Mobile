@@ -4,11 +4,15 @@ import 'dart:io';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart' show Icons, ListTile, showModalBottomSheet, SafeArea;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../library/library_provider.dart';
+import '../library/scan_settings_provider.dart';
 import '../navigation/routes.dart'
     show appNavigatorKey, openPlayer, playerOpenNotifier;
 import '../online/online_search_provider.dart';
@@ -592,8 +596,17 @@ class XianYuDeepLink {
     if (dot > 0) title = title.substring(0, dot);
     if (title.isEmpty) title = tr('未知歌曲');
 
+    // 对齐 QQ/网易云：系统「用其他应用打开」进来时提供 导入曲库/直接播放 两个选项；
+    // 导入会把文件拷进沙盒扫描目录并入库，播放用沙盒副本保证持久可用
+    var playPath = filePath;
+    final action = await _askOpenedFileAction(title);
+    if (action == true) {
+      final imported = await _importOpenedFileToLibrary(container, filePath);
+      if (imported != null) playPath = imported;
+    }
+
     final item = QueueItem(
-      path: filePath,
+      path: playPath,
       title: title,
       artist: '',
       album: '',
@@ -604,6 +617,83 @@ class XianYuDeepLink {
       _openPlayerOnce(router);
     } catch (e, st) {
       AppLog.warn('deeplink', '播放系统打开的本地音乐失败: $e\n$st');
+    }
+  }
+
+  /// 返回 true=导入曲库；false/null=仅播放
+  static Future<bool?> _askOpenedFileAction(String title) async {
+    final ctx = appNavigatorKey.currentContext;
+    if (ctx == null) return false;
+    if (!ctx.mounted) return false;
+    return showModalBottomSheet<bool>(
+      context: ctx,
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.library_music_outlined),
+              title: Text(tr('导入到曲库')),
+              onTap: () => Navigator.pop(sheetCtx, true),
+            ),
+            ListTile(
+              leading: const Icon(Icons.play_circle_outline),
+              title: Text(tr('立即播放')),
+              onTap: () => Navigator.pop(sheetCtx, false),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 拷入沙盒扫描目录 Documents/Music（重名自动加序号）→ 注册扫描目录
+  /// （幂等）→ 全量扫描，返回沙盒内最终路径；失败返回 null 走原路径播放
+  static Future<String?> _importOpenedFileToLibrary(
+    ProviderContainer container,
+    String filePath,
+  ) async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final destDir = Directory(p.join(docs.path, 'Music'));
+      if (!destDir.existsSync()) destDir.createSync(recursive: true);
+      final base = p.basename(filePath);
+      final dot = base.lastIndexOf('.');
+      final stem = dot > 0 ? base.substring(0, dot) : base;
+      final ext = dot > 0 ? base.substring(dot) : '';
+      var dest = p.join(destDir.path, base);
+      var i = 1;
+      while (File(dest).existsSync()) {
+        dest = p.join(destDir.path, '$stem (${i++})$ext');
+      }
+      await File(filePath).copy(dest);
+      final folders =
+          container.read(scanFoldersProvider).valueOrNull ?? const [];
+      final already = folders.any((f) => f.path == destDir.path);
+      if (!already) {
+        await container.read(scanFoldersProvider.notifier).addFolder(destDir.path);
+      }
+      final count =
+          await container.read(libraryProvider.notifier).scanAllFolders();
+      AppLog.info('deeplink', '深链导入曲库完成: $dest, 扫描入库 $count 首');
+      final overlay = appNavigatorKey.currentState?.overlay;
+      if (overlay != null) {
+        showXianYuToastByOverlay(overlay, tr('已导入到曲库'));
+      }
+      return dest;
+    } catch (e, st) {
+      AppLog.warn('deeplink', '深链导入曲库失败: $e\n$st');
+      return null;
     }
   }
 

@@ -137,7 +137,9 @@
 		</dict>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>弦予音乐</string>
+	<!-- 显示名按构建配置注入：Debug=弦予音乐·测试（与 Android debug 包
+	     命名一致，测试/正式包并存互不覆盖），Release=弦予音乐 -->
+	<string>$(APP_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

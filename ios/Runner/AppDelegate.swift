@@ -31,5 +31,13 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IosAudioSessionPlugin") {
       IosAudioSessionPlugin.register(with: registrar)
     }
+    // 桌面歌词：画中画（PiP）悬浮歌词窗，协议镜像 Android 悬浮窗通道。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IosFloatingLyricsPlugin") {
+      IosFloatingLyricsPlugin.register(with: registrar)
+    }
+    // 本地音乐库：文件夹书签（security-scoped bookmark）持久授权桥。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "IosFolderPlugin") {
+      IosFolderPlugin.register(with: registrar)
+    }
   }
 }

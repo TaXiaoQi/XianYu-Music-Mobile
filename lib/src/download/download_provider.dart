@@ -224,8 +224,11 @@ class DownloadManager extends StateNotifier<DownloadState> {
     return dir.path;
   }
 
+  /// Android 受分区存储限制必须显式选目录；iOS/鸿蒙固定写沙盒下载目录
+  /// （见 _downloadDir 分支），桌面端用系统默认下载目录，均无需自定义。
   bool get hasCustomDownloadDir =>
-      (!Platform.isAndroid && !Platform.isIOS) ||
+      !Platform.isAndroid ||
+      PlatformCaps.isOhos ||
       (_ref.read(settingsProvider).valueOrNull?.downloadPath ?? '').isNotEmpty;
 
   Future<String> downloadMvVideo({

@@ -3,24 +3,24 @@ import UIKit
 import WidgetKit
 import ActivityKit
 
-/// iOS 桌面小组件（WidgetKit）与 Live Activity（锁屏/灵动岛歌词）桥。
+/// iOS 桌面小组件（WidgetKit）桥。
 ///
 /// Dart 侧：lib/src/player/ios_widget_bridge.dart（IosWidgetController）。
 ///
 /// 职责：
 /// - setState：写 App Group 状态 JSON + 拷封面（cover_0/1 交替）+ 仅切歌时刷新
-///   小组件时间线；同时驱动 Live Activity start/update（歌词行/播放态变化即更）。
-/// - clear：清空状态并结束 Live Activity。
+///   小组件时间线。
+/// - clear：清空状态并收尾 Live Activity。
 /// - 消费小组件按钮命令：Darwin 通知（extension AppIntent 发出）→ onCommand 回 Dart；
 ///   冷启动 pending command.json → takePendingCommand 供 Dart 启动时兜底消费。
+///
+/// 说明：Live Activity（锁屏歌词/灵动岛）已退役——系统播控媒体卡片
+/// （audio_service Now Playing）承担锁屏/播控中心展示，两者同屏会出现
+/// 两张媒体卡片。此处仅保留对旧版本遗留运行实例的清理。
 final class IosWidgetPlugin: NSObject, FlutterPlugin {
     private static let channelName = "xianyu/ios_widget"
 
     private let channel: FlutterMethodChannel
-
-    /// 当前 Live Activity 句柄（主 App 进程单实例）。
-    @available(iOS 16.1, *)
-    private static var activity: Activity<PlaybackActivityAttributes>?
 
     static func register(with registrar: any FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
@@ -97,50 +97,22 @@ final class IosWidgetPlugin: NSObject, FlutterPlugin {
         }
 
         if #available(iOS 16.1, *) {
-            Self.startOrUpdateActivity(state)
+            // 退役的实时活动不再启动；旧版本可能遗留运行实例（进程重启后
+            // 句柄丢失，注册表里还挂着），统一收尾防止与播控卡片重复
+            Self.endActivity()
         }
     }
 
-    // MARK: - Live Activity
+    // MARK: - Live Activity 收尾
 
-    @available(iOS 16.1, *)
-    private static func makeContentState(
-        _ s: WidgetPlaybackState
-    ) -> PlaybackActivityAttributes.ContentState {
-        .init(
-            title: s.title, artist: s.artist, lyric: s.lyric,
-            position: s.position, duration: s.duration, playing: s.playing,
-            coverRev: s.coverRev)
-    }
-
-    /// 有播放内容时启动/更新 Live Activity；更新由 Dart 侧签名去重控制频率。
-    @available(iOS 16.1, *)
-    private static func startOrUpdateActivity(_ state: WidgetPlaybackState) {
-        let contentState = makeContentState(state)
-        if let activity = activity {
-            Task {
-                try? await activity.update(using: contentState)
-            }
-            return
-        }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        do {
-            activity = try Activity.request(
-                attributes: PlaybackActivityAttributes(),
-                contentState: contentState,
-                pushType: nil)
-        } catch {
-            NSLog("[IosWidgetPlugin] request live activity failed: \(error)")
-        }
-    }
-
-    /// 结束 Live Activity（队列清空 / Dart 显式清理）。
+    /// 结束本进程持有的 Live Activity，并清理注册表中的遗留实例
+    /// （上一版本启动的实例在进程重启后仅能经 Activity.activities 发现）。
     @available(iOS 16.1, *)
     private static func endActivity() {
-        guard let activity = activity else { return }
-        Self.activity = nil
-        Task {
-            try? await activity.end(using: activity.contentState, dismissalPolicy: .immediate)
+        for live in Activity<PlaybackActivityAttributes>.activities {
+            Task {
+                try? await live.end(using: live.contentState, dismissalPolicy: .immediate)
+            }
         }
     }
 
