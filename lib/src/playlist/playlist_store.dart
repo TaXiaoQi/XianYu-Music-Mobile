@@ -15,6 +15,8 @@ class ImportedPlaylist {
   final String? sourcePluginId;
   final String? sourceUrl;
   final Map<String, dynamic>? sourceRaw;
+  /// 最近一次本地改名时间戳（毫秒）：改名 LWW 依据，0 表示从未改名
+  final int renamedAt;
 
   ImportedPlaylist({
     required this.id,
@@ -26,6 +28,7 @@ class ImportedPlaylist {
     this.sourcePluginId,
     this.sourceUrl,
     this.sourceRaw,
+    this.renamedAt = 0,
   });
 
   bool get hasSource =>
@@ -43,6 +46,7 @@ class ImportedPlaylist {
     if (sourcePluginId != null) 'sourcePluginId': sourcePluginId,
     if (sourceUrl != null) 'sourceUrl': sourceUrl,
     if (sourceRaw != null) 'sourceRaw': sourceRaw,
+    if (renamedAt > 0) 'renamedAt': renamedAt,
   };
 
   factory ImportedPlaylist.fromJson(Map<String, dynamic> j) => ImportedPlaylist(
@@ -60,6 +64,7 @@ class ImportedPlaylist {
     sourceRaw: j['sourceRaw'] is Map
         ? (j['sourceRaw'] as Map).cast<String, dynamic>()
         : null,
+    renamedAt: (j['renamedAt'] as num?)?.toInt() ?? 0,
   );
 
   ImportedPlaylist copyWith({
@@ -71,6 +76,7 @@ class ImportedPlaylist {
     String? sourcePluginId,
     String? sourceUrl,
     Map<String, dynamic>? sourceRaw,
+    int? renamedAt,
   }) => ImportedPlaylist(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -81,6 +87,7 @@ class ImportedPlaylist {
     sourcePluginId: sourcePluginId ?? this.sourcePluginId,
     sourceUrl: sourceUrl ?? this.sourceUrl,
     sourceRaw: sourceRaw ?? this.sourceRaw,
+    renamedAt: renamedAt ?? this.renamedAt,
   );
 }
 
@@ -150,13 +157,19 @@ class PlaylistStore {
           // 时覆盖旧条目，添加时间随之刷新
           merged[s.path] = s.copyWith(addedAt: s.addedAt ?? DateTime.now());
         }
+        // 改名 LWW：云端改名时间戳不小于本地才采纳（按 name 匹配时名称本就
+        // 相同，实际效果是把云端 renamedAt 写回本地账本；旧端快照缺省 0
+        // 不会清掉本地已打点的改名记录）
+        final adoptRename = pl.renamedAt >= existing.renamedAt;
         result[existingIndex] = existing.copyWith(
+          name: adoptRename ? pl.name : null,
           songs: merged.values.toList(),
           cloudId: existing.cloudId ?? pl.cloudId,
           isCloud: existing.isCloud || pl.isCloud,
           sourcePluginId: existing.sourcePluginId ?? pl.sourcePluginId,
           sourceUrl: existing.sourceUrl ?? pl.sourceUrl,
           sourceRaw: existing.sourceRaw ?? pl.sourceRaw,
+          renamedAt: adoptRename ? pl.renamedAt : null,
         );
       } else {
         result.add(
@@ -172,6 +185,7 @@ class PlaylistStore {
             sourcePluginId: pl.sourcePluginId,
             sourceUrl: pl.sourceUrl,
             sourceRaw: pl.sourceRaw,
+            renamedAt: pl.renamedAt,
           ),
         );
       }
@@ -229,9 +243,14 @@ class PlaylistStore {
 
   Future<List<ImportedPlaylist>> renamePlaylist(String id, String name) async {
     final all = await loadAll();
-    final result = all
-        .map((p) => p.id == id ? p.copyWith(name: name) : p)
-        .toList();
+    final result = all.map((p) {
+      // 名称未实际变更不打点，避免空改把本地改名时间戳刷新反向覆盖他端
+      if (p.id != id || p.name == name) return p;
+      return p.copyWith(
+        name: name,
+        renamedAt: DateTime.now().millisecondsSinceEpoch,
+      );
+    }).toList();
     await saveAll(result);
     return result;
   }

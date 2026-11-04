@@ -117,6 +117,8 @@ class PluginBackupPlaylist {
   final String? sourcePluginId;
   final String? sourceUrl;
   final Map<String, dynamic>? sourceRaw;
+  /// 云端改名时间戳（毫秒）：v1 快照下载合并改名 LWW 用，本地导入缺省 0
+  final int renamedAt;
 
   PluginBackupPlaylist({
     required this.name,
@@ -127,6 +129,7 @@ class PluginBackupPlaylist {
     this.sourcePluginId,
     this.sourceUrl,
     this.sourceRaw,
+    this.renamedAt = 0,
   });
 }
 

@@ -434,8 +434,11 @@ class PluginManager extends StateNotifier<PluginListState> {
 
   Future<void> toggleEnabled(String id) async {
     final engine = await _getEngine();
+    final now = DateTime.now().millisecondsSinceEpoch;
     final list = state.sources.map((s) {
-      if (s.id == id) return s.copyWith(enabled: !s.enabled);
+      if (s.id == id) {
+        return s.copyWith(enabled: !s.enabled, enabledUpdatedAt: now);
+      }
       return s;
     }).toList();
     await engine.store.saveSources(list);
@@ -466,8 +469,13 @@ class PluginManager extends StateNotifier<PluginListState> {
         state.sources.where((s) => s.enabled != enabled).toList();
     if (changed.isEmpty) return;
     final engine = await _getEngine();
-    final list =
-        state.sources.map((s) => s.copyWith(enabled: enabled)).toList();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // 仅实际切换的插件打点（enabled LWW 依据），未变更项时间戳保持不动
+    final list = state.sources
+        .map((s) => s.enabled == enabled
+            ? s
+            : s.copyWith(enabled: enabled, enabledUpdatedAt: now))
+        .toList();
     await engine.store.saveSources(list);
     state = state.copyWith(sources: list);
     for (final s in changed) {

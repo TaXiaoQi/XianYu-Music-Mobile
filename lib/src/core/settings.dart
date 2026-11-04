@@ -6,6 +6,10 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../lyrics/lyric_font.dart';
+// 与 account_api 存在库级循环引用（account_api 使用 AppSettings），
+// Dart 支持该形态；仅用其顶层函数做设置分节变更打点
+import '../auth/account_api.dart'
+    show changedSyncableSettingKeys, markSettingsSectionsChanged;
 part 'settings.methods.dart';
 
 enum ThemeModePreference { system, light, dark }

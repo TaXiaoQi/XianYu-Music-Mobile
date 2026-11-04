@@ -340,43 +340,59 @@ class AccountApi {
     }
   }
 
-  Future<void> uploadSettings(AppSettings settings) async {
+  Future<void> uploadSettings(
+    AppSettings settings, {
+    Map<String, int>? sectionTs,
+  }) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步设置'));
     }
+    // 分节时间戳账本随载荷上云（服务端按不透明 JSON 存取），供其他端按分节 LWW
     await _action('settings_sync_upload', {
       'user_id': ciyuanxiId,
       'platform': 'mobile',
-      'settings': settingsToSyncMap(settings),
+      'settings': {
+        ...settingsToSyncMap(settings),
+        if (sectionTs != null && sectionTs.isNotEmpty)
+          '__sectionTs__': sectionTs,
+      },
     }, fetchTimeoutMs: 20000);
   }
 
   Future<Map<String, dynamic>?> downloadSettings() async =>
-      (await downloadSettingsCrossPlatform()).settings;
+      (await downloadSettingsCrossPlatform()).$1;
 
-  Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
-      downloadSettingsCrossPlatform() async {
+  Future<
+      (
+        Map<String, dynamic>? settings,
+        DateTime? uploadedAt,
+        Map<String, int>? sectionTs,
+      )> downloadSettingsCrossPlatform() async {
     final results = await Future.wait([
       _downloadSettingsSnapshot('mobile'),
       _downloadSettingsSnapshot('desktop'),
     ]);
     final own = results[0];
     final desktop = results[1];
-    final ownOk = own.settings != null && own.settings!.isNotEmpty;
-    final deskOk = desktop.settings != null && desktop.settings!.isNotEmpty;
+    final ownOk = own.$1 != null && own.$1!.isNotEmpty;
+    final deskOk = desktop.$1 != null && desktop.$1!.isNotEmpty;
     if (ownOk && deskOk) {
       final epoch = DateTime.fromMillisecondsSinceEpoch(0);
-      final ownAt = own.uploadedAt ?? epoch;
-      final deskAt = desktop.uploadedAt ?? epoch;
+      final ownAt = own.$2 ?? epoch;
+      final deskAt = desktop.$2 ?? epoch;
       return ownAt.isAfter(deskAt) ? own : desktop;
     }
     if (deskOk) return desktop;
     return own;
   }
 
-  Future<({Map<String, dynamic>? settings, DateTime? uploadedAt})>
-      _downloadSettingsSnapshot(String platform) async {
+  Future<
+      (
+        Map<String, dynamic>? settings,
+        DateTime? uploadedAt,
+        Map<String, int>? sectionTs,
+      )> _downloadSettingsSnapshot(String platform) async {
     final ciyuanxiId = _ciyuanxiId;
     if (ciyuanxiId == null || ciyuanxiId.isEmpty) {
       throw AuthException(tr('请先登录后再同步设置'));
@@ -396,10 +412,15 @@ class AccountApi {
         uploadedAt = DateTime.tryParse(uploadedAtStr);
       }
     }
-    return (
-      settings: settings is Map<String, dynamic> ? settings : null,
-      uploadedAt: uploadedAt,
-    );
+    if (settings is! Map<String, dynamic>) {
+      return (null, uploadedAt, null);
+    }
+    // 云端快照可能携带其他端写入的分节时间戳账本（__sectionTs__），
+    // 读取后剥离再交给合并/比较逻辑
+    final sectionTs = sanitizeSectionTs(settings['__sectionTs__']);
+    final filtered = Map<String, dynamic>.of(settings)
+      ..remove('__sectionTs__');
+    return (filtered, uploadedAt, sectionTs);
   }
 
   Future<ServerLoadStatus?> getServerLoad() async {
@@ -1071,4 +1092,85 @@ bool areSettingsEqual(AppSettings local, Map<String, dynamic> cloud) {
     if (cloudVal != entry.value) return false;
   }
   return true;
+}
+
+// ==================== 设置分节时间戳账本（对齐桌面端 sectionChangeTracker） ====================
+//
+// 设置按分节（移动端为 13 个同步扁平字段）做 LWW（新者优先）：本端 patch 过的
+// 分节记为「本地较新」，上传时账本以 __sectionTs__ 随载荷带到云端；下载时逐分节
+// 对比时间戳，云端较新的分节才落地本地，避免旧端全量上传反向覆盖他端新改的设置。
+// 云端下载合并与整机恢复走 SettingsStore.save（不经 [markSettingsSectionsChanged]），
+// 不会把云端值误标成本地变更。
+
+const String _settingsSectionTsKey = 'xianyu_settings_section_ts_v1';
+
+/// 云端快照里的分节时间戳账本（宽松清洗，非法条目丢弃）
+Map<String, int>? sanitizeSectionTs(Object? candidate) {
+  if (candidate is! Map) return null;
+  final table = <String, int>{};
+  candidate.forEach((key, value) {
+    if (key is String && key.isNotEmpty && value is num && value > 0) {
+      table[key] = value.toInt();
+    }
+  });
+  return table.isEmpty ? null : table;
+}
+
+Future<Map<String, int>> readSettingsSectionTs() async {
+  final prefs = await SharedPreferences.getInstance();
+  final raw = prefs.getString(_settingsSectionTsKey);
+  if (raw == null || raw.isEmpty) return const {};
+  try {
+    return sanitizeSectionTs(jsonDecode(raw)) ?? const {};
+  } catch (_) {
+    return const {};
+  }
+}
+
+/// 记录分节本地变更（同一批 keys 共用同一时间戳）；keys 为空时不动账本
+Future<void> markSettingsSectionsChanged(
+  Iterable<String> keys, {
+  int? at,
+}) async {
+  final valid = keys
+      .where((k) => k.isNotEmpty)
+      .toList();
+  if (valid.isEmpty) return;
+  final ts = at ?? DateTime.now().millisecondsSinceEpoch;
+  final table = await readSettingsSectionTs();
+  for (final k in valid) {
+    table[k] = ts;
+  }
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_settingsSectionTsKey, jsonEncode(table));
+}
+
+/// 按映射写入分节时间戳（合并语义，用于同步后对齐账本）；非法值忽略
+Future<void> writeSettingsSectionTs(Map<String, int> table) async {
+  if (table.isEmpty) return;
+  final merged = await readSettingsSectionTs();
+  table.forEach((key, value) {
+    if (key.isNotEmpty && value >= 0) merged[key] = value;
+  });
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString(_settingsSectionTsKey, jsonEncode(merged));
+}
+
+/// 全分节时间戳（本端时刻），用于「保留本地」整体上传前对齐账本
+Future<Map<String, int>> buildFullSettingsSectionTs(
+  AppSettings settings, {
+  int? at,
+}) async {
+  final ts = at ?? DateTime.now().millisecondsSinceEpoch;
+  return {for (final key in settingsToSyncMap(settings).keys) key: ts};
+}
+
+/// 对比两次设置快照，返回实际变更的同步分节（供本地变更打点）
+List<String> changedSyncableSettingKeys(AppSettings prev, AppSettings next) {
+  final a = settingsToSyncMap(prev);
+  final b = settingsToSyncMap(next);
+  return [
+    for (final entry in a.entries)
+      if (b[entry.key] != entry.value) entry.key,
+  ];
 }

@@ -191,6 +191,7 @@ class AutoSyncService {
     await notifier.syncCloudCredsUpload();
     await notifier.syncListenStats();
     if (upload.settings) {
+      // 设置 upload 为对称双向同步（先下载云端再按分节 LWW 决策），无需单独下载步骤
       await notifier.syncSettingsUpload();
     }
   }

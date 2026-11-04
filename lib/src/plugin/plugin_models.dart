@@ -38,6 +38,9 @@ class PluginSource {
   final String sourceUrl;
   final int importedAt;
   bool enabled;
+  /// 最近一次 enabled 切换时间戳（毫秒）：跨端同步 enabled LWW 依据，
+  /// 0 表示从未切换（旧端快照按缺省 0 处理，不会覆盖本端未同步的开关）
+  int enabledUpdatedAt;
   bool updateAvailable;
   final List<String> sources;
   final bool isBuiltin;
@@ -54,6 +57,7 @@ class PluginSource {
     this.sourceUrl = '',
     required this.importedAt,
     this.enabled = true,
+    this.enabledUpdatedAt = 0,
     this.updateAvailable = false,
     this.sources = const [],
     this.isBuiltin = false,
@@ -62,6 +66,7 @@ class PluginSource {
 
   PluginSource copyWith({
     bool? enabled,
+    int? enabledUpdatedAt,
     bool? updateAvailable,
     String? version,
     List<String>? sources,
@@ -79,6 +84,7 @@ class PluginSource {
       sourceUrl: sourceUrl,
       importedAt: importedAt,
       enabled: enabled ?? this.enabled,
+      enabledUpdatedAt: enabledUpdatedAt ?? this.enabledUpdatedAt,
       updateAvailable: updateAvailable ?? this.updateAvailable,
       sources: sources ?? this.sources,
       isBuiltin: isBuiltin,
@@ -97,6 +103,7 @@ class PluginSource {
         'sourceUrl': sourceUrl,
         'importedAt': importedAt,
         'enabled': enabled,
+        'enabledUpdatedAt': enabledUpdatedAt,
         'updateAvailable': updateAvailable,
         'sources': sources,
         'isBuiltin': isBuiltin,
@@ -114,6 +121,7 @@ class PluginSource {
         sourceUrl: json['sourceUrl'] as String? ?? '',
         importedAt: (json['importedAt'] as num?)?.toInt() ?? 0,
         enabled: json['enabled'] as bool? ?? true,
+        enabledUpdatedAt: (json['enabledUpdatedAt'] as num?)?.toInt() ?? 0,
         updateAvailable: json['updateAvailable'] as bool? ?? false,
         sources: (json['sources'] as List?)?.cast<String>() ?? const [],
         isBuiltin: json['isBuiltin'] as bool? ?? false,

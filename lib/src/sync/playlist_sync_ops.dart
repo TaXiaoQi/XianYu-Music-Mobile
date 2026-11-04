@@ -66,9 +66,18 @@ class _MetaPatch {
   final String? sourcePluginId;
   final String? sourceUrl;
   final Map<String, dynamic>? sourceRaw;
+  /// 改名 LWW 命中时才写入：null 表示不改名
+  final String? name;
+  final int? renamedAt;
 
-  const _MetaPatch(
-      {this.cloudId, this.sourcePluginId, this.sourceUrl, this.sourceRaw});
+  const _MetaPatch({
+    this.cloudId,
+    this.sourcePluginId,
+    this.sourceUrl,
+    this.sourceRaw,
+    this.name,
+    this.renamedAt,
+  });
 }
 
 Map<String, dynamic> _asMap(Object? v) =>
@@ -81,6 +90,25 @@ String? _nonEmptyStr(Object? v) {
 
 bool _hasCloudId(ImportedPlaylist p) =>
     p.cloudId != null && p.cloudId!.isNotEmpty;
+
+/// 改名 LWW：云端 renamedAt 不小于本地（缺省 0）时才采纳云端 name，
+/// 旧端/旧服务端快照缺省视为 0，不会覆盖本端未同步的改名。
+_MetaPatch _applyRenameLww(
+  _MetaPatch meta,
+  ImportedPlaylist existing,
+  String? cloudName,
+  int? cloudRenamedAt,
+) {
+  if (cloudRenamedAt == null || cloudRenamedAt < existing.renamedAt) return meta;
+  return _MetaPatch(
+    cloudId: meta.cloudId,
+    sourcePluginId: meta.sourcePluginId,
+    sourceUrl: meta.sourceUrl,
+    sourceRaw: meta.sourceRaw,
+    name: cloudName ?? meta.name,
+    renamedAt: cloudRenamedAt,
+  );
+}
 
 ImportedPlaylist? _findExisting(
   SyncOpsTarget target,
@@ -157,6 +185,8 @@ int _mergeIntoExisting(
       sourcePluginId: meta.sourcePluginId,
       sourceUrl: meta.sourceUrl,
       sourceRaw: meta.sourceRaw,
+      name: meta.name,
+      renamedAt: meta.renamedAt,
     );
   }
   return netAdded;
@@ -185,6 +215,7 @@ ImportedPlaylist _buildNewPlaylist(
     sourceRaw: cloudPl['sourceRaw'] is Map
         ? (cloudPl['sourceRaw'] as Map).cast<String, dynamic>()
         : null,
+    renamedAt: (cloudPl['renamedAt'] as num?)?.toInt() ?? 0,
   );
 }
 
@@ -214,10 +245,7 @@ SyncOpsOutcome applySyncOps(
             _visibleLocalSongs(cloudSongs, cloudId, deletedPaths, target);
         if (existing != null) {
           // 跨设备重复建单防护：已匹配到本地歌单 → 走合并语义
-          _mergeIntoExisting(
-            existing,
-            visible.songs,
-            visible.expandedDeleted,
+          final meta = _applyRenameLww(
             _MetaPatch(
               cloudId: _hasCloudId(existing) ? null : cloudId,
               sourcePluginId: _nonEmptyStr(cloudPl['sourcePluginId']),
@@ -226,6 +254,15 @@ SyncOpsOutcome applySyncOps(
                   ? (cloudPl['sourceRaw'] as Map).cast<String, dynamic>()
                   : null,
             ),
+            existing,
+            _nonEmptyStr(cloudPl['name']),
+            (cloudPl['renamedAt'] as num?)?.toInt(),
+          );
+          _mergeIntoExisting(
+            existing,
+            visible.songs,
+            visible.expandedDeleted,
+            meta,
             target,
           );
           merged++;
@@ -285,15 +322,21 @@ SyncOpsOutcome applySyncOps(
         final cloudId = _nonEmptyStr(op['cloudId']) ?? '';
         final existing = _findExisting(target, cloudId, _nonEmptyStr(op['id']));
         if (existing == null) break;
-        _mergeIntoExisting(
-          existing,
-          const [],
-          const {},
+        final meta = _applyRenameLww(
           _MetaPatch(
             cloudId: _hasCloudId(existing) ? null : cloudId,
             sourcePluginId: _nonEmptyStr(op['sourcePluginId']),
             sourceUrl: _nonEmptyStr(op['sourceUrl']),
           ),
+          existing,
+          _nonEmptyStr(op['name']),
+          (op['renamedAt'] as num?)?.toInt(),
+        );
+        _mergeIntoExisting(
+          existing,
+          const [],
+          const {},
+          meta,
           target,
         );
         break;

@@ -21,18 +21,103 @@ class SettingsSyncService {
 
   // ==================== 设置同步 ====================
 
+  /// 对称双向同步（自动同步/手动上传入口）：先下载云端再做分节 LWW 决策，
+  /// 对齐桌面端 uploadSettingsOnly。下载失败必须中止——不能当作「云端无数据」
+  /// 把本地全量推上去覆盖云端。
   Future<void> upload() async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
-      final settings = _ref.read(settingsProvider).valueOrNull;
-      if (settings == null) {
+      final local = _ref.read(settingsProvider).valueOrNull;
+      if (local == null) {
         _fail(tr('本地设置尚未加载完成'));
         return;
       }
-      await _api.uploadSettings(settings);
+      final (cloud, cloudAt, cloudSectionTs) =
+          await _api.downloadSettingsCrossPlatform();
+      if (cloud == null || cloud.isEmpty) {
+        // 云端无数据：全量上传并携带分节时间戳账本
+        final ts = await buildFullSettingsSectionTs(local);
+        await _api.uploadSettings(local, sectionTs: ts);
+        await writeSettingsSectionTs(ts);
+        _lens.item = _lens.item.copyWith(
+          syncing: false,
+          lastSummary: tr('已上传偏好设置'),
+          lastTime: DateTime.now(),
+          errors: [],
+        );
+        return;
+      }
+      if (cloudSectionTs == null) {
+        // 云端快照未携带分节账本（旧版端上传）：无法判定分节新旧，
+        // 维持旧行为以上传为准，并落一份本端账本供后续 LWW
+        final ts = await buildFullSettingsSectionTs(local);
+        await _api.uploadSettings(local, sectionTs: ts);
+        await writeSettingsSectionTs(ts);
+        _lens.item = _lens.item.copyWith(
+          syncing: false,
+          lastSummary: tr('已上传偏好设置'),
+          lastTime: DateTime.now(),
+          errors: [],
+        );
+        return;
+      }
+
+      // 云端有分节账本：按分节 LWW 合并（云端较新落地本地，本地较新上传云端）。
+      // 云端账本缺失的分节回落到整包 uploaded_at（旧版端上传的快照）
+      final cloudAtMs = cloudAt?.millisecondsSinceEpoch ?? 0;
+      final localTs = await readSettingsSectionTs();
+      final m = normalizeCloudSettingsMap(cloud);
+      final cloudWon = <String, dynamic>{};
+      final localWon = <String>[];
+      final mergedTs = <String, int>{};
+      for (final entry in settingsToSyncMap(local).entries) {
+        final cts = cloudSectionTs[entry.key] ?? cloudAtMs;
+        final lts = localTs[entry.key] ?? 0;
+        if (cts > lts && m[entry.key] != null) {
+          cloudWon[entry.key] = m[entry.key];
+          mergedTs[entry.key] = cts;
+        } else {
+          mergedTs[entry.key] = lts;
+          if (lts > cts) localWon.add(entry.key);
+        }
+      }
+      if (cloudWon.isEmpty &&
+          localWon.isEmpty &&
+          !areSettingsEqual(local, cloud)) {
+        // 时间戳持平但内容有差异（多见于账本刚启用）：以本端为准整体上传
+        // 并全部重新打点，避免永久停滞
+        final now = DateTime.now().millisecondsSinceEpoch;
+        for (final key in mergedTs.keys) {
+          mergedTs[key] = now;
+        }
+        localWon.addAll(mergedTs.keys);
+      }
+
+      // 云端较新分节先落地本地（applySyncedSettings 对缺失字段回落本地值）
+      if (cloudWon.isNotEmpty) {
+        await _ref
+            .read(settingsProvider.notifier)
+            .saveAll(applySyncedSettings(local, cloudWon));
+      }
+      // 账本全量对齐（云端较新分节记云端时刻，其余保持本地时刻）
+      await writeSettingsSectionTs(mergedTs);
+
+      var uploaded = false;
+      if (localWon.isNotEmpty) {
+        // 上传合并后的设置（含云端已落地部分），账本随载荷上云
+        final merged = _ref.read(settingsProvider).valueOrNull ?? local;
+        await _api.uploadSettings(merged, sectionTs: mergedTs);
+        uploaded = true;
+      }
       _lens.item = _lens.item.copyWith(
         syncing: false,
-        lastSummary: tr('已上传偏好设置'),
+        lastSummary: uploaded && cloudWon.isNotEmpty
+            ? tr('设置已双向合并同步')
+            : uploaded
+                ? tr('已上传偏好设置')
+                : cloudWon.isNotEmpty
+                    ? tr('设置已从云端更新')
+                    : tr('本地与云端设置一致，无需同步'),
         lastTime: DateTime.now(),
         errors: [],
       );
@@ -45,7 +130,8 @@ class SettingsSyncService {
   Future<void> download() async {
     _lens.item = _lens.item.copyWith(syncing: true, errors: []);
     try {
-      final cloud = await _api.downloadSettings();
+      final (cloud, cloudAt, cloudSectionTs) =
+          await _api.downloadSettingsCrossPlatform();
       if (cloud == null || cloud.isEmpty) {
         _lens.item = _lens.item.copyWith(
           syncing: false,
@@ -61,6 +147,13 @@ class SettingsSyncService {
       }
       final merged = applySyncedSettings(local, cloud);
       await _ref.read(settingsProvider.notifier).saveAll(merged);
+      // 全量落地：全部分节记云端时刻（账本缺失回落整包 uploaded_at），
+      // 避免下次自动同步把云端内容又推回去
+      final cloudAtMs = cloudAt?.millisecondsSinceEpoch ?? 0;
+      await writeSettingsSectionTs({
+        for (final key in settingsToSyncMap(local).keys)
+          key: cloudSectionTs?[key] ?? cloudAtMs,
+      });
       _lens.item = _lens.item.copyWith(
         syncing: false,
         lastSummary: tr('已应用云端设置'),
@@ -88,9 +181,8 @@ class SettingsSyncService {
         _fail(tr('本地设置尚未加载完成'));
         return;
       }
-      final meta = await _api.downloadSettingsCrossPlatform();
-      final cloud = meta.settings;
-      final cloudTime = meta.uploadedAt;
+      final (cloud, cloudTime, cloudSectionTs) =
+          await _api.downloadSettingsCrossPlatform();
       final upload = uploadConfig();
 
       if (cloud == null || cloud.isEmpty) {
@@ -146,7 +238,10 @@ class SettingsSyncService {
       if (choices.settings == SyncDirection.local) {
         if (upload.settings) {
           try {
-            await _api.uploadSettings(local);
+            // 保留本地 = 本端成为全部分节的最新持有者，先对齐账本再上传
+            final ts = await buildFullSettingsSectionTs(local);
+            await writeSettingsSectionTs(ts);
+            await _api.uploadSettings(local, sectionTs: ts);
           } catch (e) {
             errors.add(tr('设置上传失败: {e}', {'e': e}));
           }
@@ -155,6 +250,12 @@ class SettingsSyncService {
         try {
           final merged = applySyncedSettings(local, cloud);
           await _ref.read(settingsProvider.notifier).saveAll(merged);
+          // 全量落地：全部分节记云端时刻，避免下次自动同步把云端内容又推回去
+          final cloudAtMs = cloudTime?.millisecondsSinceEpoch ?? 0;
+          await writeSettingsSectionTs({
+            for (final key in settingsToSyncMap(local).keys)
+              key: cloudSectionTs?[key] ?? cloudAtMs,
+          });
         } catch (e) {
           errors.add(tr('设置下载失败: {e}', {'e': e}));
         }

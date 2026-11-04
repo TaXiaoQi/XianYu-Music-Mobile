@@ -143,6 +143,8 @@ class PlaylistSyncService {
         payload.add({
           'id': p.id,
           'name': p.name,
+          // 改名 LWW：本地实际改过名才带上时间戳（桌面端按缺省 0 处理不覆盖）
+          if (p.renamedAt > 0) 'renamedAt': p.renamedAt,
           'cloudCoverUrl': _firstRemoteSongCover(p.songs),
           'cloudId': p.cloudId,
           if (p.sourcePluginId != null) 'sourcePluginId': p.sourcePluginId,
@@ -269,6 +271,7 @@ class PlaylistSyncService {
         sourceRaw: pl['sourceRaw'] is Map
             ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
             : null,
+        renamedAt: (pl['renamedAt'] as num?)?.toInt() ?? 0,
       ));
     }
     await store.saveAll(rebuilt);
@@ -296,6 +299,8 @@ class PlaylistSyncService {
         'localId': p.id,
         if ((p.cloudId ?? '').isNotEmpty) 'cloudId': p.cloudId,
         'name': p.name,
+        // 改名 LWW：服务端 diff 下发 update_playlist_meta 时回带该时间戳
+        if (p.renamedAt > 0) 'renamedAt': p.renamedAt,
         'cloudCoverUrl': _firstRemoteSongCover(p.songs),
         if (p.importedAt > 0) 'createdAt': p.importedAt,
         if (p.sourcePluginId != null) 'sourcePluginId': p.sourcePluginId,
@@ -433,6 +438,7 @@ class PlaylistSyncService {
           sourceRaw: pl['sourceRaw'] is Map
               ? (pl['sourceRaw'] as Map).cast<String, dynamic>()
               : null,
+          renamedAt: (pl['renamedAt'] as num?)?.toInt() ?? 0,
         ));
         if (deletedPaths.isNotEmpty) {
           final removePaths = <String>{};

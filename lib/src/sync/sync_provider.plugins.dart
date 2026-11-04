@@ -54,6 +54,7 @@ class PluginsSyncService {
               'author': p.author,
               'description': p.description,
               'enabled': p.enabled,
+              'enabledUpdatedAt': p.enabledUpdatedAt,
               'sources': p.sources,
               'filePath': '$dir/plugins/${p.id}.js',
               'sourceUrl': p.sourceUrl,
@@ -172,6 +173,7 @@ class PluginsSyncService {
             'author': p.author,
             'description': p.description,
             'enabled': p.enabled,
+            'enabledUpdatedAt': p.enabledUpdatedAt,
             'sources': p.sources,
             'filePath': scriptPath,
             'sourceUrl': p.sourceUrl,
@@ -335,7 +337,13 @@ class PluginsSyncService {
             versionOverride: version.isEmpty ? null : version,
             sourceUrl: (item['sourceUrl'] as String?)?.trim() ?? '',
           );
-          if (item['enabled'] == false && source.enabled) {
+          // enabled LWW：云端 enabledUpdatedAt 不小于本地（缺省 0）才应用，
+          // 旧端快照缺省视为 0，不会覆盖本端未同步的开关切换
+          final cloudEnabled = item['enabled'] as bool? ?? true;
+          final cloudEnabledTs =
+              (item['enabledUpdatedAt'] as num?)?.toInt() ?? 0;
+          if (cloudEnabledTs >= source.enabledUpdatedAt &&
+              cloudEnabled != source.enabled) {
             await pluginManager.toggleEnabled(source.id);
           }
           final encBlock = item['userVariablesEncrypted'];

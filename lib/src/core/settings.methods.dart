@@ -16,8 +16,16 @@ class SettingsStore {
   final Future<void> Function(AppSettings) _commit;
 
   /// 应用变换并提交（状态 + 落盘）
-  Future<void> update(AppSettings Function(AppSettings) transform) =>
-      _commit(transform(_current()));
+  Future<void> update(AppSettings Function(AppSettings) transform) {
+    final prev = _current();
+    final next = transform(prev);
+    // 分节时间戳账本打点：仅用户侧 setter 走 update，云端合并/整机恢复走
+    // save，不会把云端值误标成本地变更
+    unawaited(
+      markSettingsSectionsChanged(changedSyncableSettingKeys(prev, next)),
+    );
+    return _commit(next);
+  }
 
   /// 直接提交（状态 + 落盘），供批量写入（如云端设置合并）使用
   Future<void> save(AppSettings next) => _commit(next);
