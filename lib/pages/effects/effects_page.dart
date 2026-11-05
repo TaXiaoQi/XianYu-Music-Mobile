@@ -35,7 +35,12 @@ class EffectsPage extends ConsumerWidget {
     final cutRight = isLandscape ? mq.padding.right : 0.0;
 
     return Scaffold(
-      backgroundColor: appScaffoldBackground(context, ref),
+      // 播放 Navigator 内嵌的覆盖页：壁纸开启时底色由 RoutePageBackdrop
+      // 的壁纸承担（保持透明）；无壁纸时必须自身铺实底，否则播放页
+      // 内容会从透明脚手架透出（穿模）
+      backgroundColor: ref.watch(wallpaperActiveProvider)
+          ? appScaffoldBackground(context, ref)
+          : appSurfaceBg(context),
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(child: Stack(
         children: [
