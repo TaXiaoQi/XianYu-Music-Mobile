@@ -69,10 +69,13 @@ class _FixedNavBar extends ConsumerWidget {
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
 
-    final bar = SafeArea(
-      top: false,
+    // 与悬浮底栏同款下沉：安全区打 30% 折（iOS 约 10px）+ 8px 边距，
+    // 玻璃填充仍铺到屏幕底，胶囊位置两端一致
+    final safeBottom = MediaQuery.paddingOf(context).bottom;
+    final bar = Padding(
+      padding: EdgeInsets.only(bottom: 8 + safeBottom * 0.3),
       child: SizedBox(
-        height: 64,
+        height: 70,
         child: _SlidingNavBottom(
           index: index,
           items: navItemsFor(

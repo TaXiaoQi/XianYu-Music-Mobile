@@ -377,13 +377,17 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         ? (screenSize.height - safeBottom - 58.0 - 12.0)
         : (floating
             ? (_lowState
-                ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                : (screenSize.height - safeBottom - 18.0 - 70.0 - 58.0))
+                ? (screenSize.height - safeBottom * 0.3 - 58.0 - 8.0)
+                : (screenSize.height - safeBottom * 0.3 - 8.0 - 70.0 - 58.0))
             : (_lowState
                 // 固定底栏在二级页同样塌缩隐藏（_FixedChrome 高度归零），
-                // 低位停靠档与悬浮模式一致
-                ? (screenSize.height - safeBottom - 58.0 - 18.0)
-                : (screenSize.height - safeBottom - 58.0 - 64.0)));
+                // 低位停靠档与悬浮模式一致（安全区同打 30% 折）
+                ? (screenSize.height - safeBottom * 0.3 - 58.0 - 8.0)
+                : (screenSize.height -
+                      safeBottom * 0.3 -
+                      8.0 -
+                      70.0 -
+                      58.0)));
 
     final batchLift = ref.watch(batchBarLiftProvider);
     final liftedDefaultTop = defaultTop - batchLift;
@@ -394,11 +398,16 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       if (floating) {
         return _lowState
             ? (screenSize.height - padding.bottom - barH - 12.0)
-            : (screenSize.height - safeBottom - 18.0 - 70.0 - barH - batchLift);
+            : (screenSize.height - safeBottom * 0.3 - 8.0 - 70.0 - barH - batchLift);
       }
       return _lowState
           ? (screenSize.height - padding.bottom - barH - 12.0)
-          : (screenSize.height - safeBottom - 64.0 - barH - batchLift);
+          : (screenSize.height -
+                safeBottom * 0.3 -
+                8.0 -
+                70.0 -
+                barH -
+                batchLift);
     }();
 
     final shared = MiniBarPositionStore.shared;

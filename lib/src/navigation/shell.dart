@@ -210,7 +210,7 @@ final navBarInsetProvider = Provider<double>((ref) {
   // 顶部导航没有底栏：页面只需给 mini 播放条留白
   if (s?.navBarPosition == NavBarPosition.top) return 82;
   // 悬浮底栏是覆盖式，页面需多留白避让；固定底栏占位在布局内，只需留 mini 播放条。
-  return (s?.floatingNavBar ?? false) ? 175 : 82;
+  return (s?.floatingNavBar ?? false) ? 165 : 82;
 });
 
 final navBarHiddenProvider = StateProvider<int>((ref) => 0);
@@ -1318,7 +1318,9 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             Positioned(
               left: 12,
               right: 12,
-              bottom: 18 + safeBottom,
+              // 自定义边距 8 + 安全区 30%（iOS 约 18px，留出 Home 横条
+              // 上沿间隙；安卓手势区同样打折，两端下沉量一致）
+              bottom: 8 + safeBottom * 0.3,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,
