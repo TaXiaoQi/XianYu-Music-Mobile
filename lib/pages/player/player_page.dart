@@ -765,10 +765,17 @@ class _PlayerShell extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: SafeArea(
         top: true,
-        bottom: true,
+        // 底部不再吃满安全区：与主页底栏同款下沉（8px + 安全区 30%），
+        // 控制区贴向屏幕底，Home 横条区仍留出间隙
+        bottom: false,
         left: !isLandscape,
         right: !isLandscape,
-        child: _body(),
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: 8 + MediaQuery.paddingOf(context).bottom * 0.3,
+          ),
+          child: _body(),
+        ),
       ),
     );
   }

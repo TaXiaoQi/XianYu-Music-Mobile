@@ -373,16 +373,19 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     } else {
       defaultLeft = 12.0;
     }
+    // 低位停靠档（二级页/无底栏导航模式）：与悬浮底栏同款下沉留空
+    // （8px + 安全区 30%），不直接贴在 Home 横条上
+    final lowGap = 8.0 + safeBottom * 0.3;
     final defaultTop = isSide
-        ? (screenSize.height - safeBottom - 58.0 - 12.0)
+        ? (screenSize.height - lowGap - 58.0)
         : (floating
             ? (_lowState
-                ? (screenSize.height - safeBottom * 0.3 - 58.0 - 8.0)
+                ? (screenSize.height - lowGap - 58.0)
                 : (screenSize.height - safeBottom * 0.3 - 8.0 - 70.0 - 58.0))
             : (_lowState
                 // 固定底栏在二级页同样塌缩隐藏（_FixedChrome 高度归零），
-                // 低位停靠档与悬浮模式一致（安全区同打 30% 折）
-                ? (screenSize.height - safeBottom * 0.3 - 58.0 - 8.0)
+                // 低位停靠档与悬浮模式一致
+                ? (screenSize.height - lowGap - 58.0)
                 : (screenSize.height -
                       safeBottom * 0.3 -
                       8.0 -
@@ -394,14 +397,14 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
 
     final dragMaxTop = () {
       final barH = 58.0;
-      if (isSide) return screenSize.height - safeBottom - barH - 12.0 - batchLift;
+      if (isSide) return screenSize.height - lowGap - barH - batchLift;
       if (floating) {
         return _lowState
-            ? (screenSize.height - padding.bottom - barH - 12.0)
+            ? (screenSize.height - lowGap - barH)
             : (screenSize.height - safeBottom * 0.3 - 8.0 - 70.0 - barH - batchLift);
       }
       return _lowState
-          ? (screenSize.height - padding.bottom - barH - 12.0)
+          ? (screenSize.height - lowGap - barH)
           : (screenSize.height -
                 safeBottom * 0.3 -
                 8.0 -
