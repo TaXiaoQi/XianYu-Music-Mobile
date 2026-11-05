@@ -378,7 +378,7 @@ class CastNotifier extends StateNotifier<CastState> {
     final s = _ref.read(settingsProvider).valueOrNull;
     final enabled = s?.dlnaRendererEnabled ?? false;
     final name = (s?.dlnaRendererName ?? '').trim().isEmpty
-        ? tr('弦予音乐')
+        ? tr('弦予音乐-移动端')
         : (s?.dlnaRendererName ?? '').trim();
     AppLog.info(
         'dlna', 'applyRendererSetting: enabled=$enabled running=${state.rendererRunning} name=$name');

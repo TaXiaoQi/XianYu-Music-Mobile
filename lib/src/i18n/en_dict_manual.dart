@@ -423,6 +423,7 @@ const Map<String, String> enDictManual = {
   '歌词显示、桌面歌词窗': 'Lyrics display and desktop lyrics window',
   '歌词已保存': 'Lyrics saved',
   '歌词字号': 'Lyrics font size',
+  '歌词模糊': 'Lyrics blur',
   '歌单、收藏、插件、设置备份为 JSON 并分享':
       'Back up playlists, favorites, plugins and settings as JSON and share',
   '歌单操作': 'Playlist actions',
@@ -1746,6 +1747,7 @@ const Map<String, String> enDictManual = {
       'When enabled, this device appears as a DLNA device on the LAN. Other apps can cast songs to it.',
   '投送端看到的名字': 'Name seen by casting devices',
   '弦予音乐': 'XianYu Music',
+  '弦予音乐-移动端': 'XianYu Music Mobile',
   '该歌单已同步到云端': 'This playlist is synced to the cloud',
   '歌单已同步到云端': 'Playlist is synced to the cloud',
   '收藏已同步到云端': 'Favorites are synced to the cloud',

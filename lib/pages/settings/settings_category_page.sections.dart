@@ -88,7 +88,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             subtitle: tr('投送端看到的名字'),
             trailing: Text(
               (s?.dlnaRendererName ?? '').trim().isEmpty
-                  ? tr('弦予音乐')
+                  ? tr('弦予音乐-移动端')
                   : s!.dlnaRendererName.trim(),
               style: TextStyle(
                 fontSize: 13,
@@ -1059,7 +1059,7 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
       title: tr('设备名称'),
       subtitle: tr('投送端看到的名字'),
       initialValue: (s?.dlnaRendererName ?? '').trim(),
-      hintText: tr('弦予音乐'),
+      hintText: tr('弦予音乐-移动端'),
       keyboardType: TextInputType.text,
     );
     if (name == null) return;
