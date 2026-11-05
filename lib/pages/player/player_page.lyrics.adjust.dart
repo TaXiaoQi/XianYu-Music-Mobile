@@ -67,6 +67,7 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
     final s = ref.watch(settingsProvider).valueOrNull;
     final showTranslation = s?.showLyricsTranslation ?? true;
     final showRomaji = s?.showLyricsRomaji ?? false;
+    final blurOn = s?.lyricBlur ?? true;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -110,6 +111,13 @@ class _LyricsAdjustDialogState extends ConsumerState<_LyricsAdjustDialog> {
           value: showRomaji,
           enabled: widget.hasRomaji,
           onChanged: (v) => notifier.setShowLyricsRomaji(v),
+        ),
+        _TraditionalPlayerLayoutState._buildLyricMenuSwitch(
+          context,
+          icon: Icons.blur_on_rounded,
+          label: tr('歌词模糊'),
+          value: blurOn,
+          onChanged: (v) => notifier.setLyricBlur(v),
         ),
         _TraditionalPlayerLayoutState._buildLyricMenuAction(
           context,

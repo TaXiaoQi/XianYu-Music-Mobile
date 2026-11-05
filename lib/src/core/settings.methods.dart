@@ -396,6 +396,8 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(showLyricsTranslation: v));
   Future<void> setShowLyricsRomaji(bool v) =>
       _settingsStore.update((s) => s.copyWith(showLyricsRomaji: v));
+  Future<void> setLyricBlur(bool v) =>
+      _settingsStore.update((s) => s.copyWith(lyricBlur: v));
   Future<void> setLyricFontName(String v) =>
       _settingsStore.update((s) => s.copyWith(lyricFontName: v));
   Future<void> setLyricFontPath(String v) =>

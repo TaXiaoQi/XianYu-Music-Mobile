@@ -102,6 +102,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
   int _fontSizeIdx = 1;
   bool _showTranslation = true;
   bool _showRomaji = false;
+
+  /// 非当前行模糊总开关（歌词调节弹窗「歌词模糊」，默认开）
+  bool _blurEnabled = true;
   int _offsetMs = 0;
 
   TextAlign _align = TextAlign.center;
@@ -828,6 +831,7 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
     _fontSizeIdx = newFontSizeIdx;
     _showTranslation = newShowTranslation;
     _showRomaji = newShowRomaji;
+    _blurEnabled = settings?.lyricBlur ?? true;
     _align = newAlign;
     final lyricFontFamily = (settings?.lyricFontName ?? '').isNotEmpty
         ? settings!.lyricFontName
@@ -928,7 +932,9 @@ class _LyricsViewState extends ConsumerState<_LyricsView>
                     ? 0.28
                     : 0.16;
                 final passed = idx < activeIndex;
-                final blurSigma = (!_userInteracted && !isActive)
+                final blurSigma = (_blurEnabled &&
+                        !_userInteracted &&
+                        !isActive)
                     ? math.min(1.0 + dist + (passed ? 1.0 : 0.0), 8.0)
                     : 0.0;
 

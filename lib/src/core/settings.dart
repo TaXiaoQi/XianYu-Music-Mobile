@@ -257,6 +257,7 @@ class AppSettings {
     this.lyricFontSize = 1,
     this.lyricOffsetMs = 0,
     this.showLyricsRomaji = false,
+    this.lyricBlur = true,
     this.lyricAlignment = 'center',
     this.lyricFontName = '',
     this.lyricFontPath = '',
@@ -364,6 +365,9 @@ class AppSettings {
   final bool showLyricsTranslation;
 
   final bool showLyricsRomaji;
+
+  /// 非当前行歌词模糊（桌面端同款，默认开）
+  final bool lyricBlur;
 
   final String lyricFontName;
 
@@ -604,6 +608,7 @@ class AppSettings {
     int? libraryMinDurationSeconds,
     bool? showLyricsTranslation,
     bool? showLyricsRomaji,
+    bool? lyricBlur,
     String? lyricFontName,
     String? lyricFontPath,
     bool? enableWordEffect,
@@ -731,6 +736,7 @@ class AppSettings {
       showLyricsTranslation:
           showLyricsTranslation ?? this.showLyricsTranslation,
       showLyricsRomaji: showLyricsRomaji ?? this.showLyricsRomaji,
+      lyricBlur: lyricBlur ?? this.lyricBlur,
       lyricFontName: lyricFontName ?? this.lyricFontName,
       lyricFontPath: lyricFontPath ?? this.lyricFontPath,
       enableWordEffect: enableWordEffect ?? this.enableWordEffect,
@@ -924,6 +930,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       libraryMinDurationSeconds: prefs.getInt('libraryMinDurationSeconds') ?? 0,
       showLyricsTranslation: prefs.getBool('showLyricsTranslation') ?? true,
       showLyricsRomaji: prefs.getBool('showLyricsRomaji') ?? false,
+      lyricBlur: prefs.getBool('lyricBlur') ?? true,
       lyricFontName: prefs.getString('lyricFontName') ?? '',
       lyricFontPath: prefs.getString('lyricFontPath') ?? '',
       enableWordEffect: prefs.getBool('enableWordEffect') ?? true,
