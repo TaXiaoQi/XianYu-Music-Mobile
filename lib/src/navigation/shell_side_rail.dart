@@ -187,7 +187,6 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     final left = _left ?? 12.0;
 
     final scheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final preferredDir =
         ref.watch(
@@ -205,7 +204,8 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             ) ??
             true) &&
         !lowPerf;
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
+    // 与悬浮顶栏胶囊同预算口径（header），液态/降级两分支观感完全同款
+    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
 
     const double approxExpandedH = 330.0;
 
@@ -339,7 +339,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
         Widget panelWidget;
         if (liquid) {
           final quality = liquidGlassQualitySetting(ref);
-          panelWidget = BiliPaiGlass(
+          final glass = BiliPaiGlass(
             radius: 24,
             // 来源胶囊同款修法：Impeller 缓存背板快照，逐帧重抓才能折射跟手
             alwaysLive: true,
@@ -349,49 +349,30 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             blurSigma: surfaceBlurSigma(
               base: bilipaiBackdropBlurOf(quality),
               budget: budget,
-              type: BlurSurfaceType.drawerOrSheet,
+              type: BlurSurfaceType.header,
               crispAtRest: true,
             ),
-            backgroundColor: themeTint(
-              ref,
-              'nav.bar',
-              bilipaiSurfaceTint(context, ref, quality),
-            ),
+            // 顶栏胶囊同款：纯 bilipaiSurfaceTint，不叠主题槽
+            backgroundColor: bilipaiSurfaceTint(context, ref, quality),
             specular: bilipaiSpecularOf(quality),
             edgeAmount: bilipaiEdgeOf(quality),
             saturation: bilipaiSaturationOf(quality),
             child: SizedBox(width: panelWidth, child: panelBody),
           );
-        } else if (lowPerf) {
-          panelWidget = Container(
-            width: panelWidth,
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xF02A2A2E) : const Color(0xF5FFFFFF),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.18)
-                    : Colors.white.withValues(alpha: 0.45),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: panelBody,
-          );
+          // 顶栏胶囊/底栏/mini 条同款外层 rim 壳（描边+高光），缺了观感发白发散
+          panelWidget = liquidGlassShell(context, child: glass, radius: 24);
         } else {
-          // 与顶栏同一条材质链（glassBandWrap）：跟随毛玻璃开关/档位/
-          // 壁纸设置——毛玻璃关且非壁纸时自动实底，不再独立取材
-          panelWidget = glassBandWrap(
-            context,
-            ref,
-            themeSlot: 'nav.bar',
-            borderRadius: BorderRadius.circular(24),
+          // 与悬浮顶栏胶囊同一条降级链（pseudoLiquidSurface）：毛玻璃关→
+          // 实底（浅色白 0xF0FFFFFF/深色 0xE62A2A2E，与底栏同色）、壁纸/
+          // 毛玻璃档位全跟随，不再独立取材
+          panelWidget = pseudoLiquidSurface(
+            context: context,
+            ref: ref,
+            radius: 24,
             child: SizedBox(width: panelWidth, child: panelBody),
+            surfaceType: BlurSurfaceType.header,
+            budget: budget,
+            frostedScale: frostedBlurScale(ref),
           );
         }
 

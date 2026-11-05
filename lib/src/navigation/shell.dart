@@ -46,7 +46,7 @@ import '../../pages/recent/recent_page.dart';
 import '../../pages/playlist/playlists_page.dart';
 import '../widgets/floating_search_bar.dart';
 import '../widgets/skin_icon.dart';
-import '../widgets/glass_appbar.dart' show GlassTopBar, glassBandWrap;
+import '../widgets/glass_appbar.dart' show GlassTopBar;
 import '../widgets/landscape_top_bar.dart';
 import '../../pages/account/account_page.dart';
 import '../../pages/download/download_page.dart';
