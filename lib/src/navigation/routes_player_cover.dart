@@ -164,9 +164,11 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return PredictiveBackGestureDetector(
-      route: this,
-      builder: (context, phase, startBackEvent, currentBackEvent) {
+    // iOS 左缘返回手势覆盖条：同 cover 路由（hit-test 最内层先认领）
+    return EdgeBackGestureScope(
+      child: PredictiveBackGestureDetector(
+        route: this,
+        builder: (context, phase, startBackEvent, currentBackEvent) {
         final curved = CurvedAnimation(
           parent: animation,
           curve: Curves.easeOutCubic,
@@ -214,7 +216,8 @@ class _PlayerCoverRoute extends PageRoute<void> with _CoverGestureCommit<void> {
             PredictiveCoverReturnView(animation: animation),
           ],
         );
-      },
+        },
+      ),
     );
   }
 }

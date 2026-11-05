@@ -12,6 +12,23 @@ import '../navigation/routes.dart'
 
 const bool kFrameworkPredictiveCompare = false;
 
+/// 触摸合成预测返回事件的公开分派门面：iOS 边缘滑动驱动
+/// （ios_edge_back_driver.dart）把左边缘拖拽合成 PredictiveBackEvent
+/// 后经此分派，内部路由到栈顶认领的 detector，与 Android 系统预测
+/// 返回共用同一转场/认领/commit 链路。
+abstract final class PredictiveBackSyntheticDispatch {
+  static bool start(PredictiveBackEvent event) =>
+      _PredictiveBackGestureDetectorState.syntheticStart(event);
+
+  static void update(PredictiveBackEvent event) =>
+      _PredictiveBackGestureDetectorState.syntheticUpdate(event);
+
+  static void commit() => _PredictiveBackGestureDetectorState.syntheticCommit();
+
+  static void cancel() =>
+      _PredictiveBackGestureDetectorState.syntheticCancel();
+}
+
 /// 预测返回手势的可用屏宽（逻辑像素）：合成进度按首触点到当前触点的
 /// 横向位移占屏宽比例计算。
 double predictiveBackScreenWidth() {
@@ -140,6 +157,44 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
 
   bool _owned = false;
 
+  // ---- iOS 边缘滑动返回驱动（ios_edge_back_driver.dart）----
+  // iOS 无系统预测返回事件源，触摸驱动按注册表合成 PredictiveBackEvent
+  // 分派给栈顶 detector，复用与 Android 完全相同的认领/转场/commit 链路。
+  // 注册顺序：后挂载的 detector（更上层的 navigator/路由）排在前面，
+  // 分派自上而下尝试认领，认领成功者持有整段手势。
+  static final List<_PredictiveBackGestureDetectorState> _liveDetectors = [];
+
+  static _PredictiveBackGestureDetectorState? _syntheticOwner;
+
+  /// 触摸驱动尝试开始：依次让各 detector 认领（内部已含 isCurrent/
+  /// popGestureEnabled/播放页覆盖互斥判定），返回是否有 detector 接管。
+  static bool syntheticStart(PredictiveBackEvent event) {
+    for (final state in _liveDetectors.reversed.toList()) {
+      if (state.handleStartBackGesture(event)) {
+        _syntheticOwner = state;
+        AppLog.info('backgesture',
+            'synthetic start owned=${state._routeName} total=${_liveDetectors.length}');
+        return true;
+      }
+    }
+    AppLog.info('backgesture',
+        'synthetic start NO OWNER total=${_liveDetectors.length}');
+    return false;
+  }
+
+  static void syntheticUpdate(PredictiveBackEvent event) =>
+      _syntheticOwner?.handleUpdateBackGestureProgress(event);
+
+  static void syntheticCommit() {
+    _syntheticOwner?.handleCommitBackGesture();
+    _syntheticOwner = null;
+  }
+
+  static void syntheticCancel() {
+    _syntheticOwner?.handleCancelBackGesture();
+    _syntheticOwner = null;
+  }
+
   final BackGestureProgressSynth _synth = BackGestureProgressSynth();
 
   PredictiveBackEvent? get startBackEvent => _startBackEvent;
@@ -161,18 +216,18 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     if (_coveredByPlayerPage) {
-      AppLog.debug('backgesture', 'decline $_routeName coveredByPlayer');
+      AppLog.info('backgesture', 'decline $_routeName coveredByPlayer');
       return false;
     }
     final bool gestureInProgress = !backEvent.isButtonEvent && _isEnabled;
     if (!gestureInProgress) {
       if (!backEvent.isButtonEvent && widget.route.isCurrent) {
-        AppLog.debug('backgesture',
+        AppLog.info('backgesture',
             'decline $_routeName popGestureEnabled=${widget.route.popGestureEnabled}');
       }
       return false;
     }
-    AppLog.debug('backgesture', 'claim $_routeName progress=${backEvent.progress.toStringAsFixed(3)}');
+    AppLog.info('backgesture', 'claim $_routeName progress=${backEvent.progress.toStringAsFixed(3)}');
     _owned = true;
     _synth.reset();
     phase = PredictiveBackPhase.start;
@@ -265,11 +320,14 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   @override
   void initState() {
     super.initState();
+    _liveDetectors.add(this);
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    _liveDetectors.remove(this);
+    if (_syntheticOwner == this) _syntheticOwner = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

@@ -36,6 +36,12 @@ bool _livePredictiveBack(BuildContext? context, bool fallback) {
       true;
 }
 
+/// iOS 无系统预测返回事件源，左边缘滑动由应用内触摸驱动合成事件
+/// （ios_edge_back_driver）。「预测返回」设置约束的是 Android 系统手势
+/// 入口，iOS 边缘返回不应被它连坐禁用（否则默认关闭时全线失效）。
+bool get _edgeBackAlwaysOn =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+
 PageTransitionStyle _pageTransitionStyle(BuildContext context) =>
     ProviderScope.containerOf(context, listen: false)
         .read(settingsProvider)
@@ -133,7 +139,10 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
   final String? location;
 
   @override
-  bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
+  bool get popGestureEnabled =>
+      isCurrent &&
+      (_edgeBackAlwaysOn ||
+          _livePredictiveBack(navigator?.context, predictiveBack));
 
   // 时间戳打点：didPush（动画 forward 起点）与 defer init（buildPage
   // 首帧）的时间差与各自状态。实测 gap≈9ms 且 init 已 completed
@@ -203,16 +212,19 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         fallbackColor: Colors.transparent,
       ).buildTransitions(this, context, animation, secondaryAnimation, child);
     }
-    return PredictiveBackGestureDetector(
-      route: this,
-      builder: (context, phase, startBackEvent, currentBackEvent) {
-        if (_isSmooth(context)) {
-          return _SmoothFadeForwards(
-            animation: animation,
-            secondaryAnimation: secondaryAnimation,
-            child: child,
-          );
-        }
+    // iOS 左缘返回手势覆盖条：包在转场层外侧，成为 hit-test 最内层
+    // （先于页面内识别器收事件与 sweep，见 EdgeBackGestureScope）
+    return EdgeBackGestureScope(
+      child: PredictiveBackGestureDetector(
+        route: this,
+        builder: (context, phase, startBackEvent, currentBackEvent) {
+          if (_isSmooth(context)) {
+            return _SmoothFadeForwards(
+              animation: animation,
+              secondaryAnimation: secondaryAnimation,
+              child: child,
+            );
+          }
         final isPortrait =
             MediaQuery.orientationOf(context) == Orientation.portrait;
         final page = isPortrait
@@ -231,11 +243,16 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
           location: location,
           child: page,
         );
-        if (isPortrait && phase != PredictiveBackPhase.idle) {
+        if (isPortrait &&
+            phase != PredictiveBackPhase.idle &&
+            !_edgeBackAlwaysOn) {
           // 预测返回手势期（含 commit/cancel 收尾）：Android 16 同款整页
           // 缩小卡片（缩放+贴边位移+圆角+纵向跟随），下层页面从缩小露出
           // 的区域透出。此前手势期沿用平移基线，观感是「整页盖走」而非
-          // 官方缩小返回
+          // 官方缩小返回。
+          // iOS 例外：触摸驱动的边缘返回（ios_edge_back_driver）按 iOS
+          // 原生习惯走基线滑动——整页 1:1 跟手平移、下层透出，缩卡是
+          // Android 转场语言，iOS 用户从未见过、手感怪异。
           return PredictiveBackSharedElementPageTransition(
             animation: animation,
             secondaryAnimation: secondaryAnimation,
@@ -251,12 +268,30 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
           reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
         );
         final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
+        final iosGestureSlide =
+            isPortrait && _edgeBackAlwaysOn && phase != PredictiveBackPhase.idle;
         return SlideTransition(
           position: Tween<Offset>(begin: begin, end: Offset.zero)
               .animate(curved),
-          child: content,
+          child: iosGestureSlide
+              // iOS 手势期左缘动态阴影：强化两页叠放的层次（原生观感）
+              ? DecoratedBox(
+                  decoration: BoxDecoration(
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.18),
+                        blurRadius: 12,
+                        spreadRadius: -2,
+                        offset: const Offset(-5, 0),
+                      ),
+                    ],
+                  ),
+                  child: content,
+                )
+              : content,
         );
-      },
+        },
+      ),
     );
   }
 }
@@ -301,7 +336,10 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
   final String? location;
 
   @override
-  bool get popGestureEnabled => isCurrent && _livePredictiveBack(navigator?.context, predictiveBack);
+  bool get popGestureEnabled =>
+      isCurrent &&
+      (_edgeBackAlwaysOn ||
+          _livePredictiveBack(navigator?.context, predictiveBack));
 
   // 时间戳打点（同 _CoverRoute）：实测确认 offstage 代理机制，非首帧阻塞
   @override
@@ -360,78 +398,105 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
         fallbackColor: Colors.transparent,
       ).buildTransitions(this, context, animation, secondaryAnimation, child);
     }
-    return PredictiveBackGestureDetector(
-      route: this,
-      builder: (context, phase, startBackEvent, currentBackEvent) {
-        if (_isSmooth(context)) {
-          final smooth = _SmoothFadeForwards(
-            animation: animation,
-            secondaryAnimation: secondaryAnimation,
-            child: child,
+    // iOS 左缘返回手势覆盖条：同 _CoverRoute（hit-test 最内层先认领）
+    return EdgeBackGestureScope(
+      child: PredictiveBackGestureDetector(
+        route: this,
+        builder: (context, phase, startBackEvent, currentBackEvent) {
+          if (_isSmooth(context)) {
+            final smooth = _SmoothFadeForwards(
+              animation: animation,
+              secondaryAnimation: secondaryAnimation,
+              child: child,
+            );
+            if (phase == PredictiveBackPhase.idle) return smooth;
+            return TransitionBackdrop(
+              child: Stack(
+                children: [
+                  smooth,
+                  PredictiveCoverReturnView(animation: animation),
+                ],
+              ),
+            );
+          }
+          final isPortrait =
+              MediaQuery.orientationOf(context) == Orientation.portrait;
+          final page = isPortrait
+              ? RouteStaticSnapshot(animation: animation, child: child)
+              : FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: animation,
+                    curve:
+                        const Interval(0, 0.45, curve: Curves.easeOutCubic),
+                    reverseCurve:
+                        const Interval(0, 0.45, curve: Curves.easeOutCubic),
+                  ),
+                  child: child,
+                );
+          final content = RoutePageBackdrop(
+            completion: animation,
+            location: location,
+            child: page,
           );
-          if (phase == PredictiveBackPhase.idle) return smooth;
-          return TransitionBackdrop(
-            child: Stack(
+          final Widget transition;
+          if (isPortrait &&
+              phase != PredictiveBackPhase.idle &&
+              !_edgeBackAlwaysOn) {
+            // 手势期（含 commit/cancel 收尾）：整页缩小卡片，同 _CoverRoute；
+            // 飞回封面（PredictiveCoverReturnView）继续叠加在其上。
+            // iOS 例外走基线滑动（缩卡是 Android 转场语言）
+            transition = PredictiveBackSharedElementPageTransition(
+              animation: animation,
+              secondaryAnimation: secondaryAnimation,
+              phase: phase,
+              startBackEvent: startBackEvent,
+              currentBackEvent: currentBackEvent,
+              child: content,
+            );
+          } else {
+            final curved = CurvedAnimation(
+              parent: animation,
+              curve: isPortrait ? Curves.linear : Curves.easeOut,
+              reverseCurve:
+                  isPortrait ? Curves.linear : Curves.easeOut.flipped,
+            );
+            final begin =
+                isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
+            final iosGestureSlide = isPortrait &&
+                _edgeBackAlwaysOn &&
+                phase != PredictiveBackPhase.idle;
+            transition = SlideTransition(
+              position: Tween<Offset>(begin: begin, end: Offset.zero)
+                  .animate(curved),
+              child: iosGestureSlide
+                  // iOS 手势期左缘动态阴影：同 _CoverRoute
+                  ? DecoratedBox(
+                      decoration: BoxDecoration(
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.18),
+                            blurRadius: 12,
+                            spreadRadius: -2,
+                            offset: const Offset(-5, 0),
+                          ),
+                        ],
+                      ),
+                      child: content,
+                    )
+                  : content,
+            );
+          }
+          if (phase != PredictiveBackPhase.idle) {
+            return Stack(
               children: [
-                smooth,
+                transition,
                 PredictiveCoverReturnView(animation: animation),
               ],
-            ),
-          );
-        }
-        final isPortrait =
-            MediaQuery.orientationOf(context) == Orientation.portrait;
-        final page = isPortrait
-            ? RouteStaticSnapshot(animation: animation, child: child)
-            : FadeTransition(
-                opacity: CurvedAnimation(
-                  parent: animation,
-                  curve: const Interval(0, 0.45, curve: Curves.easeOutCubic),
-                  reverseCurve:
-                      const Interval(0, 0.45, curve: Curves.easeOutCubic),
-                ),
-                child: child,
-              );
-        final content = RoutePageBackdrop(
-          completion: animation,
-          location: location,
-          child: page,
-        );
-        final Widget transition;
-        if (isPortrait && phase != PredictiveBackPhase.idle) {
-          // 手势期（含 commit/cancel 收尾）：整页缩小卡片，同 _CoverRoute；
-          // 飞回封面（PredictiveCoverReturnView）继续叠加在其上
-          transition = PredictiveBackSharedElementPageTransition(
-            animation: animation,
-            secondaryAnimation: secondaryAnimation,
-            phase: phase,
-            startBackEvent: startBackEvent,
-            currentBackEvent: currentBackEvent,
-            child: content,
-          );
-        } else {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: isPortrait ? Curves.linear : Curves.easeOut,
-            reverseCurve: isPortrait ? Curves.linear : Curves.easeOut.flipped,
-          );
-          final begin = isPortrait ? const Offset(1, 0) : const Offset(0.25, 0);
-          transition = SlideTransition(
-            position: Tween<Offset>(begin: begin, end: Offset.zero)
-                .animate(curved),
-            child: content,
-          );
-        }
-        if (phase != PredictiveBackPhase.idle) {
-          return Stack(
-            children: [
-              transition,
-              PredictiveCoverReturnView(animation: animation),
-            ],
-          );
-        }
-        return transition;
-      },
+            );
+          }
+          return transition;
+        },
+      ),
     );
   }
 }
