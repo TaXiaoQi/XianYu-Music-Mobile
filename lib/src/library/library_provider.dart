@@ -368,11 +368,47 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       }
       await _reloadSongsFromDb();
     }
+    // iOS 重装/换签名后容器 UUID 会变，旧绝对路径全部失效，扫描永远
+    // 碰不到它们成为僵尸记录。清理「文件已不存在且不在任何登记目录下」
+    // 的死路径；登记目录可能只是临时失联（iCloud 未挂载等），不在此列
+    if (Platform.isIOS && errors.isEmpty) {
+      try {
+        await _pruneDeadPaths(dbPath, folders);
+      } catch (e) {
+        AppLog.warn('library', '清理失效曲库路径失败: $e');
+      }
+    }
     await load();
     if (total == 0 && errors.isNotEmpty) {
       throw Exception('扫描失败：${errors.first}');
     }
     return total;
+  }
+
+  /// 清理文件已不存在的死路径歌曲（iOS 容器 UUID 变化后的僵尸记录）。
+  /// 只处理不在任何登记目录下的路径；按父目录整目录删除，且要求该目录
+  /// 下所有已知歌曲全部失效才执行，防止误删仍健在的文件。
+  Future<void> _pruneDeadPaths(String dbPath, List<String> folders) async {
+    final songsJson = await getLibrarySongsCached(dbPath: dbPath);
+    final all = (jsonDecode(songsJson) as List)
+        .map((e) => (e as Map)['path'] as String? ?? '')
+        .where((s) => s.startsWith('/'))
+        .toList();
+    bool registered(String path) =>
+        folders.any((r) => path == r || path.startsWith('$r/'));
+    final missing = all
+        .where((s) => !registered(s) && !File(s).existsSync())
+        .toList();
+    if (missing.isEmpty) return;
+    for (final root in missing.map(p.dirname).toSet()) {
+      // 该目录下仍有文件健在 → 不整目录删除
+      final hasSurvivor = all.any(
+        (s) => s.startsWith('$root/') && File(s).existsSync(),
+      );
+      if (hasSurvivor) continue;
+      await removeLibraryFolder(dbPath: dbPath, path: root);
+      AppLog.info('library', '已清理失效曲库目录: $root');
+    }
   }
 
   Future<int> _scanFolder(
