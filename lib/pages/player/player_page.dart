@@ -1363,12 +1363,13 @@ class _TraditionalPlayerLayoutState
                 ),
               ),
               const Spacer(),
-              Switch.adaptive(
+              // Material Switch（安卓/iOS 一致）：淡色轨道 + 圆形品牌色圆头，
+              // 不用 CupertinoSwitch（iOS 上会变成整条饱和色胶囊）
+              Switch(
                 value: value,
                 onChanged: enabled ? onChanged : null,
                 activeThumbColor: const Color(0xFFEC4141),
-                // iOS：CupertinoSwitch 默认轨道为系统绿，补齐品牌色
-                activeTrackColor: const Color(0xFFEC4141),
+                activeTrackColor: const Color(0xFFEC4141).withAlpha(70),
               ),
             ],
           ),
