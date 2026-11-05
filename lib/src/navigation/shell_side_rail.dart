@@ -123,15 +123,17 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
     _dragDistance += details.delta.distance;
     final floatingSearchBar =
         ref.read(settingsProvider).valueOrNull?.floatingSearchBar ?? false;
+    // 悬浮顶栏实际底缘：行高 44，Positioned top = padding.top + 8
     final topBarBottom = floatingSearchBar
-        ? (padding.top + 60.0)
+        ? (padding.top + 52.0)
         : (padding.top + 122.0);
-    final currentTop = _top ?? (topBarBottom + 24.0);
+    final currentTop = _top ?? (topBarBottom + 8.0);
     final currentLeft = _left ?? 12.0;
 
     final panelW = widget.expanded ? 68.0 : 52.0;
 
-    final minTop = topBarBottom + 12.0;
+    // 允许贴上悬浮顶栏下缘（仅留 2px 缝），不再抬高限制
+    final minTop = topBarBottom + 2.0;
     final maxTop = screenSize.height - padding.bottom - 52.0 - 12.0;
     final minLeft = 8.0;
     final maxLeft = screenSize.width - panelW - 8.0;
@@ -175,10 +177,10 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
       settingsProvider.select((s) => s.valueOrNull?.floatingSearchBar ?? false),
     );
     final topBarBottom = floatingSearchBar
-        ? (padding.top + 60.0)
+        ? (padding.top + 52.0)
         : (padding.top + 122.0);
-    final safeMinTop = topBarBottom + 12.0;
-    final currentTop = (_top ?? (topBarBottom + 24.0)).clamp(
+    final safeMinTop = topBarBottom + 2.0;
+    final currentTop = (_top ?? (topBarBottom + 8.0)).clamp(
       safeMinTop,
       double.infinity,
     );
@@ -234,6 +236,9 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
         final panelWidth = lerpDouble(52.0, 68.0, progress)!;
 
         final logoButton = GestureDetector(
+          // 快速点按走 onTap：pan 识别器在无位移点按时不认领，
+          // 竞技场会被下层内容的 tap 手势抢走（onPanEnd 到不了）
+          onTap: widget.onToggleExpand,
           onPanStart: _onPanStart,
           onPanUpdate: (d) => _onPanUpdate(d, screenSize, padding),
           onPanEnd: _onPanEnd,
@@ -347,7 +352,11 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
               type: BlurSurfaceType.drawerOrSheet,
               crispAtRest: true,
             ),
-            backgroundColor: bilipaiSurfaceTint(context, ref, quality),
+            backgroundColor: themeTint(
+              ref,
+              'nav.bar',
+              bilipaiSurfaceTint(context, ref, quality),
+            ),
             specular: bilipaiSpecularOf(quality),
             edgeAmount: bilipaiEdgeOf(quality),
             saturation: bilipaiSaturationOf(quality),
@@ -375,54 +384,15 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             child: panelBody,
           );
         } else {
-          final panelBg = wallpaperGlassActive(ref)
-              ? wallpaperGlassFill(context, ref)
-              : (isDark
-                    ? Colors.white.withValues(alpha: 0.05)
-                    : Colors.white.withValues(alpha: 0.35));
-          final panelFill = surfaceFillWithBudget(panelBg, budget);
-          final panelSigma = wallpaperGlassActive(ref)
-              ? wallpaperGlassSigma(context)
-              : surfaceBlurSigma(
-                  base: 8 * frostedBlurScale(ref),
-                  budget: budget,
-                  type: BlurSurfaceType.drawerOrSheet,
-                );
-          final panelBox = Container(
-            width: panelWidth,
-            decoration: BoxDecoration(
-              color: panelFill,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.18)
-                    : Colors.white.withValues(alpha: 0.45),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1),
-                  blurRadius: 18,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: panelBody,
+          // 与顶栏同一条材质链（glassBandWrap）：跟随毛玻璃开关/档位/
+          // 壁纸设置——毛玻璃关且非壁纸时自动实底，不再独立取材
+          panelWidget = glassBandWrap(
+            context,
+            ref,
+            themeSlot: 'nav.bar',
+            borderRadius: BorderRadius.circular(24),
+            child: SizedBox(width: panelWidth, child: panelBody),
           );
-          panelWidget = panelSigma <= 0
-              ? panelBox
-              // 静态帧：动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
-              : RepaintBoundary(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(
-                        sigmaX: panelSigma,
-                        sigmaY: panelSigma,
-                      ),
-                      child: panelBox,
-                    ),
-                  ),
-                );
         }
 
         return Positioned(
