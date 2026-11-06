@@ -69,6 +69,15 @@ rubato = "0.16"
 [target.'cfg(target_os = "android")'.dependencies]
 libc = "0.2"
 
+# iOS 原生音频输出（coreaudio.rs）：cpal 的 CoreAudio host 创建 AURemoteIO
+# 输出流拉取 DSP 管线 PCM；AVAudioSession 配置由 Swift 侧插件负责。
+# 版本对齐 Cargo.lock 已有的 0.15.3（此前为传递依赖），避免重解析依赖图。
+[target.'cfg(target_os = "ios")'.dependencies]
+cpal = "0.15"
+
+[dev-dependencies]
+symphonia = { version = "0.5.5", default-features = false, features = ["flac"] }
+
 [profile.dev]
 # 与桌面端保持一致：DSP/FFT 热路径在 opt-level=0 下较慢
 opt-level = 1
