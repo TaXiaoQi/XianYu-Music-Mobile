@@ -41,14 +41,29 @@ final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot = ValueNotifier(
   null,
 );
 
-/// 水滴换页弹簧（点击切换/横滑落定/拖拽落定共用）：ζ≈0.5 欠阻尼——
-/// 旧参数 damping 25.4 是 ζ≈0.62 重阻尼，过冲仅 ~8%，观感近平移；
-/// 这组多一记可见回弹（约 16% 过冲），贴近 iOS 换页的弹性落定
-const SpringDescription kNavDropletSpring = SpringDescription(
-  mass: 1,
-  stiffness: 460,
-  damping: 21.5,
-);
+/// 水滴换页弹簧按飞行距离自适应（见 _flightSpringFor）；stiffness 统一
+/// 460（ζ≈0.5-0.78 对应 damping 21.5-33.4）
+const double kNavDropletStiffness = 460;
+
+/// 距离自适应阻尼：把过冲钉成固定 ~0.06 页签（≈9px）的绝对距离，
+/// 而非随飞行距离等比放大的百分比——欠阻尼弹簧过冲百分比只跟 ζ 有
+/// 关，2 页签（首页↔插件 ~280px）7.5% 是 21px、1 页签只有 ~10px，
+/// 长飞「冲过头」观感远猛于短飞（用户实测）。按距离反解 ζ：
+/// f=exp(-πζ/√(1-ζ²)) → ζ=ln(1/f)/√(π²+ln²(1/f))；钳在 [0.5, 0.78]
+/// ——0.5 保短程仍有明显回弹，0.78 保证长程不变成纯平移
+SpringDescription _flightSpringFor(double dist) {
+  final f = (0.06 / dist.abs()).clamp(0.026, 0.7);
+  final lnf = -math.log(f);
+  final zeta = (lnf / math.sqrt(math.pi * math.pi + lnf * lnf)).clamp(
+    0.5,
+    0.78,
+  );
+  return SpringDescription(
+    mass: 1,
+    stiffness: kNavDropletStiffness,
+    damping: 2 * zeta * math.sqrt(kNavDropletStiffness),
+  );
+}
 
 /// 落定判定容差（用于 SpringSimulation.tolerance）：默认 0.001 页签
 /// ≈0.2px 太苛刻，欠阻尼弹簧的亚像素尾摆会拖住 completed 2-3 帧，
@@ -234,11 +249,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   AnimationController? _moveC;
   // 显示位可为 2（三页签，插件页签开启时）：AnimationController 默认
   // upperBound=1.0 会把指示器位置钳在中间页签——弹簧动画 0→2 钳停在 1，
-  // 自愈赋值 2.0 也被钳回 1。必须解除上界
+  // 自愈赋值 2.0 也被钳回 1。必须解除上界。下界同样必须放开：
+  // lowerBound=0 会把回首页（target=0）的欠阻尼过冲钳死在 0，
+  // 只有首页的回弹凭空消失（去我的/插件页上界畅通各有回弹——
+  // 用户实测「回首页弹跳很少」的根因）
   AnimationController get _move =>
       _moveC ??= AnimationController(
         vsync: this,
-        lowerBound: 0,
+        lowerBound: double.negativeInfinity,
         upperBound: double.infinity,
       );
 
@@ -335,10 +353,12 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               : (_pageDragDir != 0 ? _pageDragDir : 1.0);
       _move.animateWith(
         SpringSimulation(
-          kNavDropletSpring,
+          _flightSpringFor(target - _move.value),
           _move.value,
           target,
-          dir * math.max(_pageDragVel.abs(), 2.0),
+          // 方向性最小初速：保证缓速松手也有一记可见回弹；上限 1.2
+          // 页签/s——贴着目标松手时过高初速会显著加深过冲（飞过头）
+          dir * _pageDragVel.abs().clamp(0.8, 1.2),
           tolerance: kNavDropletTolerance,
         ),
       );
@@ -435,11 +455,12 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   /// 启动换页弹簧（靶心取当前 index 的显示序）
   void _startFlightSpring(double v0) {
+    final target = _dispIndexOf(widget.index).toDouble();
     _move.animateWith(
       SpringSimulation(
-        kNavDropletSpring,
+        _flightSpringFor(target - _move.value),
         _move.value,
-        _dispIndexOf(widget.index).toDouble(),
+        target,
         v0,
         tolerance: kNavDropletTolerance,
       ),
@@ -769,7 +790,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           if (overlayDroplet) {
             final w = indicatorW * sx;
             final h = dropH * sy;
-            final cx = 10 + pos * tabW + tabW / 2;
+            var cx = 10 + pos * tabW + tabW / 2;
+            // 栏缘墙：放大水滴的渲染落点钳在栏内容区内。只钳快照 cx、
+            // 不钳 pos 本体——弹簧回弹与拖拽插值不受影响，撞墙段由
+            // 尺寸脉冲继续表达回弹。墙深 16 = 8 基础余量 + 6 暗晕外扩
+            //（_DropletHaloPainter 宿主每边多画 6px 且 Clip.none，只钳
+            // rect 的话暗晕会替水滴越出玻璃缘，取证日志+截图实测吻合）
+            // + 2 贴壁微露
+            cx = cx.clamp(16 + w / 2, maxW - 16 - w / 2);
             // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
             // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
             // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
@@ -982,7 +1010,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _flight = true;
     _move.animateWith(
       SpringSimulation(
-        kNavDropletSpring,
+        _flightSpringFor(target - _move.value),
         _move.value,
         target,
         _dragVel,
