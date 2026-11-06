@@ -194,13 +194,24 @@ class _BatchActionBarState extends ConsumerState<BatchActionBar> {
     if (render is RenderBox) {
       final controller = _liftController;
       if (controller != null) {
-        controller.state = render.size.height;
+        controller.state = _visualHeight(render);
       } else {
         final fresh = ref.read(batchBarLiftProvider.notifier);
         _liftController = fresh;
-        fresh.state = render.size.height;
+        fresh.state = _visualHeight(render);
       }
     }
+  }
+
+  /// 上报屏上视觉高度而非布局高度：本条在样式大小缩放子树内布局，
+  /// render.size 是逻辑值（视觉 = 逻辑 × uiScale）；而消费方（mini 条
+  /// 停靠档）在缩放子树外的真实视口空间计算。用 localToGlobal 量
+  /// 变换后高度，天然包含 FittedBox 等任何祖先变换
+  double _visualHeight(RenderBox box) {
+    if (!box.attached || !box.hasSize) return 0;
+    final top = box.localToGlobal(Offset.zero);
+    final bottom = box.localToGlobal(Offset(0, box.size.height));
+    return (bottom.dy - top.dy).abs();
   }
 
   bool get _allSelected =>
