@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../widgets/blur_budget.dart' show setTabSwitching;
@@ -6,6 +8,12 @@ import '../widgets/blur_budget.dart' show setTabSwitching;
 /// -1 = 非拖拽态。底栏水滴指示器（_SlidingNavBottom）据此在相邻页签间
 /// 等比插值+放大水滴，随页面实时跟手，而非半程才瞬跳
 final ValueNotifier<double> tabSwipePageFraction = ValueNotifier<double>(-1);
+
+/// 拖拽松手（弹滚边界）预测的落定页（分支索引）。水滴脱钩弹簧的靶心用
+/// 它而非当前 index：快速轻甩常在弹滚过半程前松手，onPageChanged（过半
+/// 才触发）尚未变更 index，按旧 index 收敛会先反向飞再被 redirect 纠正。
+/// 松手时先写本值再置 tabSwipePageFraction = -1，保证水滴侧读到
+final ValueNotifier<int?> tabSwipeReleasePage = ValueNotifier<int?>(null);
 
 class PageSwitchTabView extends StatefulWidget {
   const PageSwitchTabView({
@@ -37,16 +45,24 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
   // 入口条件 ScrollStart.dragDetails != null 区分手指拖拽与程序式动画
   bool _pageDrag = false;
 
-  // 拖拽→弹滚切换瞬间 Flutter 会先派发 ScrollEnd 再派发弹滚的
-  // ScrollStart（dragDetails==null）。若收到 ScrollEnd 立即解除跟手态，
-  // 页面还在弹滚飞行时水滴就退化成默认样式（模拟器实测）。改为帧末
-  // 确认没有弹滚接力才收
-  bool _pendingDragEnd = false;
+  // 拖拽帧速度（页/秒）：松手落定页预测的方向票（与 PageScrollPhysics
+  // 的 vote 同量纲）
+  int _dragPageUs = 0;
+  double _dragPagePos = 0;
+  double _dragPageVel = 0;
 
   void _onControllerMoved() {
     if (!_pageDrag || !_controller.hasClients) return;
     final p = _controller.page;
-    if (p != null) tabSwipePageFraction.value = p;
+    if (p == null) return;
+    final now = DateTime.now().microsecondsSinceEpoch;
+    if (_dragPageUs > 0) {
+      final dt = (now - _dragPageUs) / 1e6;
+      if (dt > 0.001) _dragPageVel = (p - _dragPagePos) / dt;
+    }
+    _dragPageUs = now;
+    _dragPagePos = p;
+    tabSwipePageFraction.value = p;
   }
 
   bool _handlePageDragNotification(ScrollNotification n) {
@@ -54,25 +70,49 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
     if (n is ScrollStartNotification) {
       if (n.dragDetails != null) {
         _pageDrag = true;
-        _pendingDragEnd = false;
+        _dragPageUs = 0;
+        _dragPageVel = 0;
         final p = _controller.hasClients ? _controller.page : null;
         tabSwipePageFraction.value = p ?? widget.currentIndex.toDouble();
-      } else if (_pendingDragEnd) {
-        // 弹滚接力：延续跟手态，水滴随页面继续飞
-        _pageDrag = true;
-        _pendingDragEnd = false;
       }
-    } else if (n is ScrollEndNotification && _pageDrag) {
-      _pendingDragEnd = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_pendingDragEnd) return;
-        _pendingDragEnd = false;
-        _pageDrag = false;
-        // 落定解除：指示器交还弹簧动画
-        tabSwipePageFraction.value = -1;
-      });
+    } else if (_pageDrag) {
+      if (n is ScrollUpdateNotification) {
+        // 弹滚首帧即松手：DragScrollActivity（手指拖拽）派发的
+        // ScrollUpdate 才带 dragDetails，拖拽中首个 null 帧即弹滚起步。
+        // 不能等 ScrollEnd——它要延迟到弹滚模拟跑完才派发（SDK 文档
+        // 明确），届时水滴已跟页面爬到停稳，只能原地后补回弹（观感脱节）
+        if (n.dragDetails == null) _releasePageDrag();
+      } else if (n is ScrollEndNotification) {
+        // 慢速松手无弹滚（残余速度不足直接 idle）的兜底
+        _releasePageDrag();
+      }
     }
     return false;
+  }
+
+  /// 松手：水滴即刻脱钩页面、换页弹簧接管（带过冲回弹），与页面弹滚
+  /// 并行收敛。落定页按 PageScrollPhysics 预测（round(page ± 0.5 方向
+  /// 票)，票阈值 tolerance.velocity 默认 50px/s 换算成页单位）——弹滚
+  /// 未过半程时 index 尚未变更，按 index 收敛会先反向飞再被纠正
+  void _releasePageDrag() {
+    if (!_pageDrag) return;
+    _pageDrag = false;
+    _dragPageUs = 0;
+    var page = _controller.hasClients
+        ? (_controller.page ?? widget.currentIndex.toDouble())
+        : widget.currentIndex.toDouble();
+    if (_controller.hasClients) {
+      final vp = _controller.position.viewportDimension;
+      final vote = 50.0 / math.max(vp, 1.0);
+      if (_dragPageVel < -vote) {
+        page -= 0.5;
+      } else if (_dragPageVel > vote) {
+        page += 0.5;
+      }
+    }
+    tabSwipeReleasePage.value = math
+        .min(math.max(page.round(), 0), widget.children.length - 1);
+    tabSwipePageFraction.value = -1;
   }
 
   // 手势拖拽换页不做任何特别处理（用户决策 2026-11，与安卓对齐）：
@@ -115,7 +155,10 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
   @override
   void dispose() {
     if (_switchGen > 0) setTabSwitching(false);
-    if (_pageDrag) tabSwipePageFraction.value = -1;
+    if (_pageDrag) {
+      tabSwipeReleasePage.value = widget.currentIndex;
+      tabSwipePageFraction.value = -1;
+    }
     _controller.removeListener(_onControllerMoved);
     _controller.dispose();
     super.dispose();

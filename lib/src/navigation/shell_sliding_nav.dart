@@ -41,6 +41,24 @@ final ValueNotifier<NavDropletSnapshot?> navDropletSnapshot = ValueNotifier(
   null,
 );
 
+/// 水滴换页弹簧（点击切换/横滑落定/拖拽落定共用）：ζ≈0.5 欠阻尼——
+/// 旧参数 damping 25.4 是 ζ≈0.62 重阻尼，过冲仅 ~8%，观感近平移；
+/// 这组多一记可见回弹（约 16% 过冲），贴近 iOS 换页的弹性落定
+const SpringDescription kNavDropletSpring = SpringDescription(
+  mass: 1,
+  stiffness: 460,
+  damping: 21.5,
+);
+
+/// 落定判定容差（用于 SpringSimulation.tolerance）：默认 0.001 页签
+/// ≈0.2px 太苛刻，欠阻尼弹簧的亚像素尾摆会拖住 completed 2-3 帧，
+/// 回弹明明已结束水滴还停在大尺寸等才缩——肉眼不可见的 2px/12px/s
+/// 即视为落定
+const Tolerance kNavDropletTolerance = Tolerance(
+  distance: 0.01,
+  velocity: 0.06,
+);
+
 /// 顶层水滴 overlay 宿主：挂在 app.dart builder Stack 中 mini 播放条之上。
 /// 底栏指示水滴独立于底栏树渲染——长按放大可鼓出栏缘、覆盖并折射上方
 /// 内容（对齐 B 站参考效果），不再被顶层播放条盖住上缘。
@@ -94,46 +112,71 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
               if (!chromeHidden && s != null)
                 Positioned.fromRect(
                   rect: s.rect,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()..setEntry(0, 1, s.shear),
-                    child: s.liquid
-                        ? ClipOval(
-                            clipBehavior: Clip.antiAlias,
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                LiveLiquidSurface(
-                                  radius: s.radius,
-                                  refract: s.refract,
-                                  chroma: s.chroma,
-                                  blurSigma: 0,
-                                  backgroundColor: Colors.transparent,
-                                  specular: 0.12,
-                                  edgeAmount: s.band,
-                                  saturation: 1.4,
-                                  depthEffect: s.depth,
-                                  child: const SizedBox.expand(),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      // 外圈柔光暗晕：浅色栏上白玻璃放大水滴对比太弱，rim
+                      // 外一圈向外的软阴影把水滴从栏背景里「托」出来。只画
+                      // 环带不铺底——BoxShadow 铺底会把半透玻璃内部压灰。
+                      // 静息胶囊不加（保持轻量默认观感），仅液态放大态画
+                      if (s.liquid)
+                        Positioned(
+                          left: -6,
+                          top: -6,
+                          width: s.rect.width + 12,
+                          height: s.rect.height + 12,
+                          child: CustomPaint(
+                            painter: _DropletHaloPainter(s.press, s.isDark),
+                          ),
+                        ),
+                      Transform(
+                        alignment: Alignment.center,
+                        transform: Matrix4.identity()..setEntry(0, 1, s.shear),
+                        child: s.liquid
+                            ? ClipOval(
+                                clipBehavior: Clip.antiAlias,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    LiveLiquidSurface(
+                                      radius: s.radius,
+                                      refract: s.refract,
+                                      chroma: s.chroma,
+                                      blurSigma: 0,
+                                      backgroundColor: Colors.transparent,
+                                      specular: 0.12,
+                                      edgeAmount: s.band,
+                                      saturation: 1.4,
+                                      depthEffect: s.depth,
+                                      child: const SizedBox.expand(),
+                                    ),
+                                    CustomPaint(
+                                      painter: _DropletEdgePainter(
+                                        s.press,
+                                        s.isDark,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                CustomPaint(
-                                  painter: _DropletEdgePainter(
-                                    s.press,
-                                    s.isDark,
+                              )
+                            : SizedBox.expand(
+                                // SizedBox.expand 必须保留：外层 Stack（暗晕
+                                // 宿主）给非定位子项的是松约束，裸 DecoratedBox
+                                // 会塌缩成 0×0——静息胶囊整体消失（paint 探针
+                                // 实测 size=0.0x0.0 的根因）
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: s.isDark
+                                        ? Colors.white.withValues(alpha: 0.10)
+                                        : Colors.black.withValues(alpha: 0.10),
+                                    borderRadius: BorderRadius.circular(
+                                      s.rect.shortestSide / 2,
+                                    ),
                                   ),
                                 ),
-                              ],
-                            ),
-                          )
-                        : DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: s.isDark
-                                  ? Colors.white.withValues(alpha: 0.10)
-                                  : Colors.black.withValues(alpha: 0.10),
-                              borderRadius: BorderRadius.circular(
-                                s.rect.shortestSide / 2,
                               ),
-                            ),
-                          ),
+                      ),
+                    ],
                   ),
                 ),
             ],
@@ -249,10 +292,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   // ---- 手动拖拽换页的水滴跟手（消费 PageSwitchTabView.tabSwipePageFraction）----
   // 页面横拖时水滴在相邻页签间等比插值+保持液态胀大，随页面实时移动；
-  // 松手弹滚落定（fraction 归 -1）后交还弹簧动画收敛到目标页签
+  // 松手（弹滚边界，fraction 归 -1）即刻脱钩交还弹簧动画，收敛到预测
+  // 落定页签（tabSwipeReleasePage）
   bool _pageDrag = false;
   double _pageDragPos = 0;
   double _pageDragVel = 0;
+
+  /// 拖拽末段运动方向（缓速松手时回弹方向兜底用）
+  double _pageDragDir = 1;
   int _lastPageUs = 0;
 
   void _onPageFraction() {
@@ -261,19 +308,38 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     if (f < 0) {
       if (!_pageDrag) return;
       _pageDrag = false;
-      // 落定收尾与点击松手同口径：水滴不能随拖拽态结束瞬跳消失——
-      // 借 _press 的 150ms 回落做平滑收缩（等效按压 1.0 → 0），飞行
-      // 中的液态胀大由弹簧速度经 dragMf 接力（见 build 的 velTab）
+      // 松手（fraction 归 -1，页面弹滚刚起步）即刻交还弹簧：press 顶
+      // 满 1 保持液态放大（dropletOn 靠 press 续命），水滴带过冲回弹
+      // 飞向目标、与页面弹滚并行收敛，落定（completed → _onMoveStatus）
+      // 后统一收缩归位。页面弹滚本身无回弹，水滴必须脱钩自飞才有
+      // 「弹一下」；且弹滚减速到底才交还的话，水滴会等页面停稳后才
+      // 后补回弹（用户实测观感脱节）
+      _flight = true;
       if (!_press.isAnimating) {
         _press.value = 1;
-        _press.reverse();
       }
+      // 靶心用预测落定页（PageSwitchTabView 按 PageScrollPhysics 发布）：
+      // 弹滚未过半程松手时 index 还是旧页签，按它收敛会先反向飞再被
+      // index 更新的 redirect 纠正（观感抽动）
+      final target =
+          _dispIndexOf(tabSwipeReleasePage.value ?? widget.index).toDouble();
+      // 水滴贴住目标或缓速松手时真实初速≈0，过冲会消失：补最小初速
+      // 保证每记松手都有可见回弹（快甩按真实速度放大）。方向跟靶心：
+      // 回弹落空（票回原页）时速度票不可信，反向初速会先把水滴甩离靶
+      // 心再折返；靶心同位（原地 pop）才沿用拖拽速度/末段方向
+      final toward = (target - _move.value).sign;
+      final dir = toward != 0
+          ? toward
+          : _pageDragVel.abs() > 0.05
+              ? _pageDragVel.sign
+              : (_pageDragDir != 0 ? _pageDragDir : 1.0);
       _move.animateWith(
         SpringSimulation(
-          const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
+          kNavDropletSpring,
           _move.value,
-          _dispIndexOf(widget.index).toDouble(),
-          _pageDragVel,
+          target,
+          dir * math.max(_pageDragVel.abs(), 2.0),
+          tolerance: kNavDropletTolerance,
         ),
       );
       setState(() {});
@@ -297,7 +363,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       _pageDragVel = 0;
       _dragVel = 0;
     }
+    if ((disp - _pageDragPos).abs() > 0.0005) _pageDragDir = (disp - _pageDragPos).sign;
     _lastPageUs = now;
+    // 横滑中途接管：点击换页的放大飞行态作废，改由横滑路径统一
+    // 管理（液态保持由 pageDragging 驱动，松手回落见 f<0 分支）
+    _flight = false;
     _pageDrag = true;
     _pageDragPos = disp;
     _move.stop();
@@ -308,6 +378,15 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   /// 底栏玻璃胶囊定位键：顶层水滴快照在帧末用它实测栏的屏幕位置
   final GlobalKey _barKey = GlobalKey();
+
+  /// 页签内容组锚点（每 tab 一把，包住「图标+文字」竖排整组）：水滴
+  /// 垂直中心跟随实测组中心——视觉居中要以整组为准，锚图标中心会把
+  /// 文字压在圆的下缘（观感偏上），锚 bar 算术中心与组中心等价但经
+  /// 组锚点实测免受内容布局变化影响
+  List<GlobalKey> _anchorKeys = const [];
+
+  /// 树内水滴（降级路径）用的内容组中心纵坐标缓存（NaN=未量到，回退 bar 中心）
+  double _anchorCyLocal = double.nan;
 
   /// 本页被覆盖路由的转场动画。壳层视差平移（_SmoothFadeForwards 的
   /// -25% 平移）由它驱动：转场每帧 tick 重建底栏 → _syncSnapshot 帧末
@@ -346,7 +425,39 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   void initState() {
     super.initState();
     _move.value = _dispIndexOf(widget.index).toDouble();
+    _move.addStatusListener(_onMoveStatus);
     tabSwipePageFraction.addListener(_onPageFraction);
+  }
+
+  /// 点击换页的「放大飞行」态：true=水滴应保持液态放大，直到换页
+  /// 弹簧自然落定（completed）再收缩归位——与横滑换页同语言
+  bool _flight = false;
+
+  /// 启动换页弹簧（靶心取当前 index 的显示序）
+  void _startFlightSpring(double v0) {
+    _move.animateWith(
+      SpringSimulation(
+        kNavDropletSpring,
+        _move.value,
+        _dispIndexOf(widget.index).toDouble(),
+        v0,
+        tolerance: kNavDropletTolerance,
+      ),
+    );
+  }
+
+  void _onMoveStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !_flight) return;
+    // 连点 redirect 的等待拍里旧弹簧提前收敛（completed）：不终结
+    // flight——whenComplete 胀满链还挂着，起飞时 v0=0 照样飞向新靶心；
+    // 此处提前终结会让 _startFlightSpring 的守卫吞掉起飞，水滴只能
+    // 靠自愈兜底瞬移（弹簧拍整段消失）
+    if (_press.isAnimating) return;
+    _flight = false;
+    if (mounted && !_dragging && !_pageDrag) {
+      _press.reverse();
+      setState(() {});
+    }
   }
 
   @override
@@ -359,17 +470,40 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     // 的弹簧不得抢写 _move（拖拽落定的收敛由 _onPageFraction 统一接管）
     if (!_dragging && !_pageDrag) {
       if (orderChanged) {
+        _flight = false;
         _move.stop();
         _move.value = _dispIndexOf(widget.index).toDouble();
+        _press.reverse();
       } else if (widget.index != oldWidget.index) {
-        _move.animateWith(
-          SpringSimulation(
-            const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
-            _move.value,
-            _dispIndexOf(widget.index).toDouble(),
-            0,
-          ),
-        );
+        // 点击换页与横滑同语言：先原地放大成液态水滴，胀满瞬间链式
+        // 起飞弹簧（带回弹），落定（completed 回调）收缩归位。放大与
+        // 弹簧同启动会「边飞边胀」掩盖膨胀；固定延时守卫则会在胀满
+        // 后干等（用户实测），链式无此问题
+        _flight = true;
+        if (_press.value > 0.99) {
+          // 已胀满（按住复按/接力改靶）：无 swell 拍，直接带速度接力
+          // 起飞。此刻上一次落定的 reverse 可能刚被 _setPressed(false)
+          // 拉起（tap-up 先于 didUpdateWidget）：不掐掉的话水滴会在
+          // 飞行途中被收缩到 0、塌成静态胶囊一帧再靠 dragMf 复活
+          _press
+            ..stop()
+            ..forward();
+          _startFlightSpring(_move.isAnimating ? _move.velocity : 0);
+        } else {
+          // 胀满即起飞（从当前值续胀，不回退重胀）；弹翅未收敛的连点
+          // 改靶（redirect）也走同一拍，不抢跑——旧飞行中立即换弹簧
+          // 靶心会把半胀水滴直接甩出去，边飞边胀，「原地放大→再飞」
+          // 的两拍被吞（用户实测）。等待拍里旧弹簧继续滑向旧靶心，
+          // 起飞瞬间取当时速度接力；若旧弹簧恰好先收敛，completed 由
+          // _onMoveStatus 的 _press.isAnimating 守卫放过，v0=0 照常起飞
+          _press.forward().whenComplete(() {
+            // 被打断（新按压/拖拽接管）时 value<0.9 不飞，由打断方
+            // 接管（拖拽走 pageDrag、重胀走新 whenComplete 链）
+            if (!mounted || !_flight || _dragging || _pageDrag) return;
+            if (_press.value < 0.9) return;
+            _startFlightSpring(_move.isAnimating ? _move.velocity : 0);
+          });
+        }
       }
     }
   }
@@ -432,11 +566,23 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           // called during build」），异常还会中止当帧子树更新——指示器冻结
           // 在旧帧、修正永不落地（debug logcat 反复复现）。改为帧末执行：
           // 帧回调里标脏合法，下一帧按修正值落位收敛，不会循环
-          if (!_dragging && !_pageDrag && !_move.isAnimating) {
+          // 放大飞行窗口（_flight，弹簧未启动）同样豁免：此时
+          // !_move.isAnimating 成立，兜底会把水滴瞬移到目标页签，
+          // 「先放大再移动」的分相就被打穿成直接平移
+          if (!_dragging &&
+              !_pageDrag &&
+              !_flight &&
+              !_move.isAnimating) {
             final target = _dispIndexOf(widget.index).toDouble();
             if ((_move.value - target).abs() > 0.001) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted || _dragging || _move.isAnimating) return;
+                if (!mounted ||
+                    _dragging ||
+                    _pageDrag ||
+                    _flight ||
+                    _move.isAnimating) {
+                  return;
+                }
                 final now = _dispIndexOf(widget.index).toDouble();
                 if ((_move.value - now).abs() > 0.001) {
                   _move.value = now;
@@ -531,6 +677,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
           final indicatorW = widget.lens ? d : (tabW - 8);
 
+          if (_anchorKeys.length != items.length) {
+            _anchorKeys = List.generate(items.length, (_) => GlobalKey());
+          }
+
           final tabRow = Center(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -542,6 +692,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                       child: _NavTab(
                         item: items[i],
                         selected: items[i].branchIndex == widget.index,
+                        anchorKey: _anchorKeys.length == items.length
+                            ? _anchorKeys[i]
+                            : null,
                         iconScale: widget.lens
                             ? 1 + 0.2 * (1 - (i - pos).abs()).clamp(0.0, 1.0)
                             : 1.0,
@@ -571,19 +724,42 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                 children: [
                   tabRow,
                   if (!overlayDroplet)
-                    Positioned(
-                      left: 10 + pos * tabW + (tabW - indicatorW) / 2,
-                      top: (maxH - dropH) / 2,
-                      bottom: (maxH - dropH) / 2,
-                      width: indicatorW,
-                      child: IgnorePointer(
-                        child: Transform(
-                          alignment: Alignment.center,
-                          transform: Matrix4.diagonal3Values(sx, sy, 1)
-                            ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
-                          child: indicator,
-                        ),
-                      ),
+                    Builder(
+                      builder: (context) {
+                        // 树内水滴（降级路径）同样锚定实测内容组中心：
+                        // build 期布局未定，先用量到的上一帧值，帧末校准
+                        final cy = _anchorCyLocal.isFinite
+                            ? _anchorCyLocal
+                            : maxH / 2;
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          final b = _barKey.currentContext?.findRenderObject()
+                              as RenderBox?;
+                          if (b == null || !b.attached || !b.hasSize) return;
+                          final measured = _anchorGroupCyLocal(
+                            b,
+                            fallback: maxH / 2,
+                          );
+                          if ((_anchorCyLocal - measured).abs() > 0.1) {
+                            _anchorCyLocal = measured;
+                            setState(() {});
+                          }
+                        });
+                        return Positioned(
+                          left: 10 + pos * tabW + (tabW - indicatorW) / 2,
+                          top: cy - dropH / 2,
+                          height: dropH,
+                          width: indicatorW,
+                          child: IgnorePointer(
+                            child: Transform(
+                              alignment: Alignment.center,
+                              transform: Matrix4.diagonal3Values(sx, sy, 1)
+                                ..setEntry(0, 1, _dragVel.sign * _sxPos * 0.15),
+                              child: indicator,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                 ],
               ),
@@ -633,10 +809,26 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   void _setPressed(bool down) {
     if (down) {
-      _press.forward(from: 0);
-    } else if (!_dragging) {
+      // 打断保持原则：飞行/胀大/落定收缩中再按下都从当前值续胀，
+      // 严禁 from:0 重启——上一次落定的 reverse 还在跑时（value≈0.9）
+      // 重启会把已放大的水滴瞬间打回 0，快照写出一帧静态胶囊
+      // （liquid=false），放大效果被吞、指示器肉眼可见变异
+      if (!_flight) _press.forward();
+    } else if (!_dragging && !_flight) {
+      // 点击换页飞行中不得在此收缩：落定由 _onMoveStatus 统一接管
       _press.reverse();
     }
+  }
+
+  /// 内容组中心在 bar 坐标系下的纵向位置（bar 盒带 paint 变换时同矩阵换算）
+  double _anchorGroupCyLocal(RenderBox bar, {required double fallback}) {
+    for (final key in _anchorKeys) {
+      final ro = key.currentContext?.findRenderObject();
+      if (ro is! RenderBox || !ro.attached || !ro.hasSize) continue;
+      final globalCenter = ro.localToGlobal(ro.size.center(Offset.zero));
+      return bar.globalToLocal(globalCenter).dy;
+    }
+    return fallback;
   }
 
   /// 顶层水滴快照同步：帧末实测底栏几何写快照；rect 未稳定时逐帧重写
@@ -668,10 +860,21 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       if (_coverAnim?.status == AnimationStatus.forward) return;
       final b = _barKey.currentContext?.findRenderObject() as RenderBox?;
       if (b == null || !b.attached || !b.hasSize) return;
+      // 垂直锚定实测内容组中心（图标+文字整组）：视觉居中以整组为准，
+      // 锚图标中心会把文字压在圆的下缘。取第一把可用的组 key（同排等高）
+      final cy = _anchorGroupCyLocal(b, fallback: maxH / 2);
       // 逻辑中心点过同一 paint 变换（显隐动画 scale 参与矩阵），
-      // 避免未缩放逻辑 cx 与缩放后 origin 混算产生错位
-      final topLeft = b.localToGlobal(Offset(cx - w / 2, maxH / 2 - h / 2));
-      final rect = topLeft & Size(w, h);
+      // 避免未缩放逻辑 cx 与缩放后 origin 混算产生错位。
+      // 对角两点都过变换：样式大小档把路由子树按 FittedBox 等比
+      // 放大，若只变换 topLeft 而宽高保持未缩放逻辑值，rect 中心会
+      // 整体向左上偏 (1-s)×(w/2, h/2)——大/特大档水滴明显偏左上
+      final topLeft = b.localToGlobal(Offset(cx - w / 2, cy - h / 2));
+      final bottomRight = b.localToGlobal(Offset(cx + w / 2, cy + h / 2));
+      final rect = Rect.fromPoints(topLeft, bottomRight);
+      // 变换后 rect 的视觉尺寸随底栏同步放大，作用半径取短边一半
+      // 保持全局像素口径一致（overlay 的 liquid shader/胶囊圆角按
+      // rect 实际尺寸取形）
+      radius = rect.shortestSide / 2;
       final prev = navDropletSnapshot.value;
       final rectStable = prev != null && prev.rect == rect;
       // 交互中 press/refract 等随 rebuild 逐帧渐变，有变必须写快照；
@@ -726,7 +929,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   }
 
   void _onPressCancel() {
-    if (_dragging) return;
+    if (_dragging || _flight) return;
     _press.reverse();
     _move.stop();
     // 回弹落点必须换算显示序：widget.index 是分支索引，导航栏管理
@@ -775,13 +978,15 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   void _commitDragTarget(double target) {
     _dragging = false;
-    _press.reverse();
+    // 与横滑松手同语言：保持按压放大随弹簧飞行回弹，落定统一收缩
+    _flight = true;
     _move.animateWith(
       SpringSimulation(
-        const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
+        kNavDropletSpring,
         _move.value,
         target,
         _dragVel,
+        tolerance: kNavDropletTolerance,
       ),
     );
     final idx = target.round();
@@ -805,6 +1010,7 @@ class _NavTab extends ConsumerWidget {
     required this.onTap,
     this.iconScale = 1.0,
     this.suppressSplash = false,
+    this.anchorKey,
   });
 
   final BottomNavItem item;
@@ -813,6 +1019,9 @@ class _NavTab extends ConsumerWidget {
   final double iconScale;
 
   final bool suppressSplash;
+
+  /// 内容组锚点：供水滴几何实测（见 _anchorKeys）
+  final GlobalKey? anchorKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -824,29 +1033,34 @@ class _NavTab extends ConsumerWidget {
     final tab = Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Transform.scale(
-            scale: iconScale,
-            child: themeSlotIcon(
-              ref,
-              item.themeSlot,
-              fallback: item.icon,
-              size: 22,
-              color: color,
+      // 锚点包整组（图标+文字竖排）：水滴视觉居中于组中心而非图标
+      // 中心——锚图标会把文字压在圆的下缘，观感整体偏上
+      child: KeyedSubtree(
+        key: anchorKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Transform.scale(
+              scale: iconScale,
+              child: themeSlotIcon(
+                ref,
+                item.themeSlot,
+                fallback: item.icon,
+                size: 22,
+                color: color,
+              ),
             ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            navTitle(context, item),
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: color,
+            const SizedBox(height: 3),
+            Text(
+              navTitle(context, item),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
     if (suppressSplash) {
@@ -870,6 +1084,35 @@ class _NavTab extends ConsumerWidget {
   }
 }
 
+/// 水滴外圈柔光暗晕：画布比水滴每边多留 6px 模糊余量，环带以 rim 为
+/// 中心（内外各一半），外侧在栏背景上形成「托起」软阴影，内侧被上层的
+/// 玻璃水滴盖住只隐约透出——贴合 rim 的立体感。press 越大（放大/液态）
+/// 晕越重，凸显水滴存在感
+class _DropletHaloPainter extends CustomPainter {
+  const _DropletHaloPainter(this.press, this.isDark);
+
+  final double press;
+  final bool isDark;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
+      ..color = Colors.black.withValues(alpha: 0.20 + 0.08 * press);
+    canvas.drawCircle(
+      size.center(Offset.zero),
+      size.shortestSide / 2 - 6, // 减去画布每边 6px 余量，环带贴住水滴 rim
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DropletHaloPainter old) =>
+      old.press != press || old.isDark != isDark;
+}
+
 class _DropletEdgePainter extends CustomPainter {
   const _DropletEdgePainter(this.progress, this.isDark);
 
@@ -880,58 +1123,70 @@ class _DropletEdgePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final p = progress.clamp(0.0, 1.0);
     if (p <= 0) return;
-    final center = (Offset.zero & size).center;
     final rx = size.width / 2;
     final ry = size.height / 2;
     if (rx <= 0 || ry <= 0) return;
+    final outer = Offset.zero & size;
 
-    final edge = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(rx, ry) * 0.03
-      ..color = Colors.white.withValues(alpha: 0.14 * p);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: center,
-        width: size.width * 0.96,
-        height: size.height * 0.96,
-      ),
-      edge,
-    );
+    // 与顶栏/底栏同款 rim 材质（bilipai_glass.rim 同参数，形状走
+    // 圆形贴合 ClipOval）：rim 双色描边（顶亮→底暗）+ 左上贴缘镜面
+    // 反光弧 + 顶部泛光。透明度随按压进度 p 淡入，与液态胀大同节奏；
+    // 内缩弧线放大态会读成悬浮白线，反光必须贴缘（内缩仅 1.6px）
+    const white = Colors.white;
 
-    // 液态玻璃高光：平涂圆在高亮底栏上不显形（用户反馈缺高光），按
-    // iOS 26 原生标签水滴的反光语言补两笔——左上缘主高光弧（光源
-    // 左上，亮线带实心模糊）+ 顶部柔光斑（径向渐白，模拟顶部透光）。
-    final highlight = Paint()
+    // rim 主描边：纵向线性渐变柔光（顶亮→底暗），宽笔触+模糊+低
+    // 透明度，边缘像「亮起来」而非描边
+    final rim = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(rx, ry) * 0.06
+      ..strokeWidth = 2.2
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.6)
+      ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDark
+              ? [
+                  white.withValues(alpha: 0.30 * p),
+                  white.withValues(alpha: 0.08 * p),
+                  Colors.black.withValues(alpha: 0.06 * p),
+                  Colors.black.withValues(alpha: 0.30 * p),
+                ]
+              : [
+                  white.withValues(alpha: 0.42 * p),
+                  white.withValues(alpha: 0.10 * p),
+                  Colors.black.withValues(alpha: 0.03 * p),
+                  Colors.black.withValues(alpha: 0.18 * p),
+                ],
+        ).createShader(outer);
+    canvas.drawOval(outer.deflate(1.1), rim);
+
+    // 左上主高光弧：光源左上的镜面反光亮线，贴缘弱而模糊
+    final glint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
       ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 2.5)
-      ..color = Colors.white.withValues(alpha: 0.6 * p);
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.2)
+      ..color = white.withValues(alpha: (isDark ? 0.20 : 0.30) * p);
     canvas.drawArc(
-      Rect.fromCenter(
-        center: center,
-        width: size.width * 0.84,
-        height: size.height * 0.84,
-      ),
+      outer.deflate(1.6),
       math.pi * 1.05,
-      math.pi * 0.9,
+      math.pi * 0.35,
       false,
-      highlight,
+      glint,
     );
-    final glowRect = Rect.fromCenter(
-      center: Offset(center.dx, center.dy - ry * 0.42),
-      width: size.width * 0.6,
-      height: size.height * 0.4,
-    );
-    final glow = Paint()
-      ..shader = RadialGradient(
-        radius: 0.6,
-        colors: [
-          Colors.white.withValues(alpha: 0.42 * p),
-          Colors.white.withValues(alpha: 0),
-        ],
-      ).createShader(glowRect);
-    canvas.drawOval(glowRect, glow);
+
+    // 顶部泛光：上半段白色透光渐变（玻璃透光语言，画在内容之上）
+    final glossHeight = outer.height * 0.55;
+    final gloss = Paint()
+      ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            white.withValues(alpha: (isDark ? 0.05 : 0.09) * p),
+            white.withValues(alpha: (isDark ? 0.015 : 0.03) * p),
+            white.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, outer.width, glossHeight));
+    canvas.drawOval(outer, gloss);
   }
 
   @override
