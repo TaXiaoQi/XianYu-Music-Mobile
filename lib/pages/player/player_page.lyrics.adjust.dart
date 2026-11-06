@@ -1,4 +1,4 @@
-﻿part of 'player_page.dart';
+part of 'player_page.dart';
 
 class _LyricsAdjustDialog extends ConsumerStatefulWidget {
   const _LyricsAdjustDialog({required this.hasRomaji, required this.showAlign});
