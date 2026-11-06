@@ -6,6 +6,7 @@ import 'dart:async';
 import '../leaderboard/leaderboard_prefetch.dart';
 
 import '../../src/home/daily_recommend.dart';
+import '../../src/widgets/squircle.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/top_lists_preview_provider.dart';
 import '../../src/home/recommend_sheets_preview_provider.dart';
@@ -416,10 +417,7 @@ class _TopListsBody extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: OnlineCover(url: b.coverUrl, size: 92, radius: 10),
-            ),
+            ClipSquircle(radius: 14, child: OnlineCover(url: b.coverUrl, size: 92, radius: 14)),
             const SizedBox(height: 5),
             Text(
               b.title,
@@ -500,10 +498,7 @@ class _RecommendSheetsBody extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: OnlineCover(url: s.coverUrl, size: 92, radius: 10),
-            ),
+            ClipSquircle(radius: 14, child: OnlineCover(url: s.coverUrl, size: 92, radius: 14)),
             const SizedBox(height: 5),
             Text(
               s.title,

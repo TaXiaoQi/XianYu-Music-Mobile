@@ -89,7 +89,7 @@ double frostedBlurScaleOf(FrostedGlassLevel l) => switch (l) {
     };
 
 /// 壁纸模式下导航类表面的基础 sigma，实际值随毛玻璃档位缩放
-const double kNavSurfaceBlurSigma = 16.0;
+const double kNavSurfaceBlurSigma = 26.0;
 
 /// 共享 backdrop 回读组：同 key 的 BackdropFilter 由引擎合并为单次
 /// 模糊+回读（要求成员 sigma 相同且屏幕区域互不重叠）。毛玻璃下顶栏/

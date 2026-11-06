@@ -9,6 +9,7 @@ import '../../src/navigation/shell.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
+import '../../src/widgets/squircle.dart';
 import '../../src/widgets/glass_appbar.dart';
 import '../../src/widgets/floating_search_bar.dart';
 import '../../src/widgets/online_cover.dart';
@@ -395,13 +396,12 @@ class _RecommendSheetsPageState extends ConsumerState<RecommendSheetsPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(isEmbedded ? 10 : 12),
+                      child: ClipSquircle(
+                        radius: isEmbedded ? 14 : 16,
                         child: OnlineCover(
                           url: s.coverUrl,
                           size: isEmbedded ? 92 : 200,
-                          radius: isEmbedded ? 10 : 12,
+                          radius: isEmbedded ? 14 : 16,
                         ),
                       ),
                     ),

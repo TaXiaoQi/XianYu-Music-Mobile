@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -70,13 +71,20 @@ Widget glassBandWrap(
   // BackdropFilter 重 paint 即在 Opacity saveLayer 内重建采样层 → 黑帧；
   // RepaintBoundary 让动画帧复用旧玻璃 layer 不重采样（见
   // debug-liquid-glass-page-flash.md 第十轮），raster 期实时模糊不受影响
+  // 按路由实例分组（navGroupFor）：与被盖住的 shell 成员绝不混组。
+  // iOS 例外：共享组纹理在滚动后不刷新（Impeller 模拟器实测，顶栏带
+  // 恒读捕获时的旧画面 = 内容虚影），按 SystemNavGlassPad 先例改独立
+  // 回读（制备时机回到本带绘制点，代价是每帧多一次全宽回读）
+  final groupKey = sharedNavGroup &&
+          defaultTargetPlatform == TargetPlatform.android
+      ? navGroupFor(context)
+      : null;
   final glass = RepaintBoundary(
     child: ClipRRect(
       borderRadius: borderRadius ?? BorderRadius.zero,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        // 按路由实例分组（navGroupFor）：与被盖住的 shell 成员绝不混组
-        backdropGroupKey: sharedNavGroup ? navGroupFor(context) : null,
+        backdropGroupKey: groupKey,
         child: inner,
       ),
     ),

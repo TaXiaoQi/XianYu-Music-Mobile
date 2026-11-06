@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../home/home_providers.dart';
+import 'squircle.dart';
 import '../theme/theme_tint.dart';
 import '../navigation/routes.dart' show openPlayer;
 import '../player/player_provider.dart';
@@ -129,9 +130,7 @@ class _NowPlayingCard extends StatelessWidget {
 
     final card = GestureDetector(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: LayoutBuilder(
+      child: ClipSquircle(radius: 28, child: LayoutBuilder(
           builder: (context, box) => Stack(
             fit: StackFit.expand,
             children: [
@@ -208,9 +207,11 @@ class _StatsCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      decoration: ShapeDecoration(
+        shape: SquircleBorder(
+          radius: 28,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -349,9 +350,11 @@ class _EmptyCarousel extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       height: 240,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      decoration: ShapeDecoration(
+        shape: SquircleBorder(
+          radius: 28,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../online/cover_proxy.dart';
 import 'fade_in.dart';
+import 'squircle.dart';
 
 class OnlineCover extends StatefulWidget {
   const OnlineCover({
@@ -162,10 +163,7 @@ class _OnlineCoverState extends State<OnlineCover> {
     );
   }
 
-  Widget _clip(Widget child) => ClipRRect(
-    borderRadius: BorderRadius.circular(widget.radius),
-    child: child,
-  );
+  Widget _clip(Widget child) => ClipSquircle(radius: widget.radius, child: child);
 
   Widget _placeholder(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;

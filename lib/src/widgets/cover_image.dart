@@ -10,6 +10,7 @@ import '../core/application_logger.dart';
 import '../core/db_path.dart';
 import '../library/saf_channel.dart';
 import '../online/cover_proxy.dart';
+import 'squircle.dart';
 import '../rust/api.dart';
 import 'fade_in.dart';
 
@@ -242,11 +243,7 @@ class _CoverImageState extends ConsumerState<CoverImage> {
             child: content,
           );
     if (widget.radius <= 0) return box;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(widget.radius),
-      clipBehavior: Clip.antiAlias,
-      child: box,
-    );
+    return ClipSquircle(radius: widget.radius, child: box);
   }
 
   Widget _networkImage(String url) {

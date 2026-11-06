@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import 'cover_image.dart';
+import 'squircle.dart';
 
 class PlayerCoverShuttle extends StatelessWidget {
   const PlayerCoverShuttle({
@@ -60,9 +61,8 @@ class PlayerCoverShuttle extends StatelessWidget {
                     ),
                   ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            clipBehavior: Clip.antiAlias,
+          child: ClipSquircle(
+            radius: radius,
             child: CoverImage(
               songPath: songPath,
               networkUrl: networkUrl,

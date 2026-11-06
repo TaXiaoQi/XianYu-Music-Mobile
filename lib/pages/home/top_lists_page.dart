@@ -6,6 +6,7 @@ import '../../src/core/app_colors.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/settings.dart';
 import '../../src/navigation/shell.dart';
+import '../../src/widgets/squircle.dart';
 import '../../src/plugin/plugin_catalog.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
@@ -407,13 +408,12 @@ class _TopListsPageState extends ConsumerState<TopListsPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: ClipRRect(
-                        borderRadius:
-                            BorderRadius.circular(isEmbedded ? 10 : 12),
+                      child: ClipSquircle(
+                        radius: isEmbedded ? 14 : 16,
                         child: OnlineCover(
                           url: b.coverUrl,
                           size: isEmbedded ? 92 : 200,
-                          radius: isEmbedded ? 10 : 12,
+                          radius: isEmbedded ? 14 : 16,
                         ),
                       ),
                     ),

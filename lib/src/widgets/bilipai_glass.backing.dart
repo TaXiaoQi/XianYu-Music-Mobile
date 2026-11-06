@@ -556,8 +556,8 @@ class RenderLiquidBacking extends RenderBox {
     if (clipped.isEmpty) return false;
     final canvas = context.canvas;
     canvas.save();
-    canvas.clipRRect(
-      RRect.fromRectAndRadius(offset & size, Radius.circular(_radius)),
+    canvas.clipPath(
+      squircleGlassPath(offset & size, _radius, radiusScale: 1),
     );
     canvas.drawImageRect(
       image,

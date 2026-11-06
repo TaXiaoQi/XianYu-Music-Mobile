@@ -897,6 +897,41 @@ class _DropletEdgePainter extends CustomPainter {
       ),
       edge,
     );
+
+    // 液态玻璃高光：平涂圆在高亮底栏上不显形（用户反馈缺高光），按
+    // iOS 26 原生标签水滴的反光语言补两笔——左上缘主高光弧（光源
+    // 左上，亮线带实心模糊）+ 顶部柔光斑（径向渐白，模拟顶部透光）。
+    final highlight = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = math.max(rx, ry) * 0.06
+      ..strokeCap = StrokeCap.round
+      ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 2.5)
+      ..color = Colors.white.withValues(alpha: 0.6 * p);
+    canvas.drawArc(
+      Rect.fromCenter(
+        center: center,
+        width: size.width * 0.84,
+        height: size.height * 0.84,
+      ),
+      math.pi * 1.05,
+      math.pi * 0.9,
+      false,
+      highlight,
+    );
+    final glowRect = Rect.fromCenter(
+      center: Offset(center.dx, center.dy - ry * 0.42),
+      width: size.width * 0.6,
+      height: size.height * 0.4,
+    );
+    final glow = Paint()
+      ..shader = RadialGradient(
+        radius: 0.6,
+        colors: [
+          Colors.white.withValues(alpha: 0.42 * p),
+          Colors.white.withValues(alpha: 0),
+        ],
+      ).createShader(glowRect);
+    canvas.drawOval(glowRect, glow);
   }
 
   @override

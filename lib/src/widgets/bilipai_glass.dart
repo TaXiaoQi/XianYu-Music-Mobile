@@ -10,6 +10,7 @@ import 'package:flutter/scheduler.dart';
 import '../core/application_logger.dart';
 import 'blur_budget.dart';
 import 'chrome_glass_frame.dart';
+import 'squircle.dart';
 import 'glass_settings.dart';
 import 'liquid_wave.dart';
 part 'bilipai_glass.backing.dart';
@@ -567,10 +568,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
             ),
           ),
         ),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(widget.radius),
-          child: widget.child,
-        ),
+        ClipSquircle(radius: widget.radius, child: widget.child),
       ],
     );
   }
