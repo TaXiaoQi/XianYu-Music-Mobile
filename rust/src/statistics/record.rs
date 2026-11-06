@@ -321,7 +321,10 @@ pub(crate) fn derive_play_flags(listened_ms: i64, duration_ms: i64) -> (bool, bo
     (is_full_play, is_skip)
 }
 
-pub(crate) fn sqlite_local_date(conn: &rusqlite::Connection, played_at: i64) -> Result<String, String> {
+pub(crate) fn sqlite_local_date(
+    conn: &rusqlite::Connection,
+    played_at: i64,
+) -> Result<String, String> {
     conn.query_row(
         "SELECT strftime('%Y-%m-%d', ?1, 'unixepoch', 'localtime')",
         [played_at],
@@ -330,7 +333,10 @@ pub(crate) fn sqlite_local_date(conn: &rusqlite::Connection, played_at: i64) -> 
     .map_err(|e| e.to_string())
 }
 
-pub(crate) fn sqlite_local_hour(conn: &rusqlite::Connection, played_at: i64) -> Result<i64, String> {
+pub(crate) fn sqlite_local_hour(
+    conn: &rusqlite::Connection,
+    played_at: i64,
+) -> Result<i64, String> {
     conn.query_row(
         "SELECT CAST(strftime('%H', ?1, 'unixepoch', 'localtime') AS INTEGER)",
         [played_at],
@@ -339,7 +345,10 @@ pub(crate) fn sqlite_local_hour(conn: &rusqlite::Connection, played_at: i64) -> 
     .map_err(|e| e.to_string())
 }
 
-pub(crate) fn get_statistics_meta(conn: &rusqlite::Connection, key: &str) -> Result<Option<String>, String> {
+pub(crate) fn get_statistics_meta(
+    conn: &rusqlite::Connection,
+    key: &str,
+) -> Result<Option<String>, String> {
     conn.query_row(
         "SELECT value FROM statistics_meta WHERE key = ?1",
         [key],
@@ -349,7 +358,11 @@ pub(crate) fn get_statistics_meta(conn: &rusqlite::Connection, key: &str) -> Res
     .map_err(|e| e.to_string())
 }
 
-pub(crate) fn set_statistics_meta(conn: &rusqlite::Connection, key: &str, value: &str) -> Result<(), String> {
+pub(crate) fn set_statistics_meta(
+    conn: &rusqlite::Connection,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
     conn.execute(
         "INSERT INTO statistics_meta (key, value)
          VALUES (?1, ?2)

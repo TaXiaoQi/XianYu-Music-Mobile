@@ -131,10 +131,8 @@ pub(crate) fn lx_build_candidate(
     } else {
         0
     };
-    let score = invalid_count * 1_000_000
-        + backward_count * 100_000
-        + negative_penalty
-        + line_distance;
+    let score =
+        invalid_count * 1_000_000 + backward_count * 100_000 + negative_penalty + line_distance;
 
     Some((entries, score))
 }
@@ -338,4 +336,3 @@ pub fn build_structured_lyrics_payload(raw_lyrics: String) -> StructuredLyricsPa
         display_lines,
     }
 }
-

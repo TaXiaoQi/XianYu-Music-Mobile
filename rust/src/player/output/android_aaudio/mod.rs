@@ -23,8 +23,6 @@ pub(crate) use crate::player::buffered_source::BlockProducer;
 #[cfg(target_os = "android")]
 pub(crate) use crate::player::buffered_source::BufferedSource;
 #[cfg(target_os = "android")]
-pub(crate) use crate::player::output::ExclusivePlayRequest;
-#[cfg(target_os = "android")]
 pub(crate) use crate::player::dsd_dop::{parse_dsd_info, DopStreamSource};
 #[cfg(target_os = "android")]
 pub(crate) use crate::player::equalizer::{
@@ -33,10 +31,14 @@ pub(crate) use crate::player::equalizer::{
 #[cfg(target_os = "android")]
 pub(crate) use crate::player::loudness::VolumeNormalizer;
 #[cfg(target_os = "android")]
+pub(crate) use crate::player::output::ExclusivePlayRequest;
+pub(crate) use crate::player::qmc2::{
+    extract_ekey_from_footer, looks_like_qmc_encrypted, QmcCrypto, QmcDecryptReader,
+};
+#[cfg(target_os = "android")]
 pub(crate) use crate::player::sound_effect::{SoundEffectBlockProcessor, SoundEffectSettings};
 #[cfg(target_os = "android")]
 pub(crate) use crate::player::types::global_visualizer;
-pub(crate) use crate::player::qmc2::{looks_like_qmc_encrypted, extract_ekey_from_footer, QmcCrypto, QmcDecryptReader};
 pub(crate) use std::io::{Read, Seek, SeekFrom};
 pub(crate) use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "android")]
@@ -68,13 +70,13 @@ mod playback;
 #[cfg(target_os = "android")]
 mod stream;
 
-#[cfg(target_os = "android")]
-pub use playback::*;
 pub(crate) use decoder::*;
 #[cfg(target_os = "android")]
 pub(crate) use dsd::*;
 #[cfg(target_os = "android")]
 pub(crate) use ffi::*;
+#[cfg(target_os = "android")]
+pub use playback::*;
 #[cfg(target_os = "android")]
 pub(crate) use stream::*;
 

@@ -52,9 +52,7 @@ pub async fn transcode_to_wav(
 ) -> Result<TranscodeOutcome, String> {
     // 1) 解析出本地源文件：remote:// 先下载进远程缓存
     let local_path: String = if crate::remote::cache::is_remote_uri(src_path) {
-        let conn = std::sync::Arc::new(std::sync::Mutex::new(
-            crate::database::open_conn(db_path)?,
-        ));
+        let conn = std::sync::Arc::new(std::sync::Mutex::new(crate::database::open_conn(db_path)?));
         crate::remote::cache::ensure_cached_path(cache_root, conn, src_path).await?
     } else {
         src_path.to_string()
@@ -111,8 +109,7 @@ pub async fn transcode_to_wav(
 
 /// 单文件解码：按扩展名分派 APE / WV 解码器，边解边写 WAV。
 fn decode_to_wav_file(src: &Path, wav: &Path, kind: &str) -> Result<(), String> {
-    fs::create_dir_all(wav.parent().ok_or("目标目录缺失")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(wav.parent().ok_or("目标目录缺失")?).map_err(|e| e.to_string())?;
     // 先写临时文件再改名，避免中断留下半个 WAV 被误命中缓存
     let tmp = wav.with_extension("wav.part");
 
@@ -137,8 +134,7 @@ fn decode_to_wav_file(src: &Path, wav: &Path, kind: &str) -> Result<(), String> 
 fn decrypt_qmc_to_file(src: &Path, out: &Path) -> Result<(), String> {
     let crypto =
         crate::player::qmc2::detect_qmc_crypto(src).ok_or("未识别 QMC 加密密钥（缺少 ekey）")?;
-    fs::create_dir_all(out.parent().ok_or("目标目录缺失")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(out.parent().ok_or("目标目录缺失")?).map_err(|e| e.to_string())?;
     let tmp = out.with_extension("qmc.part");
     let result = (|| {
         let file = fs::File::open(src).map_err(|e| e.to_string())?;
@@ -168,8 +164,7 @@ fn decode_aiff_to_wav(src: &Path, out: &Path) -> Result<(), String> {
     use symphonia::core::meta::MetadataOptions;
     use symphonia::core::probe::Hint;
 
-    fs::create_dir_all(out.parent().ok_or("目标目录缺失")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(out.parent().ok_or("目标目录缺失")?).map_err(|e| e.to_string())?;
     let tmp = out.with_extension("aiff.part");
     let result = (|| {
         let file = fs::File::open(src).map_err(|e| e.to_string())?;
@@ -242,10 +237,7 @@ fn decode_aiff_to_wav(src: &Path, out: &Path) -> Result<(), String> {
                 continue;
             }
             if sample_buf_frames < frames {
-                sample_buf = Some(SampleBuffer::<f32>::new(
-                    frames as u64,
-                    *decoded.spec(),
-                ));
+                sample_buf = Some(SampleBuffer::<f32>::new(frames as u64, *decoded.spec()));
                 sample_buf_frames = frames;
             }
             let buf = sample_buf.as_mut().ok_or("AIFF 样本缓冲初始化失败")?;
@@ -260,9 +252,7 @@ fn decode_aiff_to_wav(src: &Path, out: &Path) -> Result<(), String> {
         }
         out_file.flush().map_err(|e| e.to_string())?;
 
-        let data_len = total_samples
-            .saturating_mul(4)
-            .min(u32::MAX as u64 - 64);
+        let data_len = total_samples.saturating_mul(4).min(u32::MAX as u64 - 64);
         out_file
             .seek(std::io::SeekFrom::Start(0))
             .map_err(|e| e.to_string())?;
@@ -285,9 +275,7 @@ fn decode_aiff_to_wav(src: &Path, out: &Path) -> Result<(), String> {
 /// APE（Monkey's Audio）：逐帧解码为交错 LE PCM 字节，直接写入 WAV。
 fn decode_ape(src: &Path, out: &Path) -> Result<(), String> {
     let mut file = fs::File::open(src).map_err(|e| e.to_string())?;
-    let start = file
-        .stream_position()
-        .map_err(|e| e.to_string())?;
+    let start = file.stream_position().map_err(|e| e.to_string())?;
     let parsed = ape_decoder::format::parse(&mut file).map_err(|e| e.to_string())?;
     file.seek(std::io::SeekFrom::Start(start))
         .map_err(|e| e.to_string())?;
@@ -336,10 +324,7 @@ fn decode_wv(src: &Path, out: &Path) -> Result<(), String> {
     }
 
     let bytes_per_sample = (bits as usize / 8).max(1);
-    let total_bytes = decoded
-        .samples
-        .len()
-        .saturating_mul(bytes_per_sample) as u64;
+    let total_bytes = decoded.samples.len().saturating_mul(bytes_per_sample) as u64;
     let mut out_file = fs::File::create(out).map_err(|e| e.to_string())?;
     write_wav_header(
         &mut out_file,
@@ -427,7 +412,10 @@ mod tests {
         assert_eq!(&buf[20..22], &1u16.to_le_bytes()); // PCM
         assert_eq!(&buf[22..24], &2u16.to_le_bytes()); // channels
         assert_eq!(u32::from_le_bytes(buf[24..28].try_into().unwrap()), 44100);
-        assert_eq!(u32::from_le_bytes(buf[28..32].try_into().unwrap()), 44100 * 4);
+        assert_eq!(
+            u32::from_le_bytes(buf[28..32].try_into().unwrap()),
+            44100 * 4
+        );
         assert_eq!(&buf[32..34], &4u16.to_le_bytes()); // block align
         assert_eq!(&buf[34..36], &16u16.to_le_bytes()); // bits
         assert_eq!(&buf[36..40], b"data");

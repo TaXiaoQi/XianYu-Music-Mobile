@@ -8,8 +8,8 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use super::common::{
-    decode_name, format_play_time, http_fetch_json, percent_encode_component, PlaylistInfo,
-    PlaylistImportResult, PlaylistSong,
+    decode_name, format_play_time, http_fetch_json, percent_encode_component, PlaylistImportResult,
+    PlaylistInfo, PlaylistSong,
 };
 
 // ==================== 懒编译正则（对齐 TS 模块级字面量） ====================
@@ -50,7 +50,10 @@ lazy_re!(
     r#""encode_src_gid"\s*:\s*"(\w+)""#
 );
 lazy_re!(kg_encode_gic_re, r#"encode_gic["']?\s*[:=]\s*["']?(\w+)"#);
-lazy_re!(kg_encode_src_gid_re, r#"encode_src_gid["']?\s*[:=]\s*["']?(\w+)"#);
+lazy_re!(
+    kg_encode_src_gid_re,
+    r#"encode_src_gid["']?\s*[:=]\s*["']?(\w+)"#
+);
 
 // ==================== 常量 ====================
 
@@ -193,7 +196,10 @@ pub(super) async fn get_list_detail_kg(raw_id: &str) -> Result<PlaylistImportRes
         match get_kg_list_detail_by_code(trimmed).await {
             Ok(Some(by_code)) if !by_code.songs.is_empty() => return Ok(by_code),
             Ok(_) => {}
-            Err(e) => eprintln!("[playlist_fetcher] getListDetailKg: command 反查失败: {}", e),
+            Err(e) => eprintln!(
+                "[playlist_fetcher] getListDetailKg: command 反查失败: {}",
+                e
+            ),
         }
     }
     let id = get_kg_list_id(raw_id);
@@ -207,9 +213,7 @@ pub(super) async fn get_list_detail_kg(raw_id: &str) -> Result<PlaylistImportRes
     };
 
     // v9 歌单页
-    let url = format!(
-        "https://www2.kugou.kugou.com/yueku/v9/special/single/{id}-5-9999.html"
-    );
+    let url = format!("https://www2.kugou.kugou.com/yueku/v9/special/single/{id}-5-9999.html");
     let resp = http_fetch_json(&url, "GET", &[], None, None).await?;
     let body = resp.text.as_str();
 
@@ -427,7 +431,8 @@ async fn decode_gcid(gcid: &str) -> Result<String, String> {
     let params = "dfid=-&appid=1005&mid=0&clientver=20109&clienttime=640612895&uuid=-";
     let body_str = format!(r#"{{"ret_info":1,"data":[{{"id":"{gcid}","id_type":2}}]}}"#);
     let signature = crate::host_crypto::kugou_sign(params, "android", &body_str);
-    let url = format!("https://t.kugou.com/v1/songlist/batch_decode?{params}&signature={signature}");
+    let url =
+        format!("https://t.kugou.com/v1/songlist/batch_decode?{params}&signature={signature}");
 
     let resp = http_fetch_json(
         &url,
@@ -452,7 +457,10 @@ async fn decode_gcid(gcid: &str) -> Result<String, String> {
 
     let err_code = nullish_chain_value(&body, &["error_code", "errcode", "err_code"]);
     if !is_strict_zero(&err_code) {
-        return Err(format!("decodeGcid failed: errcode={}", js_display(&err_code)));
+        return Err(format!(
+            "decodeGcid failed: errcode={}",
+            js_display(&err_code)
+        ));
     }
 
     // body.data?.list || body.list || body.info?.list || body.data?.info
@@ -603,7 +611,10 @@ async fn get_kg_gcid_detail(gcol: &str) -> Result<PlaylistImportResult, String> 
     match get_kg_gcid_detail_by_gateway(gcol).await {
         Ok(gw) if !gw.songs.is_empty() => return Ok(gw),
         Ok(_) => {}
-        Err(e) => eprintln!("[playlist_fetcher] getKgGcidDetail: gateway 分页失败: {}", e),
+        Err(e) => eprintln!(
+            "[playlist_fetcher] getKgGcidDetail: gateway 分页失败: {}",
+            e
+        ),
     }
     get_kg_user_list_detail2(gcol).await
 }
@@ -885,7 +896,10 @@ async fn enrich_kg_gateway_covers(songs: &mut [PlaylistSong]) {
             match fetch_kg_cover_batch(batch).await {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("[playlist_fetcher] enrichKgGatewayCovers batch failed: {}", e);
+                    eprintln!(
+                        "[playlist_fetcher] enrichKgGatewayCovers batch failed: {}",
+                        e
+                    );
                     Vec::new()
                 }
             }
@@ -910,7 +924,9 @@ async fn enrich_kg_gateway_covers(songs: &mut [PlaylistSong]) {
 }
 
 /// 封面补全单批请求：返回 (歌曲索引, 封面 URL) 列表
-async fn fetch_kg_cover_batch(batch: Vec<(usize, String, String)>) -> Result<Vec<(usize, String)>, String> {
+async fn fetch_kg_cover_batch(
+    batch: Vec<(usize, String, String)>,
+) -> Result<Vec<(usize, String)>, String> {
     let key = crate::host_crypto::host_kugou_request_key();
     let data_items: Vec<Value> = batch
         .iter()
@@ -971,7 +987,11 @@ async fn fetch_kg_cover_batch(batch: Vec<(usize, String, String)>) -> Result<Vec
     let mut cover_by_hash: HashMap<String, String> = HashMap::new();
     for item in data_arr {
         // 元素可能本身是数组，取 first
-        let first = if item.is_array() { item.get(0) } else { Some(item) };
+        let first = if item.is_array() {
+            item.get(0)
+        } else {
+            Some(item)
+        };
         let Some(first) = first.filter(|v| js_truthy(v)) else {
             continue;
         };
@@ -1036,7 +1056,10 @@ async fn get_kg_list_detail_by_code(code: &str) -> Result<Option<PlaylistImportR
     };
     let info = data.get("info").filter(|v| v.is_object());
     let name = decode_name(&truthy_str(info.and_then(|i| i.get("name"))));
-    let gcol = ts_string(info.and_then(|i| i.get("global_collection_id")).filter(|v| !v.is_null()));
+    let gcol = ts_string(
+        info.and_then(|i| i.get("global_collection_id"))
+            .filter(|v| !v.is_null()),
+    );
     if !gcol.is_empty() {
         let mut result = get_kg_gcid_detail(&gcol).await?;
         if result.info.name.is_empty() {
@@ -1106,7 +1129,10 @@ async fn get_kg_music_infos(list: Vec<Value>) -> Vec<PlaylistSong> {
     for handle in handles {
         match handle.await {
             Ok(v) => out.extend(v),
-            Err(e) => eprintln!("[playlist_fetcher] getKgMusicInfos batch join failed: {}", e),
+            Err(e) => eprintln!(
+                "[playlist_fetcher] getKgMusicInfos batch join failed: {}",
+                e
+            ),
         }
     }
     out
@@ -1159,7 +1185,11 @@ async fn fetch_kg_music_infos_batch(batch: Vec<Value>) -> Result<Vec<PlaylistSon
     let mut songs: Vec<PlaylistSong> = Vec::new();
     for item in data_arr {
         // 元素可能本身是数组，取 first
-        let first = if item.is_array() { item.get(0) } else { Some(item) };
+        let first = if item.is_array() {
+            item.get(0)
+        } else {
+            Some(item)
+        };
         if let Some(f) = first.filter(|v| js_truthy(v)) {
             if let Some(parsed) = parse_kg_song_detail_v2(f) {
                 songs.push(parsed);
@@ -1190,11 +1220,8 @@ fn parse_kg_song_detail_v2(item: &Value) -> Option<PlaylistSong> {
     let singer_name = decode_name(&truthy_str(item.get("author_name")));
     let songname = decode_name(&truthy_str(item.get("songname")));
     let album_name = decode_name(&truthy_str(album_info.get("album_name")));
-    let album_cover = truthy_chain_str(&[
-        album_info.get("sizable_cover"),
-        album_info.get("cover"),
-    ])
-    .replacen("{size}", "400", 1);
+    let album_cover = truthy_chain_str(&[album_info.get("sizable_cover"), album_info.get("cover")])
+        .replacen("{size}", "400", 1);
     let duration_f = match audio_info.get("timelength") {
         Some(v) if js_truthy(v) => ts_number(v),
         _ => 0.0,
@@ -1304,23 +1331,10 @@ mod tests {
         // duration 为毫秒
         assert_eq!(song.duration, 245000);
         // rawData 键集合
-        let keys: Vec<String> = song
-            .raw_data
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let keys: Vec<String> = song.raw_data.as_object().unwrap().keys().cloned().collect();
         assert_eq!(
             keys,
-            vec![
-                "hash",
-                "interval",
-                "name",
-                "singer",
-                "songmid",
-                "source"
-            ]
+            vec!["hash", "interval", "name", "singer", "songmid", "source"]
         );
         assert_eq!(raw_str(&song, "songmid"), "100001");
         assert_eq!(raw_str(&song, "hash"), "HASHAAA000111");
@@ -1349,14 +1363,11 @@ mod tests {
         let song = parse_kg_song(&item).expect("应解析成功");
         assert_eq!(song.id, "100002");
         assert!(song.raw_data.get("hash").is_none());
-        let keys: Vec<String> = song
-            .raw_data
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
-        assert_eq!(keys, vec!["interval", "name", "singer", "songmid", "source"]);
+        let keys: Vec<String> = song.raw_data.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(
+            keys,
+            vec!["interval", "name", "singer", "songmid", "source"]
+        );
         assert_eq!(raw_str(&song, "songmid"), "100002");
     }
 
@@ -1380,24 +1391,10 @@ mod tests {
         // cover 走 item.cover，{size} → 400
         assert_eq!(song.cover_url, "https://img.kugou.com/c1/400.jpg");
         assert_eq!(song.duration, 245000);
-        let keys: Vec<String> = song
-            .raw_data
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let keys: Vec<String> = song.raw_data.as_object().unwrap().keys().cloned().collect();
         assert_eq!(
             keys,
-            vec![
-                "audioId",
-                "hash",
-                "interval",
-                "name",
-                "singer",
-                "songmid",
-                "source"
-            ]
+            vec!["audioId", "hash", "interval", "name", "singer", "songmid", "source"]
         );
         assert_eq!(raw_str(&song, "songmid"), "200001");
         assert_eq!(raw_str(&song, "audioId"), "200001");
@@ -1476,23 +1473,10 @@ mod tests {
         assert_eq!(song.cover_url, "https://img.kugou.com/x/400.jpg");
         // timelength 为毫秒
         assert_eq!(song.duration, 245000);
-        let keys: Vec<String> = song
-            .raw_data
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect();
+        let keys: Vec<String> = song.raw_data.as_object().unwrap().keys().cloned().collect();
         assert_eq!(
             keys,
-            vec![
-                "hash",
-                "interval",
-                "name",
-                "singer",
-                "songmid",
-                "source"
-            ]
+            vec!["hash", "interval", "name", "singer", "songmid", "source"]
         );
         assert_eq!(raw_str(&song, "songmid"), "300001");
         assert_eq!(raw_str(&song, "hash"), "DetailHash001");
@@ -1513,6 +1497,9 @@ mod tests {
         assert_eq!(raw_str(&song, "interval"), "01:00");
 
         // hash 与 audio_id 皆空 → None
-        assert!(parse_kg_song_detail_v2(&json!({"audio_info": {"hash": "", "audio_id": null}})).is_none());
+        assert!(
+            parse_kg_song_detail_v2(&json!({"audio_info": {"hash": "", "audio_id": null}}))
+                .is_none()
+        );
     }
 }

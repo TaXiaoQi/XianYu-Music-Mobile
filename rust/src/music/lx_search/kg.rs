@@ -197,7 +197,8 @@ pub(crate) fn kg_filter_data_v3(raw: &serde_json::Value) -> Option<LxSearchItem>
     let duration = raw
         .get("duration")
         .and_then(|v| {
-            v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+            v.as_f64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
         })
         .unwrap_or(0.0);
     // 封面：ori_img_url 优先，回退 trans_param.union_cover / imgurl（{size} 占位符替换为 480）
@@ -317,11 +318,7 @@ pub(crate) async fn search_kg(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
     .await
 }
 
-async fn search_kg_page(
-    keyword: &str,
-    page: u32,
-    limit: u32,
-) -> Result<Vec<LxSearchItem>, String> {
+async fn search_kg_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let url = format!(
         "https://songsearch.kugou.com/song_search_v2?keyword={}&page={}&pagesize={}&userid=0&clientver=&platform=WebFilter&filter=2&iscorrection=1&privilege_filter=0&area_code=1",
         urlencoding::encode(keyword),

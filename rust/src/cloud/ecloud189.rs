@@ -30,8 +30,7 @@ const UA: &str =
 /// 宽带 CGNAT 会在多个出口 IP 间轮换，跨出口的请求一律被拒。策略：优先
 /// 复用上次成功的独立连接池（保活连接出口稳定），命中 IP 错误则换新连接
 /// 重试，成功后重新记住该客户端。
-static PREFERRED_CLIENT: std::sync::RwLock<Option<reqwest::Client>> =
-    std::sync::RwLock::new(None);
+static PREFERRED_CLIENT: std::sync::RwLock<Option<reqwest::Client>> = std::sync::RwLock::new(None);
 
 fn fresh_client() -> reqwest::Client {
     reqwest::Client::builder()
@@ -43,15 +42,11 @@ fn fresh_client() -> reqwest::Client {
 }
 
 fn is_ip_session_error(out: &http::Outbound) -> bool {
-    !out.is_ok()
-        && (out.body.contains("check ip error") || out.body.contains("InvalidSessionKey"))
+    !out.is_ok() && (out.body.contains("check ip error") || out.body.contains("InvalidSessionKey"))
 }
 
 /// 会话绑 IP 的 GET：命中出口 IP 错误时换新连接重试（最多 3 次）。
-async fn get_ipbound(
-    url: &str,
-    headers: &[(String, String)],
-) -> Result<http::Outbound, String> {
+async fn get_ipbound(url: &str, headers: &[(String, String)]) -> Result<http::Outbound, String> {
     let preferred = PREFERRED_CLIENT.read().ok().and_then(|g| g.clone());
     if let Some(c) = &preferred {
         let out = http::request_with_client(c, url, headers).await?;
@@ -142,7 +137,9 @@ fn xml_blocks(xml: &str, tag: &str) -> Vec<String> {
     let mut rest = xml;
     while let Some(i) = rest.find(&open) {
         let start = i + open.len();
-        let Some(j) = rest[start..].find(&close) else { break };
+        let Some(j) = rest[start..].find(&close) else {
+            break;
+        };
         out.push(rest[start..start + j].to_string());
         rest = &rest[start + j + close.len()..];
     }
@@ -208,7 +205,10 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .map_err(biz_err)?;
     if !resp.is_ok() {
         let head: String = resp.body.chars().take(160).collect();
-        return Err(biz_err(&format!("目录列表请求失败(HTTP {}) {head}", resp.status)));
+        return Err(biz_err(&format!(
+            "目录列表请求失败(HTTP {}) {head}",
+            resp.status
+        )));
     }
     let j = resp.json().map_err(biz_err)?;
     // 实测响应存在两种形态：open 网关为 {"data":{"fileListAO":…}}，
@@ -272,13 +272,18 @@ fn search_url(keyword: &str, page: i64) -> String {
 /// 搜索结果条目键名在列表/分享两种形态间摇摆（id|fileId、name|fileName、
 /// dir|isdir|isDir、size|fileSize）；播放（getFileDownloadUrl）只需 id。
 fn file_from_search_item(e: &Value) -> Value {
-    let id = jstr(e.get("id").filter(|v| !v.is_null()).or_else(|| e.get("fileId")));
+    let id = jstr(
+        e.get("id")
+            .filter(|v| !v.is_null())
+            .or_else(|| e.get("fileId")),
+    );
     let name = jstr(
         e.get("name")
             .filter(|v| !v.is_null())
             .or_else(|| e.get("fileName")),
     );
-    let is_dir = dart_bool(e.get("dir")) || dart_bool(e.get("isdir")) || dir_flag_189(e.get("isDir"));
+    let is_dir =
+        dart_bool(e.get("dir")) || dart_bool(e.get("isdir")) || dir_flag_189(e.get("isDir"));
     let size = num_i64(e.get("size"))
         .or_else(|| num_i64(e.get("fileSize")))
         .unwrap_or(0);
@@ -345,9 +350,7 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         "https://cloud.189.cn/api/open/share/getShareInfoByCodeV2.action?shareCode={}",
         http::url_encode(&share_code)
     );
-    let info_resp = http::get(&info_url, &headers)
-        .await
-        .map_err(biz_err)?;
+    let info_resp = http::get(&info_url, &headers).await.map_err(biz_err)?;
     if !info_resp.is_ok() {
         return Err(biz_err("分享链接解析失败"));
     }
@@ -623,7 +626,10 @@ mod tests {
     fn xml_text_extracts_sharevo() {
         // 2026-10-23 实测报文（截取）：平铺标量、值两端无空白。
         let xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><shareVO><fileId>725191279626469549</fileId><fileName>Falling U (爱上你)-T-ara.flac</fileName><fileSize>28002902</fileSize><isFolder>false</isFolder><needAccessCode>1</needAccessCode><expireTime>0</expireTime></shareVO>";
-        assert_eq!(xml_text(xml, "fileId").as_deref(), Some("725191279626469549"));
+        assert_eq!(
+            xml_text(xml, "fileId").as_deref(),
+            Some("725191279626469549")
+        );
         assert_eq!(xml_text(xml, "isFolder").as_deref(), Some("false"));
         assert_eq!(xml_text(xml, "fileSize").as_deref(), Some("28002902"));
         assert_eq!(xml_text(xml, "shareId"), None);
@@ -649,7 +655,9 @@ mod tests {
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?><successResp><success>false</success></successResp>"
         ));
         assert!(access_code_ok(""));
-        assert!(access_code_ok("<successResp><success>true</success></successResp>"));
+        assert!(access_code_ok(
+            "<successResp><success>true</success></successResp>"
+        ));
     }
 
     #[test]

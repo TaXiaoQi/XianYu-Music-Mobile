@@ -1,7 +1,7 @@
-pub mod schema;
 pub mod migrations;
-pub mod state;
 pub mod reset;
+pub mod schema;
+pub mod state;
 
 pub use state::DbState;
 /// 打开 SQLite 连接并确保 schema/迁移就绪（统计库与扫描曲库共用同一初始化流程）。

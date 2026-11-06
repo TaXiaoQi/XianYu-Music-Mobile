@@ -641,4 +641,3 @@ pub fn record_play(
 
     tx.commit().map_err(|e| e.to_string())
 }
-

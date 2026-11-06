@@ -77,10 +77,34 @@ pub async fn lx_recommend_sheet_tags(sources: &[String]) -> LxRecommendTagsResul
         .collect();
 
     // 未入选平台跑空 future，避免动态 Future 组合的类型体操
-    let wy_fut = async { if keys.contains(&"wy") { wy::wy_tags().await.ok() } else { None } };
-    let kg_fut = async { if keys.contains(&"kg") { kg::kg_tags().await.ok() } else { None } };
-    let kw_fut = async { if keys.contains(&"kw") { kw::kw_tags().await.ok() } else { None } };
-    let tx_fut = async { if keys.contains(&"tx") { tx::tx_tags().await.ok() } else { None } };
+    let wy_fut = async {
+        if keys.contains(&"wy") {
+            wy::wy_tags().await.ok()
+        } else {
+            None
+        }
+    };
+    let kg_fut = async {
+        if keys.contains(&"kg") {
+            kg::kg_tags().await.ok()
+        } else {
+            None
+        }
+    };
+    let kw_fut = async {
+        if keys.contains(&"kw") {
+            kw::kw_tags().await.ok()
+        } else {
+            None
+        }
+    };
+    let tx_fut = async {
+        if keys.contains(&"tx") {
+            tx::tx_tags().await.ok()
+        } else {
+            None
+        }
+    };
     let (wy, kg, kw, tx) = tokio::join!(wy_fut, kg_fut, kw_fut, tx_fut);
 
     let mut results = [wy, kg, kw, tx];
@@ -119,7 +143,10 @@ pub async fn lx_recommend_sheets_by_tag(
 /// 聚合各平台 tags 结果：pinned 顺序拼接；data 同名分组按 title 合并
 /// （tag 自带 source 区分平台，跨平台同名分组合并后仍可区分来源）。
 pub(crate) fn merge_tags_results(results: Vec<LxRecommendTagsResult>) -> LxRecommendTagsResult {
-    let mut out = LxRecommendTagsResult { pinned: Vec::new(), data: Vec::new() };
+    let mut out = LxRecommendTagsResult {
+        pinned: Vec::new(),
+        data: Vec::new(),
+    };
     for res in results {
         out.pinned.extend(res.pinned);
         for group in res.data {
@@ -165,15 +192,27 @@ mod tests {
         let a = LxRecommendTagsResult {
             pinned: vec![mk("p1", "wy")],
             data: vec![
-                LxRecommendTagGroup { title: "语种".into(), data: vec![mk("t1", "wy")] },
-                LxRecommendTagGroup { title: "风格".into(), data: vec![mk("t2", "wy")] },
+                LxRecommendTagGroup {
+                    title: "语种".into(),
+                    data: vec![mk("t1", "wy")],
+                },
+                LxRecommendTagGroup {
+                    title: "风格".into(),
+                    data: vec![mk("t2", "wy")],
+                },
             ],
         };
         let b = LxRecommendTagsResult {
             pinned: vec![mk("p2", "kw")],
             data: vec![
-                LxRecommendTagGroup { title: "语种".into(), data: vec![mk("t3", "kw")] },
-                LxRecommendTagGroup { title: "场景".into(), data: vec![mk("t4", "kw")] },
+                LxRecommendTagGroup {
+                    title: "语种".into(),
+                    data: vec![mk("t3", "kw")],
+                },
+                LxRecommendTagGroup {
+                    title: "场景".into(),
+                    data: vec![mk("t4", "kw")],
+                },
             ],
         };
         let merged = merge_tags_results(vec![a, b]);

@@ -1,208 +1,178 @@
-use rusqlite::{Connection};
-use std::{fs};
+use rusqlite::Connection;
+use std::fs;
 use std::path::Path;
-use std::time::{UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
 fn get_table_columns(conn: &Connection, table_name: &str) -> Result<Vec<String>, String> {
-	let query = format!("PRAGMA table_info({table_name})");
-	let result = conn
-		.prepare(&query)
-		.map_err(|e| e.to_string())?
-		.query_map([], |row| row.get::<_, String>(1))
-		.map_err(|e| e.to_string())?
-		.filter_map(|result| result.ok())
-		.collect::<Vec<_>>();
-	Ok(result)
+    let query = format!("PRAGMA table_info({table_name})");
+    let result = conn
+        .prepare(&query)
+        .map_err(|e| e.to_string())?
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| e.to_string())?
+        .filter_map(|result| result.ok())
+        .collect::<Vec<_>>();
+    Ok(result)
 }
 
 fn migrate_library_folders(conn: &Connection) -> Result<(), String> {
-	let lib_columns = get_table_columns(conn, "library_folders")?;
+    let lib_columns = get_table_columns(conn, "library_folders")?;
 
-	if !lib_columns.iter().any(|column| column == "path") {
-		conn
-			.execute("DROP TABLE IF EXISTS library_folders", [])
-			.ok();
-		conn
-			.execute(
-				"CREATE TABLE library_folders (
+    if !lib_columns.iter().any(|column| column == "path") {
+        conn.execute("DROP TABLE IF EXISTS library_folders", [])
+            .ok();
+        conn.execute(
+            "CREATE TABLE library_folders (
                 path TEXT PRIMARY KEY, 
                 added_at INTEGER 
             )",
-				[],
-			)
-			.ok();
-	}
+            [],
+        )
+        .ok();
+    }
 
-	Ok(())
+    Ok(())
 }
 
 fn migrate_song_columns(conn: &Connection) -> Result<(), String> {
-	let columns = get_table_columns(conn, "songs")?;
+    let columns = get_table_columns(conn, "songs")?;
 
-	if !columns.iter().any(|column| column == "bitrate") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN bitrate INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "cover_thumb_path") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN cover_thumb_path TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "artist_names") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN artist_names TEXT", [])
-			.ok();
-	}
-	if !columns
-		.iter()
-		.any(|column| column == "effective_artist_names")
-	{
-		conn
-			.execute(
-				"ALTER TABLE songs ADD COLUMN effective_artist_names TEXT",
-				[],
-			)
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "album_artist") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN album_artist TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "album_key") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN album_key TEXT", [])
-			.ok();
-	}
-	if !columns
-		.iter()
-		.any(|column| column == "is_various_artists_album")
-	{
-		conn
-			.execute(
-				"ALTER TABLE songs ADD COLUMN is_various_artists_album INTEGER DEFAULT 0",
-				[],
-			)
-			.ok();
-	}
-	if !columns
-		.iter()
-		.any(|column| column == "collapse_artist_credits")
-	{
-		conn
-			.execute(
-				"ALTER TABLE songs ADD COLUMN collapse_artist_credits INTEGER DEFAULT 0",
-				[],
-			)
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "sample_rate") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN sample_rate INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "bit_depth") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN bit_depth INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "format") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN format TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "container") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN container TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "codec") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN codec TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "file_size") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN file_size INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "track_number") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN track_number TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "disc_number") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN disc_number TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "added_at") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN added_at INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "file_modified_at") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN file_modified_at INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "source_type") {
-		conn
-			.execute(
-				"ALTER TABLE songs ADD COLUMN source_type TEXT NOT NULL DEFAULT 'local'",
-				[],
-			)
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "remote_source_id") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN remote_source_id TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "remote_uri") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN remote_uri TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "remote_etag") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN remote_etag TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "cache_path") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN cache_path TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "cue_source_path") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN cue_source_path TEXT", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "cue_start_offset") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN cue_start_offset INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "cue_end_offset") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN cue_end_offset INTEGER", [])
-			.ok();
-	}
-	if !columns.iter().any(|column| column == "comment") {
-		conn
-			.execute("ALTER TABLE songs ADD COLUMN comment TEXT", [])
-			.ok();
-	}
+    if !columns.iter().any(|column| column == "bitrate") {
+        conn.execute("ALTER TABLE songs ADD COLUMN bitrate INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "cover_thumb_path") {
+        conn.execute("ALTER TABLE songs ADD COLUMN cover_thumb_path TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "artist_names") {
+        conn.execute("ALTER TABLE songs ADD COLUMN artist_names TEXT", [])
+            .ok();
+    }
+    if !columns
+        .iter()
+        .any(|column| column == "effective_artist_names")
+    {
+        conn.execute(
+            "ALTER TABLE songs ADD COLUMN effective_artist_names TEXT",
+            [],
+        )
+        .ok();
+    }
+    if !columns.iter().any(|column| column == "album_artist") {
+        conn.execute("ALTER TABLE songs ADD COLUMN album_artist TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "album_key") {
+        conn.execute("ALTER TABLE songs ADD COLUMN album_key TEXT", [])
+            .ok();
+    }
+    if !columns
+        .iter()
+        .any(|column| column == "is_various_artists_album")
+    {
+        conn.execute(
+            "ALTER TABLE songs ADD COLUMN is_various_artists_album INTEGER DEFAULT 0",
+            [],
+        )
+        .ok();
+    }
+    if !columns
+        .iter()
+        .any(|column| column == "collapse_artist_credits")
+    {
+        conn.execute(
+            "ALTER TABLE songs ADD COLUMN collapse_artist_credits INTEGER DEFAULT 0",
+            [],
+        )
+        .ok();
+    }
+    if !columns.iter().any(|column| column == "sample_rate") {
+        conn.execute("ALTER TABLE songs ADD COLUMN sample_rate INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "bit_depth") {
+        conn.execute("ALTER TABLE songs ADD COLUMN bit_depth INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "format") {
+        conn.execute("ALTER TABLE songs ADD COLUMN format TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "container") {
+        conn.execute("ALTER TABLE songs ADD COLUMN container TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "codec") {
+        conn.execute("ALTER TABLE songs ADD COLUMN codec TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "file_size") {
+        conn.execute("ALTER TABLE songs ADD COLUMN file_size INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "track_number") {
+        conn.execute("ALTER TABLE songs ADD COLUMN track_number TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "disc_number") {
+        conn.execute("ALTER TABLE songs ADD COLUMN disc_number TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "added_at") {
+        conn.execute("ALTER TABLE songs ADD COLUMN added_at INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "file_modified_at") {
+        conn.execute("ALTER TABLE songs ADD COLUMN file_modified_at INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "source_type") {
+        conn.execute(
+            "ALTER TABLE songs ADD COLUMN source_type TEXT NOT NULL DEFAULT 'local'",
+            [],
+        )
+        .ok();
+    }
+    if !columns.iter().any(|column| column == "remote_source_id") {
+        conn.execute("ALTER TABLE songs ADD COLUMN remote_source_id TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "remote_uri") {
+        conn.execute("ALTER TABLE songs ADD COLUMN remote_uri TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "remote_etag") {
+        conn.execute("ALTER TABLE songs ADD COLUMN remote_etag TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "cache_path") {
+        conn.execute("ALTER TABLE songs ADD COLUMN cache_path TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "cue_source_path") {
+        conn.execute("ALTER TABLE songs ADD COLUMN cue_source_path TEXT", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "cue_start_offset") {
+        conn.execute("ALTER TABLE songs ADD COLUMN cue_start_offset INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "cue_end_offset") {
+        conn.execute("ALTER TABLE songs ADD COLUMN cue_end_offset INTEGER", [])
+            .ok();
+    }
+    if !columns.iter().any(|column| column == "comment") {
+        conn.execute("ALTER TABLE songs ADD COLUMN comment TEXT", [])
+            .ok();
+    }
 
-	Ok(())
+    Ok(())
 }
 
 fn migrate_remote_library_tables(conn: &Connection) -> Result<(), String> {
-	conn
-		.execute(
-			"CREATE TABLE IF NOT EXISTS remote_sources (
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS remote_sources (
             id TEXT PRIMARY KEY, 
             name TEXT NOT NULL, 
             provider TEXT NOT NULL, 
@@ -216,13 +186,12 @@ fn migrate_remote_library_tables(conn: &Connection) -> Result<(), String> {
             created_at INTEGER NOT NULL, 
             updated_at INTEGER NOT NULL 
         )",
-			[],
-		)
-		.map_err(|e| e.to_string())?;
+        [],
+    )
+    .map_err(|e| e.to_string())?;
 
-	conn
-		.execute(
-			"CREATE TABLE IF NOT EXISTS remote_files (
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS remote_files (
             source_id TEXT NOT NULL, 
             remote_path TEXT NOT NULL, 
             remote_uri TEXT NOT NULL, 
@@ -235,112 +204,108 @@ fn migrate_remote_library_tables(conn: &Connection) -> Result<(), String> {
             PRIMARY KEY (source_id, remote_path), 
             FOREIGN KEY(source_id) REFERENCES remote_sources(id) ON DELETE CASCADE 
         )",
-			[],
-		)
-		.map_err(|e| e.to_string())?;
+        [],
+    )
+    .map_err(|e| e.to_string())?;
 
-	conn
-		.execute(
-			"CREATE INDEX IF NOT EXISTS idx_songs_remote_source_id ON songs(remote_source_id)",
-			[],
-		)
-		.ok();
-	conn
-		.execute(
-			"CREATE INDEX IF NOT EXISTS idx_remote_files_source_id ON remote_files(source_id)",
-			[],
-		)
-		.ok();
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_songs_remote_source_id ON songs(remote_source_id)",
+        [],
+    )
+    .ok();
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_remote_files_source_id ON remote_files(source_id)",
+        [],
+    )
+    .ok();
 
-	Ok(())
+    Ok(())
 }
 
 fn timestamp_from_path(path: &str) -> Option<i64> {
-	let metadata = fs::metadata(Path::new(path)).ok()?;
-	let created = metadata
-		.created()
-		.ok()
-		.and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-		.map(|duration| duration.as_secs() as i64);
-	let modified = metadata
-		.modified()
-		.ok()
-		.and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-		.map(|duration| duration.as_secs() as i64);
+    let metadata = fs::metadata(Path::new(path)).ok()?;
+    let created = metadata
+        .created()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64);
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_secs() as i64);
 
-	created.or(modified)
+    created.or(modified)
 }
 
 fn normalize_song_added_at(conn: &Connection) -> Result<(), String> {
-	let mut select_stmt = conn
-		.prepare("SELECT path FROM songs WHERE added_at IS NULL OR TRIM(CAST(added_at AS TEXT)) = ''")
-		.map_err(|error| error.to_string())?;
-	let rows = select_stmt
-		.query_map([], |row| row.get::<_, String>(0))
-		.map_err(|error| error.to_string())?;
-	let song_paths: Vec<String> = rows.filter_map(|row| row.ok()).collect();
-	drop(select_stmt);
+    let mut select_stmt = conn
+        .prepare(
+            "SELECT path FROM songs WHERE added_at IS NULL OR TRIM(CAST(added_at AS TEXT)) = ''",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = select_stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+    let song_paths: Vec<String> = rows.filter_map(|row| row.ok()).collect();
+    drop(select_stmt);
 
-	let mut update_stmt = conn
-		.prepare(
-			"UPDATE songs
+    let mut update_stmt = conn
+        .prepare(
+            "UPDATE songs
              SET added_at = ?1
              WHERE path = ?2 AND (added_at IS NULL OR TRIM(CAST(added_at AS TEXT)) = '')",
-		)
-		.map_err(|error| error.to_string())?;
+        )
+        .map_err(|error| error.to_string())?;
 
-	for path in song_paths {
-		let Some(timestamp) = timestamp_from_path(&path) else {
-			continue;
-		};
+    for path in song_paths {
+        let Some(timestamp) = timestamp_from_path(&path) else {
+            continue;
+        };
 
-		update_stmt
-			.execute(rusqlite::params![timestamp, path])
-			.map_err(|error| error.to_string())?;
-	}
+        update_stmt
+            .execute(rusqlite::params![timestamp, path])
+            .map_err(|error| error.to_string())?;
+    }
 
-	Ok(())
+    Ok(())
 }
 
 fn migrate_play_history(conn: &Connection) -> Result<(), String> {
-	let columns = get_table_columns(conn, "play_history")?;
+    let columns = get_table_columns(conn, "play_history")?;
 
-	if !columns.iter().any(|column| column == "played_seconds") {
-		conn
-			.execute(
-				"ALTER TABLE play_history ADD COLUMN played_seconds INTEGER DEFAULT 0",
-				[],
-			)
-			.map_err(|e| format!("migrate play_history.played_seconds: {e}"))?;
-	}
+    if !columns.iter().any(|column| column == "played_seconds") {
+        conn.execute(
+            "ALTER TABLE play_history ADD COLUMN played_seconds INTEGER DEFAULT 0",
+            [],
+        )
+        .map_err(|e| format!("migrate play_history.played_seconds: {e}"))?;
+    }
 
-	if !columns.iter().any(|column| column == "song_id") {
-		conn
-			.execute("ALTER TABLE play_history ADD COLUMN song_id INTEGER", [])
-			.map_err(|e| format!("migrate play_history.song_id: {e}"))?;
-		conn
-			.execute(
-				"CREATE INDEX IF NOT EXISTS idx_play_history_song_id ON play_history(song_id)",
-				[],
-			)
-			.map_err(|e| format!("create idx_play_history_song_id: {e}"))?;
-	}
+    if !columns.iter().any(|column| column == "song_id") {
+        conn.execute("ALTER TABLE play_history ADD COLUMN song_id INTEGER", [])
+            .map_err(|e| format!("migrate play_history.song_id: {e}"))?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_play_history_song_id ON play_history(song_id)",
+            [],
+        )
+        .map_err(|e| format!("create idx_play_history_song_id: {e}"))?;
+    }
 
-	Ok(())
+    Ok(())
 }
 
 fn merge_legacy_sidebar_roots(conn: &Connection) {
-	conn
-		.execute(
-			"INSERT OR IGNORE INTO library_folders (path, added_at)
+    conn.execute(
+        "INSERT OR IGNORE INTO library_folders (path, added_at)
          SELECT path, added_at FROM sidebar_folders",
-			[],
-		)
-		.ok();
+        [],
+    )
+    .ok();
 }
 
 fn migrate_song_loudness(conn: &Connection) -> Result<(), String> {
-	conn.execute(
+    conn.execute(
         "CREATE TABLE IF NOT EXISTS song_loudness ( 
             song_id INTEGER PRIMARY KEY, 
             song_path TEXT NOT NULL, 
@@ -371,96 +336,93 @@ fn migrate_song_loudness(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-	conn
-		.execute(
-			"CREATE INDEX IF NOT EXISTS idx_song_loudness_song_id ON song_loudness(song_id)",
-			[],
-		)
-		.ok();
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_song_loudness_song_id ON song_loudness(song_id)",
+        [],
+    )
+    .ok();
 
-	Ok(())
+    Ok(())
 }
 
 fn migrate_artists_columns(conn: &Connection) -> Result<(), String> {
-	let columns = get_table_columns(conn, "artists")?;
+    let columns = get_table_columns(conn, "artists")?;
 
-	if !columns.iter().any(|column| column == "avatar_path") {
-		conn
-			.execute("ALTER TABLE artists ADD COLUMN avatar_path TEXT", [])
-			.map_err(|e| format!("Failed to add avatar_path to artists: {}", e))?;
-	}
+    if !columns.iter().any(|column| column == "avatar_path") {
+        conn.execute("ALTER TABLE artists ADD COLUMN avatar_path TEXT", [])
+            .map_err(|e| format!("Failed to add avatar_path to artists: {}", e))?;
+    }
 
-	Ok(())
+    Ok(())
 }
 
 fn migrate_playback_session(conn: &Connection) -> Result<(), String> {
-	conn
-		.execute(
-			"CREATE TABLE IF NOT EXISTS playback_session (
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS playback_session (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             data TEXT NOT NULL,
             updated_at INTEGER NOT NULL 
         )",
-			[],
-		)
-		.map_err(|e| e.to_string())?;
+        [],
+    )
+    .map_err(|e| e.to_string())?;
 
-	Ok(())
+    Ok(())
 }
 
 pub(crate) fn run_migrations(conn: &Connection) -> Result<(), String> {
-	migrate_library_folders(conn)?;
-	merge_legacy_sidebar_roots(conn);
-	migrate_song_columns(conn)?;
-	migrate_remote_library_tables(conn)?;
-	normalize_song_added_at(conn)?;
-	migrate_play_history(conn)?;
-	migrate_song_loudness(conn)?;
-	migrate_artists_columns(conn)?;
-	migrate_playback_session(conn)?;
-	migrate_song_backgrounds(conn)?;
-	// GBK 标签乱码修复为容错调用：修复失败不阻断启动，下次启动重试
-	if let Err(e) = crate::music::library::repair_gbk_tag_mojibake(conn) {
-		eprintln!("[migrations] repair_gbk_tag_mojibake failed: {}", e);
-	}
-	Ok(())
+    migrate_library_folders(conn)?;
+    merge_legacy_sidebar_roots(conn);
+    migrate_song_columns(conn)?;
+    migrate_remote_library_tables(conn)?;
+    normalize_song_added_at(conn)?;
+    migrate_play_history(conn)?;
+    migrate_song_loudness(conn)?;
+    migrate_artists_columns(conn)?;
+    migrate_playback_session(conn)?;
+    migrate_song_backgrounds(conn)?;
+    // GBK 标签乱码修复为容错调用：修复失败不阻断启动，下次启动重试
+    if let Err(e) = crate::music::library::repair_gbk_tag_mojibake(conn) {
+        eprintln!("[migrations] repair_gbk_tag_mojibake failed: {}", e);
+    }
+    Ok(())
 }
 
 fn migrate_song_backgrounds(conn: &Connection) -> Result<(), String> {
-	conn
-		.execute(
-			"CREATE TABLE IF NOT EXISTS song_backgrounds (
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS song_backgrounds (
             song_path TEXT PRIMARY KEY,
             background_path TEXT NOT NULL
         )",
-			[],
-		)
-		.map_err(|e| format!("Failed to create song_backgrounds table: {}", e))?;
-	Ok(())
+        [],
+    )
+    .map_err(|e| format!("Failed to create song_backgrounds table: {}", e))?;
+    Ok(())
 }
 
-#[cfg(test)] mod tests {
-	use super::*;
-	use rusqlite::Connection;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
 
-	#[test]
-	fn test_fresh_database_migration() {
-		let conn = Connection::open_in_memory().unwrap();
-		// 初始化基线 Schema (包含所有表)
-		crate::database::schema::ensure_base_schema(&conn).unwrap();
+    #[test]
+    fn test_fresh_database_migration() {
+        let conn = Connection::open_in_memory().unwrap();
+        // 初始化基线 Schema (包含所有表)
+        crate::database::schema::ensure_base_schema(&conn).unwrap();
 
-		// 运行迁移逻辑
-		run_migrations(&conn).unwrap();
+        // 运行迁移逻辑
+        run_migrations(&conn).unwrap();
 
-		// 验证 avatar_path 字段存在
-		let columns = get_table_columns(&conn, "artists").unwrap();
-		assert!(columns.iter().any(|c| c == "avatar_path"));
-	}
+        // 验证 avatar_path 字段存在
+        let columns = get_table_columns(&conn, "artists").unwrap();
+        assert!(columns.iter().any(|c| c == "avatar_path"));
+    }
 
-	#[test]
-	fn test_repair_gbk_tag_mojibake_heals_library_and_session() {
-		let conn = Connection::open_in_memory().unwrap();
-		conn
+    #[test]
+    fn test_repair_gbk_tag_mojibake_heals_library_and_session() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn
 			.execute_batch(
 				"CREATE TABLE songs (id INTEGER PRIMARY KEY, title TEXT, artist TEXT, album TEXT, album_artist TEXT, album_key TEXT, artist_names TEXT, effective_artist_names TEXT);
 				 CREATE TABLE artists (id INTEGER PRIMARY KEY, name TEXT);
@@ -468,121 +430,119 @@ fn migrate_song_backgrounds(conn: &Connection) -> Result<(), String> {
 			)
 			.unwrap();
 
-		// 「黑怕不怕黑」「爱琴海」的 GBK 字节被按 Latin-1 误读后的乱码（反馈日志原文）
-		conn
+        // 「黑怕不怕黑」「爱琴海」的 GBK 字节被按 Latin-1 误读后的乱码（反馈日志原文）
+        conn
 			.execute(
 				"INSERT INTO songs (id, title, artist, album, album_artist, album_key, artist_names, effective_artist_names)
 				 VALUES (1, 'ºÚÅÂ²»ÅÂºÚ', 'ºÚÅÂ²»ÅÂºÚ', '°®ÇÙº£', 'ºÚÅÂ²»ÅÂºÚ', '°®ÇÙº£', '[\"ºÚÅÂ²»ÅÂºÚ\"]', '[\"ºÚÅÂ²»ÅÂºÚ\"]')",
 				[],
 			)
 			.unwrap();
-		// 真 Latin-1 与正常数据不应被改动
-		conn
+        // 真 Latin-1 与正常数据不应被改动
+        conn
 			.execute(
 				"INSERT INTO songs (id, title, artist, album, album_artist, album_key, artist_names, effective_artist_names)
 				 VALUES (2, 'Café', 'Beyoncé', 'Normal', 'Beyoncé', 'Normal', '[\"Beyoncé\"]', '[\"Beyoncé\"]')",
 				[],
 			)
 			.unwrap();
-		conn
-			.execute("INSERT INTO artists (id, name) VALUES (1, 'ºÚÅÂ²»ÅÂºÚ')", [])
-			.unwrap();
-		conn
+        conn.execute(
+            "INSERT INTO artists (id, name) VALUES (1, 'ºÚÅÂ²»ÅÂºÚ')",
+            [],
+        )
+        .unwrap();
+        conn
 			.execute(
 				"INSERT INTO playback_session (id, data, updated_at) VALUES (1, '{\"queueSongMeta\":{\"/a.mp3\":{\"title\":\"ºÚÅÂ²»ÅÂºÚ\",\"artist\":\"ºÚÅÂ²»ÅÂºÚ\",\"album\":\"°®ÇÙº£\"}}}', 1)",
 				[],
 			)
 			.unwrap();
 
-		crate::music::library::repair_gbk_tag_mojibake(&conn).unwrap();
+        crate::music::library::repair_gbk_tag_mojibake(&conn).unwrap();
 
-		let (title, artist, album, names): (String, String, String, String) = conn
-			.query_row(
-				"SELECT title, artist, album, artist_names FROM songs WHERE id = 1",
-				[],
-				|r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-			)
-			.unwrap();
-		assert_eq!(title, "黑怕不怕黑");
-		assert_eq!(artist, "黑怕不怕黑");
-		assert_eq!(album, "爱琴海");
-		assert_eq!(names, "[\"黑怕不怕黑\"]");
+        let (title, artist, album, names): (String, String, String, String) = conn
+            .query_row(
+                "SELECT title, artist, album, artist_names FROM songs WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(title, "黑怕不怕黑");
+        assert_eq!(artist, "黑怕不怕黑");
+        assert_eq!(album, "爱琴海");
+        assert_eq!(names, "[\"黑怕不怕黑\"]");
 
-		let untouched: (String, String) = conn
-			.query_row(
-				"SELECT title, artist FROM songs WHERE id = 2",
-				[],
-				|r| Ok((r.get(0)?, r.get(1)?)),
-			)
-			.unwrap();
-		assert_eq!(untouched.0, "Café");
-		assert_eq!(untouched.1, "Beyoncé");
+        let untouched: (String, String) = conn
+            .query_row("SELECT title, artist FROM songs WHERE id = 2", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(untouched.0, "Café");
+        assert_eq!(untouched.1, "Beyoncé");
 
-		let artist_name: String = conn
-			.query_row("SELECT name FROM artists WHERE id = 1", [], |r| r.get(0))
-			.unwrap();
-		assert_eq!(artist_name, "黑怕不怕黑");
+        let artist_name: String = conn
+            .query_row("SELECT name FROM artists WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(artist_name, "黑怕不怕黑");
 
-		let session: String = conn
-			.query_row("SELECT data FROM playback_session WHERE id = 1", [], |r| {
-				r.get(0)
-			})
-			.unwrap();
-		assert!(session.contains("黑怕不怕黑"));
-		assert!(!session.contains("ºÚÅÂ²»ÅÂºÚ"));
+        let session: String = conn
+            .query_row("SELECT data FROM playback_session WHERE id = 1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(session.contains("黑怕不怕黑"));
+        assert!(!session.contains("ºÚÅÂ²»ÅÂºÚ"));
 
-		// 幂等：重复执行不再变化
-		crate::music::library::repair_gbk_tag_mojibake(&conn).unwrap();
-		let title_again: String = conn
-			.query_row("SELECT title FROM songs WHERE id = 1", [], |r| r.get(0))
-			.unwrap();
-		assert_eq!(title_again, "黑怕不怕黑");
-	}
+        // 幂等：重复执行不再变化
+        crate::music::library::repair_gbk_tag_mojibake(&conn).unwrap();
+        let title_again: String = conn
+            .query_row("SELECT title FROM songs WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(title_again, "黑怕不怕黑");
+    }
 
-	#[test]
-	fn test_upgrade_database_migration_retains_data() {
-		let conn = Connection::open_in_memory().unwrap();
-		// 初始化基线 Schema
-		crate::database::schema::ensure_base_schema(&conn).unwrap();
+    #[test]
+    fn test_upgrade_database_migration_retains_data() {
+        let conn = Connection::open_in_memory().unwrap();
+        // 初始化基线 Schema
+        crate::database::schema::ensure_base_schema(&conn).unwrap();
 
-		// 模拟旧版本库：重建 artists 表并去掉 avatar_path 列
-		conn.execute("DROP TABLE artists", []).unwrap();
-		conn
-			.execute(
-				"CREATE TABLE artists (
+        // 模拟旧版本库：重建 artists 表并去掉 avatar_path 列
+        conn.execute("DROP TABLE artists", []).unwrap();
+        conn.execute(
+            "CREATE TABLE artists (
                 id INTEGER PRIMARY KEY, 
                 name TEXT NOT NULL COLLATE NOCASE UNIQUE 
             )",
-				[],
-			)
-			.unwrap();
+            [],
+        )
+        .unwrap();
 
-		// 插入测试数据，确保迁移时老数据不丢失
-		conn
-			.execute("INSERT INTO artists (name) VALUES ('测试歌手')", [])
-			.unwrap();
+        // 插入测试数据，确保迁移时老数据不丢失
+        conn.execute("INSERT INTO artists (name) VALUES ('测试歌手')", [])
+            .unwrap();
 
-		// 运行迁移逻辑
-		run_migrations(&conn).unwrap();
+        // 运行迁移逻辑
+        run_migrations(&conn).unwrap();
 
-		// 验证新列已成功添加
-		let columns = get_table_columns(&conn, "artists").unwrap();
-		assert!(columns.iter().any(|c| c == "avatar_path"));
+        // 验证新列已成功添加
+        let columns = get_table_columns(&conn, "artists").unwrap();
+        assert!(columns.iter().any(|c| c == "avatar_path"));
 
-		// 验证旧数据依然完好
-		let artist_name: String = conn
-			.query_row("SELECT name FROM artists WHERE id = 1", [], |row| {
-				row.get(0)
-			})
-			.unwrap();
-		assert_eq!(artist_name, "测试歌手");
+        // 验证旧数据依然完好
+        let artist_name: String = conn
+            .query_row("SELECT name FROM artists WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(artist_name, "测试歌手");
 
-		// 验证新列初始值为 NULL
-		let avatar_path: Option<String> = conn
-			.query_row("SELECT avatar_path FROM artists WHERE id = 1", [], |row| {
-				row.get(0)
-			})
-			.unwrap();
-		assert!(avatar_path.is_none());
-	}
+        // 验证新列初始值为 NULL
+        let avatar_path: Option<String> = conn
+            .query_row("SELECT avatar_path FROM artists WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert!(avatar_path.is_none());
+    }
 }

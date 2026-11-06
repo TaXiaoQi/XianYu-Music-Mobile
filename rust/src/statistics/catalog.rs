@@ -333,7 +333,9 @@ pub(crate) fn lookup_song_id(conn: &rusqlite::Connection, normalized_path: &str)
     .ok()
 }
 
-pub(crate) fn build_library_match_index(conn: &rusqlite::Connection) -> Result<LibraryMatchIndex, String> {
+pub(crate) fn build_library_match_index(
+    conn: &rusqlite::Connection,
+) -> Result<LibraryMatchIndex, String> {
     let mut stmt = conn
         .prepare("SELECT path, title, artist, album, duration, track_number FROM songs")
         .map_err(|e| e.to_string())?;
@@ -503,7 +505,9 @@ pub(crate) fn load_portable_export(file_path: &str) -> Result<PortableStatistics
     Ok(export)
 }
 
-pub(crate) fn query_global_stats(conn: &rusqlite::Connection) -> Result<PortableGlobalStats, String> {
+pub(crate) fn query_global_stats(
+    conn: &rusqlite::Connection,
+) -> Result<PortableGlobalStats, String> {
     let stats = conn
         .query_row(
             "SELECT total_play_count, total_play_time_ms, first_played_at, last_played_at
@@ -531,7 +535,9 @@ pub(crate) fn query_global_stats(conn: &rusqlite::Connection) -> Result<Portable
     Ok(stats)
 }
 
-pub(crate) fn query_song_stats(conn: &rusqlite::Connection) -> Result<Vec<PortableSongStatsEntry>, String> {
+pub(crate) fn query_song_stats(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<PortableSongStatsEntry>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT title, artist, album, duration_ms, track_number,
@@ -566,7 +572,9 @@ pub(crate) fn query_song_stats(conn: &rusqlite::Connection) -> Result<Vec<Portab
     Ok(rows.filter_map(|row| row.ok()).collect())
 }
 
-pub(crate) fn query_daily_stats(conn: &rusqlite::Connection) -> Result<Vec<PortableDailyStats>, String> {
+pub(crate) fn query_daily_stats(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<PortableDailyStats>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT date, play_count, play_time_ms, unique_songs, unique_artists
@@ -590,7 +598,9 @@ pub(crate) fn query_daily_stats(conn: &rusqlite::Connection) -> Result<Vec<Porta
     Ok(rows.filter_map(|row| row.ok()).collect())
 }
 
-pub(crate) fn query_hourly_stats(conn: &rusqlite::Connection) -> Result<Vec<PortableHourlyStats>, String> {
+pub(crate) fn query_hourly_stats(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<PortableHourlyStats>, String> {
     let mut buckets = vec![
         PortableHourlyStats {
             hour: 0,
@@ -628,7 +638,9 @@ pub(crate) fn query_hourly_stats(conn: &rusqlite::Connection) -> Result<Vec<Port
     Ok(buckets)
 }
 
-pub(crate) fn query_recent_plays(conn: &rusqlite::Connection) -> Result<Vec<PortableRecentPlay>, String> {
+pub(crate) fn query_recent_plays(
+    conn: &rusqlite::Connection,
+) -> Result<Vec<PortableRecentPlay>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT played_at, title, artist, album, duration_ms, listened_ms, is_full_play, is_skip
@@ -655,4 +667,3 @@ pub(crate) fn query_recent_plays(conn: &rusqlite::Connection) -> Result<Vec<Port
 
     Ok(rows.filter_map(|row| row.ok()).collect())
 }
-

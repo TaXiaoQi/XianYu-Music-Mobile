@@ -88,8 +88,27 @@ pub(crate) fn is_vocal_parenthetical(content: &str) -> bool {
         return true;
     }
     let known_labels = [
-        "翻译", "译文", "注音", "罗马音", "罗马字", "音译", "旁白", "独白", "对白", "白",
-        "男", "女", "合", "主", "伴", "os", "intro", "outro", "间奏", "前奏", "尾奏",
+        "翻译",
+        "译文",
+        "注音",
+        "罗马音",
+        "罗马字",
+        "音译",
+        "旁白",
+        "独白",
+        "对白",
+        "白",
+        "男",
+        "女",
+        "合",
+        "主",
+        "伴",
+        "os",
+        "intro",
+        "outro",
+        "间奏",
+        "前奏",
+        "尾奏",
     ];
     if trimmed.chars().count() <= 6 && !known_labels.contains(&lower.as_str()) {
         return true;
@@ -100,8 +119,8 @@ pub(crate) fn is_vocal_parenthetical(content: &str) -> bool {
 /// 拆分主行内嵌的括号和声：`主唱 啦啦啦 (和声 哦哦哦)` → (主唱 啦啦啦, 和声 哦哦哦)。
 /// 假名/谚文括号通常是注音，跳过。
 pub(crate) fn split_parenthetical_vocal(text: &str) -> Option<(String, String)> {
-    let re = PARENTHETICAL_VOCAL_RE
-        .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
+    let re =
+        PARENTHETICAL_VOCAL_RE.get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
     let mut main_parts = Vec::new();
     let mut duet_parts = Vec::new();
     let mut last_end = 0usize;
@@ -147,8 +166,8 @@ pub(crate) fn split_parenthetical_vocal(text: &str) -> Option<(String, String)> 
 pub(crate) fn has_duet_vocal_evidence(lines: &[ParsedLine]) -> bool {
     let mut speaker_count = 0;
     let mut vocal_contents = HashSet::new();
-    let re = PARENTHETICAL_VOCAL_RE
-        .get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
+    let re =
+        PARENTHETICAL_VOCAL_RE.get_or_init(|| Regex::new(r"[（(]([^()（）\r\n]+)[)）]").unwrap());
     for line in lines {
         if line.speaker.is_some() {
             speaker_count += 1;
@@ -327,11 +346,9 @@ pub(crate) fn preprocess_lyrics_text(raw: &str) -> String {
     let mut filtered = String::with_capacity(normalized.len());
     for line in normalized.split('\n') {
         let trimmed = line.trim_start();
-        let is_hex_color = trimmed
-            .strip_prefix('#')
-            .is_some_and(|rest| {
-                (rest.len() == 3 || rest.len() == 6) && rest.chars().all(|c| c.is_ascii_hexdigit())
-            });
+        let is_hex_color = trimmed.strip_prefix('#').is_some_and(|rest| {
+            (rest.len() == 3 || rest.len() == 6) && rest.chars().all(|c| c.is_ascii_hexdigit())
+        });
         let is_comment = trimmed.starts_with("//")
             || (trimmed.starts_with('#') && !is_hex_color && !trimmed.contains('['))
             || (trimmed.starts_with(';') && !trimmed.contains('['));
@@ -454,8 +471,8 @@ pub(crate) fn parse_netease_json_word_lrc(raw: &str) -> Vec<ParsedLine> {
 /// Lyricify Quick Export（LQE）与 LyricifyLines（LYL）共用行格式：`[start,end,type]text`。
 /// start/end 为毫秒，type 为演唱者类型（0 主唱、1 背景等）。头部行（如 `[Lyricify Quick Export]`）不含数字参数，自动跳过。
 pub(crate) fn parse_lqe_like(raw: &str) -> Vec<ParsedLine> {
-    let marker_re = LQE_LIKE_MARKER_RE
-        .get_or_init(|| Regex::new(r"^\[(\d+),(\d+)(?:,(\d+))?\]").unwrap());
+    let marker_re =
+        LQE_LIKE_MARKER_RE.get_or_init(|| Regex::new(r"^\[(\d+),(\d+)(?:,(\d+))?\]").unwrap());
     let mut result = Vec::new();
     for (index, line) in raw.lines().enumerate() {
         let trimmed = line.trim();
@@ -716,7 +733,9 @@ pub(crate) fn track_has_japanese_like_lines(track: &LyricTrack) -> bool {
         .any(|line| is_japanese_like(&line.script_profile))
 }
 
-pub(crate) fn map_track_source_format(source_format: &ParsedLineSourceFormat) -> LyricTrackSourceFormat {
+pub(crate) fn map_track_source_format(
+    source_format: &ParsedLineSourceFormat,
+) -> LyricTrackSourceFormat {
     match source_format {
         ParsedLineSourceFormat::Lrc => LyricTrackSourceFormat::Lrc,
         ParsedLineSourceFormat::EnhancedLrc => LyricTrackSourceFormat::EnhancedLrc,
@@ -800,7 +819,10 @@ pub(crate) fn score_prepared_lines(lines: &[ParsedLine]) -> i32 {
     })
 }
 
-pub(crate) fn compare_parser_candidates(left: &ParserCandidate, right: &ParserCandidate) -> Ordering {
+pub(crate) fn compare_parser_candidates(
+    left: &ParserCandidate,
+    right: &ParserCandidate,
+) -> Ordering {
     score_prepared_lines(&right.lines)
         .cmp(&score_prepared_lines(&left.lines))
         .then_with(|| right.lines.len().cmp(&left.lines.len()))
@@ -978,7 +1000,10 @@ pub(crate) fn collect_markers(text: &str, open: char, close: char) -> Vec<(usize
     result
 }
 
-pub(crate) fn parse_inline_square_timed_line(line: &str, source_index: usize) -> Option<ParsedLine> {
+pub(crate) fn parse_inline_square_timed_line(
+    line: &str,
+    source_index: usize,
+) -> Option<ParsedLine> {
     let markers = collect_markers(line, '[', ']');
     if markers.len() < 2 {
         return None;
@@ -1219,10 +1244,12 @@ pub(crate) fn strip_xml_tags(raw: &str) -> String {
 }
 
 pub(crate) fn parse_ttml(raw: &str) -> Vec<ParsedLine> {
-    let paragraph_re = TTML_PARAGRAPH_RE.get_or_init(|| Regex::new(r#"(?s)<p\b([^>]*)>(.*?)</p>"#).unwrap());
+    let paragraph_re =
+        TTML_PARAGRAPH_RE.get_or_init(|| Regex::new(r#"(?s)<p\b([^>]*)>(.*?)</p>"#).unwrap());
     let begin_re = TTML_BEGIN_RE.get_or_init(|| Regex::new(r#"(?i)\bbegin="([^"]+)""#).unwrap());
     let end_re = TTML_END_RE.get_or_init(|| Regex::new(r#"(?i)\bend="([^"]+)""#).unwrap());
-    let span_re = TTML_SPAN_RE.get_or_init(|| Regex::new(r#"(?s)<span\b([^>]*)>(.*?)</span>"#).unwrap());
+    let span_re =
+        TTML_SPAN_RE.get_or_init(|| Regex::new(r#"(?s)<span\b([^>]*)>(.*?)</span>"#).unwrap());
     let role_re = TTML_ROLE_RE.get_or_init(|| Regex::new(r#"(?i)\bttm:role="([^"]+)""#).unwrap());
 
     let mut lines = Vec::new();
@@ -1362,7 +1389,10 @@ pub(crate) fn attach_lrc_translation_lines(lines: &mut [ParsedLine], tail: &str)
             if delta > 2000 {
                 continue;
             }
-            if best.map(|(_, best_delta)| delta < best_delta).unwrap_or(true) {
+            if best
+                .map(|(_, best_delta)| delta < best_delta)
+                .unwrap_or(true)
+            {
                 best = Some((index, delta));
             }
         }
@@ -1460,7 +1490,9 @@ pub(crate) fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
         parse_yrc(&normalized)
             .iter()
             .enumerate()
-            .filter_map(|(index, line)| prepare_source_line(line, ParsedLineSourceFormat::Yrc, index))
+            .filter_map(|(index, line)| {
+                prepare_source_line(line, ParsedLineSourceFormat::Yrc, index)
+            })
             .collect(),
     );
 
@@ -1478,11 +1510,7 @@ pub(crate) fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
             attach_lrc_translation_lines(&mut qrc_candidate, tail);
         }
     }
-    collect_candidate(
-        &mut candidates,
-        ParsedLineSourceFormat::Qrc,
-        qrc_candidate,
-    );
+    collect_candidate(&mut candidates, ParsedLineSourceFormat::Qrc, qrc_candidate);
 
     collect_candidate(
         &mut candidates,
@@ -1490,7 +1518,9 @@ pub(crate) fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
         parse_lys(&normalized)
             .iter()
             .enumerate()
-            .filter_map(|(index, line)| prepare_source_line(line, ParsedLineSourceFormat::Lys, index))
+            .filter_map(|(index, line)| {
+                prepare_source_line(line, ParsedLineSourceFormat::Lys, index)
+            })
             .collect(),
     );
 
@@ -1528,4 +1558,3 @@ pub(crate) fn parse_raw_lyrics(raw: &str) -> Vec<ParsedLine> {
     apply_lyrics_offset(&mut lines, extract_lyrics_meta(&normalized).offset_ms);
     lines
 }
-

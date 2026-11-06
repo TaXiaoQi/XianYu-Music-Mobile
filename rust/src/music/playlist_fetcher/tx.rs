@@ -59,7 +59,10 @@ pub(super) async fn get_list_detail_tx(raw_id: &str) -> Result<PlaylistImportRes
             &notice=0&platform=yqq.json&needNewCode=0"
     );
     let referer = format!("https://y.qq.com/n/yqq/playsquare/{id}.html");
-    let headers = [("Origin", "https://y.qq.com"), ("Referer", referer.as_str())];
+    let headers = [
+        ("Origin", "https://y.qq.com"),
+        ("Referer", referer.as_str()),
+    ];
     let resp = http_fetch_json(&url, "GET", &headers, None, None).await?;
 
     let body = &resp.body;
@@ -109,8 +112,8 @@ pub(super) async fn get_list_detail_tx(raw_id: &str) -> Result<PlaylistImportRes
 /// 对齐 TS info 组装：dissname/desc 解码，desc 中 <br> 转换行；nickname 不解码；
 /// playCount = String(cd.visitnum || 0)。
 fn build_playlist_info(cd: &Value) -> PlaylistInfo {
-    let desc = decode_name(cd.get("desc").and_then(|v| v.as_str()).unwrap_or(""))
-        .replace("<br>", "\n");
+    let desc =
+        decode_name(cd.get("desc").and_then(|v| v.as_str()).unwrap_or("")).replace("<br>", "\n");
     let play_count = match cd.get("visitnum") {
         Some(v @ Value::Number(_)) if v.as_f64().unwrap_or(0.0) != 0.0 => v.to_string(),
         _ => "0".to_string(),
@@ -195,7 +198,11 @@ fn parse_tx_song(item: &Value) -> Option<PlaylistSong> {
     });
 
     Some(PlaylistSong::new(
-        if songmid.is_empty() { song_id.as_str() } else { songmid },
+        if songmid.is_empty() {
+            song_id.as_str()
+        } else {
+            songmid
+        },
         &name,
         &singer_name,
         &album_name,
@@ -269,7 +276,9 @@ mod tests {
             Some("8012590246".to_string())
         );
         assert_eq!(
-            get_tx_list_id("https://i.y.qq.com/n2/m/share/details/taoge.html?id=8012590246&host=uin"),
+            get_tx_list_id(
+                "https://i.y.qq.com/n2/m/share/details/taoge.html?id=8012590246&host=uin"
+            ),
             Some("8012590246".to_string())
         );
         assert_eq!(
@@ -334,7 +343,14 @@ mod tests {
         let raw = song.raw_data.as_object().expect("rawData 应为对象");
         // Object 键按字母序存储，只断言键存在性与取值
         for key in [
-            "songmid", "songId", "strMediaMid", "albumMid", "name", "singer", "source", "interval",
+            "songmid",
+            "songId",
+            "strMediaMid",
+            "albumMid",
+            "name",
+            "singer",
+            "source",
+            "interval",
         ] {
             assert!(raw.contains_key(key), "rawData 缺少键 {}", key);
         }

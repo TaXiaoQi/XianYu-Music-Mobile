@@ -1,6 +1,8 @@
-﻿use super::*;
+use super::*;
 
-pub(crate) fn aggregate_behavior_stats(conn: &rusqlite::Connection) -> Result<BehaviorStats, String> {
+pub(crate) fn aggregate_behavior_stats(
+    conn: &rusqlite::Connection,
+) -> Result<BehaviorStats, String> {
     ensure_statistics_aggregates(conn)?;
 
     let global = query_global_stats(conn)?;
@@ -231,4 +233,3 @@ pub fn get_recent_history(
 
     Ok(rows.filter_map(|row| row.ok()).collect())
 }
-

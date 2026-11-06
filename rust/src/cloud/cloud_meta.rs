@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use crate::music::covers;
-use crate::music::tags::{extract_embedded_lyrics, find_embedded_picture, read_tagged_file_from_path};
+use crate::music::tags::{
+    extract_embedded_lyrics, find_embedded_picture, read_tagged_file_from_path,
+};
 use crate::security::ssrf;
 
 /// 头部拉取上限：探针只读头部标签，拿不到就放弃（不打扰播放）。
@@ -120,7 +122,11 @@ fn probe_log(data_dir: &Path, line: &str) {
             let _ = std::fs::remove_file(&path);
         }
     }
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         use std::io::Write;
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -152,7 +158,10 @@ pub async fn probe_head(
     if let Some(hit) = index_lookup(data_dir, cloud_path) {
         probe_log(
             data_dir,
-            &format!("[cloud-head] 索引命中 host={} ({cloud_path})", url_host(url)),
+            &format!(
+                "[cloud-head] 索引命中 host={} ({cloud_path})",
+                url_host(url)
+            ),
         );
         return Ok(hit);
     }
@@ -161,7 +170,10 @@ pub async fn probe_head(
         .unwrap_or_else(|| "hdrs=0".to_string());
     probe_log(
         data_dir,
-        &format!("[cloud-head] 开始 host={host} {hdr_note}", host = url_host(url)),
+        &format!(
+            "[cloud-head] 开始 host={host} {hdr_note}",
+            host = url_host(url)
+        ),
     );
     ssrf::validate_url_ip_literal(url)?;
 
@@ -253,7 +265,10 @@ pub async fn probe_head(
     if acc.is_empty() {
         probe_log(
             data_dir,
-            &format!("[cloud-head] 响应为空 status={status} host={}", url_host(url)),
+            &format!(
+                "[cloud-head] 响应为空 status={status} host={}",
+                url_host(url)
+            ),
         );
         return Err("响应为空".to_string());
     }
@@ -286,12 +301,10 @@ pub async fn probe_head(
         None => {
             // 落盘响应头片段：200 OK 却拿到 HTML（WAF 挑战页/防盗链页）时
             // 直接可见内容，免二次猜。
-            let head: String = String::from_utf8_lossy(
-                &acc[..acc.len().min(6000)],
-            )
-            .chars()
-            .map(|c| if c.is_control() { ' ' } else { c })
-            .collect();
+            let head: String = String::from_utf8_lossy(&acc[..acc.len().min(6000)])
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .collect();
             probe_log(
                 data_dir,
                 &format!(
@@ -327,7 +340,14 @@ fn extract_head_bytes(
     let ext = probe_file_ext(url, bytes);
     let tmp = tmp_dir.join(format!("xym-cloud-head-{nonce:016x}{ext}"));
     std::fs::write(&tmp, bytes).ok()?;
-    let payload = extract_meta(covers_dir, &tmp, total_bytes, url, cloud_path, duration_hint);
+    let payload = extract_meta(
+        covers_dir,
+        &tmp,
+        total_bytes,
+        url,
+        cloud_path,
+        duration_hint,
+    );
     let _ = std::fs::remove_file(&tmp);
     payload
 }
@@ -339,9 +359,8 @@ fn probe_file_ext(url: &str, bytes: &[u8]) -> String {
         let last = path.rsplit('/').next().unwrap_or("");
         if let Some(dot) = last.rfind('.') {
             let ext = &last[dot + 1..];
-            let ok = !ext.is_empty()
-                && ext.len() <= 5
-                && ext.chars().all(|c| c.is_ascii_alphanumeric());
+            let ok =
+                !ext.is_empty() && ext.len() <= 5 && ext.chars().all(|c| c.is_ascii_alphanumeric());
             if ok {
                 return format!(".{}", ext.to_ascii_lowercase());
             }
@@ -430,8 +449,7 @@ pub fn parse_headers_json(headers_json: &str) -> Result<Option<HashMap<String, S
     if s.is_empty() {
         return Ok(None);
     }
-    let v: Value =
-        serde_json::from_str(s).map_err(|e| format!("headers 解析失败: {e}"))?;
+    let v: Value = serde_json::from_str(s).map_err(|e| format!("headers 解析失败: {e}"))?;
     let Some(obj) = v.as_object() else {
         return Err("headers 必须是 JSON object".to_string());
     };

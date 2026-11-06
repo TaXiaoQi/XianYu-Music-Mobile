@@ -21,6 +21,14 @@ pub(crate) struct SymphoniaDecoder {
     stream_state: Option<crate::player::stream_cache::StreamingTempFileState>,
     /// 打开时的探测路径（供重建时复用扩展名提示）。
     hint_path: String,
+    /// 诊断：累计解码失败包数（解码成功即清零连续计数，但保留累计值）。
+    decode_errs: u64,
+    /// 诊断：连续解码失败包数（超阈值直接判不可解码，不再空扫全档）。
+    consecutive_decode_errs: u32,
+    /// 诊断：首个解码失败原因（定位「整档 0 样本」死因）。
+    first_decode_err: Option<String>,
+    /// 诊断：是否至少成功解出一个包。
+    decoded_any: bool,
 }
 
 /// 流缓存下载状态快照：Seek 诊断与死亡消息用，用于区分「symphonia 层失败」
@@ -100,7 +108,7 @@ impl SymphoniaDecoder {
         stream_reader: Option<Box<dyn crate::player::stream_cache::ReadSeek + Send + Sync>>,
         stream_state: Option<crate::player::stream_cache::StreamingTempFileState>,
     ) -> Result<Self, String> {
-        use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+        use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
         use symphonia::core::formats::FormatOptions;
         use symphonia::core::io::MediaSourceStream;
         use symphonia::core::meta::MetadataOptions;
@@ -147,7 +155,8 @@ impl SymphoniaDecoder {
                 // 读取文件末尾 1024 字节提取 ekey
                 let file_size = file.seek(SeekFrom::End(0)).map_err(|e| e.to_string())?;
                 let tail_size = (file_size.min(1024)) as usize;
-                file.seek(SeekFrom::End(-(tail_size as i64))).map_err(|e| e.to_string())?;
+                file.seek(SeekFrom::End(-(tail_size as i64)))
+                    .map_err(|e| e.to_string())?;
                 let mut tail = vec![0u8; tail_size];
                 file.read_exact(&mut tail).ok();
                 file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
@@ -165,13 +174,21 @@ impl SymphoniaDecoder {
         };
 
         if !is_http {
-            if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+            if let Some(ext) = std::path::Path::new(path)
+                .extension()
+                .and_then(|e| e.to_str())
+            {
                 hint.with_extension(ext);
             }
         }
 
         let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
             .map_err(|e| e.to_string())?;
 
         let track = probed
@@ -183,11 +200,7 @@ impl SymphoniaDecoder {
 
         let track_id = track.id;
         let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
-        let channels = track
-            .codec_params
-            .channels
-            .map(|c| c.count())
-            .unwrap_or(2) as u16;
+        let channels = track.codec_params.channels.map(|c| c.count()).unwrap_or(2) as u16;
 
         let total_duration = track
             .codec_params
@@ -212,6 +225,10 @@ impl SymphoniaDecoder {
             eof: false,
             stream_state,
             hint_path: path.to_string(),
+            decode_errs: 0,
+            consecutive_decode_errs: 0,
+            first_decode_err: None,
+            decoded_any: false,
         })
     }
 }
@@ -241,12 +258,19 @@ impl BlockProducer for SymphoniaDecoder {
                 Err(symphonia::core::errors::Error::IoError(ref e))
                     if e.kind() == std::io::ErrorKind::UnexpectedEof =>
                 {
-                    let eof_diag =
-                        crate::player::stream_cache::take_eof_diag()
-                            .map(|d| format!(" {d}"))
-                            .unwrap_or_default();
+                    let eof_diag = crate::player::stream_cache::take_eof_diag()
+                        .map(|d| format!(" {d}"))
+                        .unwrap_or_default();
+                    let dec_diag = if self.decoded_any {
+                        String::new()
+                    } else {
+                        format!(
+                            " 从未产出样本: packets已读 decode_errs={} first_err={:?}",
+                            self.decode_errs, self.first_decode_err
+                        )
+                    };
                     record_decoder_error(&format!(
-                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e} (leftover={}){eof_diag}",
+                        "IO UnexpectedEof(可能是自然EOF，也可能是上游断流): {e} (leftover={}){dec_diag}{eof_diag}",
                         self.leftover.len()
                     ));
                     self.eof = true;
@@ -260,8 +284,30 @@ impl BlockProducer for SymphoniaDecoder {
             };
 
             let decoded = match self.decoder.decode(&packet) {
-                Ok(d) => d,
-                Err(_) => continue,
+                Ok(d) => {
+                    self.decoded_any = true;
+                    self.consecutive_decode_errs = 0;
+                    d
+                }
+                Err(e) => {
+                    // 静默跳过会演变成「空扫全档 0 样本」死法：计数并保留首个
+                    // 错误；连续失败超阈值判定为不可解码流（加密/损坏），直接
+                    // 终止，避免读完整档才以泛化 EOF 收场。
+                    self.decode_errs += 1;
+                    self.consecutive_decode_errs += 1;
+                    if self.first_decode_err.is_none() {
+                        self.first_decode_err = Some(e.to_string());
+                    }
+                    if self.consecutive_decode_errs >= 64 && !self.decoded_any {
+                        record_decoder_error(&format!(
+                            "连续{}包解码失败，判定不可解码流: {}",
+                            self.consecutive_decode_errs, e
+                        ));
+                        self.eof = true;
+                        return None;
+                    }
+                    continue;
+                }
             };
 
             let frames = decoded.frames();

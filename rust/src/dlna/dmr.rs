@@ -255,9 +255,8 @@ pub async fn handle_control(
     if shared.enabled.load(Ordering::SeqCst) == 0 {
         return soap_fault(UPNP_ERR_INVALID_ACTION, "renderer disabled");
     }
-    let action = super::soap::parse_action_header(
-        headers.get("soapaction").and_then(|v| v.to_str().ok()),
-    );
+    let action =
+        super::soap::parse_action_header(headers.get("soapaction").and_then(|v| v.to_str().ok()));
     let Some(action) = action else {
         return soap_fault(UPNP_ERR_INVALID_ACTION, "missing SOAPACTION");
     };
@@ -370,11 +369,18 @@ pub async fn handle_control(
                 return soap_fault(UPNP_ERR_TRANSITION, "no host");
             };
             let (vol, _) = host.volume_snapshot();
-            soap_ok(service, "GetVolume", &format!("<CurrentVolume>{vol}</CurrentVolume>"))
+            soap_ok(
+                service,
+                "GetVolume",
+                &format!("<CurrentVolume>{vol}</CurrentVolume>"),
+            )
         }
         ("rcs", "SetVolume") => {
             let vol: u8 = arg(body, "DesiredVolume").trim().parse().unwrap_or(0);
-            let _ = shared.commands.send(DmrCommand::SetVolume { percent: vol }).await;
+            let _ = shared
+                .commands
+                .send(DmrCommand::SetVolume { percent: vol })
+                .await;
             soap_ok(service, "SetVolume", "")
         }
         ("rcs", "GetMute") => {
@@ -382,11 +388,17 @@ pub async fn handle_control(
                 return soap_fault(UPNP_ERR_TRANSITION, "no host");
             };
             let (_, mute) = host.volume_snapshot();
-            soap_ok(service, "GetMute", &format!("<CurrentMute>{}</CurrentMute>", if mute { 1 } else { 0 }))
+            soap_ok(
+                service,
+                "GetMute",
+                &format!("<CurrentMute>{}</CurrentMute>", if mute { 1 } else { 0 }),
+            )
         }
         ("rcs", "SetMute") => {
             let want = arg(body, "DesiredMute").trim().to_string();
-            let on = want == "1" || want.eq_ignore_ascii_case("true") || want.eq_ignore_ascii_case("yes");
+            let on = want == "1"
+                || want.eq_ignore_ascii_case("true")
+                || want.eq_ignore_ascii_case("yes");
             let _ = shared.commands.send(DmrCommand::SetMute { on }).await;
             soap_ok(service, "SetMute", "")
         }
@@ -395,10 +407,7 @@ pub async fn handle_control(
             soap_ok(
                 service,
                 "GetProtocolInfo",
-                &format!(
-                    "<Source></Source><Sink>{}</Sink>",
-                    xml_escape(sink)
-                ),
+                &format!("<Source></Source><Sink>{}</Sink>", xml_escape(sink)),
             )
         }
         _ => soap_fault(UPNP_ERR_INVALID_ACTION, "unsupported action"),
@@ -435,7 +444,10 @@ pub fn handle_event(method: &str) -> Response {
             .body(Body::empty())
             .unwrap()
     } else {
-        Response::builder().status(StatusCode::OK).body(Body::empty()).unwrap()
+        Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::empty())
+            .unwrap()
     }
 }
 

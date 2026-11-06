@@ -1,6 +1,8 @@
-﻿use super::*;
+use super::*;
 
-pub(crate) fn resolve_semantic_confidence(lines: &[Option<&LyricTrackLine>]) -> ClassificationConfidence {
+pub(crate) fn resolve_semantic_confidence(
+    lines: &[Option<&LyricTrackLine>],
+) -> ClassificationConfidence {
     if lines.iter().any(|line| {
         line.and_then(|value| value.role_source.clone()) == Some(ClassificationConfidence::Explicit)
     }) {
@@ -594,7 +596,9 @@ pub(crate) fn build_hard_role_semantic_line_from_cluster(
     }
 }
 
-pub(crate) fn try_build_hard_role_semantic_lines(document: &LyricDocument) -> Option<Vec<SemanticLine>> {
+pub(crate) fn try_build_hard_role_semantic_lines(
+    document: &LyricDocument,
+) -> Option<Vec<SemanticLine>> {
     let mut grouped_lines = BTreeMap::<usize, Vec<(usize, usize, LyricTrackLine)>>::new();
     let mut clustered_line_count = 0usize;
     let total_line_count = document
@@ -1106,4 +1110,3 @@ pub fn semantic_line_to_lyric_line(line: &SemanticLine) -> LyricLinePayload {
         is_duet_partner: line.is_duet_partner,
     }
 }
-

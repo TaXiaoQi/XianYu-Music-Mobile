@@ -64,8 +64,18 @@ fn js_encode_uri_component(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for &b in s.as_bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'!'
-            | b'\'' | b'(' | b')' | b'*' => out.push(b as char),
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~'
+            | b'!'
+            | b'\''
+            | b'('
+            | b')'
+            | b'*' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -80,11 +90,7 @@ fn cal_sign(body: &str, ts: &str, rand_str: &str) -> String {
     chars.sort_unstable();
     enc = chars.into_iter().collect();
     let b64 = B64.encode(enc.as_bytes());
-    let res = format!(
-        "{}{}",
-        md5_hex(&b64),
-        md5_hex(&format!("{ts}:{rand_str}"))
-    );
+    let res = format!("{}{}", md5_hex(&b64), md5_hex(&format!("{ts}:{rand_str}")));
     md5_hex(&res).to_uppercase()
 }
 
@@ -185,7 +191,10 @@ fn hcy_headers(basic: &str, body: &str) -> Vec<(String, String)> {
     let sign = cal_sign(body, &ts_str, &rand);
     vec![
         ("User-Agent".to_string(), UA.to_string()),
-        ("Accept".to_string(), "application/json, text/plain, */*".to_string()),
+        (
+            "Accept".to_string(),
+            "application/json, text/plain, */*".to_string(),
+        ),
         ("Authorization".to_string(), basic.to_string()),
         ("Caller".to_string(), "web".to_string()),
         ("CMS-DEVICE".to_string(), "default".to_string()),
@@ -380,8 +389,8 @@ async fn hcy_post(basic: &str, url: &str, body: &Value) -> Result<Value, (i32, S
     if !resp.is_ok() {
         return Err(biz_err("移动云盘接口请求失败"));
     }
-    let j: Value = serde_json::from_str(&resp.body)
-        .map_err(|_| biz_err("移动云盘接口返回格式异常"))?;
+    let j: Value =
+        serde_json::from_str(&resp.body).map_err(|_| biz_err("移动云盘接口返回格式异常"))?;
     if j.get("success") != Some(&json!(true)) {
         let msg = jstr(j.get("message"));
         return Err(biz_err(if msg.is_empty() {
@@ -492,15 +501,17 @@ async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         Err(_) => return Ok(CloudOut::plain(json!({ "valid": false }))),
     };
     // Dart try/catch：任何异常按未登录处理。
-    let valid = hcy_post(&basic, &format!("{HCYSVC}/file/list"), &list_body("root", ""))
-        .await
-        .is_ok();
+    let valid = hcy_post(
+        &basic,
+        &format!("{HCYSVC}/file/list"),
+        &list_body("root", ""),
+    )
+    .await
+    .is_ok();
     let out = json!({ "valid": valid });
     Ok(match rotated {
         Some(new_auth) => CloudOut::rotated(out, json!({ "authorization": new_auth })),
-        None => {
-            CloudOut::plain(out)
-        }
+        None => CloudOut::plain(out),
     })
 }
 
@@ -522,14 +533,22 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let files: Vec<Value> = list.iter().filter(|e| e.is_object()).map(file_from_item).collect();
+    let files: Vec<Value> = list
+        .iter()
+        .filter(|e| e.is_object())
+        .map(file_from_item)
+        .collect();
     let next_cursor = j
         .get("data")
         .filter(|d| d.is_object())
         .and_then(|d| d.get("nextPageCursor"))
         .map(|v| jstr(Some(v)))
         .unwrap_or_default();
-    let next_cursor = if next_cursor.is_empty() { None } else { Some(next_cursor) };
+    let next_cursor = if next_cursor.is_empty() {
+        None
+    } else {
+        Some(next_cursor)
+    };
     Ok(match rotated {
         Some(new_auth) => CloudOut::rotated(
             list_result_json(files, next_cursor),
@@ -640,7 +659,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         })
         .collect();
     files.extend(list.iter().filter(|e| e.is_object()).map(file_from_outlink));
-    let passcode = if pwd.is_empty() { None } else { Some(pwd.as_str()) };
+    let passcode = if pwd.is_empty() {
+        None
+    } else {
+        Some(pwd.as_str())
+    };
     Ok(CloudOut::plain(share_parse_json(
         "mobile139",
         files,
@@ -694,7 +717,11 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let ids: Vec<Value> = share
         .get("files")
         .and_then(Value::as_array)
-        .map(|l| l.iter().map(|f| f.get("id").cloned().unwrap_or(json!(""))).collect())
+        .map(|l| {
+            l.iter()
+                .map(|f| f.get("id").cloned().unwrap_or(json!("")))
+                .collect()
+        })
         .unwrap_or_default();
     let _ = post_json_follow(
         "https://share-kd-njs.yun.139.com/yun-share/richlifeApp/devapp/IBatchOprTask/createOuterLinkBatchOprTask",
@@ -724,7 +751,11 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         &json!({ "fileId": jstr(file.get("id")) }),
     )
     .await?;
-    let data = j.get("data").filter(|d| d.is_object()).cloned().unwrap_or(json!({}));
+    let data = j
+        .get("data")
+        .filter(|d| d.is_object())
+        .cloned()
+        .unwrap_or(json!({}));
     let cdn_switch = data.get("cdnSwitch").and_then(Value::as_i64) == Some(1);
     let url = if cdn_switch {
         jstr(data.get("cdnUrl"))
@@ -771,7 +802,11 @@ mod tests {
         // 独立实现（PowerShell .NET md5/base64）生成的对照向量，算法逐行
         // 对齐 OpenList drivers/139 calSign。
         assert_eq!(
-            cal_sign(r#"{"a":"周深歌单123"}"#, "1792128233219", "abcdefgh12345678"),
+            cal_sign(
+                r#"{"a":"周深歌单123"}"#,
+                "1792128233219",
+                "abcdefgh12345678"
+            ),
             "D6093DD9F20B51DD65ECBA49D16CA220"
         );
         // encodeURIComponent 保留字符语义：!'()* 原样、空格 %20。
@@ -788,7 +823,13 @@ mod tests {
         assert_eq!(st.account, "16608240512");
         assert_eq!(st.token, "1|a|b|9999999999999|c");
         assert_eq!(st.expiry_ms, 9999999999999);
-        assert_eq!(st.basic, format!("Basic {}", B64.encode(b"pc:16608240512:1|a|b|9999999999999|c")));
+        assert_eq!(
+            st.basic,
+            format!(
+                "Basic {}",
+                B64.encode(b"pc:16608240512:1|a|b|9999999999999|c")
+            )
+        );
         // 非法 base64 / 非 pc 前缀 / 空 token → 过期。
         assert!(parse_authorization("%%%").is_err());
         assert!(parse_authorization(&B64.encode(b"xx:a:b")).is_err());
@@ -952,7 +993,12 @@ mod tests {
         // 匿名分享网关头：不带 Authorization / Caller。
         assert!(!keys.contains(&"Authorization"));
         assert!(!keys.contains(&"Caller"));
-        for need in ["CMS-DEVICE", "mcloud-sign", "mcloud-client", "X-Yun-Module-Type"] {
+        for need in [
+            "CMS-DEVICE",
+            "mcloud-sign",
+            "mcloud-client",
+            "X-Yun-Module-Type",
+        ] {
             assert!(keys.contains(&need), "missing {need}");
         }
         let ct = h.iter().find(|(k, _)| *k == "Content-Type").unwrap();
@@ -970,7 +1016,10 @@ mod tests {
             resolve_url("https://a.com/x", "https://b.com/y"),
             "https://b.com/y"
         );
-        assert_eq!(resolve_url("https://a.com/x", "//b.com/y"), "https://b.com/y");
+        assert_eq!(
+            resolve_url("https://a.com/x", "//b.com/y"),
+            "https://b.com/y"
+        );
         assert_eq!(resolve_url("https://a.com/x", "/y"), "https://a.com/y");
         assert_eq!(resolve_url("https://a.com/x/y", "z"), "https://a.com/x/z");
     }

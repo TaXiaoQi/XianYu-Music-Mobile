@@ -128,8 +128,18 @@ pub(crate) fn percent_encode_component(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for &b in input.as_bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~'
-            | b'*' | b'\'' | b'(' | b')' => out.push(b as char),
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => out.push(b as char),
             _ => {
                 out.push('%');
                 out.push(HEX[(b >> 4) as usize] as char);
@@ -212,8 +222,10 @@ pub(crate) async fn http_fetch_json(
         }
     }
 
-    let header_refs: Vec<(&str, &str)> =
-        merged.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let header_refs: Vec<(&str, &str)> = merged
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
     let resp = crate::music::lyric_fetcher::http_fetch_text(
         url,
         method,

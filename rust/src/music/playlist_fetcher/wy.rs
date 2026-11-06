@@ -469,6 +469,9 @@ mod tests {
             Some("123456".to_string())
         );
         // 含 URL 特征字符但正则无果 → None（对齐 TS null）
-        assert_eq!(get_wy_list_id("https://music.163.com/playlist/789456"), None);
+        assert_eq!(
+            get_wy_list_id("https://music.163.com/playlist/789456"),
+            None
+        );
     }
 }

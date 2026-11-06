@@ -66,8 +66,8 @@ fn direct_link_headers() -> Value {
 /// 40 位 hex arg1 按位置表重排后与固定 mask 逐字节异或即 cookie 值，
 /// 2026-10 实测算出的 cookie 有效）。
 const ACW_POS: [usize; 40] = [
-    15, 35, 29, 24, 33, 16, 1, 38, 10, 9, 19, 31, 40, 27, 22, 23, 25, 13, 6, 11, 39, 18, 20, 8,
-    14, 21, 32, 26, 2, 30, 7, 4, 17, 5, 3, 28, 34, 37, 12, 36,
+    15, 35, 29, 24, 33, 16, 1, 38, 10, 9, 19, 31, 40, 27, 22, 23, 25, 13, 6, 11, 39, 18, 20, 8, 14,
+    21, 32, 26, 2, 30, 7, 4, 17, 5, 3, 28, 34, 37, 12, 36,
 ];
 const ACW_MASK: &str = "3000176000856006061501533003690027800375";
 
@@ -142,7 +142,11 @@ async fn acw_probe(direct_url: &str) -> (Option<String>, String) {
                 }
             }
             return (
-                if cookies.is_empty() { None } else { Some(pairs_str(&cookies)) },
+                if cookies.is_empty() {
+                    None
+                } else {
+                    Some(pairs_str(&cookies))
+                },
                 resp.body,
             );
         }
@@ -352,10 +356,20 @@ async fn direct_link_json_with_waf(
         headers["Cookie"] = json!(c);
     }
     match unpack_lanrar_verify(direct, cookie.as_deref(), &probe_body).await {
-        Ok(Some(real)) => {
-            Ok(direct_link_json(&real, headers, Some(name), Some(size), Some(expire_ms)))
-        }
-        Ok(None) => Ok(direct_link_json(direct, headers, Some(name), Some(size), Some(expire_ms))),
+        Ok(Some(real)) => Ok(direct_link_json(
+            &real,
+            headers,
+            Some(name),
+            Some(size),
+            Some(expire_ms),
+        )),
+        Ok(None) => Ok(direct_link_json(
+            direct,
+            headers,
+            Some(name),
+            Some(size),
+            Some(expire_ms),
+        )),
         Err(d) => Err(biz_err(format!("蓝奏验证页解包失败: {d}"))),
     }
 }
@@ -570,7 +584,10 @@ async fn direct_from_page(page: &str, pwd: &str) -> Option<String> {
     let url = format!("https://apifile.woozooo.com/ajaxfile.php?file={file_id}");
     let headers = vec![
         ("User-Agent".to_string(), PC_UA.to_string()),
-        ("Referer".to_string(), "https://wwi.lanzouo.com/".to_string()),
+        (
+            "Referer".to_string(),
+            "https://wwi.lanzouo.com/".to_string(),
+        ),
     ];
     let resp = post_form_follow(
         &url,
@@ -694,9 +711,10 @@ async fn doupload(
     } else {
         format!("https://pc.woozooo.com/doupload.php?uid={uid}")
     };
-    let pairs: Vec<(String, String)> =
-        form.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-    let resp = post_form_follow(&url, &h_headers(cookie), pairs).await.map_err(biz_err)?;
+    let pairs: Vec<(String, String)> = form.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+    let resp = post_form_follow(&url, &h_headers(cookie), pairs)
+        .await
+        .map_err(biz_err)?;
     if !resp.is_ok() {
         return Err(biz_err("目录列表请求失败"));
     }
@@ -773,7 +791,15 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             // token 存 'f:<id>'，直链时 task=22 换分享页链接（对齐
             // direct_link 的 token 语义）。
             let token = format!("f:{id}");
-            files.push(file_json(&token, &name, false, size, Some(&path), None, Some(&token)));
+            files.push(file_json(
+                &token,
+                &name,
+                false,
+                size,
+                Some(&path),
+                None,
+                Some(&token),
+            ));
         }
     }
     // 蓝奏云 task=5 语义（对齐 comm.js）：info==0 还有下一页，info==1
@@ -785,8 +811,7 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .get("text")
         .and_then(Value::as_array)
         .map_or(0, |a| a.len());
-    let has_next =
-        list.get("info").and_then(Value::as_i64).unwrap_or(1) == 0 && raw_page_count > 0;
+    let has_next = list.get("info").and_then(Value::as_i64).unwrap_or(1) == 0 && raw_page_count > 0;
     let next_cursor = if has_next {
         Some((page + 1).to_string())
     } else {
@@ -813,7 +838,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     } else {
         info.share_id.clone()
     };
-    let passcode = if pwd.is_empty() { None } else { Some(pwd.as_str()) };
+    let passcode = if pwd.is_empty() {
+        None
+    } else {
+        Some(pwd.as_str())
+    };
     Ok(CloudOut::plain(share_parse_json(
         "lanzou",
         files,
@@ -1050,8 +1079,14 @@ mod tests {
             resolve_url("https://a.com/x/y", "https://b.com/z"),
             "https://b.com/z"
         );
-        assert_eq!(resolve_url("https://a.com/x/y", "//b.com/z"), "https://b.com/z");
-        assert_eq!(resolve_url("https://a.com/x/y", "/top"), "https://a.com/top");
+        assert_eq!(
+            resolve_url("https://a.com/x/y", "//b.com/z"),
+            "https://b.com/z"
+        );
+        assert_eq!(
+            resolve_url("https://a.com/x/y", "/top"),
+            "https://a.com/top"
+        );
         assert_eq!(
             resolve_url("https://a.com/x/y?k=1", "c.mp3"),
             "https://a.com/x/c.mp3"

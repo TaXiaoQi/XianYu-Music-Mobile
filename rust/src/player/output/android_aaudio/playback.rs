@@ -105,9 +105,7 @@ pub(crate) fn instance() -> &'static Mutex<Option<AndroidExclusivePlayback>> {
 // 公共 API
 // =========================================================================
 
-pub fn start_exclusive_playback(
-    mut request: ExclusivePlayRequest,
-) -> Result<String, String> {
+pub fn start_exclusive_playback(mut request: ExclusivePlayRequest) -> Result<String, String> {
     // 共享模式（日常 DSP 管线）不涉及 Bit-perfect 直出。
     if request.shared_mode {
         request.bit_perfect = false;
@@ -234,7 +232,9 @@ pub fn set_exclusive_volume(volume: f32) {
 pub fn set_exclusive_volume_balance_gain(gain: f32) {
     if let Ok(guard) = instance().lock() {
         if let Some(playback) = guard.as_ref() {
-            let _ = playback.tx.send(ExclusiveCommand::SetVolumeBalanceGain(gain));
+            let _ = playback
+                .tx
+                .send(ExclusiveCommand::SetVolumeBalanceGain(gain));
         }
     }
 }
@@ -400,30 +400,38 @@ pub fn get_exclusive_channels() -> u16 {
 /// 供前端检测热插拔断开并自动回退到普通播放。
 /// 返回 `{"active":bool,"deviceName":String,"sampleRate":u32,"channels":u16,"bitPerfect":bool}` JSON。
 pub fn get_exclusive_device_info() -> String {
-    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms, last_error, transition_seq) =
-        if let Ok(guard) = instance().lock() {
-            if let Some(playback) = guard.as_ref() {
-                (
-                    playback.running.load(Ordering::Relaxed),
-                    playback.device_name.clone(),
-                    playback.progress.sample_rate.load(Ordering::Relaxed),
-                    playback.progress.channels.load(Ordering::Relaxed) as u16,
-                    playback.bit_perfect.load(Ordering::Relaxed),
-                    playback.progress.duration_ms.load(Ordering::Relaxed),
-                    playback
-                        .last_error
-                        .lock()
-                        .ok()
-                        .and_then(|e| e.clone())
-                        .unwrap_or_default(),
-                    playback.progress.transition_seq.load(Ordering::Relaxed),
-                )
-            } else {
-                (false, String::new(), 0, 0, false, 0, String::new(), 0)
-            }
+    let (
+        active,
+        device_name,
+        sample_rate,
+        channels,
+        bit_perfect,
+        duration_ms,
+        last_error,
+        transition_seq,
+    ) = if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            (
+                playback.running.load(Ordering::Relaxed),
+                playback.device_name.clone(),
+                playback.progress.sample_rate.load(Ordering::Relaxed),
+                playback.progress.channels.load(Ordering::Relaxed) as u16,
+                playback.bit_perfect.load(Ordering::Relaxed),
+                playback.progress.duration_ms.load(Ordering::Relaxed),
+                playback
+                    .last_error
+                    .lock()
+                    .ok()
+                    .and_then(|e| e.clone())
+                    .unwrap_or_default(),
+                playback.progress.transition_seq.load(Ordering::Relaxed),
+            )
         } else {
             (false, String::new(), 0, 0, false, 0, String::new(), 0)
-        };
+        }
+    } else {
+        (false, String::new(), 0, 0, false, 0, String::new(), 0)
+    };
     serde_json::json!({
         "active": active,
         "deviceName": device_name,
@@ -487,7 +495,9 @@ pub(crate) fn run_exclusive_playback(
     let lib = match AAudioLib::load() {
         Ok(l) => l,
         Err(e) => {
-            let _ = init_tx.send(Err(format!("无法加载 libaaudio.so（需要 Android API 26+）: {e}")));
+            let _ = init_tx.send(Err(format!(
+                "无法加载 libaaudio.so（需要 Android API 26+）: {e}"
+            )));
             return;
         }
     };
@@ -552,9 +562,7 @@ pub(crate) fn run_exclusive_playback(
                         let _ = init_tx.send(Err(format!("流缓存下载失败: {err}")));
                         return;
                     }
-                    if !running.load(Ordering::Relaxed)
-                        || std::time::Instant::now() >= deadline
-                    {
+                    if !running.load(Ordering::Relaxed) || std::time::Instant::now() >= deadline {
                         let _ = init_tx.send(Err("流缓存缓冲超时".to_string()));
                         return;
                     }
@@ -689,7 +697,13 @@ pub(crate) fn run_exclusive_playback(
     // 独占 Bit-perfect 时优先按源位深协商整数格式（≤16bit→Int16，>16bit→Int24，
     // 深层浮点回退），实现「按源位深整数直出」；常规独占仍 Float32→Int16。
     let (stream, device_format, stream_sample_rate, stream_channels) = if request.shared_mode {
-        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, playback_channels, true) {
+        match create_aaudio_stream(
+            &lib,
+            request.device_id,
+            source_sample_rate,
+            playback_channels,
+            true,
+        ) {
             Ok(result) => result,
             Err(e) => {
                 let _ = init_tx.send(Err(e));
@@ -712,8 +726,13 @@ pub(crate) fn run_exclusive_playback(
             }
         }
     } else {
-        match create_aaudio_stream(&lib, request.device_id, source_sample_rate, source_channels, false)
-        {
+        match create_aaudio_stream(
+            &lib,
+            request.device_id,
+            source_sample_rate,
+            source_channels,
+            false,
+        ) {
             Ok(result) => result,
             Err(e) => {
                 let _ = init_tx.send(Err(e));
@@ -723,8 +742,12 @@ pub(crate) fn run_exclusive_playback(
     };
 
     let effective_rate = sound_effect.effective_sample_rate();
-    progress.sample_rate.store(effective_rate, Ordering::Relaxed);
-    progress.channels.store(stream_channels as u32, Ordering::Relaxed);
+    progress
+        .sample_rate
+        .store(effective_rate, Ordering::Relaxed);
+    progress
+        .channels
+        .store(stream_channels as u32, Ordering::Relaxed);
     progress.duration_ms.store(
         total_duration.map(|d| d.as_millis() as u64).unwrap_or(0),
         Ordering::Relaxed,
@@ -782,7 +805,10 @@ pub(crate) fn run_exclusive_playback(
         // 检查命令
         match cmd_rx.try_recv() {
             Ok(ExclusiveCommand::Stop) => break,
-            Ok(ExclusiveCommand::Seek { time_secs, is_playing }) => {
+            Ok(ExclusiveCommand::Seek {
+                time_secs,
+                is_playing,
+            }) => {
                 let _ = unsafe { (lib.stream_request_pause)(stream) };
                 let seek_res = buffered.try_seek(Duration::from_secs_f64(time_secs));
                 match &seek_res {
@@ -1045,11 +1071,14 @@ pub(crate) fn run_exclusive_playback(
 
         if frames_written < 0 {
             // 写入错误，可能是设备断开
-            set_exit_reason!(last_error, format!(
-                "stream_write错误({} 已播{}样本)",
-                unsafe { lib.result_text(frames_written as i32) },
-                progress.samples_played.load(Ordering::Relaxed)
-            ));
+            set_exit_reason!(
+                last_error,
+                format!(
+                    "stream_write错误({} 已播{}样本)",
+                    unsafe { lib.result_text(frames_written as i32) },
+                    progress.samples_played.load(Ordering::Relaxed)
+                )
+            );
             break;
         }
 

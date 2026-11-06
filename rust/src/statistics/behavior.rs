@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 /// 行为统计结果
 #[derive(Serialize)]
@@ -314,4 +314,3 @@ pub fn get_listen_durations(conn: &rusqlite::Connection) -> Result<ListenDuratio
         today_play_count: today_count,
     })
 }
-

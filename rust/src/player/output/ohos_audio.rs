@@ -24,7 +24,7 @@ use crate::player::equalizer::{
 };
 use crate::player::loudness::VolumeNormalizer;
 use crate::player::output::android_aaudio::{
-    CacheDiag, SymphoniaDecoder, record_pipeline_diag, reset_pipeline_diag, take_decoder_error,
+    record_pipeline_diag, reset_pipeline_diag, take_decoder_error, CacheDiag, SymphoniaDecoder,
 };
 use crate::player::sound_effect::{SoundEffectBlockProcessor, SoundEffectSettings};
 use crate::player::types::global_visualizer;
@@ -67,8 +67,10 @@ extern "C" {
         stream_type: c_int,
     ) -> c_int;
     fn OH_AudioStreamBuilder_Destroy(builder: *mut OH_AudioStreamBuilder) -> c_int;
-    fn OH_AudioStreamBuilder_SetSamplingRate(builder: *mut OH_AudioStreamBuilder, rate: c_int)
-        -> c_int;
+    fn OH_AudioStreamBuilder_SetSamplingRate(
+        builder: *mut OH_AudioStreamBuilder,
+        rate: c_int,
+    ) -> c_int;
     fn OH_AudioStreamBuilder_SetChannelCount(
         builder: *mut OH_AudioStreamBuilder,
         channel_count: c_int,
@@ -81,8 +83,10 @@ extern "C" {
         builder: *mut OH_AudioStreamBuilder,
         latency_mode: c_int,
     ) -> c_int;
-    fn OH_AudioStreamBuilder_SetRendererInfo(builder: *mut OH_AudioStreamBuilder, usage: c_int)
-        -> c_int;
+    fn OH_AudioStreamBuilder_SetRendererInfo(
+        builder: *mut OH_AudioStreamBuilder,
+        usage: c_int,
+    ) -> c_int;
     fn OH_AudioStreamBuilder_SetRendererWriteDataCallback(
         builder: *mut OH_AudioStreamBuilder,
         callback: Option<OhosWriteDataCallback>,
@@ -96,7 +100,8 @@ extern "C" {
     fn OH_AudioRenderer_Pause(renderer: *mut OH_AudioRenderer) -> c_int;
     fn OH_AudioRenderer_Stop(renderer: *mut OH_AudioRenderer) -> c_int;
     fn OH_AudioRenderer_Release(renderer: *mut OH_AudioRenderer) -> c_int;
-    fn OH_AudioRenderer_GetSamplingRate(renderer: *mut OH_AudioRenderer, rate: *mut c_int) -> c_int;
+    fn OH_AudioRenderer_GetSamplingRate(renderer: *mut OH_AudioRenderer, rate: *mut c_int)
+        -> c_int;
     fn OH_AudioRenderer_GetChannelCount(
         renderer: *mut OH_AudioRenderer,
         channel_count: *mut c_int,
@@ -555,30 +560,38 @@ pub fn get_exclusive_channels() -> u16 {
 }
 
 pub fn get_exclusive_device_info() -> String {
-    let (active, device_name, sample_rate, channels, bit_perfect, duration_ms, last_error, transition_seq) =
-        if let Ok(guard) = instance().lock() {
-            if let Some(playback) = guard.as_ref() {
-                (
-                    playback.running.load(Ordering::Relaxed),
-                    playback.device_name.clone(),
-                    playback.progress.sample_rate.load(Ordering::Relaxed),
-                    playback.progress.channels.load(Ordering::Relaxed) as u16,
-                    playback.bit_perfect.load(Ordering::Relaxed),
-                    playback.progress.duration_ms.load(Ordering::Relaxed),
-                    playback
-                        .last_error
-                        .lock()
-                        .ok()
-                        .and_then(|e| e.clone())
-                        .unwrap_or_default(),
-                    playback.progress.transition_seq.load(Ordering::Relaxed),
-                )
-            } else {
-                (false, String::new(), 0, 0, false, 0, String::new(), 0)
-            }
+    let (
+        active,
+        device_name,
+        sample_rate,
+        channels,
+        bit_perfect,
+        duration_ms,
+        last_error,
+        transition_seq,
+    ) = if let Ok(guard) = instance().lock() {
+        if let Some(playback) = guard.as_ref() {
+            (
+                playback.running.load(Ordering::Relaxed),
+                playback.device_name.clone(),
+                playback.progress.sample_rate.load(Ordering::Relaxed),
+                playback.progress.channels.load(Ordering::Relaxed) as u16,
+                playback.bit_perfect.load(Ordering::Relaxed),
+                playback.progress.duration_ms.load(Ordering::Relaxed),
+                playback
+                    .last_error
+                    .lock()
+                    .ok()
+                    .and_then(|e| e.clone())
+                    .unwrap_or_default(),
+                playback.progress.transition_seq.load(Ordering::Relaxed),
+            )
         } else {
             (false, String::new(), 0, 0, false, 0, String::new(), 0)
-        };
+        }
+    } else {
+        (false, String::new(), 0, 0, false, 0, String::new(), 0)
+    };
     serde_json::json!({
         "active": active,
         "deviceName": device_name,
@@ -662,7 +675,14 @@ fn create_renderer(
             let mut actual_fmt: c_int = 0;
             if OH_AudioRenderer_GetSampleFormat(renderer, &mut actual_fmt) == AUDIOSTREAM_SUCCESS {
                 match OutFormat::of_ohos(actual_fmt) {
-                    Some(f) => return Ok((renderer, f, read_back_rate(renderer, sample_rate), read_back_channels(renderer, channels))),
+                    Some(f) => {
+                        return Ok((
+                            renderer,
+                            f,
+                            read_back_rate(renderer, sample_rate),
+                            read_back_channels(renderer, channels),
+                        ))
+                    }
                     None => {
                         // 未知格式（S24/S32 等暂不做字节转换）：释放后试下一档
                         OH_AudioRenderer_Release(renderer);
@@ -670,7 +690,12 @@ fn create_renderer(
                     }
                 }
             }
-            return Ok((renderer, fmt, read_back_rate(renderer, sample_rate), read_back_channels(renderer, channels)));
+            return Ok((
+                renderer,
+                fmt,
+                read_back_rate(renderer, sample_rate),
+                read_back_channels(renderer, channels),
+            ));
         }
     }
     Err("无法创建 OHAudio 渲染流（系统混音器拒绝 F32/S16 格式）".to_string())
@@ -784,9 +809,7 @@ fn run_ohos_playback(
                         let _ = init_tx.send(Err(format!("流缓存下载失败: {err}")));
                         return;
                     }
-                    if !running.load(Ordering::Relaxed)
-                        || std::time::Instant::now() >= deadline
-                    {
+                    if !running.load(Ordering::Relaxed) || std::time::Instant::now() >= deadline {
                         let _ = init_tx.send(Err("流缓存缓冲超时".to_string()));
                         return;
                     }
@@ -853,7 +876,12 @@ fn run_ohos_playback(
         transition.clone(),
     );
     let crossfade_ms = producer.crossfade_handle();
-    let mut buffered = BufferedSource::new(producer, source_sample_rate, source_channels, total_duration);
+    let mut buffered = BufferedSource::new(
+        producer,
+        source_sample_rate,
+        source_channels,
+        total_duration,
+    );
 
     // 4. 跳到起始位置
     if request.start_time_secs > 0.0 {
@@ -938,8 +966,12 @@ fn run_ohos_playback(
     let bytes_per_sample = device_format.bytes_per_sample();
 
     let effective_rate = sound_effect.effective_sample_rate();
-    progress.sample_rate.store(effective_rate, Ordering::Relaxed);
-    progress.channels.store(stream_channels as u32, Ordering::Relaxed);
+    progress
+        .sample_rate
+        .store(effective_rate, Ordering::Relaxed);
+    progress
+        .channels
+        .store(stream_channels as u32, Ordering::Relaxed);
     progress.duration_ms.store(
         total_duration.map(|d| d.as_millis() as u64).unwrap_or(0),
         Ordering::Relaxed,
@@ -954,7 +986,11 @@ fn run_ohos_playback(
 
     let device_name = format!(
         "{} ({}Hz, {}ch){}",
-        if usb_mode { "USB 独占" } else { "系统混音器 shared" },
+        if usb_mode {
+            "USB 独占"
+        } else {
+            "系统混音器 shared"
+        },
         stream_sample_rate,
         stream_channels,
         if downmix_active {
@@ -972,12 +1008,8 @@ fn run_ohos_playback(
 
     // 8. 产出循环：解码 → DSP → 字节 → 环形缓冲（回调侧消费）。
     // 环形缓冲上限 ~300ms，防管线跑太远拉高内存与 seek 延迟。
-    let cap_bytes = (stream_sample_rate as usize
-        * stream_channels as usize
-        * bytes_per_sample
-        * 3
-        / 10)
-    .max(1);
+    let cap_bytes =
+        (stream_sample_rate as usize * stream_channels as usize * bytes_per_sample * 3 / 10).max(1);
     let mut last_transition: u64 = 0;
 
     loop {

@@ -122,7 +122,8 @@ impl HttpBridge {
         let until = Instant::now() + Duration::from_secs(CERT_FAIL_COOLDOWN_SECS);
         let mut map = self.cert_failures.lock().unwrap();
         map.retain(|_, (u, _)| *u > Instant::now());
-        map.entry(key).or_insert_with(|| (until, err_text.to_string()));
+        map.entry(key)
+            .or_insert_with(|| (until, err_text.to_string()));
     }
 
     fn client_for(&self, redirect_limit: usize) -> Result<reqwest::Client, String> {
@@ -161,7 +162,10 @@ impl HttpBridge {
         follow: i64,
         want_binary: bool,
     ) -> HttpBridgeResponse {
-        match self.request_inner(method, url, headers, body, timeout_ms, follow, want_binary).await {
+        match self
+            .request_inner(method, url, headers, body, timeout_ms, follow, want_binary)
+            .await
+        {
             Ok(resp) => resp,
             Err(err) => HttpBridgeResponse {
                 status: 0,
@@ -336,7 +340,15 @@ mod tests {
     #[tokio::test]
     async fn invalid_method_returns_error() {
         let resp = bridge()
-            .request("BAD METHOD", "https://example.com", HashMap::new(), None, 0, -1, false)
+            .request(
+                "BAD METHOD",
+                "https://example.com",
+                HashMap::new(),
+                None,
+                0,
+                -1,
+                false,
+            )
             .await;
         assert!(resp.error.is_some());
     }
@@ -357,7 +369,10 @@ mod tests {
             cert_endpoint_key("https://a.b:8443/x").as_deref(),
             Some("a.b:8443")
         );
-        assert_eq!(cert_endpoint_key("https://a.b/x").as_deref(), Some("a.b:443"));
+        assert_eq!(
+            cert_endpoint_key("https://a.b/x").as_deref(),
+            Some("a.b:443")
+        );
         assert_eq!(cert_endpoint_key("http://a.b/x"), None);
         assert_eq!(cert_endpoint_key("not-a-url"), None);
     }
@@ -367,8 +382,12 @@ mod tests {
         assert!(is_cert_failure(
             "error sending request for url (https://1.2.3.4/api) -> client error (Connect) -> invalid peer certificate: Other(OtherError(UnsupportedCertVersion))"
         ));
-        assert!(!is_cert_failure("error sending request -> client error (Connect) -> connection refused"));
-        assert!(!is_cert_failure("error sending request -> operation timed out"));
+        assert!(!is_cert_failure(
+            "error sending request -> client error (Connect) -> connection refused"
+        ));
+        assert!(!is_cert_failure(
+            "error sending request -> operation timed out"
+        ));
     }
 
     #[tokio::test]
@@ -380,7 +399,9 @@ mod tests {
             url,
             "client error (Connect) -> invalid peer certificate: UnsupportedCertVersion",
         );
-        let cached = bridge.cert_failure_cached(url).expect("should hit cooldown");
+        let cached = bridge
+            .cert_failure_cached(url)
+            .expect("should hit cooldown");
         assert!(cached.contains("连接熔断"));
         assert!(cached.contains("invalid peer certificate"));
     }

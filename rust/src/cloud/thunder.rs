@@ -19,10 +19,10 @@
 
 use serde_json::{json, Value};
 
+use super::http;
 use super::types::{
     direct_link_json, file_json, list_result_json, share_parse_json, CloudOut, CloudReq,
 };
-use super::http;
 use super::{biz_err, pre_parse_share, require_cred};
 
 const API: &str = "https://api-pan.xunlei.com/drive/v1";
@@ -168,7 +168,10 @@ fn auth_headers(
 ) -> Result<Vec<(String, String)>, (i32, String)> {
     let mut h = base_headers(cred)?;
     if !access_token.is_empty() {
-        h.push(("Authorization".to_string(), format!("Bearer {access_token}")));
+        h.push((
+            "Authorization".to_string(),
+            format!("Bearer {access_token}"),
+        ));
     }
     if !captcha_token.is_empty() {
         h.push(("X-Captcha-Token".to_string(), captcha_token.to_string()));
@@ -262,7 +265,10 @@ async fn captcha_token(cred: &Value, action: &str) -> Result<String, (i32, Strin
 /// 刷新 access_token，返回 (access_token, refresh_token)（响应缺 refresh_token
 /// 时沿用旧值）。所有失败路径统一映射「登录已过期，请重新绑定」。
 async fn refresh_access_token(cred: &Value) -> Result<(String, String), (i32, String)> {
-    let refresh_token = cred.get("refreshToken").and_then(Value::as_str).unwrap_or("");
+    let refresh_token = cred
+        .get("refreshToken")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if refresh_token.is_empty() {
         return Err(biz_err(EXPIRED));
     }
@@ -300,8 +306,12 @@ async fn refresh_access_token(cred: &Value) -> Result<(String, String), (i32, St
 
 /// 轮换后的新凭据集（键名对齐 Dart cred）。
 fn rotated_cred(cred: &Value, access_token: &str, refresh_token: &str) -> Value {
-    let s =
-        |k: &str| cred.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let s = |k: &str| {
+        cred.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
     json!({
         "accessToken": access_token,
         "refreshToken": refresh_token,
@@ -313,7 +323,10 @@ fn rotated_cred(cred: &Value, access_token: &str, refresh_token: &str) -> Value 
 
 /// 取可用 access_token：缓存优先（无轮换）；否则刷新并产出新凭据集。
 async fn auth(cred: &Value) -> Result<(String, Option<Value>), (i32, String)> {
-    let cached = cred.get("accessToken").and_then(Value::as_str).unwrap_or("");
+    let cached = cred
+        .get("accessToken")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if !cached.is_empty() {
         return Ok((cached.to_string(), None));
     }
@@ -507,14 +520,23 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let mut files = Vec::new();
     if let Some(items) = list.as_array() {
         for e in items {
-            let id = js_str(e.get("file_id").filter(|v| !v.is_null()).or_else(|| e.get("id")), "");
+            let id = js_str(
+                e.get("file_id")
+                    .filter(|v| !v.is_null())
+                    .or_else(|| e.get("id")),
+                "",
+            );
             let name = js_str(e.get("name"), "");
             let is_dir = e.get("kind").and_then(Value::as_str) == Some("drive#folder");
             let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
             files.push(file_json(&id, &name, is_dir, size, None, None, None));
         }
     }
-    let pwd_opt = if pass_code.is_empty() { None } else { Some(pass_code) };
+    let pwd_opt = if pass_code.is_empty() {
+        None
+    } else {
+        Some(pass_code)
+    };
     Ok(CloudOut::plain(share_parse_json(
         "thunder",
         files,
@@ -555,7 +577,13 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         "pass_code_token": token,
         "file_list": file_list,
     });
-    let (_, rotated) = biz_json(&req.cred, "POST", &format!("{API}/share/restore"), Some(&body)).await?;
+    let (_, rotated) = biz_json(
+        &req.cred,
+        "POST",
+        &format!("{API}/share/restore"),
+        Some(&body),
+    )
+    .await?;
     // 转存后 id 变化：按文件名回查根目录。
     let (listed, rotated2) = list_files(&req.cred, "", "").await?;
     let rotated = rotated2.or(rotated);
@@ -586,7 +614,11 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let file = req.param_obj("file");
-    let file_id = file.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    let file_id = file
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let (j, rotated) = biz_json(&req.cred, "GET", &file_meta_url(&file_id), None).await?;
     let dl_url = js_str(j.get("web_content_link"), "");
     if dl_url.is_empty() {
@@ -661,7 +693,9 @@ mod tests {
         assert!(s.starts_with("1."));
         let hex = &s[2..];
         assert_eq!(hex.len(), 32);
-        assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(hex
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         // 同输入恒同输出。
         assert_eq!(s, captcha_sign("dev1", 1729000000000));
         assert_eq!(ALGORITHMS.len(), 9);
@@ -678,7 +712,10 @@ mod tests {
 
     #[test]
     fn action_of_paths() {
-        assert_eq!(action_of("GET", &files_list_url("", "")), "GET:/drive/v1/files");
+        assert_eq!(
+            action_of("GET", &files_list_url("", "")),
+            "GET:/drive/v1/files"
+        );
         assert_eq!(
             action_of("POST", &format!("{API}/share/restore")),
             "POST:/drive/v1/share/restore"
@@ -697,7 +734,10 @@ mod tests {
             h,
             vec![
                 ("User-Agent".to_string(), "UA1".to_string()),
-                ("Accept".to_string(), "application/json;charset=UTF-8".to_string()),
+                (
+                    "Accept".to_string(),
+                    "application/json;charset=UTF-8".to_string()
+                ),
                 ("x-device-id".to_string(), "dev1".to_string()),
                 ("x-client-id".to_string(), CLIENT_ID.to_string()),
                 ("x-client-version".to_string(), CLIENT_VERSION.to_string()),
@@ -707,7 +747,9 @@ mod tests {
         assert!(base_headers(&json!({ "accessToken": "a" })).is_err());
         // 鉴权头追加 Bearer + X-Captcha-Token。
         let ah = auth_headers(&cred, "at1", "ct1").unwrap();
-        assert!(ah.iter().any(|(k, v)| k == "Authorization" && v == "Bearer at1"));
+        assert!(ah
+            .iter()
+            .any(|(k, v)| k == "Authorization" && v == "Bearer at1"));
         assert!(ah.iter().any(|(k, v)| k == "X-Captcha-Token" && v == "ct1"));
     }
 

@@ -56,7 +56,10 @@ fn qs_item_from_track(track: &serde_json::Value) -> Option<LxSearchItem> {
         }
     }
 
-    let duration_ms = track.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let duration_ms = track
+        .get("duration")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     Some(LxSearchItem {
         name: track
             .get("name")
@@ -203,7 +206,12 @@ fn qs_normalize_play_entry(x: &serde_json::Value) -> Option<QsPlayEntry> {
 
 /// video_model（JSON 字符串或对象）→ video_list 原始数组
 fn qs_list_from_video_model(vm_val: &serde_json::Value) -> Vec<serde_json::Value> {
-    for pointer in ["/video_list", "/VideoList", "/data/play_info_list", "/PlayInfoList"] {
+    for pointer in [
+        "/video_list",
+        "/VideoList",
+        "/data/play_info_list",
+        "/PlayInfoList",
+    ] {
         if let Some(list) = vm_val.pointer(pointer).and_then(|v| v.as_array()) {
             return list.clone();
         }
@@ -244,8 +252,7 @@ async fn qs_fetch_play_list_via_player_info(url_player_info: &str) -> Vec<QsPlay
         "/PlayInfoList",
     ] {
         if let Some(list) = result.pointer(pointer).and_then(|v| v.as_array()) {
-            let out: Vec<QsPlayEntry> =
-                list.iter().filter_map(qs_normalize_play_entry).collect();
+            let out: Vec<QsPlayEntry> = list.iter().filter_map(qs_normalize_play_entry).collect();
             if !out.is_empty() {
                 return out;
             }
@@ -380,8 +387,8 @@ pub(crate) fn qs_play_auth_to_cek(play_auth: &str) -> Result<String, String> {
     if tmp.is_empty() {
         return Err("QS spade 变换输出为空".into());
     }
-    let skip = spade_decode_base36(tmp[0])
-        .ok_or_else(|| "QS playAuth 头部非法".to_string())? as i64;
+    let skip =
+        spade_decode_base36(tmp[0]).ok_or_else(|| "QS playAuth 头部非法".to_string())? as i64;
     // lyms: endIndex = 1 + (binary.length - paddingLen - 2) - skipBytes，
     // 其中 binary.length - paddingLen = 1 + inner.len，故 end = inner.len - skip
     let end = inner.len() as i64 - skip;

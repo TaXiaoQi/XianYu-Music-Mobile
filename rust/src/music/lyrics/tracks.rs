@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 pub(crate) fn track_source_format(lines: &[LyricTrackLine]) -> LyricTrackSourceFormat {
     let mut formats = lines
@@ -488,7 +488,10 @@ pub(crate) fn score_pair_alignment(drift_ms: i64) -> f64 {
     }
 }
 
-pub(crate) fn compute_track_alignment(main_track: &LyricTrack, aux_track: &LyricTrack) -> TrackAlignment {
+pub(crate) fn compute_track_alignment(
+    main_track: &LyricTrack,
+    aux_track: &LyricTrack,
+) -> TrackAlignment {
     let main_lines = &main_track.lines;
     let aux_lines = &aux_track.lines;
     let mut pairs = Vec::new();
@@ -1195,4 +1198,3 @@ pub(crate) fn detect_layout_template(
     detect_japanese_with_romaji_translation_template(tracks, alignments)
         .or_else(|| detect_main_with_translation_template(tracks, alignments))
 }
-

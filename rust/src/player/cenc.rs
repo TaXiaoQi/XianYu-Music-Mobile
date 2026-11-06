@@ -348,11 +348,7 @@ fn read_tenc(data: &[u8], tenc: &BoxInfo) -> Option<TencInfo> {
 }
 
 /// 计算每个样本在文件中的绝对偏移。
-fn compute_sample_offsets(
-    stsc: &[(u32, u32, u32)],
-    stco: &[u64],
-    stsz: &[u32],
-) -> Vec<u64> {
+fn compute_sample_offsets(stsc: &[(u32, u32, u32)], stco: &[u64], stsz: &[u32]) -> Vec<u64> {
     let mut offsets = Vec::with_capacity(stsz.len());
     let mut sample_idx = 0usize;
     for (i, &(first_chunk, samples_per_chunk, _desc)) in stsc.iter().enumerate() {
@@ -537,7 +533,10 @@ pub fn decrypt_cenc_in_place(data: &mut [u8], cek: &[u8]) -> Result<bool, String
         for (i, &offset) in offsets.iter().enumerate() {
             let size = stsz[i] as usize;
             if offset as usize + size > data.len() {
-                return Err(format!("样本 {} 越界 (offset={}, size={})", i, offset, size));
+                return Err(format!(
+                    "样本 {} 越界 (offset={}, size={})",
+                    i, offset, size
+                ));
             }
             decrypt_range_in_sample(
                 cek,
@@ -603,13 +602,30 @@ pub fn parse_cenc_metadata(data: &[u8], cek: &[u8]) -> Result<Option<CencMetadat
     let mut enca_patch_offset: Option<u64> = None;
 
     for trak in find_child_boxes(data, &moov, b"trak") {
-        let mdia = match find_child_box(data, &trak, b"mdia") { Some(m) => m, None => continue };
-        let minf = match find_child_box(data, &mdia, b"minf") { Some(m) => m, None => continue };
-        let stbl = match find_child_box(data, &minf, b"stbl") { Some(m) => m, None => continue };
+        let mdia = match find_child_box(data, &trak, b"mdia") {
+            Some(m) => m,
+            None => continue,
+        };
+        let minf = match find_child_box(data, &mdia, b"minf") {
+            Some(m) => m,
+            None => continue,
+        };
+        let stbl = match find_child_box(data, &minf, b"stbl") {
+            Some(m) => m,
+            None => continue,
+        };
 
-        let stsd = match find_child_box(data, &stbl, b"stsd") { Some(s) => s, None => continue };
-        let entry = match read_box_header(data, stsd.data_start + 8) { Some(e) => e, None => continue };
-        if !entry.is(b"enca") { continue; }
+        let stsd = match find_child_box(data, &stbl, b"stsd") {
+            Some(s) => s,
+            None => continue,
+        };
+        let entry = match read_box_header(data, stsd.data_start + 8) {
+            Some(e) => e,
+            None => continue,
+        };
+        if !entry.is(b"enca") {
+            continue;
+        }
 
         let tenc = match parse_tenc(data, &entry) {
             Some(t) => t,
@@ -700,7 +716,9 @@ fn xor_keystream_from(cek: &[u8], iv: &[u8], data: &mut [u8], ks_offset: usize) 
     for _ in 0..start_block {
         for i in (0..16).rev() {
             counter[i] = counter[i].wrapping_add(1);
-            if counter[i] != 0 { break; }
+            if counter[i] != 0 {
+                break;
+            }
         }
     }
 
@@ -718,7 +736,9 @@ fn xor_keystream_from(cek: &[u8], iv: &[u8], data: &mut [u8], ks_offset: usize) 
         pos += n;
         for i in (0..16).rev() {
             counter[i] = counter[i].wrapping_add(1);
-            if counter[i] != 0 { break; }
+            if counter[i] != 0 {
+                break;
+            }
         }
     }
 
@@ -733,7 +753,9 @@ fn xor_keystream_from(cek: &[u8], iv: &[u8], data: &mut [u8], ks_offset: usize) 
         pos += n;
         for i in (0..16).rev() {
             counter[i] = counter[i].wrapping_add(1);
-            if counter[i] != 0 { break; }
+            if counter[i] != 0 {
+                break;
+            }
         }
     }
 }
@@ -799,7 +821,9 @@ impl<R: Read + Seek> CencDecryptReader<R> {
 impl<R: Read + Seek> Read for CencDecryptReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         let n = self.inner.read(buf)?;
-        if n == 0 { return Ok(0); }
+        if n == 0 {
+            return Ok(0);
+        }
 
         let read_start = self.pos;
         let read_end = self.pos + n as u64;
@@ -925,7 +949,7 @@ mod tests {
         let mut enca_payload = Vec::new();
         enca_payload.extend_from_slice(&[0u8; 8]); // SampleEntry reserved + data_reference_index
         enca_payload.extend_from_slice(&[0u8; 20]); // AudioSampleEntry 固定字段
-        // sinf > schi > tenc
+                                                    // sinf > schi > tenc
         let mut tenc_payload = Vec::new();
         tenc_payload.extend_from_slice(&[0u8; 4]); // FullBox version+flags
         tenc_payload.push(0); // reserved
@@ -1067,7 +1091,9 @@ mod tests {
             vec![(16u16, 20u32), (2u16, 2u32)]
         );
         let mut reader = CencDecryptReader::new(Cursor::new(file.clone()), key.clone(), meta);
-        reader.seek(SeekFrom::Start(mdat_data_start as u64)).unwrap();
+        reader
+            .seek(SeekFrom::Start(mdat_data_start as u64))
+            .unwrap();
         let mut out = vec![0u8; 40];
         reader.read_exact(&mut out).unwrap();
         assert_eq!(out, plain);
@@ -1083,12 +1109,8 @@ mod tests {
     #[test]
     fn test_decrypt_cenc_full_flow() {
         let cek = [0x2b; 16];
-        let ivs: Vec<Vec<u8>> = (0..4)
-            .map(|i| vec![0x10 + i as u8; 8])
-            .collect();
-        let plain: Vec<Vec<u8>> = (0..4)
-            .map(|i| vec![0x40 + i as u8; 16])
-            .collect();
+        let ivs: Vec<Vec<u8>> = (0..4).map(|i| vec![0x10 + i as u8; 8]).collect();
+        let plain: Vec<Vec<u8>> = (0..4).map(|i| vec![0x40 + i as u8; 16]).collect();
 
         // 先用 CTR 加密样本（对称），构造加密文件
         let mut encrypted_samples: Vec<Vec<u8>> = Vec::new();
@@ -1114,7 +1136,12 @@ mod tests {
         let mdat_data_start = 24;
         for (i, p) in plain.iter().enumerate() {
             let off = mdat_data_start + i * 16;
-            assert_eq!(&file[off..off + 16], p.as_slice(), "样本 {} 解密结果不符", i);
+            assert_eq!(
+                &file[off..off + 16],
+                p.as_slice(),
+                "样本 {} 解密结果不符",
+                i
+            );
         }
     }
 

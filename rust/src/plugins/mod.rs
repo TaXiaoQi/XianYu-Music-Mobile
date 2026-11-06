@@ -22,9 +22,17 @@ fn shrink_to_fit(img: image::DynamicImage, max_edge: u32) -> image::DynamicImage
         return img;
     }
     if w >= h {
-        img.resize(max_edge, (h * max_edge) / w, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            max_edge,
+            (h * max_edge) / w,
+            image::imageops::FilterType::Lanczos3,
+        )
     } else {
-        img.resize((w * max_edge) / h, max_edge, image::imageops::FilterType::Lanczos3)
+        img.resize(
+            (w * max_edge) / h,
+            max_edge,
+            image::imageops::FilterType::Lanczos3,
+        )
     }
 }
 
@@ -191,7 +199,8 @@ pub fn read_image_base64(path: String) -> Result<String, String> {
         return Err(format!("文件不存在: {}", path));
     }
 
-    let metadata = fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
+    let metadata =
+        fs::metadata(path_obj).map_err(|error| format!("读取文件元数据失败: {}", error))?;
     let max_size = 5 * 1024 * 1024;
     if metadata.len() > max_size {
         return Err(format!(
@@ -310,10 +319,7 @@ pub async fn download_video_to_cache(
 
 /// 仅允许清理本功能在应用缓存中创建的视频文件。
 /// `cache_dir` 必须与本功能写入视频时传入的缓存根目录一致。
-pub async fn remove_cached_background_video(
-    cache_dir: String,
-    path: String,
-) -> Result<(), String> {
+pub async fn remove_cached_background_video(cache_dir: String, path: String) -> Result<(), String> {
     let video_dir = Path::new(&cache_dir).join("video-background");
     let candidate = std::path::PathBuf::from(path);
     let file_name = candidate

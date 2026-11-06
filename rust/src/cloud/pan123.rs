@@ -112,13 +112,7 @@ fn cst_ymdhm(unix_secs: i64) -> (i64, u32, u32, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     let y = if m <= 2 { y + 1 } else { y };
-    (
-        y,
-        m,
-        d,
-        (rem / 3600) as u32,
-        ((rem % 3600) / 60) as u32,
-    )
+    (y, m, d, (rem / 3600) as u32, ((rem % 3600) / 60) as u32)
 }
 
 /// 签名键值对（k=timeSign，v={ts}-{rand}-{dataSign}）。随机数取系统纳秒
@@ -239,14 +233,18 @@ fn item_size(e: &Value) -> i64 {
 
 fn item_id(e: &Value) -> String {
     js_str(
-        e.get("FileId").filter(|v| !v.is_null()).or_else(|| e.get("fileId")),
+        e.get("FileId")
+            .filter(|v| !v.is_null())
+            .or_else(|| e.get("fileId")),
         "",
     )
 }
 
 fn item_name(e: &Value) -> String {
     js_str(
-        e.get("FileName").filter(|v| !v.is_null()).or_else(|| e.get("filename")),
+        e.get("FileName")
+            .filter(|v| !v.is_null())
+            .or_else(|| e.get("filename")),
         "",
     )
 }
@@ -348,7 +346,11 @@ fn s3_token(s3: &str, etag: &str) -> Option<String> {
     if !etag.is_empty() {
         parts.push(format!("Etag:{etag}"));
     }
-    if parts.is_empty() { None } else { Some(parts.join("|")) }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("|"))
+    }
 }
 
 /// 从复合 token 串取某参数值（"S3KeyFlag:x|Etag:y" → key="Etag" → "y"）。
@@ -424,7 +426,10 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         } else {
             "分享已失效"
         };
-        let msg = j.get("message").and_then(Value::as_str).unwrap_or(default_msg);
+        let msg = j
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or(default_msg);
         return Err(biz_err(msg));
     }
     let list = j
@@ -435,9 +440,16 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let mut files = Vec::new();
     if let Some(items) = list.as_array() {
         for e in items {
-            let id = js_str(e.get("FileId").filter(|v| !v.is_null()).or_else(|| e.get("fileId")), "");
+            let id = js_str(
+                e.get("FileId")
+                    .filter(|v| !v.is_null())
+                    .or_else(|| e.get("fileId")),
+                "",
+            );
             let name = js_str(
-                e.get("FileName").filter(|v| !v.is_null()).or_else(|| e.get("filename")),
+                e.get("FileName")
+                    .filter(|v| !v.is_null())
+                    .or_else(|| e.get("filename")),
                 "",
             );
             let is_dir = item_type(e) == Some(1);
@@ -446,7 +458,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
     }
     // 123 分享直链需复用提取码，shareToken 暂存 pwd（Dart：shareToken: pwd, passcode: pwd）。
-    let pwd_opt = if pass_code.is_empty() { None } else { Some(pass_code) };
+    let pwd_opt = if pass_code.is_empty() {
+        None
+    } else {
+        Some(pass_code)
+    };
     Ok(CloudOut::plain(share_parse_json(
         "pan123",
         files,
@@ -472,7 +488,11 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .and_then(Value::as_str)
         .unwrap_or("")
         .to_string();
-    let file_id = file.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    let file_id = file
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     // Dart：jsonEncode([{'FileId': file.id}])。
     let file_ids_json = serde_json::to_string(&json!([{ "FileId": file_id }])).unwrap_or_default();
     let resp = http::get(
@@ -488,9 +508,8 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if j.get("code").and_then(Value::as_i64) != Some(0) {
         return Err(biz_err("分享直链获取失败"));
     }
-    let dl_url = unwrap_interstitial_url(&extract_download_url(
-        j.get("data").unwrap_or(&Value::Null),
-    ));
+    let dl_url =
+        unwrap_interstitial_url(&extract_download_url(j.get("data").unwrap_or(&Value::Null)));
     if dl_url.is_empty() {
         return Err(biz_err("分享直链获取失败"));
     }
@@ -512,7 +531,11 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let token = req.cred_str("token");
     let file = req.param_obj("file");
-    let file_id = file.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    let file_id = file
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let size = file.get("size").and_then(Value::as_i64);
     let name = file.get("name").and_then(Value::as_str).unwrap_or("");
     // 123 盘已把 download_info 从 GET 改为 POST（GET 该路由裸 404；
@@ -536,16 +559,15 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
     }
     let resp = http::post_json(&download_info_url(&file_id), &auth_headers(&token), &body)
-    .await
-    .map_err(biz_err)?;
+        .await
+        .map_err(biz_err)?;
     if !resp.is_ok() {
         return Err(biz_err(format!("直链获取失败 (HTTP {})", resp.status)));
     }
     let j = resp.json().map_err(biz_err)?;
     check_code(&j, "直链获取失败")?;
-    let dl_url = unwrap_interstitial_url(&extract_download_url(
-        j.get("data").unwrap_or(&Value::Null),
-    ));
+    let dl_url =
+        unwrap_interstitial_url(&extract_download_url(j.get("data").unwrap_or(&Value::Null)));
     if dl_url.is_empty() {
         return Err(biz_err(format!(
             "直链获取失败（未返回下载地址，code={})",
@@ -703,7 +725,10 @@ mod tests {
         let h = auth_headers("tok123");
         assert_eq!(h[0].0, "User-Agent");
         assert_eq!(h[1].1, "https://yun.123pan.com/");
-        assert_eq!(h[2], ("Origin".to_string(), "https://yun.123pan.com".to_string()));
+        assert_eq!(
+            h[2],
+            ("Origin".to_string(), "https://yun.123pan.com".to_string())
+        );
         assert_eq!(h[3], ("Platform".to_string(), "web".to_string()));
         assert_eq!(h[4], ("App-Version".to_string(), "3".to_string()));
         assert_eq!(h[5].1, "Bearer tok123");
@@ -756,7 +781,9 @@ mod tests {
             "https://yun.123pan.com/b/api/share/download/info?shareKey=s1&PassCode=&SharePwd=&fileIds=%5B%7B%22FileId%22%3A%2242%22%7D%5D&"
         ));
         let dl = download_info_url("42");
-        assert!(dl.starts_with("https://yun.123pan.com/b/api/file/download_info?driveId=0&fileId=42&"));
+        assert!(
+            dl.starts_with("https://yun.123pan.com/b/api/file/download_info?driveId=0&fileId=42&")
+        );
         // 尾段签名值形如 {ts}-{rand}-{sign}（两个 -），键为 timeSign 数值串。
         let kv = dl.rsplit('&').next().unwrap();
         let (k, v) = kv.split_once('=').unwrap();
@@ -830,7 +857,10 @@ mod tests {
             unwrap_interstitial_url("https://a.com/b.mp3"),
             "https://a.com/b.mp3"
         );
-        assert_eq!(unwrap_interstitial_url("https://a.com/b?x=1"), "https://a.com/b?x=1");
+        assert_eq!(
+            unwrap_interstitial_url("https://a.com/b?x=1"),
+            "https://a.com/b?x=1"
+        );
     }
 
     #[test]
@@ -844,7 +874,9 @@ mod tests {
         );
         // JSON 串里再嵌 JSON 串（双层）。
         assert_eq!(
-            extract_download_url(&json!(r#"{"DownloadUrl":"{\"download_url\":\"http://y/2\"}"}"#)),
+            extract_download_url(&json!(
+                r#"{"DownloadUrl":"{\"download_url\":\"http://y/2\"}"}"#
+            )),
             "http://y/2"
         );
         // 对象 + 小驼峰键。
@@ -854,7 +886,9 @@ mod tests {
         );
         // backup 兜底。
         assert_eq!(
-            extract_download_url(&json!({ "DownloadUrl": "no", "backup_download_url": "http://b/4" })),
+            extract_download_url(
+                &json!({ "DownloadUrl": "no", "backup_download_url": "http://b/4" })
+            ),
             "http://b/4"
         );
         assert_eq!(

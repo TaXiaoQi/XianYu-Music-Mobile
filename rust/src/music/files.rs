@@ -2,7 +2,9 @@
 
 use super::scanner::{apply_scan_changes, parse_song_from_file};
 use super::tags::{extract_detail_metadata, read_tagged_file_from_path};
-use super::types::{SaveArtistAvatarResponse, SaveSongInfoResponse, SongDetail, SongInfoEditPayload};
+use super::types::{
+    SaveArtistAvatarResponse, SaveSongInfoResponse, SongDetail, SongInfoEditPayload,
+};
 use super::utils::normalize_path;
 use crate::remote::cache::is_remote_uri;
 use crate::security::path_validator;
@@ -25,7 +27,6 @@ pub struct MovedMusicFilePath {
 pub struct BatchMoveMusicFilesResult {
     moved_paths: Vec<MovedMusicFilePath>,
 }
-
 
 fn normalized_optional_text(value: Option<String>) -> Option<String> {
     value
@@ -65,45 +66,45 @@ fn write_song_info_tags(path_obj: &Path, payload: &SongInfoEditPayload) -> Resul
     }
 
     super::tags::edit_tags(path_obj, |tagged_file| {
-    let tag_type = tagged_file.primary_tag_type();
+        let tag_type = tagged_file.primary_tag_type();
 
-    if tagged_file.tag_mut(tag_type).is_none() {
-        tagged_file.insert_tag(Tag::new(tag_type));
-    }
-
-    let tag = tagged_file
-        .tag_mut(tag_type)
-        .ok_or_else(|| "当前歌曲格式不支持写入标签".to_string())?;
-
-    let _ = tag.insert_text(ItemKey::TrackTitle, title.to_string());
-    write_optional_text(tag, ItemKey::TrackArtist, Some(payload.artist.clone()));
-    write_optional_text(tag, ItemKey::AlbumTitle, Some(payload.album.clone()));
-    write_optional_text(tag, ItemKey::AlbumArtist, Some(payload.artist.clone()));
-    write_optional_text(tag, ItemKey::TrackNumber, payload.track_number.clone());
-    write_optional_text(tag, ItemKey::DiscNumber, payload.disc_number.clone());
-    write_optional_text(tag, ItemKey::RecordingDate, payload.year.clone());
-    if normalized_optional_text(payload.year.clone()).is_none() {
-        tag.remove_key(&ItemKey::Year);
-    }
-
-    if let Some(cover_path) = normalized_optional_text(payload.cover_path.clone()) {
-        let cover_path_obj = Path::new(&cover_path);
-        if !cover_path_obj.is_file() {
-            return Err("选择的封面图片不存在".to_string());
+        if tagged_file.tag_mut(tag_type).is_none() {
+            tagged_file.insert_tag(Tag::new(tag_type));
         }
 
-        let image_bytes = fs::read(cover_path_obj).map_err(|e| e.to_string())?;
-        let picture = Picture::new_unchecked(
-            PictureType::CoverFront,
-            Some(picture_mime_from_path(cover_path_obj)),
-            None,
-            image_bytes,
-        );
-        tag.remove_picture_type(PictureType::CoverFront);
-        tag.push_picture(picture);
-    }
+        let tag = tagged_file
+            .tag_mut(tag_type)
+            .ok_or_else(|| "当前歌曲格式不支持写入标签".to_string())?;
 
-    Ok(())
+        let _ = tag.insert_text(ItemKey::TrackTitle, title.to_string());
+        write_optional_text(tag, ItemKey::TrackArtist, Some(payload.artist.clone()));
+        write_optional_text(tag, ItemKey::AlbumTitle, Some(payload.album.clone()));
+        write_optional_text(tag, ItemKey::AlbumArtist, Some(payload.artist.clone()));
+        write_optional_text(tag, ItemKey::TrackNumber, payload.track_number.clone());
+        write_optional_text(tag, ItemKey::DiscNumber, payload.disc_number.clone());
+        write_optional_text(tag, ItemKey::RecordingDate, payload.year.clone());
+        if normalized_optional_text(payload.year.clone()).is_none() {
+            tag.remove_key(&ItemKey::Year);
+        }
+
+        if let Some(cover_path) = normalized_optional_text(payload.cover_path.clone()) {
+            let cover_path_obj = Path::new(&cover_path);
+            if !cover_path_obj.is_file() {
+                return Err("选择的封面图片不存在".to_string());
+            }
+
+            let image_bytes = fs::read(cover_path_obj).map_err(|e| e.to_string())?;
+            let picture = Picture::new_unchecked(
+                PictureType::CoverFront,
+                Some(picture_mime_from_path(cover_path_obj)),
+                None,
+                image_bytes,
+            );
+            tag.remove_picture_type(PictureType::CoverFront);
+            tag.push_picture(picture);
+        }
+
+        Ok(())
     })
 }
 
@@ -174,7 +175,6 @@ fn sync_moved_song_paths(
 
     tx.commit().map_err(|e| e.to_string())
 }
-
 
 pub fn save_song_info(
     conn: &mut rusqlite::Connection,
@@ -342,7 +342,9 @@ pub fn get_song_detail(conn: &rusqlite::Connection, path: String) -> Result<Stri
         detail.container = container.filter(|value| !value.trim().is_empty());
         detail.codec = codec.filter(|value| !value.trim().is_empty());
         detail.file_size = file_size.and_then(|value| u64::try_from(value).ok());
-        detail.bitrate = bitrate.and_then(|value| u32::try_from(value).ok()).filter(|v| *v > 0);
+        detail.bitrate = bitrate
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|v| *v > 0);
         detail.sample_rate = sample_rate
             .and_then(|value| u32::try_from(value).ok())
             .filter(|v| *v > 0);
@@ -660,4 +662,3 @@ pub fn save_artist_avatar(
     };
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
-

@@ -186,7 +186,10 @@ mod tests {
             ),
             "zzcfe761c2myum6ntupxsjzpwe5pwij7defo183925a5"
         );
-        assert_eq!(zzc_sign("hello world 中文测试"), "zzccbdcf94uzqbt2ymvkxoghoxqhluaysuvaqf2a649b2");
+        assert_eq!(
+            zzc_sign("hello world 中文测试"),
+            "zzccbdcf94uzqbt2ymvkxoghoxqhluaysuvaqf2a649b2"
+        );
     }
 
     #[test]
@@ -199,7 +202,10 @@ mod tests {
             ),
             "20b720a85d3ba48138ea1df1997c1ecd"
         );
-        assert_eq!(kugou_sign("b=2&a=1&c=3", "android", "BODYDATA"), "e4ec17307d2c2328b4f2d7221e3e8400");
+        assert_eq!(
+            kugou_sign("b=2&a=1&c=3", "android", "BODYDATA"),
+            "e4ec17307d2c2328b4f2d7221e3e8400"
+        );
     }
 
     #[test]
@@ -213,9 +219,11 @@ mod tests {
     #[test]
     fn test_weapi_fixed_key() {
         let key_bytes: [u8; 16] = [
-            b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'a', b'b', b'c', b'd', b'e', b'f',
+            b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'a', b'b', b'c', b'd',
+            b'e', b'f',
         ];
-        let (params, enc_sec_key) = weapi_encrypt_with_key(r#"{"c":"[{\"id\":123}]","ids":"[123]"}"#, &key_bytes);
+        let (params, enc_sec_key) =
+            weapi_encrypt_with_key(r#"{"c":"[{\"id\":123}]","ids":"[123]"}"#, &key_bytes);
         assert_eq!(params, "auDeheFn0YvsgT3xR8gl97LdNR+b1Rg6DtWzyihBvdC2c+cxPsgZBqPPCgH5ql9XycrCwrS2ACEjHxto45U6Av0AdLvSnXwhWGRSqaz+9FQ=");
         assert_eq!(enc_sec_key, "35701388baf89fed412e11269b9c76625d095ecaf17f03fa018abe19ea2d38b949debf242ee39a71ca1f6cda71b1b86a45aa909ee27f7e78e267d34e732f0de948206c3340a788d0003372183e2f753c1f78b66ac23d134ac1fc9b993156520ea826b8aa89a962d4491b4b8d7e08738e1da9b07aa39bf4a7ef0b1c210728cd52");
     }

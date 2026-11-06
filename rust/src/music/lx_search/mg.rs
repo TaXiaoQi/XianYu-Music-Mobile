@@ -174,11 +174,7 @@ pub(crate) async fn search_mg(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
     .await
 }
 
-async fn search_mg_page(
-    keyword: &str,
-    page: u32,
-    limit: u32,
-) -> Result<Vec<LxSearchItem>, String> {
+async fn search_mg_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let time = std::time::SystemTime::now();
     let timestamp = time
         .duration_since(std::time::UNIX_EPOCH)

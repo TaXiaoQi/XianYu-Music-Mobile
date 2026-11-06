@@ -62,7 +62,10 @@ fn share_headers(token: &str) -> Vec<(String, String)> {
 /// 换 access_token。缓存有效直接用（无轮换）；否则用 refresh_token 换新，
 /// 返回新凭据集供调用方放进 rotated_cred（不落盘，由调用方负责回写）。
 async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, String)> {
-    let cached = cred.get("accessToken").and_then(Value::as_str).unwrap_or("");
+    let cached = cred
+        .get("accessToken")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let expire_ms: i64 = cred
         .get("accessExpireMs")
         .and_then(Value::as_str)
@@ -117,7 +120,10 @@ async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, Str
             brief
         )));
     }
-    let expires_in = data.get("expires_in").and_then(Value::as_i64).unwrap_or(7200);
+    let expires_in = data
+        .get("expires_in")
+        .and_then(Value::as_i64)
+        .unwrap_or(7200);
     let s = |k: &str| {
         cred.get(k)
             .and_then(Value::as_str)

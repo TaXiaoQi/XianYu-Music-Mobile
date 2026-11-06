@@ -23,16 +23,16 @@ mod qs;
 mod tx;
 mod wy;
 
-pub use tx::{tx_album_songs, tx_batch_track_interval, tx_search_albums};
 pub(crate) use kg::kg_filter_data_v3;
-pub(crate) use tx::{random_5_digits, random_tx_guid};
-pub(crate) use tx::tx_handle_result;
 use kg::*;
 use kw::*;
 use mg::*;
-pub(crate) use qs::{qs_play_auth_to_cek, qs_resolve_play, QS_UA};
 use qs::*;
+pub(crate) use qs::{qs_play_auth_to_cek, qs_resolve_play, QS_UA};
+pub(crate) use tx::tx_handle_result;
 use tx::*;
+pub(crate) use tx::{random_5_digits, random_tx_guid};
+pub use tx::{tx_album_songs, tx_batch_track_interval, tx_search_albums};
 use wy::*;
 
 /// 搜索结果项（与前端 LxSearchResultItem 对应）
@@ -92,8 +92,7 @@ where
     F: Fn(u32) -> Fut,
     Fut: std::future::Future<Output = Result<Vec<LxSearchItem>, String>>,
 {
-    let pages =
-        ((target + SEARCH_PAGE_SIZE - 1) / SEARCH_PAGE_SIZE).clamp(1, SEARCH_MAX_PAGES);
+    let pages = ((target + SEARCH_PAGE_SIZE - 1) / SEARCH_PAGE_SIZE).clamp(1, SEARCH_MAX_PAGES);
     let mut out: Vec<LxSearchItem> = Vec::new();
     let mut first_err: Option<String> = None;
     for page in 1..=pages {
@@ -421,7 +420,10 @@ pub(crate) fn http_client() -> &'static Result<reqwest::Client, String> {
     })
 }
 
-pub(crate) async fn http_get_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, String> {
+pub(crate) async fn http_get_json(
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<serde_json::Value, String> {
     let body = http_get_text(url, headers).await?;
     serde_json::from_str(&body).map_err(|e| format!("Invalid JSON: {}", e))
 }

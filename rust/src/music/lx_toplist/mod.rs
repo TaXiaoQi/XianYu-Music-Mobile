@@ -123,7 +123,13 @@ pub(crate) fn declared_types(
         .collect();
     let mut lx_types = HashMap::new();
     for q in qualities {
-        lx_types.insert((*q).into(), LxTypeEntry { size: None, hash: hash.clone() });
+        lx_types.insert(
+            (*q).into(),
+            LxTypeEntry {
+                size: None,
+                hash: hash.clone(),
+            },
+        );
     }
     (types, lx_types)
 }

@@ -46,7 +46,8 @@ fn wy_eapi_encrypt(url: &str, data: &str) -> Result<String, String> {
 
 fn parse_yrc(yrc_text: &str) -> String {
     let line_time_re = WY_YRC_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),(\d+)]").unwrap());
-    let word_tag_re = WY_YRC_WORD_TAG_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+),\d+\)").unwrap());
+    let word_tag_re =
+        WY_YRC_WORD_TAG_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+),\d+\)").unwrap());
     let mut result: Vec<String> = Vec::new();
 
     for raw_line in yrc_text.split('\n') {
@@ -320,9 +321,11 @@ fn wy_fix_time_label(lrc: &str, tlrc: &str, romalrc: &str) -> (String, String, S
 
     if new_lrc != lrc || new_tlrc != tlrc {
         let new_romalrc = if !romalrc.is_empty() {
-            let re2 = WY_FIX_ROMA_TIME_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}):(\d{2,3})]").unwrap());
+            let re2 = WY_FIX_ROMA_TIME_RE
+                .get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}):(\d{2,3})]").unwrap());
             let intermediate = re2.replace_all(romalrc, "[$1.$2]").to_string();
-            let re3 = WY_FIX_ROMA_TRAIL_RE.get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}\.\d{2})0]").unwrap());
+            let re3 = WY_FIX_ROMA_TRAIL_RE
+                .get_or_init(|| Regex::new(r"\[(\d{2}:\d{2}\.\d{2})0]").unwrap());
             re3.replace_all(&intermediate, "[$1]").to_string()
         } else {
             romalrc.to_string()
@@ -579,7 +582,9 @@ pub(crate) async fn fetch_wy_lyric_by_id(song_id: &str) -> Result<Option<LyricRe
     }))
 }
 
-pub(crate) async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
+pub(crate) async fn fetch_wy_lyric(
+    song_info: &LyricSongInfo,
+) -> Result<Option<LyricResult>, String> {
     let ids = collect_wy_song_ids(song_info);
     if ids.is_empty() {
         return Ok(None);
@@ -589,8 +594,7 @@ pub(crate) async fn fetch_wy_lyric(song_info: &LyricSongInfo) -> Result<Option<L
     for song_id in ids {
         match fetch_wy_lyric_by_id(&song_id).await {
             Ok(Some(result)) => return Ok(Some(result)),
-            Ok(None) => {
-            }
+            Ok(None) => {}
             Err(error) => {
                 last_error = Some(error);
             }

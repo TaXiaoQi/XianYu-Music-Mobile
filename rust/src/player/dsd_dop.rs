@@ -97,7 +97,8 @@ pub fn parse_dsf_info(path: &str) -> Result<DsdInfo, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
 
     let mut magic = [0u8; 4];
-    file.read_exact(&mut magic).map_err(|_| "not a DSD file".to_string())?;
+    file.read_exact(&mut magic)
+        .map_err(|_| "not a DSD file".to_string())?;
     if &magic != b"DSD " {
         return Err("not DSF".to_string());
     }
@@ -105,7 +106,8 @@ pub fn parse_dsf_info(path: &str) -> Result<DsdInfo, String> {
     // 跳过 DSD chunk 剩余 24 字节（size + file_size + metadata_offset），
     // 使读取位置落在 fmt 子块起点（offset 28）。
     let mut dsd_rest = [0u8; 24];
-    file.read_exact(&mut dsd_rest).map_err(|_| "bad dsd chunk".to_string())?;
+    file.read_exact(&mut dsd_rest)
+        .map_err(|_| "bad dsd chunk".to_string())?;
 
     // 从 fmt 起点开始按子块遍历：fmt 先解析，data 决定数据区。
     let mut channels = 0u16;
@@ -132,7 +134,8 @@ pub fn parse_dsf_info(path: &str) -> Result<DsdInfo, String> {
             // fmt 负载 = chunk_size(52) - 8 字节块头 = 44 字节；
             // 此前误读 52 字节会吞掉 data 块头，导致后续解析失败。
             let mut fmt = [0u8; 44];
-            file.read_exact(&mut fmt).map_err(|_| "bad fmt payload".to_string())?;
+            file.read_exact(&mut fmt)
+                .map_err(|_| "bad fmt payload".to_string())?;
             format_id = read_u32_le(&fmt[4..8]);
             channels = read_u32_le(&fmt[12..16]) as u16;
             dsd_rate = read_u32_le(&fmt[16..20]);
@@ -143,11 +146,13 @@ pub fn parse_dsf_info(path: &str) -> Result<DsdInfo, String> {
             // 跳过 fmt 负载剩余部分（52 为含块头的规范总长）
             let skip = chunk_size as i64 - 52;
             if skip > 0 {
-                file.seek(SeekFrom::Current(skip)).map_err(|e| e.to_string())?;
+                file.seek(SeekFrom::Current(skip))
+                    .map_err(|e| e.to_string())?;
             }
         } else if chunk_id == b"data" {
             let mut inner = [0u8; 8];
-            file.read_exact(&mut inner).map_err(|_| "bad data size".to_string())?;
+            file.read_exact(&mut inner)
+                .map_err(|_| "bad data size".to_string())?;
             data_size = read_u64_le(&inner);
             data_offset = file.stream_position().map_err(|e| e.to_string())?;
             break;
@@ -183,17 +188,20 @@ pub fn parse_dff_info(path: &str) -> Result<DsdInfo, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
 
     let mut magic = [0u8; 4];
-    file.read_exact(&mut magic).map_err(|_| "not a DSD file".to_string())?;
+    file.read_exact(&mut magic)
+        .map_err(|_| "not a DSD file".to_string())?;
     if &magic != b"FRM8" {
         return Err("not DFF (expected FRM8 magic)".to_string());
     }
 
     let mut frm8_size_buf = [0u8; 8];
-    file.read_exact(&mut frm8_size_buf).map_err(|_| "bad FRM8 size".to_string())?;
+    file.read_exact(&mut frm8_size_buf)
+        .map_err(|_| "bad FRM8 size".to_string())?;
     let frm8_size = read_u64_be(&frm8_size_buf);
 
     let mut form_type = [0u8; 4];
-    file.read_exact(&mut form_type).map_err(|_| "bad form type".to_string())?;
+    file.read_exact(&mut form_type)
+        .map_err(|_| "bad form type".to_string())?;
     if &form_type != b"DSD " {
         return Err("not DSDIFF (form type is not DSD)".to_string());
     }
@@ -310,7 +318,8 @@ pub fn parse_dff_info(path: &str) -> Result<DsdInfo, String> {
 pub fn parse_dsd_info(path: &str) -> Result<DsdInfo, String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut magic = [0u8; 4];
-    file.read_exact(&mut magic).map_err(|_| "not a DSD file".to_string())?;
+    file.read_exact(&mut magic)
+        .map_err(|_| "not a DSD file".to_string())?;
     drop(file);
 
     match &magic {
@@ -345,7 +354,8 @@ pub struct DopStreamSource {
 impl DopStreamSource {
     pub fn open(path: &str, info: &DsdInfo) -> Result<Self, String> {
         let mut file = File::open(path).map_err(|e| e.to_string())?;
-        file.seek(SeekFrom::Start(info.data_offset)).map_err(|e| e.to_string())?;
+        file.seek(SeekFrom::Start(info.data_offset))
+            .map_err(|e| e.to_string())?;
         let (block_size, cps) = match info.format {
             DsdFormat::Dsf => {
                 let bs = info.block_size as usize;
@@ -379,7 +389,10 @@ impl DopStreamSource {
         self.buf.resize(self.cps, 0);
         let mut filled = 0usize;
         while filled < self.cps {
-            let n = self.reader.read(&mut self.buf[filled..]).map_err(|e| e.to_string())?;
+            let n = self
+                .reader
+                .read(&mut self.buf[filled..])
+                .map_err(|e| e.to_string())?;
             if n == 0 {
                 break;
             }
@@ -411,7 +424,11 @@ impl DopStreamSource {
                 break;
             }
             let frame_in_buf = self.frames_in_buf - self.frames_left;
-            let marker = if self.frame_index & 1 == 0 { DOP_MARKER_LOW } else { DOP_MARKER_HIGH };
+            let marker = if self.frame_index & 1 == 0 {
+                DOP_MARKER_LOW
+            } else {
+                DOP_MARKER_HIGH
+            };
             for ch in 0..self.channels {
                 let db = match self.format {
                     // DSF block 布局：ch0[0..bs], ch1[0..bs], ... => 帧 f 的通道 c 字节 = buf[f + c*bs]
@@ -454,9 +471,7 @@ impl DopStreamSource {
             }
             DsdFormat::Dff => {
                 let channels = self.channels as u64;
-                let byte_off = target_frame
-                    .saturating_mul(channels)
-                    .min(self.data_size);
+                let byte_off = target_frame.saturating_mul(channels).min(self.data_size);
                 self.reader
                     .seek(SeekFrom::Start(self.start_offset + byte_off))
                     .map_err(|e| e.to_string())?;
@@ -485,7 +500,7 @@ mod tests {
         fmt_payload.extend_from_slice(&dsd_rate.to_le_bytes());
         fmt_payload.extend_from_slice(&1u32.to_le_bytes()); // bits_per_sample
         fmt_payload.extend_from_slice(&(blocks.len() as u64).to_le_bytes()); // sample_count
-        // DSF 规范 block_size_per_channel 为 u64（测试夹具此前误用 u32 导致 40≠44）
+                                                                             // DSF 规范 block_size_per_channel 为 u64（测试夹具此前误用 u32 导致 40≠44）
         fmt_payload.extend_from_slice(&(block_size as u64).to_le_bytes());
         fmt_payload.extend_from_slice(&0u32.to_le_bytes()); // reserved
         assert_eq!(fmt_payload.len(), 44);
@@ -549,7 +564,11 @@ mod tests {
 
         let mut i = 0;
         for frame in 0..4 {
-            let marker = if frame & 1 == 0 { DOP_MARKER_LOW } else { DOP_MARKER_HIGH };
+            let marker = if frame & 1 == 0 {
+                DOP_MARKER_LOW
+            } else {
+                DOP_MARKER_HIGH
+            };
             assert_eq!(out[i], [0xAA, 0x55, 0xFF, 0x00][frame]);
             assert_eq!(out[i + 1], 0);
             assert_eq!(out[i + 2], marker);

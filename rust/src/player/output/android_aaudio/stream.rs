@@ -14,8 +14,7 @@ pub(crate) fn create_aaudio_stream(
     let formats = [DeviceFormat::Float32, DeviceFormat::Int16];
 
     for &fmt in &formats {
-        let stream =
-            unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt, shared) };
+        let stream = unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt, shared) };
         match stream {
             Ok(s) => {
                 let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
@@ -62,15 +61,18 @@ pub(crate) fn create_aaudio_stream_bitperfect(
     };
 
     let mut attempts: Vec<DeviceFormat> = vec![preferred];
-    for f in [DeviceFormat::Int16, DeviceFormat::I24Packed, DeviceFormat::Float32] {
+    for f in [
+        DeviceFormat::Int16,
+        DeviceFormat::I24Packed,
+        DeviceFormat::Float32,
+    ] {
         if f != preferred && !attempts.contains(&f) {
             attempts.push(f);
         }
     }
 
     for &fmt in &attempts {
-        let stream =
-            unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt, false) };
+        let stream = unsafe { try_open_stream(lib, device_id, sample_rate, channels, fmt, false) };
         match stream {
             Ok(s) => {
                 let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
@@ -121,12 +123,9 @@ pub(crate) fn probe_source_bit_depth(path: &str) -> Option<u8> {
                 }
                 return None;
             }
-            let size = u32::from_le_bytes([
-                head[off + 4],
-                head[off + 5],
-                head[off + 6],
-                head[off + 7],
-            ]) as usize;
+            let size =
+                u32::from_le_bytes([head[off + 4], head[off + 5], head[off + 6], head[off + 7]])
+                    as usize;
             off += 8 + size + (size & 1);
         }
         return None;
@@ -137,12 +136,9 @@ pub(crate) fn probe_source_bit_depth(path: &str) -> Option<u8> {
         let mut off = 12usize;
         while off + 8 <= head.len() {
             let chunk = &head[off..off + 4];
-            let size = u32::from_be_bytes([
-                head[off + 4],
-                head[off + 5],
-                head[off + 6],
-                head[off + 7],
-            ]) as usize;
+            let size =
+                u32::from_be_bytes([head[off + 4], head[off + 5], head[off + 6], head[off + 7]])
+                    as usize;
             if chunk == b"COMM" {
                 if off + 8 + 4 > head.len() {
                     return None;

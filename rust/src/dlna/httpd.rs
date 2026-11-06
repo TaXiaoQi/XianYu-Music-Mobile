@@ -111,7 +111,8 @@ pub async fn start(state: AppState) -> Result<HttpServer, String> {
         .fallback(not_found_handler)
         .with_state(state);
 
-    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<Result<(u16, watch::Sender<bool>), String>>();
+    let (ready_tx, ready_rx) =
+        tokio::sync::oneshot::channel::<Result<(u16, watch::Sender<bool>), String>>();
     super::spawn::spawn_persistent(async move {
         let result = bind_and_serve(app).await;
         let _ = ready_tx.send(result);
@@ -122,9 +123,7 @@ pub async fn start(state: AppState) -> Result<HttpServer, String> {
     Ok(HttpServer { port, shutdown_tx })
 }
 
-async fn bind_and_serve(
-    app: Router,
-) -> Result<(u16, watch::Sender<bool>), String> {
+async fn bind_and_serve(app: Router) -> Result<(u16, watch::Sender<bool>), String> {
     let mut bound = None;
     for port in PORT_RANGE {
         match tokio::net::TcpListener::bind(("0.0.0.0", port)).await {

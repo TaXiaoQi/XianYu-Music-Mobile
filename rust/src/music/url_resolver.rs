@@ -72,8 +72,10 @@ fn evict_url_cache(cache: &mut HashMap<String, CacheEntry>, now: Instant) {
         return;
     }
     // 收集并按访问时间排序，淘汰最久未访问的 excess 项
-    let mut keys: Vec<(String, Instant)> =
-        cache.iter().map(|(k, e)| (k.clone(), e.last_access)).collect();
+    let mut keys: Vec<(String, Instant)> = cache
+        .iter()
+        .map(|(k, e)| (k.clone(), e.last_access))
+        .collect();
     keys.sort_unstable_by_key(|(_, t)| *t);
     for (k, _) in keys.into_iter().take(excess) {
         cache.remove(&k);
@@ -356,9 +358,8 @@ pub async fn get_lx_cover_url(song_info: &LxUrlSongInfo) -> Option<String> {
                 if let Ok((status, body)) = http_get_text(&album_url, headers).await {
                     if status == 200 {
                         if let Ok(body_json) = serde_json::from_str::<serde_json::Value>(&body) {
-                            if let Some(pic_url) = body_json
-                                .pointer("/album/picUrl")
-                                .and_then(|v| v.as_str())
+                            if let Some(pic_url) =
+                                body_json.pointer("/album/picUrl").and_then(|v| v.as_str())
                             {
                                 if !pic_url.is_empty() {
                                     set_cached_wy_album_cover(&album_id, pic_url.to_string()).await;

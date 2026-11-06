@@ -16,10 +16,10 @@
 
 use serde_json::{json, Value};
 
+use super::http;
 use super::types::{
     direct_link_json, file_json, list_result_json, share_parse_json, CloudOut, CloudReq,
 };
-use super::http;
 use super::{biz_err, pre_parse_share, require_cred};
 
 const UA: &str = "ANDROID-com.pikcloud.pikpak/1.47.1";
@@ -48,7 +48,10 @@ fn uuid_v4() -> String {
 fn api_headers(access_token: &str) -> Vec<(String, String)> {
     let mut h = vec![("User-Agent".to_string(), UA.to_string())];
     if !access_token.is_empty() {
-        h.push(("Authorization".to_string(), format!("Bearer {access_token}")));
+        h.push((
+            "Authorization".to_string(),
+            format!("Bearer {access_token}"),
+        ));
     }
     h.push(("Content-Type".to_string(), "application/json".to_string()));
     h
@@ -113,7 +116,10 @@ fn file_meta_url(file_id: &str) -> String {
 /// 刷新 access_token。Dart _refreshToken 任何失败 → null → _auth 抛过期；
 /// 这里所有失败路径统一映射同一文案。
 async fn refresh_access_token(cred: &Value) -> Result<String, (i32, String)> {
-    let refresh_token = cred.get("refreshToken").and_then(Value::as_str).unwrap_or("");
+    let refresh_token = cred
+        .get("refreshToken")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if refresh_token.is_empty() {
         return Err(biz_err(EXPIRED));
     }
@@ -143,12 +149,20 @@ async fn refresh_access_token(cred: &Value) -> Result<String, (i32, String)> {
 /// 取可用 access_token：缓存优先（无轮换）；否则刷新并产出新凭据集
 /// （键名对齐 Dart cred：accessToken/refreshToken/userId）。
 async fn auth(cred: &Value) -> Result<(String, Option<Value>), (i32, String)> {
-    let cached = cred.get("accessToken").and_then(Value::as_str).unwrap_or("");
+    let cached = cred
+        .get("accessToken")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     if !cached.is_empty() {
         return Ok((cached.to_string(), None));
     }
     let at = refresh_access_token(cred).await?;
-    let s = |k: &str| cred.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let s = |k: &str| {
+        cred.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
     let new_cred = json!({
         "accessToken": at,
         "refreshToken": s("refreshToken"),
@@ -162,8 +176,11 @@ async fn auth(cred: &Value) -> Result<(String, Option<Value>), (i32, String)> {
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let (at, rotated) = auth(&req.cred).await?;
-    let valid = match http::get("https://api-drive.mypikpak.com/drive/v1/about", &api_headers(&at))
-        .await
+    let valid = match http::get(
+        "https://api-drive.mypikpak.com/drive/v1/about",
+        &api_headers(&at),
+    )
+    .await
     {
         Ok(resp) => resp.is_ok(),
         Err(_) => false,
@@ -279,7 +296,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         return Err(biz_err("分享链接解析失败"));
     }
     let j = resp.json().map_err(biz_err)?;
-    let share = j.get("share").cloned().filter(|v| v.is_object()).unwrap_or(json!({}));
+    let share = j
+        .get("share")
+        .cloned()
+        .filter(|v| v.is_object())
+        .unwrap_or(json!({}));
     let pass_code_token = js_str(share.get("pass_code_token"), "");
     if pass_code_token.is_empty() && !pass_code.is_empty() {
         return Err(biz_err("提取码错误"));
@@ -294,14 +315,23 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     let mut files = Vec::new();
     if let Some(items) = list.as_array() {
         for e in items {
-            let id = js_str(e.get("file_id").filter(|v| !v.is_null()).or_else(|| e.get("id")), "");
+            let id = js_str(
+                e.get("file_id")
+                    .filter(|v| !v.is_null())
+                    .or_else(|| e.get("id")),
+                "",
+            );
             let name = js_str(e.get("name"), "");
             let is_dir = e.get("kind").and_then(Value::as_str) == Some("drive#folder");
             let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
             files.push(file_json(&id, &name, is_dir, size, None, None, None));
         }
     }
-    let pwd_opt = if pass_code.is_empty() { None } else { Some(pass_code) };
+    let pwd_opt = if pass_code.is_empty() {
+        None
+    } else {
+        Some(pass_code)
+    };
     Ok(CloudOut::plain(share_parse_json(
         "pikpak",
         files,
@@ -382,7 +412,11 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let (at, rotated) = auth(&req.cred).await?;
     let file = req.param_obj("file");
-    let file_id = file.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    let file_id = file
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let resp = http::get(&file_meta_url(&file_id), &api_headers(&at))
         .await
         .map_err(biz_err)?;
@@ -471,7 +505,10 @@ mod tests {
         let h = api_headers("at1");
         assert_eq!(h[0].1, UA);
         assert_eq!(h[1].1, "Bearer at1");
-        assert_eq!(h[2], ("Content-Type".to_string(), "application/json".to_string()));
+        assert_eq!(
+            h[2],
+            ("Content-Type".to_string(), "application/json".to_string())
+        );
         // 空 token 不带 Authorization（对齐 Dart if (accessToken.isNotEmpty)）。
         let h0 = api_headers("");
         assert_eq!(h0.len(), 2);
@@ -532,7 +569,8 @@ mod tests {
         assert_eq!(f["size"], 123);
         assert_eq!(f["parentId"], "p0");
         // 目录 kind 判定；parentId 缺省回空串。
-        let d = file_from_search_item(&json!({ "id": "d1", "name": "dir", "kind": "drive#folder" }));
+        let d =
+            file_from_search_item(&json!({ "id": "d1", "name": "dir", "kind": "drive#folder" }));
         assert_eq!(d["isDir"], true);
         assert_eq!(d["parentId"], "");
         // 播放只需 id：path 留空。

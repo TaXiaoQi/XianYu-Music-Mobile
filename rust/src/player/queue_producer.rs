@@ -140,7 +140,9 @@ impl QueueProducer {
         if self.mixing.is_some() {
             return;
         }
-        let Some(tail) = self.tail_frames() else { return };
+        let Some(tail) = self.tail_frames() else {
+            return;
+        };
         let prepared = match self.slot.lock() {
             Ok(mut g) => g.take(),
             Err(_) => None,
@@ -413,7 +415,11 @@ mod tests {
         );
         let out = drain_all(&mut p);
         assert_eq!(out.len(), 60);
-        assert_eq!(transition.seq.load(Ordering::Relaxed), 0, "没有下一首不应报过渡");
+        assert_eq!(
+            transition.seq.load(Ordering::Relaxed),
+            0,
+            "没有下一首不应报过渡"
+        );
     }
 
     #[test]
@@ -603,11 +609,7 @@ mod tests {
             let b = p.produce(16).expect("应有样本");
             produced += b.len() / 2;
         }
-        assert_eq!(
-            transition.seq.load(Ordering::Relaxed),
-            1,
-            "应已拼接到 B"
-        );
+        assert_eq!(transition.seq.load(Ordering::Relaxed), 1, "应已拼接到 B");
         // 现在槽里放 C，并继续产出：B 才播到开头，不该立刻把 C 混进来
         *slot.lock().unwrap() = Some(PreparedSource {
             producer: Box::new(ConstProducer::new(1000, 2, 3.0)),

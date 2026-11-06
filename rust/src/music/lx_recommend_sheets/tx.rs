@@ -33,9 +33,12 @@ fn strip_jsonp(body: &str) -> &str {
 }
 
 async fn tx_get_json(url: &str, timeout_secs: u64, err: &str) -> Result<serde_json::Value, String> {
-    let body = tokio::time::timeout(Duration::from_secs(timeout_secs), http_get_text(url, TX_HEADERS))
-        .await
-        .map_err(|_| format!("{} timeout", err))??;
+    let body = tokio::time::timeout(
+        Duration::from_secs(timeout_secs),
+        http_get_text(url, TX_HEADERS),
+    )
+    .await
+    .map_err(|_| format!("{} timeout", err))??;
     serde_json::from_str(strip_jsonp(&body)).map_err(|e| format!("{} invalid JSON: {}", err, e))
 }
 
@@ -88,14 +91,21 @@ pub(crate) async fn tx_tags() -> Result<LxRecommendTagsResult, String> {
     if groups.is_empty() {
         return Err("TX recommend tags empty".into());
     }
-    Ok(LxRecommendTagsResult { pinned, data: groups })
+    Ok(LxRecommendTagsResult {
+        pinned,
+        data: groups,
+    })
 }
 
 pub(crate) async fn tx_sheets_by_tag(
     tag_id: &str,
     page: u32,
 ) -> Result<LxRecommendSheetsResult, String> {
-    let category_id = if tag_id.is_empty() { TX_DEFAULT_CATEGORY } else { tag_id };
+    let category_id = if tag_id.is_empty() {
+        TX_DEFAULT_CATEGORY
+    } else {
+        tag_id
+    };
     let data = tx_get_json(&tx_by_tag_url(category_id, page), 8, "TX recommend sheets").await?;
 
     let sum = data.pointer("/data/sum").map(value_to_u64).unwrap_or(0);
@@ -123,7 +133,9 @@ pub(crate) async fn tx_sheets_by_tag(
                     .filter(|u| !u.is_empty()),
                 play_count: s.get("listennum").map(value_to_u64).unwrap_or(0),
                 works_num: 0,
-                description: decode_name(s.get("introduction").and_then(|v| v.as_str()).unwrap_or("")),
+                description: decode_name(
+                    s.get("introduction").and_then(|v| v.as_str()).unwrap_or(""),
+                ),
                 source: "tx".into(),
             })
             .collect(),
@@ -137,14 +149,8 @@ mod tests {
     #[test]
     fn test_strip_jsonp_plain_and_wrapped() {
         assert_eq!(strip_jsonp(r#"{"a":1}"#), r#"{"a":1}"#);
-        assert_eq!(
-            strip_jsonp("callback({\"a\":1})"),
-            r#"{"a":1}"#
-        );
-        assert_eq!(
-            strip_jsonp("MusicJsonCallback({\"a\":1})\n"),
-            r#"{"a":1}"#
-        );
+        assert_eq!(strip_jsonp("callback({\"a\":1})"), r#"{"a":1}"#);
+        assert_eq!(strip_jsonp("MusicJsonCallback({\"a\":1})\n"), r#"{"a":1}"#);
         // 无括号的异常响应原样返回
         assert_eq!(strip_jsonp("bad"), "bad");
     }

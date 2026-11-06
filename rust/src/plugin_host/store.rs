@@ -96,8 +96,7 @@ impl PluginStore {
         data.cookies
             .iter()
             .filter(|(_, c)| {
-                !c.domain.is_empty()
-                    && (host.contains(&c.domain) || c.domain.contains(&host))
+                !c.domain.is_empty() && (host.contains(&c.domain) || c.domain.contains(&host))
             })
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect()
@@ -231,18 +230,8 @@ mod tests {
     #[test]
     fn cookie_roundtrip_and_domain_match() {
         let store = PluginStore::load(None);
-        assert!(store.set_cookie(
-            "https://www.bilibili.com/x",
-            "SESSDATA",
-            "abc123",
-            None
-        ));
-        assert!(store.set_cookie(
-            "https://api.kugou.com/v1",
-            "kg_token",
-            "xyz",
-            None
-        ));
+        assert!(store.set_cookie("https://www.bilibili.com/x", "SESSDATA", "abc123", None));
+        assert!(store.set_cookie("https://api.kugou.com/v1", "kg_token", "xyz", None));
 
         // 双向子串匹配（与原前端 getCookies 语义一致）：同 host 命中
         let header = store.cookie_header_for_url("https://www.bilibili.com/foo");
@@ -261,12 +250,7 @@ mod tests {
     #[test]
     fn upsert_cookies_overwrites_existing_value() {
         let store = PluginStore::load(None);
-        assert!(store.set_cookie(
-            "https://www.bilibili.com/x",
-            "SESSDATA",
-            "old_value",
-            None
-        ));
+        assert!(store.set_cookie("https://www.bilibili.com/x", "SESSDATA", "old_value", None));
         // import_local 补缺：同名字段不覆盖
         let mut m = HashMap::new();
         m.insert(
@@ -277,7 +261,9 @@ mod tests {
             },
         );
         store.import_local(m.clone(), HashMap::new());
-        assert!(store.cookie_header_for_domain("bilibili").contains("old_value"));
+        assert!(store
+            .cookie_header_for_domain("bilibili")
+            .contains("old_value"));
         // upsert_cookies 覆盖：新值必须生效（用户变量显式同步语义）
         store.upsert_cookies(m);
         let header = store.cookie_header_for_domain("bilibili");

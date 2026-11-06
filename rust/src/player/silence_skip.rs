@@ -43,7 +43,11 @@ pub fn normalize_skip_params(threshold_db: f32, keep_ms: u32) -> (f32, u32) {
     } else {
         -45.0
     };
-    let keep = if keep_ms > 0 { keep_ms.min(10_000) } else { 500 };
+    let keep = if keep_ms > 0 {
+        keep_ms.min(10_000)
+    } else {
+        500
+    };
     (thr, keep)
 }
 
@@ -109,12 +113,7 @@ impl<P> SilenceSkipProducer<P>
 where
     P: BlockProducer,
 {
-    pub fn new(
-        inner: P,
-        channels: u16,
-        sample_rate: u32,
-        state: Arc<SkipSilenceState>,
-    ) -> Self {
+    pub fn new(inner: P, channels: u16, sample_rate: u32, state: Arc<SkipSilenceState>) -> Self {
         Self {
             inner,
             channels: channels.max(1) as usize,

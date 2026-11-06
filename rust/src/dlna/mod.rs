@@ -3,8 +3,8 @@
 //! - 发送端（DMC）：SSDP 搜索渲染器 → 本机媒体服务包装直链/本地文件 → AVTransport SOAP 控制。
 //! - 接收端（DMR）：SSDP alive 广播 + AVTransport SOAP 端点 → 指令交给宿主播放器（`DmrHost`）。
 
-pub mod dmr;
 pub mod discovery;
+pub mod dmr;
 pub mod httpd;
 pub mod media_server;
 pub mod net_util;
@@ -108,10 +108,7 @@ impl DlnaCore {
         }
         // 本机渲染器开启时会收到自己的 M-SEARCH 应答（多接口/多 ST 还会产生
         // 重复条目）：按 UDN 剔除自己并去重。
-        let own_udn = self
-            .dmr_shared
-            .get()
-            .map(|s| s.udn.lock().unwrap().clone());
+        let own_udn = self.dmr_shared.get().map(|s| s.udn.lock().unwrap().clone());
         let mut seen = std::collections::HashSet::new();
         out.retain(|d| Some(&d.udn) != own_udn.as_ref() && seen.insert(d.udn.clone()));
         out.sort_by(|a, b| a.friendly_name.cmp(&b.friendly_name));
@@ -214,11 +211,13 @@ impl DlnaCore {
     }
 
     pub async fn cast_pause(&self, dev: &DlnaDevice) -> Result<(), String> {
-        self.simple_avt(dev, "Pause", "<InstanceID>0</InstanceID>").await
+        self.simple_avt(dev, "Pause", "<InstanceID>0</InstanceID>")
+            .await
     }
 
     pub async fn cast_stop(&self, dev: &DlnaDevice) -> Result<(), String> {
-        self.simple_avt(dev, "Stop", "<InstanceID>0</InstanceID>").await
+        self.simple_avt(dev, "Stop", "<InstanceID>0</InstanceID>")
+            .await
     }
 
     pub async fn cast_seek(&self, dev: &DlnaDevice, secs: f64) -> Result<(), String> {
@@ -400,7 +399,12 @@ fn build_didl(
     duration: &str,
 ) -> String {
     let cover = cover_url
-        .map(|u| format!("<upnp:albumArtURI>{}</upnp:albumArtURI>", soap::xml_escape(u)))
+        .map(|u| {
+            format!(
+                "<upnp:albumArtURI>{}</upnp:albumArtURI>",
+                soap::xml_escape(u)
+            )
+        })
         .unwrap_or_default();
     format!(
         r#"<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" restricted="1"><dc:title>{title}</dc:title><dc:creator>{artist}</dc:creator><upnp:artist>{artist}</upnp:artist><upnp:album>{album}</upnp:album><upnp:class>object.item.audioItem.musicTrack</upnp:class><res duration="{duration}">{url}</res>{cover}</item></DIDL-Lite>"#,

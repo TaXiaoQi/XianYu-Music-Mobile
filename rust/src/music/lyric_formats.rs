@@ -380,13 +380,25 @@ mod lyric_formats_tests {
     fn process_lyrics_sorts_by_first_word_and_derives_line_times() {
         let mut lines = vec![
             LyricLine {
-                words: vec![LyricWord { start_time: 200, end_time: 300, word: "b".into() }],
+                words: vec![LyricWord {
+                    start_time: 200,
+                    end_time: 300,
+                    word: "b".into(),
+                }],
                 ..Default::default()
             },
             LyricLine {
                 words: vec![
-                    LyricWord { start_time: 100, end_time: 150, word: "a".into() },
-                    LyricWord { start_time: 150, end_time: 180, word: "c".into() },
+                    LyricWord {
+                        start_time: 100,
+                        end_time: 150,
+                        word: "a".into(),
+                    },
+                    LyricWord {
+                        start_time: 150,
+                        end_time: 180,
+                        word: "c".into(),
+                    },
                 ],
                 start_time: 999,
                 end_time: 0,

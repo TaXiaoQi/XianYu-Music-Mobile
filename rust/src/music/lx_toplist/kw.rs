@@ -16,12 +16,13 @@ fn kw_bang_url(id: &str, page: u32, rn: u32) -> String {
 
 pub(crate) async fn kw_boards() -> Vec<LxToplistBoard> {
     // 单请求 6s 超时：列表接口偶发不响应时整体置空
-    let data = match tokio::time::timeout(Duration::from_secs(6), http_get_json(KW_BANG_LIST_URL, &[]))
-        .await
-    {
-        Ok(Ok(data)) => data,
-        _ => return Vec::new(),
-    };
+    let data =
+        match tokio::time::timeout(Duration::from_secs(6), http_get_json(KW_BANG_LIST_URL, &[]))
+            .await
+        {
+            Ok(Ok(data)) => data,
+            _ => return Vec::new(),
+        };
     let groups = data
         .get("child")
         .and_then(|v| v.as_array())
@@ -45,14 +46,12 @@ pub(crate) async fn kw_boards() -> Vec<LxToplistBoard> {
                 continue;
             }
             // pic5/pic2 为 zimg 正方形封面；pic 兜底
-            let cover = ["pic5", "pic2", "pic"]
-                .iter()
-                .find_map(|k| {
-                    b.get(k)
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .filter(|s| !s.is_empty())
-                });
+            let cover = ["pic5", "pic2", "pic"].iter().find_map(|k| {
+                b.get(k)
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.is_empty())
+            });
             out.push(LxToplistBoard {
                 id,
                 title,

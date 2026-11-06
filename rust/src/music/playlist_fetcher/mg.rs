@@ -230,9 +230,7 @@ fn pick_cover_url(item: &Value) -> String {
         .and_then(|img| img.get("img"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .or_else(|| {
-            first_non_empty_str(item, &["albumPic", "img3", "img2", "img1"])
-        })
+        .or_else(|| first_non_empty_str(item, &["albumPic", "img3", "img2", "img1"]))
         .unwrap_or_default();
     if raw.is_empty() {
         return String::new();
@@ -288,7 +286,11 @@ fn normalize_duration_seconds(value: Option<&Value>) -> Option<i64> {
             if !f.is_finite() || f <= 0.0 {
                 return None;
             }
-            let secs = if f >= 1000.0 { (f / 1000.0).floor() } else { f.floor() };
+            let secs = if f >= 1000.0 {
+                (f / 1000.0).floor()
+            } else {
+                f.floor()
+            };
             (secs > 0.0).then_some(secs as i64)
         }
         _ => None,
@@ -415,8 +417,14 @@ mod tests {
             normalize_duration_seconds(Some(&serde_json::json!(183000))),
             Some(183)
         );
-        assert_eq!(normalize_duration_seconds(Some(&serde_json::json!(183))), Some(183));
-        assert_eq!(normalize_duration_seconds(Some(&serde_json::json!(0))), None);
+        assert_eq!(
+            normalize_duration_seconds(Some(&serde_json::json!(183))),
+            Some(183)
+        );
+        assert_eq!(
+            normalize_duration_seconds(Some(&serde_json::json!(0))),
+            None
+        );
         assert_eq!(
             normalize_duration_seconds(Some(&Value::String("abc".into()))),
             None

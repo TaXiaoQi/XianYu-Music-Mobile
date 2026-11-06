@@ -145,10 +145,7 @@ fn token_info(pairs: &[(String, String)]) -> Value {
 
 /// webapp 网关 req_header（JSON 序列化后作为外层 req_header 字段值）。
 fn goapi_header(cmd: i64, token: &Value) -> Value {
-    let wx_openid = coalesce_jstr(
-        token.get("openid"),
-        token.get("minico_openid"),
-    );
+    let wx_openid = coalesce_jstr(token.get("openid"), token.get("minico_openid"));
     json!({
         "seq": now_ms() / 1000,
         "cmd": cmd,
@@ -196,7 +193,10 @@ async fn goapi(
         .unwrap_or_default(),
     });
     let mut h = goapi_headers(cred);
-    h.push(("Content-Type".into(), "application/json; charset=UTF-8".into()));
+    h.push((
+        "Content-Type".into(),
+        "application/json; charset=UTF-8".into(),
+    ));
     let resp = http::post_json(&url, &h, &body).await.map_err(biz_err)?;
     if !resp.is_ok() {
         return Err(biz_err("微云接口请求失败"));
@@ -354,10 +354,7 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     // 分享页提取 shareKey 兜底（页面 JS 变量，脆弱）：任何失败都保持原 key。
     let mut key = share_key.clone();
     if let Ok(page) = http::get(
-        &format!(
-            "https://share.weiyun.com/{}",
-            http::url_encode(&share_key)
-        ),
+        &format!("https://share.weiyun.com/{}", http::url_encode(&share_key)),
         &[("User-Agent".into(), UA.into())],
     )
     .await
@@ -574,7 +571,9 @@ mod tests {
         let t3 = token_info(&cookie_pairs(&json!({ "cookie": "p_skey=P1; skey=@abc" })));
         assert_eq!(t3["login_key_value"], "P1");
         // access_token（微信登录）。
-        let t4 = token_info(&cookie_pairs(&json!({ "cookie": "wy_uf=1; openid=oX; access_token=T" })));
+        let t4 = token_info(&cookie_pairs(
+            &json!({ "cookie": "wy_uf=1; openid=oX; access_token=T" }),
+        ));
         assert_eq!(t4["token_type"], json!(1));
         assert_eq!(t4["login_key_value"], "T");
     }
@@ -611,10 +610,15 @@ mod tests {
         });
         assert!(outer["req_header"].is_string());
         assert!(outer["req_body"].is_string());
-        let inner: Value =
-            serde_json::from_str(outer["req_body"].as_str().unwrap()).unwrap();
-        assert_eq!(inner["ReqMsg_body"][&format!(".weiyun.{cmd_name}MsgReq_body")]["dir_key"], "k1");
-        assert_eq!(inner["ReqMsg_body"]["ext_req_head"]["language_info"]["language_type"], 2052);
+        let inner: Value = serde_json::from_str(outer["req_body"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            inner["ReqMsg_body"][&format!(".weiyun.{cmd_name}MsgReq_body")]["dir_key"],
+            "k1"
+        );
+        assert_eq!(
+            inner["ReqMsg_body"]["ext_req_head"]["language_info"]["language_type"],
+            2052
+        );
     }
 
     #[test]
@@ -637,7 +641,11 @@ mod tests {
         });
         let result = resp.get("data").unwrap();
         assert_eq!(result.pointer("/rsp_header/retcode"), Some(&json!(0)));
-        let msg = result.pointer("/rsp_body/RspMsg_body").unwrap().as_str().unwrap();
+        let msg = result
+            .pointer("/rsp_body/RspMsg_body")
+            .unwrap()
+            .as_str()
+            .unwrap();
         let parsed: Value = serde_json::from_str(msg).unwrap();
         assert!(parsed["file_list"].is_array());
     }
@@ -656,20 +664,32 @@ mod tests {
         assert_eq!(coalesce_jstr(e.get("file_name"), e.get("dir_name")), "目录");
         let e2 = json!({ "file_id": "fid2", "dir_name": "fallback" });
         assert_eq!(coalesce_jstr(e2.get("dir_key"), e2.get("file_id")), "fid2");
-        assert_eq!(coalesce_jstr(e2.get("file_name"), e2.get("dir_name")), "fallback");
+        assert_eq!(
+            coalesce_jstr(e2.get("file_name"), e2.get("dir_name")),
+            "fallback"
+        );
     }
 
     #[test]
     fn is_dir_strict_bool() {
         // Dart `e['is_dir'] == true`：数字 1 不算。
-        assert_eq!(json!({ "is_dir": true }).get("is_dir"), Some(&Value::Bool(true)));
-        assert_ne!(json!({ "is_dir": 1 }).get("is_dir"), Some(&Value::Bool(true)));
+        assert_eq!(
+            json!({ "is_dir": true }).get("is_dir"),
+            Some(&Value::Bool(true))
+        );
+        assert_ne!(
+            json!({ "is_dir": 1 }).get("is_dir"),
+            Some(&Value::Bool(true))
+        );
         assert_ne!(json!({}).get("is_dir"), Some(&Value::Bool(true)));
     }
 
     #[test]
     fn file_size_parsing() {
-        assert_eq!(num_i64(json!({ "file_size": 1024 }).get("file_size")), Some(1024));
+        assert_eq!(
+            num_i64(json!({ "file_size": 1024 }).get("file_size")),
+            Some(1024)
+        );
         assert_eq!(num_i64(json!({}).get("file_size")), None);
     }
 }

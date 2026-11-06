@@ -33,12 +33,14 @@ pub(crate) type FnBuilderSetSharingMode = unsafe extern "C" fn(*mut AAudioStream
 pub(crate) type FnBuilderSetPerformanceMode = unsafe extern "C" fn(*mut AAudioStreamBuilder, i32);
 pub(crate) type FnBuilderSetBufferCapacity = unsafe extern "C" fn(*mut AAudioStreamBuilder, i32);
 pub(crate) type FnBuilderSetDirection = unsafe extern "C" fn(*mut AAudioStreamBuilder, i32);
-pub(crate) type FnBuilderOpenStream = unsafe extern "C" fn(*mut AAudioStreamBuilder, *mut *mut AAudioStream) -> i32;
+pub(crate) type FnBuilderOpenStream =
+    unsafe extern "C" fn(*mut AAudioStreamBuilder, *mut *mut AAudioStream) -> i32;
 pub(crate) type FnStreamRequestStart = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 pub(crate) type FnStreamRequestPause = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 pub(crate) type FnStreamRequestStop = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 pub(crate) type FnStreamClose = unsafe extern "C" fn(*mut AAudioStream) -> i32;
-pub(crate) type FnStreamWrite = unsafe extern "C" fn(*mut AAudioStream, *const std::os::raw::c_void, i32, i64) -> i64;
+pub(crate) type FnStreamWrite =
+    unsafe extern "C" fn(*mut AAudioStream, *const std::os::raw::c_void, i32, i64) -> i64;
 pub(crate) type FnStreamGetFramesRead = unsafe extern "C" fn(*mut AAudioStream) -> i64;
 pub(crate) type FnStreamGetFramesWritten = unsafe extern "C" fn(*mut AAudioStream) -> i64;
 pub(crate) type FnStreamGetXRunCount = unsafe extern "C" fn(*mut AAudioStream) -> i32;
@@ -46,12 +48,8 @@ pub(crate) type FnStreamGetSampleRate = unsafe extern "C" fn(*mut AAudioStream) 
 pub(crate) type FnStreamGetChannelCount = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 pub(crate) type FnStreamGetFormat = unsafe extern "C" fn(*mut AAudioStream) -> i32;
 pub(crate) type FnStreamGetBufferSize = unsafe extern "C" fn(*mut AAudioStream) -> i32;
-pub(crate) type FnStreamGetTimestamp = unsafe extern "C" fn(
-    *mut AAudioStream,
-    *mut std::os::raw::c_int,
-    *mut i64,
-    *mut i64,
-) -> i32;
+pub(crate) type FnStreamGetTimestamp =
+    unsafe extern "C" fn(*mut AAudioStream, *mut std::os::raw::c_int, *mut i64, *mut i64) -> i32;
 pub(crate) type FnConvertResultToText = unsafe extern "C" fn(i32) -> *const std::os::raw::c_char;
 
 /// 动态加载的 AAudio 函数表。
@@ -104,39 +102,56 @@ impl AAudioLib {
             }
 
             macro_rules! sym {
-                ($name:expr, $type:ty) => {
-                    {
-                        let sym_name = concat!($name, "\0").as_ptr();
-                        let ptr = libc::dlsym(handle, sym_name as *const _);
-                        if ptr.is_null() {
-                            let err = libc::dlerror();
-                            let detail = if err.is_null() {
-                                "符号不存在".to_string()
-                            } else {
-                                std::ffi::CStr::from_ptr(err)
-                                    .to_string_lossy()
-                                    .into_owned()
-                            };
-                            libc::dlclose(handle);
-                            return Err(format!("dlsym {} 失败: {}", $name, detail));
-                        }
-                        std::mem::transmute::<*mut std::os::raw::c_void, $type>(ptr)
+                ($name:expr, $type:ty) => {{
+                    let sym_name = concat!($name, "\0").as_ptr();
+                    let ptr = libc::dlsym(handle, sym_name as *const _);
+                    if ptr.is_null() {
+                        let err = libc::dlerror();
+                        let detail = if err.is_null() {
+                            "符号不存在".to_string()
+                        } else {
+                            std::ffi::CStr::from_ptr(err).to_string_lossy().into_owned()
+                        };
+                        libc::dlclose(handle);
+                        return Err(format!("dlsym {} 失败: {}", $name, detail));
                     }
-                };
+                    std::mem::transmute::<*mut std::os::raw::c_void, $type>(ptr)
+                }};
             }
 
             let lib = Self {
                 _handle: handle,
                 create_stream_builder: sym!("AAudio_createStreamBuilder", FnCreateStreamBuilder),
                 builder_delete: sym!("AAudioStreamBuilder_delete", FnBuilderDelete),
-                builder_set_device_id: sym!("AAudioStreamBuilder_setDeviceId", FnBuilderSetDeviceId),
-                builder_set_sample_rate: sym!("AAudioStreamBuilder_setSampleRate", FnBuilderSetSampleRate),
-                builder_set_channel_count: sym!("AAudioStreamBuilder_setChannelCount", FnBuilderSetChannelCount),
+                builder_set_device_id: sym!(
+                    "AAudioStreamBuilder_setDeviceId",
+                    FnBuilderSetDeviceId
+                ),
+                builder_set_sample_rate: sym!(
+                    "AAudioStreamBuilder_setSampleRate",
+                    FnBuilderSetSampleRate
+                ),
+                builder_set_channel_count: sym!(
+                    "AAudioStreamBuilder_setChannelCount",
+                    FnBuilderSetChannelCount
+                ),
                 builder_set_format: sym!("AAudioStreamBuilder_setFormat", FnBuilderSetFormat),
-                builder_set_sharing_mode: sym!("AAudioStreamBuilder_setSharingMode", FnBuilderSetSharingMode),
-                builder_set_performance_mode: sym!("AAudioStreamBuilder_setPerformanceMode", FnBuilderSetPerformanceMode),
-                builder_set_buffer_capacity: sym!("AAudioStreamBuilder_setBufferCapacityInFrames", FnBuilderSetBufferCapacity),
-                builder_set_direction: sym!("AAudioStreamBuilder_setDirection", FnBuilderSetDirection),
+                builder_set_sharing_mode: sym!(
+                    "AAudioStreamBuilder_setSharingMode",
+                    FnBuilderSetSharingMode
+                ),
+                builder_set_performance_mode: sym!(
+                    "AAudioStreamBuilder_setPerformanceMode",
+                    FnBuilderSetPerformanceMode
+                ),
+                builder_set_buffer_capacity: sym!(
+                    "AAudioStreamBuilder_setBufferCapacityInFrames",
+                    FnBuilderSetBufferCapacity
+                ),
+                builder_set_direction: sym!(
+                    "AAudioStreamBuilder_setDirection",
+                    FnBuilderSetDirection
+                ),
                 builder_open_stream: sym!("AAudioStreamBuilder_openStream", FnBuilderOpenStream),
                 stream_request_start: sym!("AAudioStream_requestStart", FnStreamRequestStart),
                 stream_request_pause: sym!("AAudioStream_requestPause", FnStreamRequestPause),
@@ -150,9 +165,15 @@ impl AAudioLib {
                 ),
                 stream_get_xrun_count: sym!("AAudioStream_getXRunCount", FnStreamGetXRunCount),
                 stream_get_sample_rate: sym!("AAudioStream_getSampleRate", FnStreamGetSampleRate),
-                stream_get_channel_count: sym!("AAudioStream_getChannelCount", FnStreamGetChannelCount),
+                stream_get_channel_count: sym!(
+                    "AAudioStream_getChannelCount",
+                    FnStreamGetChannelCount
+                ),
                 stream_get_format: sym!("AAudioStream_getFormat", FnStreamGetFormat),
-                stream_get_buffer_size: sym!("AAudioStream_getBufferSizeInFrames", FnStreamGetBufferSize),
+                stream_get_buffer_size: sym!(
+                    "AAudioStream_getBufferSizeInFrames",
+                    FnStreamGetBufferSize
+                ),
                 stream_get_timestamp: sym!("AAudioStream_getTimestamp", FnStreamGetTimestamp),
                 convert_result_to_text: sym!("AAudio_convertResultToText", FnConvertResultToText),
             };
@@ -234,4 +255,3 @@ pub(crate) fn push_sample_bytes(buf: &mut Vec<u8>, sample: f32, fmt: DeviceForma
 // =========================================================================
 // Symphonia 解码器（BlockProducer）
 // =========================================================================
-

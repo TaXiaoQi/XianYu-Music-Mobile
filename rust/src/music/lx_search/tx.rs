@@ -298,11 +298,7 @@ pub(crate) async fn search_tx(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
     .await
 }
 
-async fn search_tx_page(
-    keyword: &str,
-    page: u32,
-    limit: u32,
-) -> Result<Vec<LxSearchItem>, String> {
+async fn search_tx_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     // 优先走无需签名的 soso 接口。
     //
     // 带签名的 musics.fcg 已返回 code 2000（签名校验失败），
@@ -419,11 +415,7 @@ async fn search_tx_page(
 /// QQ 音乐搜索（soso 接口，无需签名）。
 ///
 /// 必须使用移动端 User-Agent：桌面版 UA 会得到 `code:0` 但列表为空。
-async fn search_tx_soso(
-    keyword: &str,
-    page: u32,
-    limit: u32,
-) -> Result<Vec<LxSearchItem>, String> {
+async fn search_tx_soso(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     const MOBILE_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1";
 
     // 注意：不能带 new_json=1，否则上游返回 code:0 但 song.list 恒为空。

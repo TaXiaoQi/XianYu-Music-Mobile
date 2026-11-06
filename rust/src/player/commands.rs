@@ -122,7 +122,10 @@ pub fn dispatch_playback_command(cmd: PlaybackCommand) -> Result<String, String>
             output::resume_exclusive();
             Ok(String::new())
         }
-        PlaybackCommand::Seek { time_secs, is_playing } => {
+        PlaybackCommand::Seek {
+            time_secs,
+            is_playing,
+        } => {
             output::seek_exclusive(time_secs, is_playing);
             Ok(String::new())
         }

@@ -122,16 +122,16 @@ impl HttpSeekableReader {
                 .get(reqwest::header::CONTENT_RANGE)
                 .and_then(|v| v.to_str().ok())
                 .and_then(parse_content_range_total);
-            Ok(RangeResponse {
-                resp,
-                total,
-                start,
-            })
+            Ok(RangeResponse { resp, total, start })
         } else if status == reqwest::StatusCode::OK {
             // 服务端不支持 Range：全量响应（Content-Length 即文件总长）。
             // 起点固定 0，读取侧按逻辑位置丢弃推进到目标偏移。
             let total = resp.content_length().map(|n| n as u64);
-            Ok(RangeResponse { resp, total, start: 0 })
+            Ok(RangeResponse {
+                resp,
+                total,
+                start: 0,
+            })
         } else {
             Err(format!("HTTP 状态异常: {status}"))
         }
@@ -143,14 +143,17 @@ impl HttpSeekableReader {
             Some(r) => r,
             None => return Ok(None),
         };
-        let chunk = http_runtime()
-            .block_on(resp.chunk())
-            .map_err(io_err)?;
+        let chunk = http_runtime().block_on(resp.chunk()).map_err(io_err)?;
         Ok(chunk)
     }
 
     /// 确保存在起点 ≤ pos 的响应流；不存在则重开 Range 请求。
-    fn ensure_stream(inner: &mut Inner, client: &reqwest::Client, url: &str, total_out: &mut Option<u64>) -> io::Result<()> {
+    fn ensure_stream(
+        inner: &mut Inner,
+        client: &reqwest::Client,
+        url: &str,
+        total_out: &mut Option<u64>,
+    ) -> io::Result<()> {
         let need_reopen = match &inner.resp {
             None => true,
             Some(_) => inner.pos < inner.resp_start,
@@ -239,11 +242,12 @@ impl Seek for HttpSeekableReader {
         let mut inner = self.inner.lock().map_err(|e| io_err(e))?;
         let new_pos: i64 = match pos {
             SeekFrom::Start(o) => o as i64,
-            SeekFrom::End(o) => self
-                .total
-                .ok_or_else(|| io_err("流式源未知总长，不支持 End 定位"))?
-                as i64
-                + o,
+            SeekFrom::End(o) => {
+                self.total
+                    .ok_or_else(|| io_err("流式源未知总长，不支持 End 定位"))?
+                    as i64
+                    + o
+            }
             SeekFrom::Current(o) => inner.pos as i64 + o,
         };
         if new_pos < 0 {
@@ -270,10 +274,7 @@ mod tests {
 
     #[test]
     fn parse_content_range_total_values() {
-        assert_eq!(
-            parse_content_range_total("bytes 0-1023/45678"),
-            Some(45678)
-        );
+        assert_eq!(parse_content_range_total("bytes 0-1023/45678"), Some(45678));
         assert_eq!(parse_content_range_total("bytes 100-199/*"), None);
         assert_eq!(parse_content_range_total("bytes 0-1/abc"), None);
         assert_eq!(parse_content_range_total("garbage"), None);

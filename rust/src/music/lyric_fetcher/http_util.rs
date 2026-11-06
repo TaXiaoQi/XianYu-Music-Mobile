@@ -136,4 +136,3 @@ pub(crate) async fn http_fetch_binary(
 ) -> Result<HttpResponse, String> {
     http_fetch_text(url, method, headers, body).await
 }
-

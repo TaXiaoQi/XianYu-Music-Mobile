@@ -43,25 +43,60 @@ pub struct LxPlaylistTracksResult {
 }
 
 const PLAYLIST_ID_KEYS: &[&str] = &[
-    "id", "ID", "playlistId", "playlistid", "specialid", "dissid", "disstid",
-    "songListId", "songlistId", "musicListId", "rid",
+    "id",
+    "ID",
+    "playlistId",
+    "playlistid",
+    "specialid",
+    "dissid",
+    "disstid",
+    "songListId",
+    "songlistId",
+    "musicListId",
+    "rid",
 ];
 const PLAYLIST_TITLE_KEYS: &[&str] = &[
-    "title", "name", "playlistName", "specialname", "dissname",
-    "songListName", "songlistName", "NAME",
+    "title",
+    "name",
+    "playlistName",
+    "specialname",
+    "dissname",
+    "songListName",
+    "songlistName",
+    "NAME",
 ];
-const PLAYLIST_ARTIST_KEYS: &[&str] = &[
-    "artist", "author", "nickname", "uname", "UNAME", "userName",
-];
+const PLAYLIST_ARTIST_KEYS: &[&str] =
+    &["artist", "author", "nickname", "uname", "UNAME", "userName"];
 const PLAYLIST_COVER_KEYS: &[&str] = &[
-    "coverUrl", "coverImgUrl", "img", "imgurl", "pic", "picUrl", "pic_url",
-    "PIC", "album_pic_url", "hts_pic", "musicListPicUrl",
+    "coverUrl",
+    "coverImgUrl",
+    "img",
+    "imgurl",
+    "pic",
+    "picUrl",
+    "pic_url",
+    "PIC",
+    "album_pic_url",
+    "hts_pic",
+    "musicListPicUrl",
 ];
 const PLAYLIST_TRACK_COUNT_KEYS: &[&str] = &[
-    "trackCount", "trackcount", "songCount", "song_count", "songnum", "SONGNUM", "musicNum",
+    "trackCount",
+    "trackcount",
+    "songCount",
+    "song_count",
+    "songnum",
+    "SONGNUM",
+    "musicNum",
 ];
 const PLAYLIST_PLAY_COUNT_KEYS: &[&str] = &[
-    "playCount", "playcount", "play_count", "playcnt", "listennum", "LISTENNUM", "playNum",
+    "playCount",
+    "playcount",
+    "play_count",
+    "playcnt",
+    "listennum",
+    "LISTENNUM",
+    "playNum",
 ];
 
 /// 顺序取多个候选键里的首个非 null/非空串值（对齐桌面 firstValue）。
@@ -164,10 +199,14 @@ fn normalize_playlists(source: &str, raw_items: &Value) -> Vec<LxPlaylistItem> {
                 })
             })
             .unwrap_or_default();
-        let track_count = first_value(&raw, PLAYLIST_TRACK_COUNT_KEYS)
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
-        let play_count = first_value(&raw, PLAYLIST_PLAY_COUNT_KEYS)
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+        let track_count = first_value(&raw, PLAYLIST_TRACK_COUNT_KEYS).and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        });
+        let play_count = first_value(&raw, PLAYLIST_PLAY_COUNT_KEYS).and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        });
 
         results.push(LxPlaylistItem {
             id: format!("{}:playlist:{}", source, playlist_id),
@@ -235,10 +274,7 @@ fn parse_loose_json(text: &str) -> Result<Value, String> {
 }
 
 /// 宽松 GET：标准 JSON 失败时尝试单引号状态机转换（对齐桌面 httpGetLooseJson）。
-async fn http_get_loose_json(
-    url: &str,
-    headers: &[(&str, &str)],
-) -> Result<Value, String> {
+async fn http_get_loose_json(url: &str, headers: &[(&str, &str)]) -> Result<Value, String> {
     // 复用 lx_search 的严格 GET；失败时再拉一次文本做宽松解析。
     // 这里直接调用严格版：其错误信息含 HTTP 状态，无法区分解析失败，
     // 因此宽松版仅在严格版返回「Invalid JSON」时用独立请求兜底。
@@ -312,11 +348,8 @@ pub async fn lx_search_playlists(
                 page - 1,
                 limit
             );
-            let data = http_get_loose_json(
-                &old_url,
-                &[("Referer", "https://www.kuwo.cn/")],
-            )
-            .await?;
+            let data =
+                http_get_loose_json(&old_url, &[("Referer", "https://www.kuwo.cn/")]).await?;
             let list = data
                 .get("abslist")
                 .or_else(|| data.get("data"))
@@ -350,7 +383,10 @@ pub async fn lx_search_playlists(
             let data = http_get_json(
                 &url,
                 &[
-                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                    (
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    ),
                     ("Referer", "https://music.163.com"),
                     ("Cookie", "MUSIC_A=1"),
                 ],
@@ -585,9 +621,8 @@ async fn kg_playlist_tracks_v9(playlist_id: &str) -> Result<Vec<LxSearchItem>, S
         urlencode(playlist_id)
     );
     let html = http_get_text(&url, KG_V3_HEADERS).await?;
-    let re = KG_GLOBAL_DATA_RE.get_or_init(|| {
-        Regex::new(r"(?s)global\.data\s*=\s*(\[.+]);").expect("invalid regex")
-    });
+    let re = KG_GLOBAL_DATA_RE
+        .get_or_init(|| Regex::new(r"(?s)global\.data\s*=\s*(\[.+]);").expect("invalid regex"));
     let json_text = re
         .captures(&html)
         .and_then(|c| c.get(1))
@@ -688,10 +723,10 @@ async fn kw_playlist_tracks_all(playlist_id: &str) -> Result<Vec<LxSearchItem>, 
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        if let Some(t) = info
-            .get("total")
-            .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok())))
-        {
+        if let Some(t) = info.get("total").and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+        }) {
             total_page = (t + PAGE_SIZE as u64 - 1) / PAGE_SIZE as u64;
         }
         // 页签名去重：上游重复返回同一页说明异常，报错退出（触发整体回退）
@@ -738,11 +773,7 @@ async fn tx_playlist_tracks_full_fetch(playlist_id: &str) -> Result<Vec<LxSearch
         urlencode(playlist_id)
     );
     let referer = format!("https://y.qq.com/n/ryqq/playlist/{}", playlist_id);
-    let text = http_get_text(
-        &url,
-        &[("Referer", referer.as_str()), ("Cookie", "uin=0")],
-    )
-    .await?;
+    let text = http_get_text(&url, &[("Referer", referer.as_str()), ("Cookie", "uin=0")]).await?;
     // 去掉 JSONP 包裹：前缀函数名 + 结尾右括号
     let mut body = text.trim();
     for prefix in ["MusicJsonCallback(", "jsonCallback(", "callback("] {
@@ -838,12 +869,11 @@ pub async fn lx_playlist_tracks(
                         "http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid={}&pn=0&rn=1000&encode=utf8&keyset=pl2012&vipver=MUSIC_9.1.1.2_BCS2&newver=1",
                         urlencode(playlist_id)
                     );
-                    let body = match http_get_json(&url, &[("Referer", "https://www.kuwo.cn/")])
-                        .await
-                    {
-                        Ok(b) => b,
-                        Err(e) => return Err(e),
-                    };
+                    let body =
+                        match http_get_json(&url, &[("Referer", "https://www.kuwo.cn/")]).await {
+                            Ok(b) => b,
+                            Err(e) => return Err(e),
+                        };
                     if body.get("result").and_then(|v| v.as_str()) != Some("ok") {
                         return Ok(LxPlaylistTracksResult {
                             list: Vec::new(),
@@ -857,10 +887,7 @@ pub async fn lx_playlist_tracks(
                         .unwrap_or_default();
                     let list = musiclist.iter().map(|m| kw_music_item(source, m)).collect();
                     // nplserver 一次返回全部，isEnd 始终为 true
-                    LxPlaylistTracksResult {
-                        list,
-                        is_end: true,
-                    }
+                    LxPlaylistTracksResult { list, is_end: true }
                 }
             }
         }
@@ -1045,7 +1072,10 @@ pub async fn lx_playlist_tracks(
                     let data = http_get_json(
                         &url,
                         &[
-                            ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                            (
+                                "User-Agent",
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            ),
                             ("Referer", "https://music.163.com"),
                             ("Cookie", "MUSIC_A=1"),
                         ],
@@ -1226,7 +1256,15 @@ fn mg_cover_url(item: &Value) -> Option<String> {
 /// 咪咕时长：候选字段顺序取第一个有效值；"mm:ss"/"hh:mm:ss" 逐段 ×60 累加，
 /// 数字 ≥1000 按毫秒折算、否则按秒，返回秒（对齐 playlist_fetcher mg.rs）
 fn mg_duration_seconds(item: &Value) -> f64 {
-    for key in ["duration", "length", "songTime", "playTime", "timeLength", "songLength", "lengthOfTrack"] {
+    for key in [
+        "duration",
+        "length",
+        "songTime",
+        "playTime",
+        "timeLength",
+        "songLength",
+        "lengthOfTrack",
+    ] {
         match item.get(key) {
             Some(Value::String(s)) if s.contains(':') => {
                 let mut total = 0.0f64;
@@ -1247,7 +1285,11 @@ fn mg_duration_seconds(item: &Value) -> f64 {
             Some(Value::Number(n)) => {
                 let v = n.as_f64().unwrap_or(0.0);
                 if v > 0.0 {
-                    return if v >= 1000.0 { (v / 1000.0).round() } else { v.round() };
+                    return if v >= 1000.0 {
+                        (v / 1000.0).round()
+                    } else {
+                        v.round()
+                    };
                 }
             }
             _ => {}
@@ -1343,16 +1385,12 @@ pub async fn lx_album_songs(
                         rid,
                         m.get("name").and_then(|v| v.as_str()).unwrap_or(""),
                         m.get("artist").and_then(|v| v.as_str()).unwrap_or(""),
-                        m.get("album")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(""),
+                        m.get("album").and_then(|v| v.as_str()).unwrap_or(""),
                         m.get("albumid")
                             .cloned()
                             .unwrap_or(Value::String(album_id.to_string())),
                         format_play_time(duration),
-                        m.get("pic")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
+                        m.get("pic").and_then(|v| v.as_str()).map(|s| s.to_string()),
                         None,
                     )
                 })
@@ -1373,21 +1411,18 @@ pub async fn lx_album_songs(
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
-            let list: Vec<LxSearchItem> = info_list
-                .iter()
-                .filter_map(kg_filter_data_v3)
-                .collect();
+            let list: Vec<LxSearchItem> = info_list.iter().filter_map(kg_filter_data_v3).collect();
             Ok(list)
         }
         "wy" => {
-            let url = format!(
-                "https://music.163.com/api/album/{}",
-                urlencode(album_id)
-            );
+            let url = format!("https://music.163.com/api/album/{}", urlencode(album_id));
             let data = http_get_json(
                 &url,
                 &[
-                    ("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+                    (
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    ),
                     ("Referer", "https://music.163.com"),
                     ("Cookie", "MUSIC_A=1"),
                 ],
@@ -1471,10 +1506,7 @@ pub async fn lx_album_songs(
                         .or_else(|| item.get("img1"))
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
-                    let duration = item
-                        .get("duration")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0);
+                    let duration = item.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
                     simple_item(
                         "mg",
                         item.get("songId")

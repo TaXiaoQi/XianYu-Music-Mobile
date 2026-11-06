@@ -28,13 +28,18 @@ pub(crate) fn run_dsd_passthrough(
         }
     };
     if dsd.is_dst {
-        let _ = init_tx.send(Err("DST 压缩 DSD 暂不支持直出，请转未压缩 DSD 后再试".to_string()));
+        let _ = init_tx.send(Err(
+            "DST 压缩 DSD 暂不支持直出，请转未压缩 DSD 后再试".to_string()
+        ));
         return;
     }
     let dop_rate = match crate::player::dsd_dop::dop_pcm_rate(dsd.dsd_rate) {
         Some(r) => r,
         None => {
-            let _ = init_tx.send(Err(format!("DSD 采样率 {} 不适用于 DoP 打包", dsd.dsd_rate)));
+            let _ = init_tx.send(Err(format!(
+                "DSD 采样率 {} 不适用于 DoP 打包",
+                dsd.dsd_rate
+            )));
             return;
         }
     };
@@ -42,7 +47,14 @@ pub(crate) fn run_dsd_passthrough(
 
     // 打开 DoP DAC：仅尝试 24-bit packed 独占流。
     let (stream, stream_rate, stream_channels) = match unsafe {
-        try_open_stream(&lib, request.device_id, dop_rate, channels, DeviceFormat::I24Packed, false)
+        try_open_stream(
+            &lib,
+            request.device_id,
+            dop_rate,
+            channels,
+            DeviceFormat::I24Packed,
+            false,
+        )
     } {
         Ok(s) => {
             let actual_rate = unsafe { (lib.stream_get_sample_rate)(s) } as u32;
@@ -50,7 +62,9 @@ pub(crate) fn run_dsd_passthrough(
             (s, actual_rate, actual_channels)
         }
         Err(e) => {
-            let _ = init_tx.send(Err(format!("无法打开 DoP 音频流（{dop_rate}Hz/24bit 独占）: {e}")));
+            let _ = init_tx.send(Err(format!(
+                "无法打开 DoP 音频流（{dop_rate}Hz/24bit 独占）: {e}"
+            )));
             return;
         }
     };
@@ -65,7 +79,9 @@ pub(crate) fn run_dsd_passthrough(
     };
 
     progress.sample_rate.store(dop_rate, Ordering::Relaxed);
-    progress.channels.store(stream_channels as u32, Ordering::Relaxed);
+    progress
+        .channels
+        .store(stream_channels as u32, Ordering::Relaxed);
     progress.samples_played.store(
         (request.start_time_secs * dop_rate as f64 * stream_channels as f64) as u64,
         Ordering::Relaxed,
@@ -96,7 +112,10 @@ pub(crate) fn run_dsd_passthrough(
     loop {
         match cmd_rx.try_recv() {
             Ok(ExclusiveCommand::Stop) => break,
-            Ok(ExclusiveCommand::Seek { time_secs, is_playing: play }) => {
+            Ok(ExclusiveCommand::Seek {
+                time_secs,
+                is_playing: play,
+            }) => {
                 let _ = unsafe { (lib.stream_request_pause)(stream) };
                 let target = (time_secs * dop_rate as f64) as u64;
                 let _ = dop.seek_to_frame(target);
@@ -159,10 +178,13 @@ pub(crate) fn run_dsd_passthrough(
         };
         if produced == 0 {
             // EOF
-            set_exit_reason!(last_error, format!(
-                "DoP EOF(已播{}样本)",
-                progress.samples_played.load(Ordering::Relaxed)
-            ));
+            set_exit_reason!(
+                last_error,
+                format!(
+                    "DoP EOF(已播{}样本)",
+                    progress.samples_played.load(Ordering::Relaxed)
+                )
+            );
             break;
         }
         progress
@@ -178,11 +200,14 @@ pub(crate) fn run_dsd_passthrough(
             )
         };
         if written < 0 {
-            set_exit_reason!(last_error, format!(
-                "DoP stream_write错误({} 已播{}样本)",
-                unsafe { lib.result_text(written as i32) },
-                progress.samples_played.load(Ordering::Relaxed)
-            ));
+            set_exit_reason!(
+                last_error,
+                format!(
+                    "DoP stream_write错误({} 已播{}样本)",
+                    unsafe { lib.result_text(written as i32) },
+                    progress.samples_played.load(Ordering::Relaxed)
+                )
+            );
             break;
         }
         if written < produced as i64 {

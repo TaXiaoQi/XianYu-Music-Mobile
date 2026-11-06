@@ -121,27 +121,17 @@ pub async fn request(
             Body::Form(pairs) => {
                 let encoded: Vec<String> = pairs
                     .iter()
-                    .map(|(k, v)| {
-                        format!(
-                            "{}={}",
-                            url_encode(k),
-                            url_encode(v)
-                        )
-                    })
+                    .map(|(k, v)| format!("{}={}", url_encode(k), url_encode(v)))
                     .collect();
                 if !has_ct {
-                    req = req
-                        .header("content-type", "application/x-www-form-urlencoded");
+                    req = req.header("content-type", "application/x-www-form-urlencoded");
                 }
                 req.body(encoded.join("&"))
             }
             Body::Raw(s) => req.body(s.clone()),
         };
     }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("网络请求失败: {e}"))?;
+    let resp = req.send().await.map_err(|e| format!("网络请求失败: {e}"))?;
     let status = resp.status().as_u16();
     let mut headers_out: Vec<(String, String)> = Vec::new();
     let mut set_cookies: Vec<String> = Vec::new();
@@ -155,7 +145,10 @@ pub async fn request(
             headers_out.push((k, v.to_string()));
         }
     }
-    let body = resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
     Ok(Outbound {
         status,
         headers: headers_out,
@@ -180,10 +173,7 @@ pub async fn request_with_client(
     for (k, v) in headers {
         req = req.header(k.as_str(), v.as_str());
     }
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("网络请求失败: {e}"))?;
+    let resp = req.send().await.map_err(|e| format!("网络请求失败: {e}"))?;
     let status = resp.status().as_u16();
     let mut headers_out: Vec<(String, String)> = Vec::new();
     let mut set_cookies: Vec<String> = Vec::new();
@@ -197,7 +187,10 @@ pub async fn request_with_client(
             headers_out.push((k, v.to_string()));
         }
     }
-    let body = resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
     Ok(Outbound {
         status,
         headers: headers_out,
@@ -293,10 +286,7 @@ mod tests {
     fn join_query_skips_empty() {
         assert_eq!(join_query(&[("a", Some("1")), ("b", Some(""))]), "?a=1");
         assert_eq!(join_query(&[("a", None)]), "");
-        assert_eq!(
-            join_query(&[("k", Some("a b&c"))]),
-            "?k=a+b%26c"
-        );
+        assert_eq!(join_query(&[("k", Some("a b&c"))]), "?k=a+b%26c");
     }
 
     #[test]
@@ -322,7 +312,10 @@ mod tests {
         };
         assert_eq!(
             ob.set_cookie_pairs(),
-            vec![("a".to_string(), "3".to_string()), ("b".to_string(), "2".to_string())]
+            vec![
+                ("a".to_string(), "3".to_string()),
+                ("b".to_string(), "2".to_string())
+            ]
         );
     }
 

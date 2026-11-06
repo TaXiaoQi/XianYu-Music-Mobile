@@ -232,7 +232,10 @@ mod tests {
 
         // The symlink directory itself should be canonicalized (resolved to real path)
         let result = validate_path(&link.to_string_lossy(), None);
-        assert!(result.is_ok(), "symlink path should be allowed when no allowed_roots");
+        assert!(
+            result.is_ok(),
+            "symlink path should be allowed when no allowed_roots"
+        );
 
         fs::remove_dir_all(&base).ok();
     }

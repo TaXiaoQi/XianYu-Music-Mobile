@@ -37,10 +37,13 @@ impl MediaRegistry {
     pub fn create(&self, payload: MediaPayload) -> String {
         let token = new_token();
         let now = now_ms();
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(token.clone(), RegistryEntry { payload, created_at_ms: now });
+        self.inner.lock().unwrap().insert(
+            token.clone(),
+            RegistryEntry {
+                payload,
+                created_at_ms: now,
+            },
+        );
         token
     }
 
@@ -132,7 +135,11 @@ pub fn parse_range(range: Option<&str>, total: Option<u64>) -> Option<(u64, Opti
     Some((start, end))
 }
 
-fn simple_response(status: StatusCode, headers: Vec<(&'static str, String)>, body: Body) -> Response {
+fn simple_response(
+    status: StatusCode,
+    headers: Vec<(&'static str, String)>,
+    body: Body,
+) -> Response {
     let mut builder = Response::builder().status(status);
     for (k, v) in headers {
         builder = builder.header(k, v);
@@ -146,7 +153,11 @@ fn simple_response(status: StatusCode, headers: Vec<(&'static str, String)>, bod
 }
 
 fn error_response(status: StatusCode, msg: &str) -> Response {
-    simple_response(status, vec![("CONTENT-TYPE", "text/plain".into())], Body::from(msg.to_string()))
+    simple_response(
+        status,
+        vec![("CONTENT-TYPE", "text/plain".into())],
+        Body::from(msg.to_string()),
+    )
 }
 
 /// GET|HEAD /media/{token}
@@ -164,9 +175,9 @@ pub async fn serve_media(
 
     match entry.payload {
         MediaPayload::LocalFile { path } => serve_local_file(&path, &headers).await,
-        MediaPayload::Remote { url, headers: uh, .. } => {
-            serve_remote(&registry.client_for_remote(), &url, &uh, &headers).await
-        }
+        MediaPayload::Remote {
+            url, headers: uh, ..
+        } => serve_remote(&registry.client_for_remote(), &url, &uh, &headers).await,
         MediaPayload::Cover { .. } => error_response(StatusCode::NOT_FOUND, "not a media token"),
     }
 }
@@ -194,7 +205,9 @@ pub async fn serve_cover(
     }
     let resp = match req.timeout(std::time::Duration::from_secs(15)).send().await {
         Ok(r) => r,
-        Err(e) => return error_response(StatusCode::BAD_GATEWAY, &format!("cover fetch failed: {e}")),
+        Err(e) => {
+            return error_response(StatusCode::BAD_GATEWAY, &format!("cover fetch failed: {e}"))
+        }
     };
     let content_type = resp
         .headers()
@@ -239,7 +252,12 @@ async fn serve_local_file(path: &str, headers: &HeaderMap) -> Response {
         // 200 全量。
         let file = match tokio::fs::File::open(&path).await {
             Ok(f) => f,
-            Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("open failed: {e}")),
+            Err(e) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("open failed: {e}"),
+                )
+            }
         };
         let stream = tokio_util::io::ReaderStream::new(file);
         return simple_response(
@@ -253,11 +271,18 @@ async fn serve_local_file(path: &str, headers: &HeaderMap) -> Response {
         );
     };
 
-    let end = end.unwrap_or(total.saturating_sub(1)).min(total.saturating_sub(1));
+    let end = end
+        .unwrap_or(total.saturating_sub(1))
+        .min(total.saturating_sub(1));
     let length = end - start + 1;
     let mut file = match tokio::fs::File::open(&path).await {
         Ok(f) => f,
-        Err(e) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("open failed: {e}")),
+        Err(e) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("open failed: {e}"),
+            )
+        }
     };
     if file.seek(std::io::SeekFrom::Start(start)).await.is_err() {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "seek failed");
@@ -295,11 +320,7 @@ async fn serve_remote(
     if let Some(range) = client_headers.get("range") {
         req = req.header("RANGE", range.as_bytes());
     }
-    let resp = match req
-        .timeout(std::time::Duration::from_secs(20))
-        .send()
-        .await
-    {
+    let resp = match req.timeout(std::time::Duration::from_secs(20)).send().await {
         Ok(r) => r,
         Err(e) => return error_response(StatusCode::BAD_GATEWAY, &format!("upstream failed: {e}")),
     };
@@ -340,9 +361,18 @@ mod tests {
 
     #[test]
     fn range_parse_cases() {
-        assert_eq!(parse_range(Some("bytes=0-99"), Some(1000)), Some((0, Some(99))));
-        assert_eq!(parse_range(Some("bytes=500-"), Some(1000)), Some((500, None)));
-        assert_eq!(parse_range(Some("bytes=-200"), Some(1000)), Some((800, Some(999))));
+        assert_eq!(
+            parse_range(Some("bytes=0-99"), Some(1000)),
+            Some((0, Some(99)))
+        );
+        assert_eq!(
+            parse_range(Some("bytes=500-"), Some(1000)),
+            Some((500, None))
+        );
+        assert_eq!(
+            parse_range(Some("bytes=-200"), Some(1000)),
+            Some((800, Some(999)))
+        );
         assert_eq!(parse_range(Some("bytes=0-99"), None), Some((0, Some(99))));
         assert_eq!(parse_range(Some("bytes=0-99,200-299"), Some(1000)), None);
         assert_eq!(parse_range(Some("bytes=5000-"), Some(1000)), None);
@@ -352,10 +382,17 @@ mod tests {
     #[test]
     fn registry_create_update_get() {
         let reg = MediaRegistry::new(reqwest::Client::new());
-        let t = reg.create(MediaPayload::LocalFile { path: "/a.mp3".into() });
+        let t = reg.create(MediaPayload::LocalFile {
+            path: "/a.mp3".into(),
+        });
         assert_eq!(t.len(), 64);
         assert!(reg.get(&t).is_some());
-        assert!(reg.update(&t, MediaPayload::LocalFile { path: "/b.flac".into() }));
+        assert!(reg.update(
+            &t,
+            MediaPayload::LocalFile {
+                path: "/b.flac".into()
+            }
+        ));
         if let Some(e) = reg.get(&t) {
             match e.payload {
                 MediaPayload::LocalFile { path } => assert_eq!(path, "/b.flac"),

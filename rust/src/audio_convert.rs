@@ -234,7 +234,9 @@ fn probe_duration_blocking(src: PathBuf) -> Result<f64, String> {
         InputClass::Symphonia => decode_via_symphonia(&src)?,
         InputClass::Ape => decode_ape_pcm(&src)?,
         InputClass::Wv => decode_wv_pcm(&src)?,
-        InputClass::Unsupported => return Err(format!("unsupported input format: {}", extension_of(&src))),
+        InputClass::Unsupported => {
+            return Err(format!("unsupported input format: {}", extension_of(&src)))
+        }
     };
     let frames = pcm.len() / ch.max(1) as usize;
     if sr == 0 {
@@ -256,7 +258,12 @@ fn probe_symphonia_duration(src: &Path) -> Option<f64> {
         hint.with_extension(ext);
     }
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .ok()?;
     let track = probed.format.tracks().first()?;
     let sr = track.codec_params.sample_rate.filter(|r| *r > 0)?;
@@ -271,15 +278,35 @@ fn extension_of(src: &Path) -> String {
         .unwrap_or_default()
 }
 
-fn convert_blocking(src: &Path, out: &Path, fmt: OutputFormat, opts: &ConvertOptions) -> Result<(), String> {
+fn convert_blocking(
+    src: &Path,
+    out: &Path,
+    fmt: OutputFormat,
+    opts: &ConvertOptions,
+) -> Result<(), String> {
     if !src.is_file() {
         return Err(format!("input not found: {}", src.display()));
     }
     let (sr, ch, pcm) = decode_input(src)?;
-    render_output(src, out, fmt, sr, ch, pcm, opts.sample_rate, opts.keep_cover, opts.keep_lyrics)
+    render_output(
+        src,
+        out,
+        fmt,
+        sr,
+        ch,
+        pcm,
+        opts.sample_rate,
+        opts.keep_cover,
+        opts.keep_lyrics,
+    )
 }
 
-fn trim_blocking(src: &Path, out: &Path, fmt: OutputFormat, opts: &TrimOptions) -> Result<(), String> {
+fn trim_blocking(
+    src: &Path,
+    out: &Path,
+    fmt: OutputFormat,
+    opts: &TrimOptions,
+) -> Result<(), String> {
     if !src.is_file() {
         return Err(format!("input not found: {}", src.display()));
     }
@@ -290,7 +317,8 @@ fn trim_blocking(src: &Path, out: &Path, fmt: OutputFormat, opts: &TrimOptions) 
         return Err("音频解码结果为空".into());
     }
     let begin = ((opts.start_secs * sr as f64).round() as i64).clamp(0, frames as i64) as usize;
-    let end = ((opts.end_secs * sr as f64).round() as i64).clamp(begin as i64, frames as i64) as usize;
+    let end =
+        ((opts.end_secs * sr as f64).round() as i64).clamp(begin as i64, frames as i64) as usize;
     if end <= begin {
         return Err(format!(
             "选区为空：{:.3}s ~ {:.3}s",
@@ -298,7 +326,17 @@ fn trim_blocking(src: &Path, out: &Path, fmt: OutputFormat, opts: &TrimOptions) 
         ));
     }
     let sliced = pcm[begin * nch..end * nch].to_vec();
-    render_output(src, out, fmt, sr, ch, sliced, opts.sample_rate, opts.keep_cover, opts.keep_lyrics)
+    render_output(
+        src,
+        out,
+        fmt,
+        sr,
+        ch,
+        sliced,
+        opts.sample_rate,
+        opts.keep_cover,
+        opts.keep_lyrics,
+    )
 }
 
 /// 解码 + 可选重采样 + 编码 + 标签迁移的公共尾部。
@@ -325,8 +363,7 @@ fn render_output(
         sr = target_sr;
     }
 
-    fs::create_dir_all(out.parent().ok_or("out_dir missing")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(out.parent().ok_or("out_dir missing")?).map_err(|e| e.to_string())?;
     let tmp = out.with_extension("part");
     let res = match fmt {
         OutputFormat::Wav => encode_wav_f32(&tmp, sr, ch, &pcm),
@@ -335,7 +372,10 @@ fn render_output(
     };
     match res {
         Ok(()) => fs::rename(&tmp, out).map_err(|e| e.to_string()),
-        Err(e) => { let _ = fs::remove_file(&tmp); Err(e) }
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
     }?;
 
     // 标签/封面迁移为尽力而为：失败不影响已生成的音频文件
@@ -354,7 +394,12 @@ fn decode_input(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
     }
 }
 
-enum InputClass { Symphonia, Ape, Wv, Unsupported }
+enum InputClass {
+    Symphonia,
+    Ape,
+    Wv,
+    Unsupported,
+}
 
 // ===== 标签/封面迁移（lofty，统一 TaggedFile IO） =====
 
@@ -401,9 +446,7 @@ fn write_output_tags(
     use lofty::picture::{Picture, PictureType};
     use lofty::tag::{ItemKey, Tag};
 
-    if (!keep_lyrics || meta.text_items.is_empty())
-        && (!keep_cover || meta.pictures.is_empty())
-    {
+    if (!keep_lyrics || meta.text_items.is_empty()) && (!keep_cover || meta.pictures.is_empty()) {
         return Ok(());
     }
 
@@ -522,7 +565,9 @@ fn resample_f32(pcm: &[f32], ch: u16, sr_in: u32, sr_out: u32) -> Result<Vec<f32
 
 fn classify_input(ext: &str) -> InputClass {
     match ext {
-        "mp3"|"flac"|"m4a"|"aac"|"ogg"|"wav"|"aif"|"aiff"|"alac" => InputClass::Symphonia,
+        "mp3" | "flac" | "m4a" | "aac" | "ogg" | "wav" | "aif" | "aiff" | "alac" => {
+            InputClass::Symphonia
+        }
         "ape" => InputClass::Ape,
         "wv" => InputClass::Wv,
         _ => InputClass::Unsupported,
@@ -545,15 +590,31 @@ fn decode_via_symphonia(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|e| format!("probe fail: {e}"))?;
 
-    let track = probed.format.tracks().iter()
+    let track = probed
+        .format
+        .tracks()
+        .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .ok_or("no audio track")?;
     let track_id = track.id;
-    let sr = track.codec_params.sample_rate.filter(|r| *r > 0).ok_or("invalid sr")?;
-    let ch = track.codec_params.channels.map(|c| c.count()).filter(|c| *c > 0)
+    let sr = track
+        .codec_params
+        .sample_rate
+        .filter(|r| *r > 0)
+        .ok_or("invalid sr")?;
+    let ch = track
+        .codec_params
+        .channels
+        .map(|c| c.count())
+        .filter(|c| *c > 0)
         .ok_or("invalid channels")? as u16;
 
     let mut decoder = symphonia::default::get_codecs()
@@ -568,15 +629,28 @@ fn decode_via_symphonia(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
     loop {
         let packet = match format.next_packet() {
             Ok(p) => p,
-            Err(symphonia::core::errors::Error::ResetRequired) => { decoder.reset(); continue; }
+            Err(symphonia::core::errors::Error::ResetRequired) => {
+                decoder.reset();
+                continue;
+            }
             Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break
+            }
             Err(e) => return Err(format!("decode fail: {e}")),
         };
-        if packet.track_id() != track_id { continue; }
-        let dec = match decoder.decode(&packet) { Ok(d) => d, Err(_) => continue };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let dec = match decoder.decode(&packet) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
         let frames = dec.frames();
-        if frames == 0 { continue; }
+        if frames == 0 {
+            continue;
+        }
         if sb_frames < frames {
             sb = Some(SampleBuffer::<f32>::new(frames as u64, *dec.spec()));
             sb_frames = frames;
@@ -592,16 +666,20 @@ fn decode_ape_pcm(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
     let mut file = fs::File::open(src).map_err(|e| e.to_string())?;
     let start = file.stream_position().map_err(|e| e.to_string())?;
     let parsed = ape_decoder::format::parse(&mut file).map_err(|e| e.to_string())?;
-    file.seek(std::io::SeekFrom::Start(start)).map_err(|e| e.to_string())?;
+    file.seek(std::io::SeekFrom::Start(start))
+        .map_err(|e| e.to_string())?;
     let ch = parsed.header.channels as u16;
     let sr = parsed.header.sample_rate;
     let bits = parsed.header.bits_per_sample;
-    if sr == 0 || ch == 0 || bits == 0 { return Err("APE header invalid".into()); }
+    if sr == 0 || ch == 0 || bits == 0 {
+        return Err("APE header invalid".into());
+    }
     let mut decoder = ape_decoder::ApeDecoder::new(file).map_err(|e| e.to_string())?;
     let info = decoder.info();
     let mut all: Vec<f32> = Vec::new();
     for frame in 0..info.total_frames {
-        let pcm = decoder.decode_frame(frame)
+        let pcm = decoder
+            .decode_frame(frame)
             .map_err(|e| format!("APE frame {frame}: {e}"))?;
         if bits == 16 {
             for chunk in pcm.chunks_exact(2) {
@@ -610,16 +688,19 @@ fn decode_ape_pcm(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
             }
         } else if bits == 24 {
             for chunk in pcm.chunks_exact(3) {
-                let mut b = [0u8; 4]; b[..3].copy_from_slice(chunk);
+                let mut b = [0u8; 4];
+                b[..3].copy_from_slice(chunk);
                 let v = i32::from_le_bytes(b) >> 8;
                 all.push(v as f32 / 8388608.0);
             }
         } else if bits == 32 {
             for chunk in pcm.chunks_exact(4) {
-                let v = i32::from_le_bytes([chunk[0],chunk[1],chunk[2],chunk[3]]);
+                let v = i32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
                 all.push(v as f32 / 2147483648.0);
             }
-        } else { return Err(format!("unsupported APE bits: {bits}")); }
+        } else {
+            return Err(format!("unsupported APE bits: {bits}"));
+        }
     }
     Ok((sr, ch, all))
 }
@@ -629,7 +710,9 @@ fn decode_wv_pcm(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
     let decoded = wavicle::decode_stream(&bytes).map_err(|e| format!("WV fail: {e}"))?;
     let ch = decoded.channels.max(1) as u16;
     let sr = decoded.sample_rate;
-    if sr == 0 || decoded.samples.is_empty() { return Err("WV invalid".into()); }
+    if sr == 0 || decoded.samples.is_empty() {
+        return Err("WV invalid".into());
+    }
     let mut all: Vec<f32> = Vec::with_capacity(decoded.samples.len());
     if decoded.is_float {
         for v in &decoded.samples {
@@ -638,40 +721,54 @@ fn decode_wv_pcm(src: &Path) -> Result<(u32, u16, Vec<f32>), String> {
     } else {
         let bits = decoded.bits_per_sample;
         let div = match bits {
-            16 => 32768.0, 24 => 8388608.0, 32 => 2147483648.0,
+            16 => 32768.0,
+            24 => 8388608.0,
+            32 => 2147483648.0,
             _ => return Err(format!("unsupported WV bits: {bits}")),
         };
-        for v in &decoded.samples { all.push(*v as f32 / div); }
+        for v in &decoded.samples {
+            all.push(*v as f32 / div);
+        }
     }
     Ok((sr, ch, all))
 }
 
 fn encode_wav_f32(out: &Path, sr: u32, ch: u16, f32: &[f32]) -> Result<(), String> {
-    fs::create_dir_all(out.parent().ok_or("out_dir missing")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(out.parent().ok_or("out_dir missing")?).map_err(|e| e.to_string())?;
     let mut file = fs::File::create(out).map_err(|e| e.to_string())?;
     let bits = 16u16;
     let block_align = ch as u32 * (bits as u32 / 8);
     let byte_rate = sr * block_align;
     let n_frames = (f32.len() as u64 / ch as u64).min(u32::MAX as u64);
-    let data_len = n_frames.saturating_mul(block_align as u64)
+    let data_len = n_frames
+        .saturating_mul(block_align as u64)
         .min(u32::MAX as u64 - 64) as u32;
     file.write_all(b"RIFF").map_err(|e| e.to_string())?;
-    file.write_all(&data_len.saturating_add(36).to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&data_len.saturating_add(36).to_le_bytes())
+        .map_err(|e| e.to_string())?;
     file.write_all(b"WAVE").map_err(|e| e.to_string())?;
     file.write_all(b"fmt ").map_err(|e| e.to_string())?;
-    file.write_all(&16u32.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&1u16.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&ch.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&sr.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&byte_rate.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&block_align.to_le_bytes()).map_err(|e| e.to_string())?;
-    file.write_all(&bits.to_le_bytes()).map_err(|e| e.to_string())?;
+    file.write_all(&16u32.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&1u16.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&ch.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&sr.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&byte_rate.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&block_align.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    file.write_all(&bits.to_le_bytes())
+        .map_err(|e| e.to_string())?;
     file.write_all(b"data").map_err(|e| e.to_string())?;
-    file.write_all(&data_len.to_le_bytes()).map_err(|e| e.to_string())?;
-    let clamped: Vec<i16> = f32.iter().map(|&s| {
-        (s * 32767.0).clamp(-32768.0, 32767.0).round() as i16
-    }).collect();
+    file.write_all(&data_len.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    let clamped: Vec<i16> = f32
+        .iter()
+        .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0).round() as i16)
+        .collect();
     let bytes: Vec<u8> = clamped.iter().flat_map(|v| v.to_le_bytes()).collect();
     file.write_all(&bytes).map_err(|e| e.to_string())?;
     file.flush().map_err(|e| e.to_string())?;
@@ -679,31 +776,33 @@ fn encode_wav_f32(out: &Path, sr: u32, ch: u16, f32: &[f32]) -> Result<(), Strin
 }
 
 fn encode_flac_f32(out: &Path, sr: u32, ch: u16, f32: &[f32]) -> Result<(), String> {
-    fs::create_dir_all(out.parent().ok_or("out_dir missing")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(out.parent().ok_or("out_dir missing")?).map_err(|e| e.to_string())?;
     // f32 -> i16
-    let pcm: Vec<i32> = f32.iter().map(|&s| {
-        (s * 32767.0).clamp(-32768.0, 32767.0).round() as i32
-    }).collect();
+    let pcm: Vec<i32> = f32
+        .iter()
+        .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0).round() as i32)
+        .collect();
     use flacenc::component::BitRepr;
     use flacenc::error::Verify;
     let source = flacenc::source::MemSource::from_samples(&pcm, ch as usize, 16, sr as usize);
     let config = flacenc::config::Encoder::default();
-    let verified = config.into_verified()
+    let verified = config
+        .into_verified()
         .map_err(|(_, e)| format!("config verify: {e:?}"))?;
-    let stream = flacenc::encode_with_fixed_block_size(
-        &verified, source, 4096,
-    ).map_err(|e| format!("FLAC encode: {e}"))?;
+    let stream = flacenc::encode_with_fixed_block_size(&verified, source, 4096)
+        .map_err(|e| format!("FLAC encode: {e}"))?;
     let mut file = fs::File::create(out).map_err(|e| e.to_string())?;
     let mut sink = flacenc::bitsink::MemSink::<u8>::with_capacity(8192);
-    stream.write(&mut sink).map_err(|e| format!("FLAC encode: {e}"))?;
-    file.write_all(sink.as_slice()).map_err(|e| format!("FLAC write: {e}"))?;
+    stream
+        .write(&mut sink)
+        .map_err(|e| format!("FLAC encode: {e}"))?;
+    file.write_all(sink.as_slice())
+        .map_err(|e| format!("FLAC write: {e}"))?;
     Ok(())
 }
 
 fn encode_mp3_f32(out: &Path, sr: u32, ch: u16, f32: &[f32]) -> Result<(), String> {
-    fs::create_dir_all(out.parent().ok_or("out_dir missing")?)
-        .map_err(|e| e.to_string())?;
+    fs::create_dir_all(out.parent().ok_or("out_dir missing")?).map_err(|e| e.to_string())?;
     use rusty_mp3::{Error, Mp3Encoder, Mp3EncoderConfig};
 
     let mut enc = Mp3Encoder::new(Mp3EncoderConfig {

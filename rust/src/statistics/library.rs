@@ -1,4 +1,4 @@
-﻿use super::*;
+use super::*;
 
 // =====================================================
 // 曲库统计
@@ -90,7 +90,9 @@ pub fn get_format_distribution(conn: &rusqlite::Connection) -> Result<FormatDist
 }
 
 /// 获取音质分布统计
-pub fn get_quality_distribution(conn: &rusqlite::Connection) -> Result<QualityDistribution, String> {
+pub fn get_quality_distribution(
+    conn: &rusqlite::Connection,
+) -> Result<QualityDistribution, String> {
     let mut stmt = conn
         .prepare("SELECT format, codec, bit_depth, sample_rate, bitrate FROM songs")
         .map_err(|e| e.to_string())?;
@@ -231,4 +233,3 @@ pub fn get_library_stats(conn: &rusqlite::Connection) -> Result<LibraryStats, St
         this_month_added,
     })
 }
-

@@ -35,7 +35,10 @@ fn decode_kg_krc(base64_data: &str) -> Result<String, String> {
     for (name, attempt) in [
         ("raw deflate", decompress_deflate_to_bytes(&data)),
         ("zlib", decompress_zlib_to_bytes(&data)),
-        ("zlib/skip-header", decompress_zlib_to_bytes_skip_header(&data)),
+        (
+            "zlib/skip-header",
+            decompress_zlib_to_bytes_skip_header(&data),
+        ),
         ("gzip", decompress_gzip_to_bytes(&data)),
     ] {
         match attempt {
@@ -49,7 +52,6 @@ fn decode_kg_krc(base64_data: &str) -> Result<String, String> {
 }
 
 // ==================== KW Lyric Encryption/Decryption (Kuwo) ====================
-
 
 // ==================== KG (Kugou) Lyric Fetching ====================
 
@@ -192,7 +194,9 @@ fn kg_get_intv(interval: &str) -> u32 {
     intv
 }
 
-pub(crate) async fn fetch_kg_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
+pub(crate) async fn fetch_kg_lyric(
+    song_info: &LyricSongInfo,
+) -> Result<Option<LyricResult>, String> {
     let name = &song_info.name;
     let hash = song_info.hash.as_deref().unwrap_or(&song_info.songmid);
     let time = song_info

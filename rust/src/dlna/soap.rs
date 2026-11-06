@@ -136,7 +136,10 @@ mod tests {
     #[test]
     fn extract_tag_handles_attrs_and_case() {
         let xml = r#"<root><TrackDuration a="1">0:03:21</TrackDuration><missing/></root>"#;
-        assert_eq!(extract_tag(xml, "TrackDuration").as_deref(), Some("0:03:21"));
+        assert_eq!(
+            extract_tag(xml, "TrackDuration").as_deref(),
+            Some("0:03:21")
+        );
         assert_eq!(extract_tag(xml, "missing").as_deref(), Some(""));
         assert_eq!(extract_tag(xml, "nope"), None);
     }

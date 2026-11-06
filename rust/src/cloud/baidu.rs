@@ -42,12 +42,12 @@ const SAVE_DIR: &str = "/apps/弦予音乐";
 // XIANYU_BAIDU_APPKEY / XIANYU_BAIDU_APPSECRET；未注入（CI/他人克隆）
 // 时保持占位符，密钥永不入 git。
 const OAUTH_CLIENT_ID: &str = match option_env!("XIANYU_BAIDU_APPKEY") {
-	Some(key) => key,
-	None => "__BAIDU_APPKEY__",
+    Some(key) => key,
+    None => "__BAIDU_APPKEY__",
 };
 const OAUTH_CLIENT_SECRET: &str = match option_env!("XIANYU_BAIDU_APPSECRET") {
-	Some(secret) => secret,
-	None => "__BAIDU_APPSECRET__",
+    Some(secret) => secret,
+    None => "__BAIDU_APPSECRET__",
 };
 // 统一移动 UA：百度网页会话与创建环境 UA 绑定——移动端 WebView（安卓
 // UA）种的 Cookie 用桌面 UA 请求会判定会话无效（/disk/main 302 循环、
@@ -155,7 +155,10 @@ async fn access_token(cred: &Value) -> Result<(String, Option<Value>), (i32, Str
         .and_then(Value::as_str)
         .unwrap_or(&refresh_token)
         .to_string();
-    let expires_in = j.get("expires_in").and_then(Value::as_i64).unwrap_or(2_592_000);
+    let expires_in = j
+        .get("expires_in")
+        .and_then(Value::as_i64)
+        .unwrap_or(2_592_000);
     let s = |k: &str| {
         cred.get(k)
             .and_then(Value::as_str)
@@ -341,7 +344,11 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             };
             return Err(biz_err(format!("{msg}(errno={errno})")));
         }
-        let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+        let list = j
+            .get("list")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let files: Vec<Value> = list.iter().map(file_from_xpan_item).collect();
         let next_cursor = if files.len() >= 100 {
             Some((start + 100).to_string())
@@ -373,7 +380,11 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
         return Err(biz_err(format!("目录列表请求失败(errno={errno})")));
     }
-    let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+    let list = j
+        .get("list")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let mut files = Vec::new();
     for e in &list {
         files.push(file_json(
@@ -434,7 +445,9 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     // xpan 无全盘搜索 API，OAuth 轨明确降级提示。
     if is_oauth(&req.cred) {
-        return Err(biz_err("OAuth 账号暂不支持全盘搜索（百度开放平台未提供接口）"));
+        return Err(biz_err(
+            "OAuth 账号暂不支持全盘搜索（百度开放平台未提供接口）",
+        ));
     }
     let keyword = req.param_str("keyword");
     if keyword.is_empty() {
@@ -452,7 +465,11 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if errno != 0 {
         return Err(biz_err(&format!("搜索请求失败 (errno={errno})")));
     }
-    let list = j.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+    let list = j
+        .get("list")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let files: Vec<Value> = list.iter().map(file_from_search_item).collect();
     Ok(CloudOut::plain(list_result_json(files, None)))
 }
@@ -460,7 +477,9 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     // 分享接口仅网页 API（Cookie 登录态），OAuth 轨明确提示。
     if is_oauth(&req.cred) {
-        return Err(biz_err("分享解析需 Cookie 登录态：请用「填 Cookie」绑定的账号，或转存到网盘后播放"));
+        return Err(biz_err(
+            "分享解析需 Cookie 登录态：请用「填 Cookie」绑定的账号，或转存到网盘后播放",
+        ));
     }
     let info = pre_parse_share(req, "baidu")?;
     // Dart：info?.shareId ?? url。
@@ -518,7 +537,11 @@ async fn parse_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     if errno != Some(0) {
         return Err(biz_err("分享已失效"));
     }
-    let list = lj.get("list").and_then(Value::as_array).cloned().unwrap_or_default();
+    let list = lj
+        .get("list")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let mut files = Vec::new();
     for e in &list {
         // token 存 `<shareid>:<from>`，转存时用。
@@ -591,7 +614,9 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     // 分享接口仅网页 API（Cookie 登录态），OAuth 轨明确提示。
     if is_oauth(&req.cred) {
-        return Err(biz_err("分享转存需 Cookie 登录态：请用「填 Cookie」绑定的账号"));
+        return Err(biz_err(
+            "分享转存需 Cookie 登录态：请用「填 Cookie」绑定的账号",
+        ));
     }
     let share = req.param_obj("share");
     let files_in = share
@@ -660,13 +685,13 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         }
         let old_id = jstr(e.get("from_fs_id"));
         let src = by_fs_id.get(&old_id);
-        let name = src
-            .map(|s| jstr(s.get("name")))
-            .unwrap_or_default();
+        let name = src.map(|s| jstr(s.get("name"))).unwrap_or_default();
         let is_dir = src
             .map(|s| s.get("isDir").and_then(Value::as_bool).unwrap_or(false))
             .unwrap_or(false);
-        let size = src.map(|s| num_i64(s.get("size")).unwrap_or(0)).unwrap_or(0);
+        let size = src
+            .map(|s| num_i64(s.get("size")).unwrap_or(0))
+            .unwrap_or(0);
         out.push(file_json(
             &new_id,
             &name,
@@ -706,8 +731,7 @@ fn is_rate_limited(host: &str) -> bool {
 /// Cookie 轨签名三元组缓存：sign1/sign3/timestamp 由 gettemplatevariable
 /// 下发（账号 session 派生、长期稳定），按账号缓存后每首歌省 1 个 API
 /// 往返。errno=113（签名过期）时调用方清除，重试链路自动重拉。
-static SIGN_CACHE: OnceLock<Mutex<HashMap<String, (String, String, i64, i64)>>> =
-    OnceLock::new();
+static SIGN_CACHE: OnceLock<Mutex<HashMap<String, (String, String, i64, i64)>>> = OnceLock::new();
 const SIGN_CACHE_TTL_MS: i64 = 30 * 60 * 1000;
 
 fn sign_cache() -> &'static Mutex<HashMap<String, (String, String, i64, i64)>> {
@@ -872,8 +896,7 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             ));
         }
         // dlink 下载校验 UA 为 netdisk 系；跟随 302 归一到下载边缘终态。
-        let dlink =
-            resolve_final_url(&dlink, &[("User-Agent".into(), NETDISK_UA.into())]).await;
+        let dlink = resolve_final_url(&dlink, &[("User-Agent".into(), NETDISK_UA.into())]).await;
         if is_rate_limited(&host_of(&dlink)) {
             return Err(biz_err("该文件被限速，暂无法播放"));
         }
@@ -922,8 +945,7 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
             let r = j.get("result").cloned().unwrap_or(Value::Null);
             let sign1 = jstr(r.get("sign1"));
             let sign3 = jstr(r.get("sign3"));
-            let timestamp =
-                num_i64(r.get("timestamp")).unwrap_or_else(|| now_ms() / 1000);
+            let timestamp = num_i64(r.get("timestamp")).unwrap_or_else(|| now_ms() / 1000);
             if sign1.is_empty() || sign3.is_empty() {
                 return Err(biz_err("直链获取失败"));
             }
@@ -952,7 +974,11 @@ async fn direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         if cred_expired(errno) {
             return Err(biz_err("登录已过期，请重新绑定"));
         }
-        let msg = if errno == 113 { "签名已过期，请重试" } else { "直链获取失败" };
+        let msg = if errno == 113 {
+            "签名已过期，请重试"
+        } else {
+            "直链获取失败"
+        };
         // 签名相关失败清缓存，Dart 侧重取链路将拉到新三元组
         drop_sign(&sign_key);
         return Err(biz_err(format!("{msg}(errno={errno})")));
@@ -1039,7 +1065,9 @@ mod tests {
 
     #[test]
     fn oauth_track_detection() {
-        assert!(is_oauth(&json!({ "refreshToken": "r", "accessToken": "a" })));
+        assert!(is_oauth(
+            &json!({ "refreshToken": "r", "accessToken": "a" })
+        ));
         assert!(is_oauth(&json!({ "accessToken": "a" })));
         assert!(!is_oauth(&json!({ "BDUSS": "b" })));
         assert!(!is_oauth(&json!({ "refreshToken": "" })));
@@ -1111,9 +1139,15 @@ mod tests {
     fn name_fallback_skips_null_only() {
         let e = json!({ "server_filename": "", "filename": "fb.flac" });
         // Dart `??` 只跳 null：空串不回退。
-        assert_eq!(coalesce_jstr(e.get("server_filename"), e.get("filename")), "");
+        assert_eq!(
+            coalesce_jstr(e.get("server_filename"), e.get("filename")),
+            ""
+        );
         let e2 = json!({ "filename": "fb.flac" });
-        assert_eq!(coalesce_jstr(e2.get("server_filename"), e2.get("filename")), "fb.flac");
+        assert_eq!(
+            coalesce_jstr(e2.get("server_filename"), e2.get("filename")),
+            "fb.flac"
+        );
     }
 
     #[test]
@@ -1184,7 +1218,9 @@ mod tests {
     fn rate_limited_host_check() {
         assert!(is_rate_limited(&host_of("https://data.d2-ant.baidu.com/x")));
         assert!(is_rate_limited(&host_of("https://speed-limited.xxx.com/y")));
-        assert!(!is_rate_limited(&host_of("https://d.pcs.baidu.com/file?x=1")));
+        assert!(!is_rate_limited(&host_of(
+            "https://d.pcs.baidu.com/file?x=1"
+        )));
         assert_eq!(host_of("https://u:p@host.example:8443/a"), "host.example");
     }
 

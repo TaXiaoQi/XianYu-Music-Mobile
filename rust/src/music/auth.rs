@@ -24,9 +24,7 @@ const LEGACY_DEFAULT_API_SECRETS: [&str; 1] = ["acca7562ecaf830fcce45814f110eace
 /// api_secret.txt 的残留值是否应被忽略（空白、当前默认或历史默认）。
 fn is_stale_saved_secret(saved: &str) -> bool {
     let saved = saved.trim();
-    saved.is_empty()
-        || saved == DEFAULT_API_SECRET
-        || LEGACY_DEFAULT_API_SECRETS.contains(&saved)
+    saved.is_empty() || saved == DEFAULT_API_SECRET || LEGACY_DEFAULT_API_SECRETS.contains(&saved)
 }
 
 /// 官方后端地址
@@ -77,8 +75,8 @@ fn generate_nonce() -> String {
 fn build_signed_headers(body: &str, api_secret: &str, timestamp: i64) -> SignedHeaders {
     use hmac::Mac;
     let nonce = generate_nonce();
-    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(api_secret.as_bytes())
-        .expect("HMAC key");
+    let mut mac =
+        hmac::Hmac::<sha2::Sha256>::new_from_slice(api_secret.as_bytes()).expect("HMAC key");
     mac.update(format!("{}{}{}", timestamp, nonce, body).as_bytes());
     let sign = hex::encode(mac.finalize().into_bytes());
     SignedHeaders {
@@ -309,7 +307,15 @@ pub async fn signed_post_json(
     fetch_timeout_ms: Option<u64>,
 ) -> Result<Value, String> {
     let api_secret = read_api_secret(data_dir);
-    do_signed_post(data_dir, &url, "signedPostJson", body, fetch_timeout_ms, &api_secret).await
+    do_signed_post(
+        data_dir,
+        &url,
+        "signedPostJson",
+        body,
+        fetch_timeout_ms,
+        &api_secret,
+    )
+    .await
 }
 
 /// 需要 PoW 工作量证明的动作（V-05 加固）：
@@ -358,9 +364,7 @@ async fn fetch_and_solve_pow(
         return None;
     }
     let nonce = solve_pow(&salt, difficulty as u32)?;
-    Some(
-        serde_json::json!({ "challenge_id": challenge_id, "nonce": nonce, "algorithm": "sha256" }),
-    )
+    Some(serde_json::json!({ "challenge_id": challenge_id, "nonce": nonce, "algorithm": "sha256" }))
 }
 
 /// 暴力求解：找 nonce 使 sha256(salt ++ nonce) 的前 difficulty 个二进制位为 0。

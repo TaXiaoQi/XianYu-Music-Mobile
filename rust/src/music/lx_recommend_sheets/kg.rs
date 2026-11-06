@@ -7,7 +7,13 @@ use crate::music::lx_search::{build_kugou_cover_url, http_post_json};
 const PAGE_SIZE: usize = 20;
 
 /// 档位标签（t 参数直取的固定排序位），与插件 pinned 顺序一致
-const KG_PINNED: [(&str, &str); 5] = [("推荐", "5"), ("最热", "6"), ("最新", "7"), ("热藏", "3"), ("飙升", "8")];
+const KG_PINNED: [(&str, &str); 5] = [
+    ("推荐", "5"),
+    ("最热", "6"),
+    ("最新", "7"),
+    ("热藏", "3"),
+    ("飙升", "8"),
+];
 
 fn kg_sheets_url(sort_id: &str, category_id: &str, page: u32) -> String {
     format!(
@@ -19,7 +25,10 @@ fn kg_sheets_url(sort_id: &str, category_id: &str, page: u32) -> String {
 pub(crate) async fn kg_tags() -> Result<LxRecommendTagsResult, String> {
     let data = tokio::time::timeout(
         Duration::from_secs(6),
-        http_get_json("http://www2.kugou.kugou.com/yueku/v9/special/getSpecial?is_smarty=1", &[]),
+        http_get_json(
+            "http://www2.kugou.kugou.com/yueku/v9/special/getSpecial?is_smarty=1",
+            &[],
+        ),
     )
     .await
     .map_err(|_| "KG recommend tags timeout".to_string())??;
@@ -40,7 +49,10 @@ pub(crate) async fn kg_tags() -> Result<LxRecommendTagsResult, String> {
     if let Some(map) = tagids.and_then(|v| v.as_object()) {
         for (title, group) in map {
             let empty = Vec::new();
-            let items = group.get("data").and_then(|v| v.as_array()).unwrap_or(&empty);
+            let items = group
+                .get("data")
+                .and_then(|v| v.as_array())
+                .unwrap_or(&empty);
             let tags: Vec<LxRecommendTag> = items
                 .iter()
                 .filter_map(|tag| {
@@ -59,11 +71,17 @@ pub(crate) async fn kg_tags() -> Result<LxRecommendTagsResult, String> {
                 })
                 .collect();
             if !tags.is_empty() {
-                groups.push(LxRecommendTagGroup { title: decode_name(title), data: tags });
+                groups.push(LxRecommendTagGroup {
+                    title: decode_name(title),
+                    data: tags,
+                });
             }
         }
     }
-    Ok(LxRecommendTagsResult { pinned, data: groups })
+    Ok(LxRecommendTagsResult {
+        pinned,
+        data: groups,
+    })
 }
 
 pub(crate) async fn kg_sheets_by_tag(
@@ -90,7 +108,10 @@ pub(crate) async fn kg_sheets_by_tag(
         kg_fetch_special(sort_id, category_id, page).await?
     };
 
-    Ok(LxRecommendSheetsResult { is_end: list.len() < PAGE_SIZE, data: list })
+    Ok(LxRecommendSheetsResult {
+        is_end: list.len() < PAGE_SIZE,
+        data: list,
+    })
 }
 
 async fn kg_fetch_special(

@@ -16,7 +16,8 @@ static TX_WORD_EXTRACT_RE: OnceLock<Regex> = OnceLock::new();
 // ==================== TX (QQ Music) Lyric Fetching ====================
 
 fn tx_remove_tag(s: &str) -> String {
-    let re1 = TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
+    let re1 =
+        TX_LYRIC_CONTENT_OPEN_RE.get_or_init(|| Regex::new(r#"^[\S\s]*?LyricContent=""#).unwrap());
     let re2 = TX_LYRIC_CONTENT_CLOSE_RE.get_or_init(|| Regex::new(r#""/>[\S\s]*$"#).unwrap());
     re2.replace_all(&re1.replace_all(s, ""), "").to_string()
 }
@@ -29,9 +30,11 @@ fn tx_parse_lyric(lrc: &str) -> (String, String) {
 
     let line_time_re = TX_LINE_TIME_RE.get_or_init(|| Regex::new(r"^\[(\d+),\d+]").unwrap());
     let line_time2_re = TX_LINE_TIME2_RE.get_or_init(|| Regex::new(r"^\[([\d:.]+)]").unwrap());
-    let word_time_all_re = TX_WORD_TIME_GROUP_RE.get_or_init(|| Regex::new(r"(\(\d+,\d+\))").unwrap());
+    let word_time_all_re =
+        TX_WORD_TIME_GROUP_RE.get_or_init(|| Regex::new(r"(\(\d+,\d+\))").unwrap());
     let word_time_re = TX_WORD_TIME_RE.get_or_init(|| Regex::new(r"\(\d+,\d+\)").unwrap());
-    let word_extract_re = TX_WORD_EXTRACT_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+)\)").unwrap());
+    let word_extract_re =
+        TX_WORD_EXTRACT_RE.get_or_init(|| Regex::new(r"\((\d+),(\d+)\)").unwrap());
 
     let mut lxlrc_lines: Vec<String> = Vec::new();
     let mut lrc_lines: Vec<String> = Vec::new();
@@ -228,17 +231,27 @@ fn tx_parse(lrc: &str, tlrc: &str, rlrc: &str) -> LyricResult {
     info
 }
 
-pub(crate) async fn fetch_tx_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
+pub(crate) async fn fetch_tx_lyric(
+    song_info: &LyricSongInfo,
+) -> Result<Option<LyricResult>, String> {
     let song_id_num = song_info
         .song_id
         .as_ref()
-        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok())))
+        .and_then(|v| {
+            v.as_i64()
+                .or_else(|| v.as_str().and_then(|s| s.parse::<i64>().ok()))
+        })
         .unwrap_or(0);
     let songmid = &song_info.songmid;
     let interval_sec = song_info
         .interval_ms
         .map(|ms| (ms / 1000) as i64)
-        .or_else(|| song_info.interval.as_ref().and_then(|s| s.parse::<i64>().ok()))
+        .or_else(|| {
+            song_info
+                .interval
+                .as_ref()
+                .and_then(|s| s.parse::<i64>().ok())
+        })
         .unwrap_or(0);
     let album_mid = song_info.album_mid.clone().unwrap_or_default();
 

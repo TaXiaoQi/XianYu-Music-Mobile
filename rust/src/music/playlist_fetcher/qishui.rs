@@ -958,10 +958,16 @@ mod tests {
             "https://a.com/x.png"
         );
         // null / 缺失 → ""
-        assert_eq!(build_image_url_from_cover(Some(&Value::Null), DEFAULT_COVER_SIZE), "");
+        assert_eq!(
+            build_image_url_from_cover(Some(&Value::Null), DEFAULT_COVER_SIZE),
+            ""
+        );
         assert_eq!(build_image_url_from_cover(None, DEFAULT_COVER_SIZE), "");
         // 非字符串非对象（数字）→ ""
-        assert_eq!(build_image_url_from_cover(Some(&json!(123)), DEFAULT_COVER_SIZE), "");
+        assert_eq!(
+            build_image_url_from_cover(Some(&json!(123)), DEFAULT_COVER_SIZE),
+            ""
+        );
         // uri + template_prefix
         assert_eq!(
             build_image_url_from_cover(

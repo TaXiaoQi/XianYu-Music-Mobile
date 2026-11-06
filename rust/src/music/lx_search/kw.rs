@@ -2,8 +2,8 @@
 
 use super::*;
 use regex::Regex;
-use std::sync::OnceLock;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 const KW_MINFO_REGEX: &str = r"level:(\w+),bitrate:(\d+),format:(\w+),size:([\w.]+)";
 
@@ -155,11 +155,7 @@ pub(crate) async fn search_kw(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
     .await
 }
 
-async fn search_kw_page(
-    keyword: &str,
-    page: u32,
-    limit: u32,
-) -> Result<Vec<LxSearchItem>, String> {
+async fn search_kw_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     // pn 为 0 起始页码
     let url = format!(
         "http://search.kuwo.cn/r.s?client=kt&all={}&pn={}&rn={}&uid=794762570&ver=kwplayer_ar_9.2.2.1&vipver=1&show_copyright_off=1&newver=1&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&vermerge=1&mobi=1&issubtitle=1",

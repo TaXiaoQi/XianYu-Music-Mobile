@@ -19,12 +19,18 @@ pub async fn describe_device(
         .map_err(|e| format!("读取设备描述失败: {e}"))?;
 
     let base_url = base_of(location);
-    let udn = extract_tag(&text, "UDN").unwrap_or_default().trim().to_string();
+    let udn = extract_tag(&text, "UDN")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let friendly_name = extract_tag(&text, "friendlyName")
         .unwrap_or_else(|| "未知设备".into())
         .trim()
         .to_string();
-    let model_name = extract_tag(&text, "modelName").unwrap_or_default().trim().to_string();
+    let model_name = extract_tag(&text, "modelName")
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
     // 扫描 service 块，定位 AVTransport / RenderingControl 的 controlURL。
     let (mut avt, mut rcs) = (None, None);
@@ -42,7 +48,9 @@ pub async fn describe_device(
     }
 
     if avt.is_none() {
-        return Err(format!("{friendly_name} 不支持 AVTransport（非 DLNA 渲染器）"));
+        return Err(format!(
+            "{friendly_name} 不支持 AVTransport（非 DLNA 渲染器）"
+        ));
     }
 
     Ok(DlnaDevice {

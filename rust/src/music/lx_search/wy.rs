@@ -13,11 +13,7 @@ pub(crate) async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
     .await
 }
 
-async fn search_wy_page(
-    keyword: &str,
-    page: u32,
-    limit: u32,
-) -> Result<Vec<LxSearchItem>, String> {
+async fn search_wy_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let offset = (page - 1) * limit;
     let url = format!(
         "https://music.163.com/api/search/get/web?s={}&type=1&offset={}&limit={}",

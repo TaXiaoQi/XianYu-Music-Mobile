@@ -33,7 +33,11 @@ fn record_pinned_ips(host: &str, ips: Vec<IpAddr>) {
 }
 
 fn pinned_anchor(host: &str) -> Option<Vec<IpAddr>> {
-    pinned_ips().lock().ok()?.get(&host.to_ascii_lowercase()).cloned()
+    pinned_ips()
+        .lock()
+        .ok()?
+        .get(&host.to_ascii_lowercase())
+        .cloned()
 }
 
 /// 判定 IP 是否为代理 fake-ip 保留段（198.18.0.0/15）。
@@ -175,7 +179,9 @@ impl Resolve for OutboundDnsResolver {
         Box::pin(async move {
             let ips: Vec<IpAddr> = match pinned_anchor(&host) {
                 Some(ips) if !ips.is_empty() => ips,
-                _ => resolve_allowed_ips(&host, 443).await.map_err(boxed_io_err)?,
+                _ => resolve_allowed_ips(&host, 443)
+                    .await
+                    .map_err(boxed_io_err)?,
             };
             // reqwest 会用 URL 端口覆盖此处 SocketAddr 的端口，故端口先置 0
             let addrs: Box<dyn Iterator<Item = SocketAddr> + Send> =
@@ -350,7 +356,9 @@ pub fn validate_outbound_url_sync(url: &str) -> Result<reqwest::Url, String> {
         .to_string();
     if let Some(p) = parsed.port() {
         if !port_allowed(p) {
-            return Err(format!("端口不在允许范围（80/443/3000/8000/8080/8082/8443/8888）: {p}"));
+            return Err(format!(
+                "端口不在允许范围（80/443/3000/8000/8080/8082/8443/8888）: {p}"
+            ));
         }
     }
     check_host(&host)?;
@@ -438,8 +446,12 @@ mod tests {
         assert!(forbidden_ip(IpAddr::V6("fd00::1".parse().unwrap())));
         assert!(forbidden_ip(IpAddr::V6("fe80::1".parse().unwrap())));
         // ::ffff:127.0.0.1 → 127.0.0.1 被禁
-        assert!(forbidden_ip(IpAddr::V6("::ffff:127.0.0.1".parse().unwrap())));
-        assert!(!forbidden_ip(IpAddr::V6("2606:4700:4700::1111".parse().unwrap())));
+        assert!(forbidden_ip(IpAddr::V6(
+            "::ffff:127.0.0.1".parse().unwrap()
+        )));
+        assert!(!forbidden_ip(IpAddr::V6(
+            "2606:4700:4700::1111".parse().unwrap()
+        )));
     }
 
     #[test]
@@ -469,21 +481,38 @@ mod tests {
 
     #[test]
     fn rejects_internal_ip_literal() {
-        assert!(validate_url_ip_literal("http://127.0.0.1/x").is_err(), "127.0.0.1");
-        assert!(validate_url_ip_literal("http://10.0.0.5/x").is_err(), "10.0.0.5");
-        assert!(validate_url_ip_literal("http://169.254.169.254/latest/meta-data").is_err(), "meta");
+        assert!(
+            validate_url_ip_literal("http://127.0.0.1/x").is_err(),
+            "127.0.0.1"
+        );
+        assert!(
+            validate_url_ip_literal("http://10.0.0.5/x").is_err(),
+            "10.0.0.5"
+        );
+        assert!(
+            validate_url_ip_literal("http://169.254.169.254/latest/meta-data").is_err(),
+            "meta"
+        );
         assert!(validate_url_ip_literal("http://[::1]/x").is_err(), "::1");
-        assert!(validate_url_ip_literal("http://[::ffff:192.168.1.1]/x").is_err(), "v4mapped");
+        assert!(
+            validate_url_ip_literal("http://[::ffff:192.168.1.1]/x").is_err(),
+            "v4mapped"
+        );
     }
 
     #[test]
     fn dsp_entry_allows_loopback_only() {
         // DSP 播放入口：回环代理 URL 放行
-        assert!(validate_url_ip_literal_allow_loopback("http://127.0.0.1:8765/token/audio?u=x").is_ok());
+        assert!(
+            validate_url_ip_literal_allow_loopback("http://127.0.0.1:8765/token/audio?u=x").is_ok()
+        );
         assert!(validate_url_ip_literal_allow_loopback("http://[::1]:8765/x").is_ok());
         assert!(validate_url_ip_literal_allow_loopback("http://[::ffff:127.0.0.1]/x").is_ok());
         // 其余禁区（云元数据/私网/CGNAT/多播）依旧拒绝
-        assert!(validate_url_ip_literal_allow_loopback("http://169.254.169.254/latest/meta-data").is_err());
+        assert!(
+            validate_url_ip_literal_allow_loopback("http://169.254.169.254/latest/meta-data")
+                .is_err()
+        );
         assert!(validate_url_ip_literal_allow_loopback("http://10.0.0.5/x").is_err());
         assert!(validate_url_ip_literal_allow_loopback("http://192.168.1.1/x").is_err());
         assert!(validate_url_ip_literal_allow_loopback("http://100.64.0.1/x").is_err());

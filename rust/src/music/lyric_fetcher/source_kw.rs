@@ -100,7 +100,6 @@ fn decode_kw_lyric(body_base64: &str) -> Result<String, String> {
 
 // ==================== WY eapi Encryption (NetEase) ====================
 
-
 // ==================== KW (Kuwo) Lyric Fetching ====================
 
 pub(crate) fn ms_format(time_ms: u64) -> String {
@@ -113,8 +112,9 @@ pub(crate) fn ms_format(time_ms: u64) -> String {
 
 fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
     let time_re = KW_LRC_TIME_RE.get_or_init(|| Regex::new(r"^\[([\d:.]*)]").unwrap());
-    let tag_re =
-        KW_TAG_RE.get_or_init(|| Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap());
+    let tag_re = KW_TAG_RE.get_or_init(|| {
+        Regex::new(r"\[(ver|ti|ar|al|offset|by|kuwo):\s*(\S+(?:\s+\S+)*)\s*]").unwrap()
+    });
     let lyricx_tag_re = KW_LYRICX_TAG_RE.get_or_init(|| Regex::new(r"^<-?\d+,-?\d+>").unwrap());
 
     let mut tags: Vec<String> = Vec::new();
@@ -202,7 +202,9 @@ fn kw_parse_lrc(lrc: &str) -> Result<LyricResult, String> {
     })
 }
 
-pub(crate) async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<LyricResult>, String> {
+pub(crate) async fn fetch_kw_lyric(
+    song_info: &LyricSongInfo,
+) -> Result<Option<LyricResult>, String> {
     let url = format!(
         "http://newlyric.kuwo.cn/newlyric.lrc?{}",
         kw_build_params(&song_info.songmid, true)
@@ -232,7 +234,8 @@ pub(crate) async fn fetch_kw_lyric(song_info: &LyricSongInfo) -> Result<Option<L
         Err(_) => return Ok(None),
     };
 
-    let word_time_re = KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
+    let word_time_re =
+        KW_WORD_TIME_ALL_RE.get_or_init(|| Regex::new(r"<(-?\d+),(-?\d+)(?:,-?\d+)?>").unwrap());
     if !lrc_info.tlyric.is_empty() {
         lrc_info.tlyric = word_time_re.replace_all(&lrc_info.tlyric, "").to_string();
     }

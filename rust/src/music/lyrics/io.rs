@@ -133,29 +133,29 @@ fn write_tag_item(tag: &mut Tag, key: ItemKey, description: String, lyrics: Stri
 
 fn write_embedded_lyrics(path_obj: &Path, lyrics: String) -> Result<String, String> {
     crate::music::tags::edit_tags(path_obj, |tagged_file| {
-    let current_lyrics = extract_embedded_lyrics_match(tagged_file);
-    let tag_type = current_lyrics
-        .as_ref()
-        .map(|lyrics_match| lyrics_match.tag_type)
-        .unwrap_or_else(|| tagged_file.primary_tag_type());
+        let current_lyrics = extract_embedded_lyrics_match(tagged_file);
+        let tag_type = current_lyrics
+            .as_ref()
+            .map(|lyrics_match| lyrics_match.tag_type)
+            .unwrap_or_else(|| tagged_file.primary_tag_type());
 
-    if tagged_file.tag_mut(tag_type).is_none() {
-        tagged_file.insert_tag(Tag::new(tag_type));
-    }
+        if tagged_file.tag_mut(tag_type).is_none() {
+            tagged_file.insert_tag(Tag::new(tag_type));
+        }
 
-    let tag = tagged_file
-        .tag_mut(tag_type)
-        .ok_or_else(|| "Song file does not support writable lyrics tags".to_string())?;
+        let tag = tagged_file
+            .tag_mut(tag_type)
+            .ok_or_else(|| "Song file does not support writable lyrics tags".to_string())?;
 
-    if let Some(lyrics_match) = current_lyrics {
-        write_tag_item(tag, lyrics_match.item_key, lyrics_match.description, lyrics);
-    } else if lyrics.trim().is_empty() {
-        tag.remove_key(&ItemKey::Lyrics);
-    } else {
-        let _ = tag.insert_text(ItemKey::Lyrics, lyrics);
-    }
+        if let Some(lyrics_match) = current_lyrics {
+            write_tag_item(tag, lyrics_match.item_key, lyrics_match.description, lyrics);
+        } else if lyrics.trim().is_empty() {
+            tag.remove_key(&ItemKey::Lyrics);
+        } else {
+            let _ = tag.insert_text(ItemKey::Lyrics, lyrics);
+        }
 
-    Ok(())
+        Ok(())
     })?;
 
     Ok(normalize_path(&path_obj.to_string_lossy()))
@@ -183,10 +183,7 @@ struct RemoteLyricsCtx {
     local_lyrics: Option<String>,
 }
 
-fn resolve_remote_lyrics_ctx(
-    path: &str,
-    conn: &rusqlite::Connection,
-) -> Option<RemoteLyricsCtx> {
+fn resolve_remote_lyrics_ctx(path: &str, conn: &rusqlite::Connection) -> Option<RemoteLyricsCtx> {
     let lookup = get_source_for_remote_uri(conn, path).ok()?;
     let cache_path = get_song_cache_path(conn, lookup.3.as_deref().unwrap_or(path))
         .ok()
@@ -442,7 +439,8 @@ mod tests {
         )
         .unwrap();
 
-        let ctx = resolve_remote_lyrics_ctx("remote://source/Artist/Album/Demo.flac", &conn).unwrap();
+        let ctx =
+            resolve_remote_lyrics_ctx("remote://source/Artist/Album/Demo.flac", &conn).unwrap();
         let lyrics = read_remote_song_lyrics_raw(ctx).await;
 
         assert_eq!(lyrics, "[00:01.00]cached lyric");

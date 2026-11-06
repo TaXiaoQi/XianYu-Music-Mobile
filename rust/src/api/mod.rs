@@ -6,8 +6,8 @@
 //! 约定：复合类型参数/返回值统一用 JSON 字符串传递（serde camelCase），
 //! 避免为每个内部结构体生成 Dart 绑定，Dart 侧用 `jsonDecode`/`jsonEncode` 转换。
 
-use crate::music::lyrics::build_structured_lyrics_payload;
 use crate::database::open_conn;
+use crate::music::lyrics::build_structured_lyrics_payload;
 use crate::music::url_resolver::LxUrlSongInfo;
 
 // =========================================================================
@@ -195,8 +195,7 @@ pub fn decrypt_plugin_lyric(encrypted_hex: String) -> Result<String, String> {
 /// 返回 `PlaylistImportResult{source,songs,total,info}`（camelCase）的 JSON；
 /// serde 字段名与桌面端契约冻结一致。
 pub async fn fetch_playlist_from_source(source: String, raw_id: String) -> Result<String, String> {
-    let result =
-        crate::music::playlist_fetcher::fetch_playlist_from_source(source, raw_id).await?;
+    let result = crate::music::playlist_fetcher::fetch_playlist_from_source(source, raw_id).await?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -211,10 +210,7 @@ pub async fn webdav_test_connection(source_json: String) -> Result<(), String> {
 }
 
 /// 按表单连接信息浏览 WebDAV 目录（新增源未保存时也可浏览，返回 [`RemoteFileEntry[]`] JSON）。
-pub async fn webdav_browse_directory(
-    source_json: String,
-    path: String,
-) -> Result<String, String> {
+pub async fn webdav_browse_directory(source_json: String, path: String) -> Result<String, String> {
     let source = crate::remote::types::parse_remote_source(&source_json)?;
     let entries = crate::remote::webdav::list_directory(
         crate::remote::webdav::shared_client(),
@@ -1169,11 +1165,7 @@ pub fn set_usb_exclusive_bit_perfect(enabled: bool) {
 
 /// 运行时切换跳过静音：静音段只保留 `keep_ms`，多出来的丢掉。
 /// 位置上报会把丢掉的时长加回去，所以进度条仍按原曲时间轴走。
-pub fn set_usb_exclusive_skip_silence(
-    enabled: bool,
-    threshold_db: f32,
-    keep_ms: u32,
-) {
+pub fn set_usb_exclusive_skip_silence(enabled: bool, threshold_db: f32, keep_ms: u32) {
     crate::player::commands::dispatch_playback_command(
         crate::player::commands::PlaybackCommand::SetSkipSilence {
             enabled,
@@ -1408,7 +1400,11 @@ pub fn verify_fallback_config_signature(
     signature: String,
     key_id: Option<String>,
 ) -> Result<crate::fallback_verify::FallbackVerifyResult, String> {
-    crate::fallback_verify::verify_fallback_config_signature(&config_json, &signature, key_id.as_deref())
+    crate::fallback_verify::verify_fallback_config_signature(
+        &config_json,
+        &signature,
+        key_id.as_deref(),
+    )
 }
 
 /// 校验服务端 check_beta_access 响应签名（ed25519）。返回 true 表示响应可信。
@@ -1420,11 +1416,7 @@ pub fn verify_beta_access_signature(
     signature: String,
 ) -> Result<bool, String> {
     crate::fallback_verify::verify_beta_access_signature(
-        &device_id,
-        allowed,
-        pending,
-        exp,
-        &signature,
+        &device_id, allowed, pending, exp, &signature,
     )
 }
 
@@ -2281,19 +2273,27 @@ pub async fn dlna_cast_set_uri(
 }
 
 pub async fn dlna_cast_play(device_json: String) -> Result<(), String> {
-    DlnaCore::shared().cast_play(&crate::dlna::types::parse_device(&device_json)?).await
+    DlnaCore::shared()
+        .cast_play(&crate::dlna::types::parse_device(&device_json)?)
+        .await
 }
 
 pub async fn dlna_cast_pause(device_json: String) -> Result<(), String> {
-    DlnaCore::shared().cast_pause(&crate::dlna::types::parse_device(&device_json)?).await
+    DlnaCore::shared()
+        .cast_pause(&crate::dlna::types::parse_device(&device_json)?)
+        .await
 }
 
 pub async fn dlna_cast_stop(device_json: String) -> Result<(), String> {
-    DlnaCore::shared().cast_stop(&crate::dlna::types::parse_device(&device_json)?).await
+    DlnaCore::shared()
+        .cast_stop(&crate::dlna::types::parse_device(&device_json)?)
+        .await
 }
 
 pub async fn dlna_cast_seek(device_json: String, secs: f64) -> Result<(), String> {
-    DlnaCore::shared().cast_seek(&crate::dlna::types::parse_device(&device_json)?, secs).await
+    DlnaCore::shared()
+        .cast_seek(&crate::dlna::types::parse_device(&device_json)?, secs)
+        .await
 }
 
 pub async fn dlna_cast_set_volume(device_json: String, percent: u8) -> Result<(), String> {
@@ -2322,10 +2322,7 @@ pub async fn dlna_enable_renderer(friendly_name: String, udn: String) -> Result<
     let udn = udn.trim().trim_start_matches("uuid:").to_string();
     DlnaCore::shared()
         .enable_renderer(
-            crate::dlna::RendererConfig {
-                friendly_name,
-                udn,
-            },
+            crate::dlna::RendererConfig { friendly_name, udn },
             crate::dlna::bridge::host(),
         )
         .await
@@ -2373,7 +2370,13 @@ pub fn dlna_dmr_report_playback(
         "transitioning" => TransportState::Transitioning,
         _ => TransportState::NoMedia,
     };
-    crate::dlna::bridge::report_playback(state, position_secs, duration_secs, volume_percent, muted);
+    crate::dlna::bridge::report_playback(
+        state,
+        position_secs,
+        duration_secs,
+        volume_percent,
+        muted,
+    );
 }
 
 // =========================================================================

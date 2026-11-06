@@ -50,10 +50,16 @@ pub(crate) async fn wy_tags() -> Result<LxRecommendTagsResult, String> {
         if let Some(g) = groups.iter_mut().find(|g| g.title == title) {
             g.data.push(item);
         } else {
-            groups.push(LxRecommendTagGroup { title, data: vec![item] });
+            groups.push(LxRecommendTagGroup {
+                title,
+                data: vec![item],
+            });
         }
     }
-    Ok(LxRecommendTagsResult { pinned, data: groups })
+    Ok(LxRecommendTagsResult {
+        pinned,
+        data: groups,
+    })
 }
 
 pub(crate) async fn wy_sheets_by_tag(
@@ -67,12 +73,9 @@ pub(crate) async fn wy_sheets_by_tag(
         urlencoding::encode(cat),
         page.saturating_sub(1) * PAGE_SIZE as u32
     );
-    let data = tokio::time::timeout(
-        Duration::from_secs(8),
-        http_get_json(&url, WY_HEADERS),
-    )
-    .await
-    .map_err(|_| "WY recommend sheets timeout".to_string())??;
+    let data = tokio::time::timeout(Duration::from_secs(8), http_get_json(&url, WY_HEADERS))
+        .await
+        .map_err(|_| "WY recommend sheets timeout".to_string())??;
 
     let playlists = data
         .get("playlists")
@@ -98,7 +101,9 @@ pub(crate) async fn wy_sheets_by_tag(
                     .map(|s| s.replace("http://", "https://")),
                 play_count: p.get("playCount").map(value_to_u64).unwrap_or(0),
                 works_num: p.get("trackCount").map(value_to_u64).unwrap_or(0),
-                description: decode_name(p.get("description").and_then(|v| v.as_str()).unwrap_or("")),
+                description: decode_name(
+                    p.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                ),
                 source: "wy".into(),
             })
             .collect(),

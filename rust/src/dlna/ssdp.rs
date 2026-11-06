@@ -61,16 +61,14 @@ fn tokio_udp_from_socket(sock: Socket) -> std::io::Result<UdpSocket> {
 
 /// 从 SSDP 报文提取头部值（大小写不敏感）。
 fn header_value(msg: &str, name: &str) -> Option<String> {
-    msg.lines()
-        .skip(1)
-        .find_map(|line| {
-            let (k, v) = line.split_once(':')?;
-            if k.trim().eq_ignore_ascii_case(name) {
-                Some(v.trim().to_string())
-            } else {
-                None
-            }
-        })
+    msg.lines().skip(1).find_map(|line| {
+        let (k, v) = line.split_once(':')?;
+        if k.trim().eq_ignore_ascii_case(name) {
+            Some(v.trim().to_string())
+        } else {
+            None
+        }
+    })
 }
 
 /// M-SEARCH 搜索局域网 DLNA 渲染器，返回去重后的 LOCATION 列表。
@@ -145,9 +143,8 @@ pub async fn sweep_family_renderers() -> Vec<String> {
     };
     let o = v4.octets();
     // 仅扫 RFC1918 私网；蜂窝/VPN 网段扫了也够不到局域网设备
-    let private = o[0] == 10
-        || (o[0] == 172 && (16..=31).contains(&o[1]))
-        || (o[0] == 192 && o[1] == 168);
+    let private =
+        o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168);
     if !private {
         return Vec::new();
     }

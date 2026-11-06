@@ -96,10 +96,7 @@ impl CloudReq {
     }
 
     pub fn param_obj(&self, key: &str) -> Value {
-        self.params
-            .get(key)
-            .cloned()
-            .unwrap_or_else(|| json!({}))
+        self.params.get(key).cloned().unwrap_or_else(|| json!({}))
     }
 }
 

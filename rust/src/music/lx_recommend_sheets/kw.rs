@@ -10,9 +10,12 @@ fn kw_tag_list_url() -> &'static str {
 }
 
 pub(crate) async fn kw_tags() -> Result<LxRecommendTagsResult, String> {
-    let data = tokio::time::timeout(Duration::from_secs(6), http_get_json(kw_tag_list_url(), &[]))
-        .await
-        .map_err(|_| "KW recommend tags timeout".to_string())??;
+    let data = tokio::time::timeout(
+        Duration::from_secs(6),
+        http_get_json(kw_tag_list_url(), &[]),
+    )
+    .await
+    .map_err(|_| "KW recommend tags timeout".to_string())??;
 
     let groups_in = data
         .get("data")
@@ -47,21 +50,32 @@ pub(crate) async fn kw_tags() -> Result<LxRecommendTagsResult, String> {
                 })
                 .collect();
             // 末组固定为空，剔除
-            (!tags.is_empty()).then(|| LxRecommendTagGroup { title: decode_name(title), data: tags })
+            (!tags.is_empty()).then(|| LxRecommendTagGroup {
+                title: decode_name(title),
+                data: tags,
+            })
         })
         .collect();
 
     // pinned 固定四个热门标签（digest=10000 走标签推荐分支），与插件一致
-    let pinned = [("翻唱", "1848"), ("网络", "621"), ("伤感", "146"), ("欧美", "35")]
-        .iter()
-        .map(|(title, id)| LxRecommendTag {
-            id: (*id).into(),
-            title: (*title).into(),
-            digest: Some("10000".into()),
-            source: "kw".into(),
-        })
-        .collect();
-    Ok(LxRecommendTagsResult { pinned, data: groups })
+    let pinned = [
+        ("翻唱", "1848"),
+        ("网络", "621"),
+        ("伤感", "146"),
+        ("欧美", "35"),
+    ]
+    .iter()
+    .map(|(title, id)| LxRecommendTag {
+        id: (*id).into(),
+        title: (*title).into(),
+        digest: Some("10000".into()),
+        source: "kw".into(),
+    })
+    .collect();
+    Ok(LxRecommendTagsResult {
+        pinned,
+        data: groups,
+    })
 }
 
 pub(crate) async fn kw_sheets_by_tag(
@@ -104,13 +118,18 @@ pub(crate) async fn kw_sheets_by_tag(
         let arr = data.as_array().cloned().unwrap_or_default();
         let mut sheets = Vec::new();
         for group in &arr {
-            let Some(list) = group.get("list").and_then(|v| v.as_array()) else { continue };
+            let Some(list) = group.get("list").and_then(|v| v.as_array()) else {
+                continue;
+            };
             for item in list {
                 sheets.push(kw_sheet_from_value(item));
             }
         }
         let total = sheets.len() as u64;
-        Ok(LxRecommendSheetsResult { is_end: page as u64 * PAGE_SIZE >= total, data: sheets })
+        Ok(LxRecommendSheetsResult {
+            is_end: page as u64 * PAGE_SIZE >= total,
+            data: sheets,
+        })
     } else {
         let total = data.pointer("/data/total").map(value_to_u64).unwrap_or(0);
         let list = data

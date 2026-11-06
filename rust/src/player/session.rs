@@ -30,9 +30,11 @@ impl PlaybackSessionState {
     /// 从 SQLite 加载持久化的会话状态（启动时调用）
     pub fn load_from_db(&self, conn: &Connection) -> Result<(), String> {
         let result: Result<Option<String>, rusqlite::Error> = conn
-            .query_row("SELECT data FROM playback_session WHERE id = 1", [], |row| {
-                row.get(0)
-            })
+            .query_row(
+                "SELECT data FROM playback_session WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
             .map(Some)
             .or_else(|e| {
                 if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
@@ -228,7 +230,9 @@ mod tests {
         state.flush_playback_session(&conn).expect("flush empty ok");
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM playback_session", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM playback_session", [], |row| {
+                row.get(0)
+            })
             .expect("count");
         assert_eq!(count, 0);
     }
@@ -322,7 +326,9 @@ mod tests {
         assert_eq!(state.get_playback_session().current_position_secs, 10.0);
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM playback_session", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM playback_session", [], |row| {
+                row.get(0)
+            })
             .expect("count");
         assert_eq!(count, 1);
     }

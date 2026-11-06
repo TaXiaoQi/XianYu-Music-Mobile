@@ -60,12 +60,9 @@ pub(crate) async fn wy_board_songs(
         "https://music.163.com/api/v6/playlist/detail?id={}&n={}&s=0",
         board_id, n
     );
-    let data = tokio::time::timeout(
-        Duration::from_secs(8),
-        http_get_json(&url, WY_HEADERS),
-    )
-    .await
-    .map_err(|_| "WY toplist detail timeout".to_string())??;
+    let data = tokio::time::timeout(Duration::from_secs(8), http_get_json(&url, WY_HEADERS))
+        .await
+        .map_err(|_| "WY toplist detail timeout".to_string())??;
 
     let tracks = data
         .pointer("/playlist/tracks")
@@ -131,4 +128,3 @@ pub(crate) async fn wy_board_songs(
         })
         .collect())
 }
-

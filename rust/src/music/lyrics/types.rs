@@ -382,8 +382,7 @@ pub(crate) fn latin_word_gap_needed(left: &str, right: &str) -> bool {
     let Some(first) = right.chars().next() else {
         return false;
     };
-    let left_ok =
-        last.is_ascii_alphanumeric() || matches!(last, ',' | '.' | '!' | '?' | '%' | ')');
+    let left_ok = last.is_ascii_alphanumeric() || matches!(last, ',' | '.' | '!' | '?' | '%' | ')');
     let right_ok = first.is_ascii_alphanumeric() || matches!(first, '(');
     left_ok && right_ok
 }
@@ -403,4 +402,3 @@ pub(crate) fn insert_latin_word_gaps(words: &mut [ParsedWord]) {
         }
     }
 }
-

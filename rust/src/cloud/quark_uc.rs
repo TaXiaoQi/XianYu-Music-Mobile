@@ -204,9 +204,15 @@ fn share_files_from_list(list: &Value) -> Vec<Value> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let is_dir = e.get("dir").map(|d| d == &json!(true) || d == &json!(1)).unwrap_or(false);
+            let is_dir = e
+                .get("dir")
+                .map(|d| d == &json!(true) || d == &json!(1))
+                .unwrap_or(false);
             let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
-            let token = e.get("fid_token").and_then(Value::as_str).map(str::to_string);
+            let token = e
+                .get("fid_token")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             out.push(super::types::file_json(
                 id,
                 &name,
@@ -224,7 +230,11 @@ fn share_files_from_list(list: &Value) -> Vec<Value> {
 async fn validate(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     require_cred(req)?;
     let b = brand_of(&req.provider);
-    let url = format!("https://{}/1/clouddrive/member?{}", b.api_host, common_query(b));
+    let url = format!(
+        "https://{}/1/clouddrive/member?{}",
+        b.api_host,
+        common_query(b)
+    );
     let resp = http::get(&url, &auth_headers(b, &req.cred))
         .await
         .map_err(biz_err)?;
@@ -254,7 +264,10 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         // 带上 status + 响应体片段：夸克凭据/风控问题只能从响应体定位
         // （如 NotLogin / 风控文案），光报「请求失败」没法排障。
         let body: String = resp.body.chars().take(300).collect();
-        return Err((502, format!("目录列表请求失败 status={}: {body}", resp.status)));
+        return Err((
+            502,
+            format!("目录列表请求失败 status={}: {body}", resp.status),
+        ));
     }
     let j = resp.json().map_err(biz_err)?;
     let data = j.get("data").cloned().unwrap_or(Value::Null);
@@ -268,10 +281,16 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let is_dir = e.get("dir").map(|d| d == &json!(true) || d == &json!(1)).unwrap_or(false);
+            let is_dir = e
+                .get("dir")
+                .map(|d| d == &json!(true) || d == &json!(1))
+                .unwrap_or(false);
             let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
             let pdir = e.get("pdir_fid").and_then(Value::as_str).unwrap_or("");
-            let token = e.get("fid_token").and_then(Value::as_str).map(str::to_string);
+            let token = e
+                .get("fid_token")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             files.push(super::types::file_json(
                 id,
                 &name,
@@ -296,7 +315,11 @@ async fn list_dir(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     } else {
         files.len() >= 100
     };
-    let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
+    let next_cursor = if has_next {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
@@ -316,7 +339,10 @@ fn file_from_search_item(e: &Value) -> Value {
         .unwrap_or(false);
     let size = e.get("size").and_then(Value::as_i64).unwrap_or(0);
     let pdir = e.get("pdir_fid").and_then(Value::as_str).unwrap_or("");
-    let token = e.get("fid_token").and_then(Value::as_str).map(str::to_string);
+    let token = e
+        .get("fid_token")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     super::types::file_json(id, &name, is_dir, size, Some(pdir), None, token.as_deref())
 }
 
@@ -357,7 +383,11 @@ async fn search_files(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
         .and_then(Value::as_i64)
         .unwrap_or(0);
     let has_next = page * 50 < total;
-    let next_cursor = if has_next { Some((page + 1).to_string()) } else { None };
+    let next_cursor = if has_next {
+        Some((page + 1).to_string())
+    } else {
+        None
+    };
     Ok(CloudOut::plain(list_result_json(files, next_cursor)))
 }
 
@@ -456,10 +486,7 @@ async fn share_direct_link(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
     }
     let (pairs, rotated) = rotate_auth_cookies(&req.cred, &resp);
     let j = resp.json().map_err(biz_err)?;
-    let dl = j
-        .get("data")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let dl = j.get("data").cloned().unwrap_or(Value::Null);
     let dl_url = extract_download_url(&dl).ok_or_else(|| biz_err("分享直链获取失败"))?;
     let name = file.get("name").and_then(Value::as_str).unwrap_or("");
     let size = file.get("size").and_then(Value::as_i64);
@@ -590,7 +617,11 @@ async fn transfer_share(req: &CloudReq) -> Result<CloudOut, (i32, String)> {
 }
 
 /// route1：我的网盘文件直链（file/download 接口）。
-async fn direct_link_route1(b: &Brand, req: &CloudReq, file: &Value) -> Result<CloudOut, (i32, String)> {
+async fn direct_link_route1(
+    b: &Brand,
+    req: &CloudReq,
+    file: &Value,
+) -> Result<CloudOut, (i32, String)> {
     let url = format!(
         "https://{}/1/clouddrive/file/download?{}",
         b.api_host,

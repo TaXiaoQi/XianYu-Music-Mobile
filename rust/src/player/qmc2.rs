@@ -239,9 +239,7 @@ struct Qmc2MapCrypto {
 
 impl Qmc2MapCrypto {
     fn new(key: &[u8]) -> Self {
-        Self {
-            key: key.to_vec(),
-        }
+        Self { key: key.to_vec() }
     }
 
     #[inline]
@@ -353,8 +351,7 @@ impl Qmc2Rc4Crypto {
     fn encode_other_segment(&self, offset: usize, buf: &mut [u8]) {
         let seg_id = offset / OTHER_SEGMENT_SIZE;
         let seg_id_small = seg_id & 0x1FF;
-        let mut discard_count =
-            self.calc_segment_key(seg_id, self.rc4_key[seg_id_small]) & 0x1FF;
+        let mut discard_count = self.calc_segment_key(seg_id, self.rc4_key[seg_id_small]) & 0x1FF;
         discard_count += offset % OTHER_SEGMENT_SIZE;
         let n = self.rc4_key.len();
         let mut s = self.s.clone();
@@ -408,11 +405,10 @@ impl Qmc2Rc4Crypto {
 // ============================================================
 
 const QMC1_KEY_TABLE: [u8; 64] = [
-    0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52, 0xd8, 0xa1, 0x66, 0x62, 0x9f, 0x5b, 0x09,
-    0x00, 0xc3, 0x5e, 0x95, 0x23, 0x9f, 0x13, 0x11, 0x7e, 0xd8, 0x92, 0x3f, 0xbc, 0x90, 0xbb,
-    0x74, 0x0e, 0xc3, 0x47, 0x74, 0x3d, 0x90, 0xaa, 0x3f, 0x51, 0xd8, 0xf4, 0x11, 0x84, 0x9f,
-    0xde, 0x95, 0x1d, 0xc3, 0xc6, 0x09, 0xd5, 0x9f, 0xfa, 0x66, 0xf9, 0xd8, 0xf0, 0xf7, 0xa0,
-    0x90, 0xa1, 0xd6, 0xf3,
+    0xc3, 0x4a, 0xd6, 0xca, 0x90, 0x67, 0xf7, 0x52, 0xd8, 0xa1, 0x66, 0x62, 0x9f, 0x5b, 0x09, 0x00,
+    0xc3, 0x5e, 0x95, 0x23, 0x9f, 0x13, 0x11, 0x7e, 0xd8, 0x92, 0x3f, 0xbc, 0x90, 0xbb, 0x74, 0x0e,
+    0xc3, 0x47, 0x74, 0x3d, 0x90, 0xaa, 0x3f, 0x51, 0xd8, 0xf4, 0x11, 0x84, 0x9f, 0xde, 0x95, 0x1d,
+    0xc3, 0xc6, 0x09, 0xd5, 0x9f, 0xfa, 0x66, 0xf9, 0xd8, 0xf0, 0xf7, 0xa0, 0x90, 0xa1, 0xd6, 0xf3,
 ];
 
 #[inline]
@@ -528,9 +524,7 @@ impl<R: Read + Seek> Seek for QmcDecryptReader<R> {
 
 /// 让 QmcDecryptReader 可直接喂给 symphonia 的 MediaSourceStream。
 /// 需要底层 reader 同时满足 Read + Seek + Send + Sync。
-impl<R: Read + Seek + Send + Sync> symphonia::core::io::MediaSource
-    for QmcDecryptReader<R>
-{
+impl<R: Read + Seek + Send + Sync> symphonia::core::io::MediaSource for QmcDecryptReader<R> {
     fn is_seekable(&self) -> bool {
         true
     }
@@ -560,8 +554,12 @@ pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
         let tag_start = data.len() - tail.len() + pos;
         if tag_start >= 4 {
             // Read the 4 bytes before QTag as little-endian key size
-            let key_size =
-                u32::from_le_bytes([data[tag_start - 4], data[tag_start - 3], data[tag_start - 2], data[tag_start - 1]]) as usize;
+            let key_size = u32::from_le_bytes([
+                data[tag_start - 4],
+                data[tag_start - 3],
+                data[tag_start - 2],
+                data[tag_start - 1],
+            ]) as usize;
             // The ekey is before the size field, as a comma-separated value
             // Find the ekey by looking backwards from the size field
             let ekey_start = tag_start.saturating_sub(4 + key_size);
@@ -585,7 +583,10 @@ pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
         let ekey_bytes = &data[data.len() - 4 - key_size..data.len() - 4];
         let ekey_str = String::from_utf8_lossy(ekey_bytes).to_string();
         // Verify it looks like base64
-        if ekey_str.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\0') {
+        if ekey_str
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=' || c == '\0')
+        {
             return Some(ekey_str.trim_matches(char::from(0)).to_string());
         }
     }
@@ -595,9 +596,7 @@ pub fn extract_ekey_from_footer(data: &[u8]) -> Option<String> {
 
 #[allow(dead_code)]
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|w| w == needle)
+    haystack.windows(needle.len()).position(|w| w == needle)
 }
 
 /// Check if file header looks like QMC-encrypted content (not a valid audio format).
@@ -652,7 +651,8 @@ fn extract_ekey_from_file_tail(file: &mut fs::File) -> Option<String> {
 
     let file_size = file.seek(SeekFrom::End(0)).ok()?;
     let tail_size = file_size.min(4096) as usize;
-    file.seek(SeekFrom::Start(file_size - tail_size as u64)).ok()?;
+    file.seek(SeekFrom::Start(file_size - tail_size as u64))
+        .ok()?;
     let mut tail = vec![0u8; tail_size];
     file.read_exact(&mut tail).ok()?;
     extract_ekey_from_footer(&tail)
@@ -672,7 +672,15 @@ pub fn inner_audio_extension(ext: &str) -> Option<&'static str> {
 pub fn is_qmc_extension(ext: &str) -> bool {
     matches!(
         ext.to_ascii_lowercase().as_str(),
-        "mgg" | "mgg0" | "mggl" | "mflac" | "mflac0" | "qmc0" | "qmc2" | "qmc3" | "qmcflac"
+        "mgg"
+            | "mgg0"
+            | "mggl"
+            | "mflac"
+            | "mflac0"
+            | "qmc0"
+            | "qmc2"
+            | "qmc3"
+            | "qmcflac"
             | "qmcogg"
     )
 }
@@ -754,7 +762,10 @@ mod tests {
         let tea_key = derive_tea_key(&ekey_header);
         assert_eq!(
             tea_key,
-            [0x69, 0xf1, 0x56, 0xf2, 0x46, 0xf3, 0x38, 0xf4, 0x2b, 0xf5, 0x20, 0xf6, 0x15, 0xf7, 0x0b, 0xf8]
+            [
+                0x69, 0xf1, 0x56, 0xf2, 0x46, 0xf3, 0x38, 0xf4, 0x2b, 0xf5, 0x20, 0xf6, 0x15, 0xf7,
+                0x0b, 0xf8
+            ]
         );
     }
 
@@ -776,14 +787,19 @@ mod tests {
 
     #[test]
     fn test_qmc2_map_scramble() {
-        let key = [0x41u8, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
-                   0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F, 0x50];
+        let key = [
+            0x41u8, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E,
+            0x4F, 0x50,
+        ];
         let crypto = Qmc2MapCrypto::new(&key);
         let mut data = [0u8; 16];
         crypto.decrypt(0, &mut data);
         assert_eq!(
             data,
-            [0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49, 0xC1, 0x8A, 0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49, 0xC1, 0x8A]
+            [
+                0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49, 0xC1, 0x8A, 0x3F, 0x8A, 0xC1, 0x49, 0x3F, 0x49,
+                0xC1, 0x8A
+            ]
         );
     }
 

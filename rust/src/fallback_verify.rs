@@ -17,7 +17,10 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 /// 全部槽位；签名对某槽位有效但 keyId 不在槽位 → valid + key_unknown
 /// （客户端采纳配置并上报 FallbackConfigKeyUnknown 事件）。
 const FALLBACK_VERIFY_KEYS: &[(&str, &str)] = &[
-    ("2026a", "fd2f887e74adb2009079bc822536d8f09d1404656f748289608592b6a4c974c5"),
+    (
+        "2026a",
+        "fd2f887e74adb2009079bc822536d8f09d1404656f748289608592b6a4c974c5",
+    ),
     // 轮换 T0 预发布：解开注释并填入下一把公钥
     // ("2026b", "<next-public-key-hex>"),
 ];
@@ -41,7 +44,12 @@ pub(crate) fn fallback_config_message(config_json: &str) -> Vec<u8> {
 
 /// 内测资格响应签名消息（与服务端 check_beta_access 逐字一致）：
 /// `xianyu-beta-access-v1\x00{device_id}\x00{allowed01}\x00{pending01}\x00{exp}`
-pub(crate) fn beta_access_message(device_id: &str, allowed: bool, pending: bool, exp: i64) -> Vec<u8> {
+pub(crate) fn beta_access_message(
+    device_id: &str,
+    allowed: bool,
+    pending: bool,
+    exp: i64,
+) -> Vec<u8> {
     format!(
         "xianyu-beta-access-v1\x00{device_id}\x00{}\x00{}\x00{exp}",
         i32::from(allowed),
@@ -85,11 +93,7 @@ pub fn verify_fallback_config_signature(
     signature: &str,
     key_id: Option<&str>,
 ) -> Result<FallbackVerifyResult, String> {
-    verify_with_public_keys(
-        &fallback_config_message(config_json),
-        signature,
-        key_id,
-    )
+    verify_with_public_keys(&fallback_config_message(config_json), signature, key_id)
 }
 
 fn slot_verifying_key(slot: &(&str, &str)) -> Option<VerifyingKey> {
@@ -197,9 +201,11 @@ mod tests {
     #[test]
     fn rejects_malformed_signature() {
         assert!(verify_fallback_config_signature("{\"version\":1}", "not-hex!!", None).is_err());
-        assert!(!verify_fallback_config_signature("{\"version\":1}", "abcd", None)
-            .unwrap()
-            .valid);
+        assert!(
+            !verify_fallback_config_signature("{\"version\":1}", "abcd", None)
+                .unwrap()
+                .valid
+        );
     }
 
     #[test]
@@ -208,12 +214,16 @@ mod tests {
             eprintln!("跳过：未设置 XY_FALLBACK_TEST_SEED");
             return;
         };
-        assert!(verify_fallback_config_signature("{\"version\":1}", &sig, None)
-            .unwrap()
-            .valid);
-        assert!(!verify_fallback_config_signature("{\"version\":2}", &sig, None)
-            .unwrap()
-            .valid);
+        assert!(
+            verify_fallback_config_signature("{\"version\":1}", &sig, None)
+                .unwrap()
+                .valid
+        );
+        assert!(
+            !verify_fallback_config_signature("{\"version\":2}", &sig, None)
+                .unwrap()
+                .valid
+        );
     }
 
     #[test]
@@ -235,8 +245,13 @@ mod tests {
         assert!(r.valid && r.key_unknown);
         // 陌生密钥签名 + 已知 keyId → 严格绑定该槽位，直接拒绝（防密钥降级）
         let rogue = SigningKey::from_bytes(&[7u8; 32]);
-        let rogue_sig = hex::encode(rogue.sign(&fallback_config_message("{\"version\":1}")).to_bytes());
-        let r = verify_fallback_config_signature("{\"version\":1}", &rogue_sig, Some("2026a")).unwrap();
+        let rogue_sig = hex::encode(
+            rogue
+                .sign(&fallback_config_message("{\"version\":1}"))
+                .to_bytes(),
+        );
+        let r =
+            verify_fallback_config_signature("{\"version\":1}", &rogue_sig, Some("2026a")).unwrap();
         assert!(!r.valid && !r.key_unknown);
         // 陌生密钥签名 + 无 keyId → 遍历不命中 → 拒绝
         let r = verify_fallback_config_signature("{\"version\":1}", &rogue_sig, None).unwrap();

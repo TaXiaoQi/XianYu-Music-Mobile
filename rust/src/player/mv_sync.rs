@@ -75,10 +75,8 @@ pub fn analyze_local(
     }
 
     let (mv_rate, mv_samples) = decode_mono_native_cap(mv_path, LOCAL_MV_MAX_SEC)?;
-    let (song_rate, song_samples) = decode_mono_native_cap(
-        song_path,
-        song_pos_sec + window_sec + 5.0,
-    )?;
+    let (song_rate, song_samples) =
+        decode_mono_native_cap(song_path, song_pos_sec + window_sec + 5.0)?;
 
     let mv8 = resample_linear(&mv_samples, mv_rate, ANALYSIS_SAMPLE_RATE);
     let song8 = resample_linear(&song_samples, song_rate, ANALYSIS_SAMPLE_RATE);
@@ -114,7 +112,11 @@ pub fn analyze_local(
         let center = f * mv_total_sec;
         let lo = ((center - half_band) / hop_sec).floor().max(0.0) as usize;
         let hi = (((center + half_band) / hop_sec).ceil() as usize).min(mv_last_start);
-        if hi >= lo { (lo, hi) } else { (0, mv_last_start) }
+        if hi >= lo {
+            (lo, hi)
+        } else {
+            (0, mv_last_start)
+        }
     } else {
         (0, mv_last_start)
     };
@@ -131,12 +133,7 @@ pub fn analyze_local(
 /// 滑窗互相关：把 [song_win] 当作模板，在 [mv_env] 的 `[lo, hi]` 帧范围内按下标
 /// 滑窗求 Pearson 相关，返回最佳 MV 起始帧。窗内各自 z-score 归一化（对齐全局
 /// 算法的归一化口径）。步进用 1 帧（≈64ms），对开局对齐精度足够。
-fn sliding_window_align(
-    mv_env: &[f32],
-    song_win: &[f32],
-    lo: usize,
-    hi: usize,
-) -> Option<usize> {
+fn sliding_window_align(mv_env: &[f32], song_win: &[f32], lo: usize, hi: usize) -> Option<usize> {
     let w = song_win.len();
     if mv_env.len() < w || lo > hi || hi + w > mv_env.len() {
         return None;
@@ -172,11 +169,7 @@ fn mv_start_confidence(mv_env: &[f32], song_win: &[f32], mv_start: usize) -> f64
     }
     let song_z = z_normalize(song_win);
     let slice_z = z_normalize(&mv_env[mv_start..mv_start + w]);
-    let dot: f64 = song_z
-        .iter()
-        .zip(slice_z.iter())
-        .map(|(a, b)| a * b)
-        .sum();
+    let dot: f64 = song_z.iter().zip(slice_z.iter()).map(|(a, b)| a * b).sum();
     (dot / w as f64).clamp(-1.0, 1.0)
 }
 
@@ -188,9 +181,7 @@ pub fn is_local_trustworthy(_lag_sec: f64, confidence: f64) -> bool {
 
 /// 置信度与偏移是否可信（对齐桌面端 isTrustworthyEstimate）。
 pub fn is_trustworthy(offset_sec: f64, confidence: f64) -> bool {
-    offset_sec.is_finite()
-        && confidence >= MIN_CONFIDENCE
-        && offset_sec.abs() < MAX_LAG_SEC - 0.5
+    offset_sec.is_finite() && confidence >= MIN_CONFIDENCE && offset_sec.abs() < MAX_LAG_SEC - 0.5
 }
 
 /// 解码音频文件为单声道 f32 采样（原生采样率），超过默认分析时长 + 1s 提前停止。
@@ -200,10 +191,7 @@ fn decode_mono_native(path: &Path) -> Result<(u32, Vec<f32>), String> {
 
 /// 解码音频文件为单声道 f32 采样（原生采样率），超过 `max_sec` 提前停止。
 /// 局部匹配用更大的上限让 MV 解到整曲，供在整个时间轴上滑窗。
-fn decode_mono_native_cap(
-    path: &Path,
-    max_sec: f64,
-) -> Result<(u32, Vec<f32>), String> {
+fn decode_mono_native_cap(path: &Path, max_sec: f64) -> Result<(u32, Vec<f32>), String> {
     use symphonia::core::audio::SampleBuffer;
     use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
     use symphonia::core::formats::FormatOptions;
@@ -211,8 +199,8 @@ fn decode_mono_native_cap(
     use symphonia::core::meta::MetadataOptions;
     use symphonia::core::probe::Hint;
 
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("打开失败 {}: {e}", path.display()))?;
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("打开失败 {}: {e}", path.display()))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
@@ -220,7 +208,12 @@ fn decode_mono_native_cap(
     }
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
         .map_err(|e| format!("probe fail: {e}"))?;
 
     // 只挑音频轨：视频轨（h264 等）没有 sample_rate，用它过滤 MP4 里的视频流。
@@ -229,8 +222,7 @@ fn decode_mono_native_cap(
         .tracks()
         .iter()
         .find(|t| {
-            t.codec_params.codec != CODEC_TYPE_NULL
-                && t.codec_params.sample_rate.unwrap_or(0) > 0
+            t.codec_params.codec != CODEC_TYPE_NULL && t.codec_params.sample_rate.unwrap_or(0) > 0
         })
         .ok_or("no audio track")?;
     let track_id = track.id;
@@ -265,7 +257,10 @@ fn decode_mono_native_cap(
             }
             // 截断/损坏文件的结尾按 EOF 处理，拿到多少用多少。
             Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break
+            }
             Err(symphonia::core::errors::Error::DecodeError(_)) => break,
             Err(e) => {
                 if mono.is_empty() {
@@ -327,7 +322,11 @@ fn resample_linear(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
         let idx = pos as usize;
         let frac = (pos - idx as f64) as f32;
         let a = samples[idx];
-        let b = if idx + 1 < samples.len() { samples[idx + 1] } else { a };
+        let b = if idx + 1 < samples.len() {
+            samples[idx + 1]
+        } else {
+            a
+        };
         out.push(a + (b - a) * frac);
     }
     out
@@ -416,7 +415,11 @@ fn estimate_envelope_lag(mv_env: &[f32], song_env: &[f32]) -> Option<(f64, f64)>
             song_norm += b * b;
         }
         let denom = (mv_norm * song_norm).sqrt();
-        let score = if denom > 1e-9 { dot / denom } else { f64::NEG_INFINITY };
+        let score = if denom > 1e-9 {
+            dot / denom
+        } else {
+            f64::NEG_INFINITY
+        };
         scores[(lag + max_lag) as usize] = score;
         if score > best_score {
             best_score = score;
@@ -431,7 +434,11 @@ fn estimate_envelope_lag(mv_env: &[f32], song_env: &[f32]) -> Option<(f64, f64)>
     // 抛物线细化，把 lag 精度从 1 帧提升到亚帧级。
     let mut refined = best_lag as f64;
     let idx = (best_lag + max_lag) as usize;
-    let left = if idx > 0 { scores[idx - 1] } else { f64::NEG_INFINITY };
+    let left = if idx > 0 {
+        scores[idx - 1]
+    } else {
+        f64::NEG_INFINITY
+    };
     let right = if idx + 1 < n_scores {
         scores[idx + 1]
     } else {
@@ -474,7 +481,9 @@ mod tests {
     #[test]
     fn lag_recovers_shift() {
         // 构造 song 包络，mv 包络是 song 右移 20 帧（mv[t+20] = song[t]）。
-        let song: Vec<f32> = (0..800).map(|i| ((i as f32) * 0.1).sin().abs() + 0.1).collect();
+        let song: Vec<f32> = (0..800)
+            .map(|i| ((i as f32) * 0.1).sin().abs() + 0.1)
+            .collect();
         let lag_frames = 20_usize;
         let mut mv = vec![0.05_f32; 800 + lag_frames];
         for i in 0..song.len() {
@@ -482,7 +491,10 @@ mod tests {
         }
         let (offset, conf) = estimate_envelope_lag(&mv, &song).unwrap();
         let hop_sec = ENVELOPE_HOP as f64 / ANALYSIS_SAMPLE_RATE as f64;
-        assert!((offset - lag_frames as f64 * hop_sec).abs() < hop_sec, "offset={offset}");
+        assert!(
+            (offset - lag_frames as f64 * hop_sec).abs() < hop_sec,
+            "offset={offset}"
+        );
         assert!(conf > 0.9, "conf={conf}");
     }
 
@@ -491,8 +503,9 @@ mod tests {
         // 模拟「MV 加了片头」：mv 包络前面垫一大段不相关内容，再出现整段歌。
         // 歌曲窗取自歌中间；滑窗匹配应把窗对准到 mv 里歌的对应位置。
         let w = 140_usize; // 歌曲窗长度（帧）
-        let song_base: Vec<f32> =
-            (0..400).map(|i| ((i as f32) * 0.17).sin().abs() + 0.08).collect();
+        let song_base: Vec<f32> = (0..400)
+            .map(|i| ((i as f32) * 0.17).sin().abs() + 0.08)
+            .collect();
         let pad = 60_usize; // 片头帧数
         let head_offset = 25_usize; // 歌窗原点到歌曲起点的帧偏移（模拟不在 0 秒开播）
         let song_win: Vec<f32> = song_base[head_offset..head_offset + w].to_vec();

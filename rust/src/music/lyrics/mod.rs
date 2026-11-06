@@ -14,11 +14,11 @@ mod semantic;
 mod tracks;
 mod types;
 
+pub(crate) use io::decode_lyrics_file_bytes;
 pub use io::{
     get_song_lyrics, get_song_lyrics_for_edit, get_song_lyrics_payload, read_lyrics_file,
     save_song_lyrics,
 };
-pub(crate) use io::decode_lyrics_file_bytes;
 pub(crate) use lx_convert::*;
 pub(crate) use parse::*;
 pub(crate) use semantic::*;
@@ -35,9 +35,7 @@ mod tests {
     #[test]
     fn parses_relative_angle_word_time_offset_to_line_start() {
         // lrc-a2 相对逐字格式：词内尖括号时间为行首偏移，需加回行起点
-        let parsed = parse_raw_lyrics(
-            "[00:23.59]<00:00.16>塞<00:00.21>纳<00:00.23>河<00:00.32>畔",
-        );
+        let parsed = parse_raw_lyrics("[00:23.59]<00:00.16>塞<00:00.21>纳<00:00.23>河<00:00.32>畔");
         assert_eq!(parsed.len(), 1);
         let words = parsed[0].words.as_ref().unwrap();
         assert_eq!(words[0].start_ms, 23590 + 160);
@@ -345,17 +343,28 @@ mod tests {
             parsed[0].source_format
         );
         assert!(
-            parsed[0].words.as_ref().map(|w| !w.is_empty()).unwrap_or(false),
+            parsed[0]
+                .words
+                .as_ref()
+                .map(|w| !w.is_empty())
+                .unwrap_or(false),
             "Qrc 行应保留逐字 words"
         );
-        let with_translation = parsed
-            .iter()
-            .find(|line| line.translated_text.as_deref().map(|t| !t.trim().is_empty()).unwrap_or(false));
+        let with_translation = parsed.iter().find(|line| {
+            line.translated_text
+                .as_deref()
+                .map(|t| !t.trim().is_empty())
+                .unwrap_or(false)
+        });
         assert!(
             with_translation.is_some(),
             "译文 LRC 应关联出 translated_text，实际全部为空；行数={}，前3行文本={:?}",
             parsed.len(),
-            parsed.iter().take(3).map(|l| l.text.as_str()).collect::<Vec<_>>()
+            parsed
+                .iter()
+                .take(3)
+                .map(|l| l.text.as_str())
+                .collect::<Vec<_>>()
         );
     }
 
