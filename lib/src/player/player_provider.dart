@@ -204,6 +204,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   StreamSubscription<dynamic>? _errSub;
   StreamSubscription<dynamic>? _interruptionSub;
   StreamSubscription<void>? _noisySub;
+  VoidCallback? _iosPipelineSub;
+  /// iOS 管线中断去重标志（Swift 通道与 audio_session 双路信号并存，
+  /// 见 _init 里的 subscribeIosPipelineEvents 订阅）
+  bool _iosPipelineInterrupted = false;
   bool _interruptedByInterruption = false;
   // 后台/关闭期间被其他应用抢占音频输出：toast 无处可弹，记下标记，
   // 回到前台补弹窗询问是否继续播放或修改自动恢复开关。
@@ -534,6 +538,39 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         AppLog.warn('playgate', 'becomingNoisy pause');
         await _pauseForInterruption(toast: false);
       });
+    });
+    // iOS DSP 管线（Rust coreaudio 后端）：Swift 侧常驻转发 AVAudioSession
+    // 中断/路由事件。audio_session 的 interruption 流在 iOS 同样投递，
+    // 这里做幂等去重（双路信号，任一路先到即处理，另一路空跑）。
+    _iosPipelineSub = subscribeIosPipelineEvents((method, args) async {
+      switch (method) {
+        case 'onPipelineInterruption':
+          if (args['began'] == true) {
+            if (state.isPlaying && (state.dspActive || state.usbExclusive)) {
+              _iosPipelineInterrupted = true;
+              await _pauseForInterruption();
+            }
+          } else if (_iosPipelineInterrupted) {
+            _iosPipelineInterrupted = false;
+            final auto =
+                _ref
+                    .read(settingsProvider)
+                    .valueOrNull
+                    ?.autoResumeAfterInterruption ??
+                true;
+            if (auto && !state.isPlaying && state.current != null) {
+              _pendingInterruptionNotice = false;
+              await _resumeAfterInterruption();
+            }
+          }
+        case 'onPipelineRouteChanged':
+          // oldDeviceUnavailable = 拔耳机/断蓝牙（becomingNoisy 等价）
+          if (args['oldDeviceUnavailable'] == true && state.isPlaying) {
+            _pauseOrigin = 'becomingNoisy';
+            AppLog.warn('playgate', 'ios route oldDeviceUnavailable pause');
+            await _pauseForInterruption(toast: false);
+          }
+      }
     });
     _listenTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (state.isPlaying) {
@@ -1906,6 +1943,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     _errSub?.cancel();
     _interruptionSub?.cancel();
     _noisySub?.cancel();
+    _iosPipelineSub?.call();
     try {
       stopUsbExclusivePlayback();
     } catch (e) {

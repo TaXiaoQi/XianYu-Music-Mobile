@@ -338,6 +338,12 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       if (isPlaying && !castPlayback && !await _ensurePipelineAudioFocus()) {
         return false;
       }
+      if (PlatformCaps.isIOS) {
+        // iOS 管线经 cpal AURemoteIO 输出：先提交源采样率偏好（外接 DAC
+        // 尽量贴近源规格），再激活 .playback 会话（后台可播、不受静音键影响）
+        await _applyIosPreferredSampleRate(path);
+        await prepareIosPipelineAudioSession();
+      }
       var sfx = _ref.read(soundEffectProvider).settings;
       if (castPlayback) {
         // 被投播放按 DLNA 语义强制原速原调，其余音效（EQ/混响等）保持
@@ -384,6 +390,10 @@ extension PlayerNotifierAudioChain on PlayerNotifier {
       await stopUsbExclusivePlayback();
     } catch (e) {
       AppLog.warn('player', '停止独占播放失败: $e');
+    }
+    if (PlatformCaps.isIOS) {
+      // 管线停了就让出 iOS 音频会话（notifyOthersOnDeactivation）
+      await releaseIosPipelineAudioSession();
     }
     if (_isOhos) {
       // ArkTS 侧等时循环 + releaseInterface/closePipe（幂等）
