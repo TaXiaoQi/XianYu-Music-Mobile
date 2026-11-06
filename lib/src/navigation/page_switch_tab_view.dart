@@ -27,6 +27,29 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
   // whenComplete 不得把新动画的 tabSwitching 提前清掉
   int _switchGen = 0;
 
+  // 用户手势拖拽换页窗口：didUpdateWidget 只覆盖底部点按的程序式切换，
+  // 直接横向拖拽 PageView 全程无信号——玻璃 shader 降级、mini 条冻结、
+  // chrome 抓帧门控全部失效（iOS 横移掉帧主源）。animateToPage 同样
+  // 派发 ScrollStart/End，与程序式置位幂等；depth!=0 的内层滚动
+  // （列表/横向轮播）不是换页，不置位
+  bool _dragActive = false;
+
+  bool _handleSwitchNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is ScrollStartNotification) {
+      if (!_dragActive) {
+        _dragActive = true;
+        setTabSwitching(true);
+      }
+    } else if (notification is ScrollEndNotification) {
+      if (_dragActive) {
+        _dragActive = false;
+        setTabSwitching(false);
+      }
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -56,24 +79,27 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
 
   @override
   void dispose() {
-    if (_switchGen > 0) setTabSwitching(false);
+    if (_switchGen > 0 || _dragActive) setTabSwitching(false);
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return PageView(
-      controller: _controller,
-      physics: const _TabPageScrollPhysics(),
-      onPageChanged: (page) {
-        if (page != widget.currentIndex) {
-          widget.onPageSettled?.call(page);
-        }
-      },
-      children: [
-        for (final child in widget.children) TabKeepAlivePage(child: child),
-      ],
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleSwitchNotification,
+      child: PageView(
+        controller: _controller,
+        physics: const _TabPageScrollPhysics(),
+        onPageChanged: (page) {
+          if (page != widget.currentIndex) {
+            widget.onPageSettled?.call(page);
+          }
+        },
+        children: [
+          for (final child in widget.children) TabKeepAlivePage(child: child),
+        ],
+      ),
     );
   }
 }

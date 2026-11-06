@@ -3,6 +3,8 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../src/widgets/blur_budget.dart' show globalIsTabSwitching;
+
 /// 播放页高级模式的低开销多边形流光叠层。
 ///
 /// 桌面端使用 GPU Voronoi 片元着色；移动端保留“随时间漂移的多边形色场”
@@ -40,7 +42,27 @@ class _PlayerFlowingBackgroundState extends State<PlayerFlowingBackground>
   )..repeat();
 
   @override
+  void initState() {
+    super.initState();
+    // 换页横移窗口（封面⇄歌词 PageView）冻结流光：逐帧 fullscreen
+    // repaint（顶点漂移+暗角渐变）与 PageView 滑动合成竞争，是 iOS
+    // 切页掉帧源之一。18s 周期的环境动效冻结 260/320ms 不可感知，
+    // 落定沿原相位续跑
+    globalIsTabSwitching.addListener(_onTabSwitchingChanged);
+  }
+
+  void _onTabSwitchingChanged() {
+    if (!mounted) return;
+    if (globalIsTabSwitching.value) {
+      _controller.stop();
+    } else if (!_controller.isAnimating) {
+      _controller.repeat();
+    }
+  }
+
+  @override
   void dispose() {
+    globalIsTabSwitching.removeListener(_onTabSwitchingChanged);
     _controller.dispose();
     super.dispose();
   }

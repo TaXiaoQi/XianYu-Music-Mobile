@@ -1054,28 +1054,46 @@ class _TraditionalPlayerLayoutState
           : Stack(
               fit: StackFit.expand,
               children: [
-                PageView.builder(
-                  controller: _pageController,
-                  itemCount: 2,
-                  allowImplicitScrolling: true,
-                  onPageChanged: (i) {
-                    if (_showLyrics != (i == 1)) {
-                      setState(() => _showLyrics = i == 1);
+                NotificationListener<ScrollNotification>(
+                  onNotification: (notification) {
+                    // 封面⇄歌词横移换页信号（同 PageSwitchTabView）：玻璃
+                    // shader 降级、流光背景冻结按换页口径静默。点按切换的
+                    // animateToPage 与手势拖拽都会派发 ScrollStart/End，
+                    // depth!=0 的内层滚动不置位
+                    if (notification.depth != 0) return false;
+                    if (notification is ScrollStartNotification) {
+                      setTabSwitching(true);
+                    } else if (notification is ScrollEndNotification) {
+                      setTabSwitching(false);
                     }
-                    PredictiveCoverReturn.instance.lyricsActive.value = i == 1;
+                    return false;
                   },
-                  itemBuilder: (context, i) {
-                    if (i == 0) {
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: 2,
+                    allowImplicitScrolling: true,
+                    onPageChanged: (i) {
+                      if (_showLyrics != (i == 1)) {
+                        setState(() => _showLyrics = i == 1);
+                      }
+                      PredictiveCoverReturn.instance.lyricsActive.value =
+                          i == 1;
+                    },
+                    itemBuilder: (context, i) {
+                      if (i == 0) {
+                        return _KeepAliveWrap(
+                          child: _buildCoverSection(
+                            context,
+                            immersive: immersive,
+                            immersiveTopGap: captionGap,
+                          ),
+                        );
+                      }
                       return _KeepAliveWrap(
-                        child: _buildCoverSection(
-                          context,
-                          immersive: immersive,
-                          immersiveTopGap: captionGap,
-                        ),
+                        child: _buildLyricsPage(current),
                       );
-                    }
-                    return _KeepAliveWrap(child: _buildLyricsPage(current));
-                  },
+                    },
+                  ),
                 ),
               ],
             ),

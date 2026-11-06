@@ -399,7 +399,9 @@ class RenderLiquidBacking extends RenderBox {
     globalScrollOffset.addListener(_onScrollChanged);
     globalScrollTick.addListener(_onScrollTick);
     globalIsTransitioning.addListener(_onTransitionBlurSync);
-    _liveUseShader = !globalIsTransitioning.value;
+    globalIsTabSwitching.addListener(_onTransitionBlurSync);
+    _liveUseShader =
+        !globalIsTransitioning.value && !globalIsTabSwitching.value;
   }
 
   @override
@@ -410,10 +412,11 @@ class RenderLiquidBacking extends RenderBox {
     globalScrollOffset.removeListener(_onScrollChanged);
     globalScrollTick.removeListener(_onScrollTick);
     globalIsTransitioning.removeListener(_onTransitionBlurSync);
+    globalIsTabSwitching.removeListener(_onTransitionBlurSync);
     super.detach();
   }
 
-  // 转场中 shader 降级开关（由 _onTransitionBlurSync 维护）
+  // 转场/换页中 shader 降级开关（由 _onTransitionBlurSync 维护）
   bool _liveUseShader = true;
 
   void _onTransitionBlurSync() {
@@ -421,8 +424,14 @@ class RenderLiquidBacking extends RenderBox {
     // 每帧仍会在合成期重新采样 backdrop——转场动画中 ImageFilter.shader
     // 的 backdrop 采样在部分设备/Impeller 上失效（毛玻璃普通 blur 同场景
     // 正常，液态玻璃整段色块且因静态帧"不更新"）。上升沿换纯 blur 层
-    // （=毛玻璃路径，已验证可用），下降沿恢复 shader
-    _liveUseShader = !globalIsTransitioning.value;
+    // （=毛玻璃路径，已验证可用），下降沿恢复 shader。
+    // 换页横移（PageView 拖拽/点按）同口径：此前的口径只静默重绘、
+    // retained shader 层仍逐帧重采样 backdrop（安卓 GPU 硬扛无感），iOS
+    // Impeller/Metal 上全屏背板 shader 采样每帧全量执行是首页横移掉帧
+    // 主源——横移窗口与路由转场同语言降级（chromeFrame 面画缓存帧裁剪、
+    // 页内面纯 tint 平涂），落定沿恢复
+    _liveUseShader =
+        !globalIsTransitioning.value && !globalIsTabSwitching.value;
     markNeedsPaint();
   }
 
