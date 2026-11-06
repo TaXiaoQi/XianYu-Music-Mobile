@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -143,6 +144,7 @@ BlurBudget resolveBlurBudget({
   required MotionTier motionTier,
   required bool isScrolling,
   required bool isTransitionRunning,
+  bool isTabSwitching = false,
   bool forceLowBudget = false,
 }) {
   var maxBlurLevel = switch (type) {
@@ -176,6 +178,20 @@ BlurBudget resolveBlurBudget({
     allowRealtime = false;
   }
 
+  if (isTabSwitching && type == BlurSurfaceType.generic) {
+    // 换页横移窗口（仅 iOS 激活，见 blurBudgetProvider）：页内毛玻璃卡片
+    // 的 backdrop 输入随整屏平移逐帧变化、全量重采样，是 iOS 横移掉帧
+    // 主源之一。窗口仅数百 ms，卡片退实色不可感（安卓先例 ab2c7104）。
+    // 仅限 generic：顶栏/底栏/mini 条带不做横移优化、与安卓完全对齐
+    // （条带全屏可控，横移开销由液态玻璃缓存帧/静态帧机制承担；sigma
+    // 归 0 摘层会令条带中途树结构突变，与 chrome 缓存帧裁剪叠加实测
+    // 撕出双底栏残影）。路由转场不走此路（isTransition 由快照/液态
+    // 降级机制承担，转场期卡片材质突变观感风险高）
+    maxBlurLevel = math.min(maxBlurLevel, 0);
+    alphaMul *= 0.92;
+    allowRealtime = false;
+  }
+
   if (forceLowBudget) {
     maxBlurLevel = 0;
     alphaMul *= 0.9;
@@ -195,6 +211,14 @@ double surfaceBlurSigma({
   required BlurSurfaceType type,
   bool crispAtRest = false,
 }) {
+  // 预算接真（消费方据 sigma<=0 整层摘除 BackdropFilter）：level 0 的面
+  // sigma 归 0——σ=0 仍走 saveLayer+backdrop 制备，不摘层没有降载收益。
+  // 仅 generic 卡片接真：条带面（header/bottomBar）与安卓完全对齐，恒回
+  // base（lowPerf 档条带的实色降级走 glassShouldUseSolid，不在此叠加，
+  // 否则安卓条带也会因 level 0 被摘层、观感变化）
+  if (type == BlurSurfaceType.generic && budget.maxBlurLevel <= 0) {
+    return 0;
+  }
   return base;
 }
 
@@ -204,11 +228,16 @@ final blurBudgetProvider = Provider.family<BlurBudget, BlurSurfaceType>(
   (ref, type) {
     final lowPerf = ref.watch(settingsProvider.select(
         (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
+    // 换页横移降载仅 iOS 激活（用户决策 2026-11）：安卓/鸿蒙不监听该
+    // 信号，观感与重建行为零变化
+    final iosMotion =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
     return resolveBlurBudget(
       type: type,
       motionTier: lowPerf ? MotionTier.reduced : MotionTier.normal,
       isScrolling: ref.watch(isScrollingProvider),
       isTransitionRunning: ref.watch(isTransitioningProvider),
+      isTabSwitching: iosMotion && ref.watch(isTabSwitchingProvider),
       forceLowBudget: lowPerf,
     );
   },

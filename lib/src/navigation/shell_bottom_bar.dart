@@ -75,7 +75,7 @@ class _FixedNavBar extends ConsumerWidget {
     final bar = Padding(
       padding: EdgeInsets.only(bottom: 8 + safeBottom * 0.3),
       child: SizedBox(
-        height: 70,
+        height: navBarContentHeight,
         child: _SlidingNavBottom(
           index: index,
           items: navItemsFor(

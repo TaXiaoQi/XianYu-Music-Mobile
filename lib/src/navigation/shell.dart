@@ -20,6 +20,7 @@ import '../auth/auth_provider.dart';
 import '../widgets/glass_settings.dart';
 import '../widgets/landscape_page_fade.dart';
 import 'landscape_tab_switcher.dart';
+import 'page_switch_tab_view.dart' show tabSwipePageFraction;
 import '../widgets/blur_budget.dart';
 import '../widgets/orientation_transition.dart';
 import '../widgets/app_toast.dart';

@@ -144,6 +144,12 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
   }
 }
 
+/// 底栏内容高度：iOS 上 70pt 相对原生 Liquid Glass 标签栏（约 83pt）
+/// 明显扁窄（用户反馈 iOS 26 观感），抬到 80pt；安卓维持 70pt 不变。
+/// 固定底栏与悬浮液态底栏共用，水滴尺寸随高度比例推导
+double get navBarContentHeight =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS ? 80.0 : 70.0;
+
 class _SlidingNavBottom extends StatefulWidget {
   const _SlidingNavBottom({
     required this.index,
@@ -209,10 +215,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     _springLast = elapsed;
     final dt = (rawDt < 0 || rawDt > 0.05) ? 0.016 : rawDt;
 
-    final vn = _dragging ? (_dragVel.abs() / 4.0).clamp(0.0, 1.0) : 0.0;
+    final dragging = _dragging || _pageDrag;
+    final vn = dragging ? (_dragVel.abs() / 4.0).clamp(0.0, 1.0) : 0.0;
     const defX = 0.40, compY = 0.54;
-    final tX = _dragging ? vn * defX : 0.0;
-    final tY = _dragging ? -vn * defX * compY : 0.0;
+    final tX = dragging ? vn * defX : 0.0;
+    final tY = dragging ? -vn * defX * compY : 0.0;
     const sStiff = 620.0, sDamp = 22.9;
     _sxSpd += ((tX - _sxPos) * sStiff - _sxSpd * sDamp) * dt;
     _sxPos += _sxSpd * dt;
@@ -221,6 +228,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
     final settled =
         !_dragging &&
+        !_pageDrag &&
         _sxSpd.abs() < 0.001 &&
         _sxPos.abs() < 0.002 &&
         _sySpd.abs() < 0.001 &&
@@ -238,6 +246,65 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   double _sxPos = 0, _sxSpd = 0;
   double _syPos = 0, _sySpd = 0;
   Duration? _lastDragTime;
+
+  // ---- 手动拖拽换页的水滴跟手（消费 PageSwitchTabView.tabSwipePageFraction）----
+  // 页面横拖时水滴在相邻页签间等比插值+保持液态胀大，随页面实时移动；
+  // 松手弹滚落定（fraction 归 -1）后交还弹簧动画收敛到目标页签
+  bool _pageDrag = false;
+  double _pageDragPos = 0;
+  double _pageDragVel = 0;
+  int _lastPageUs = 0;
+
+  void _onPageFraction() {
+    if (!mounted) return;
+    final f = tabSwipePageFraction.value;
+    if (f < 0) {
+      if (!_pageDrag) return;
+      _pageDrag = false;
+      // 落定收尾与点击松手同口径：水滴不能随拖拽态结束瞬跳消失——
+      // 借 _press 的 150ms 回落做平滑收缩（等效按压 1.0 → 0），飞行
+      // 中的液态胀大由弹簧速度经 dragMf 接力（见 build 的 velTab）
+      if (!_press.isAnimating) {
+        _press.value = 1;
+        _press.reverse();
+      }
+      _move.animateWith(
+        SpringSimulation(
+          const SpringDescription(mass: 1, stiffness: 420, damping: 25.4),
+          _move.value,
+          _dispIndexOf(widget.index).toDouble(),
+          _pageDragVel,
+        ),
+      );
+      setState(() {});
+      return;
+    }
+    // 分支空间分数位置 → 显示序空间插值（导航栏管理可重排，页签序
+    // 与分支序不必相等）
+    final from = f.floor().clamp(0, 1 << 30);
+    final t = (f - from).clamp(0.0, 1.0);
+    final dFrom = _dispIndexOf(from).toDouble();
+    final dTo = _dispIndexOf(from + 1).toDouble();
+    final disp = dFrom + (dTo - dFrom) * t;
+    final now = DateTime.now().microsecondsSinceEpoch;
+    if (_pageDrag && _lastPageUs > 0) {
+      final dt = (now - _lastPageUs) / 1e6;
+      if (dt > 0.004) {
+        _pageDragVel = (disp - _pageDragPos) / dt;
+        _dragVel = _pageDragVel;
+      }
+    } else {
+      _pageDragVel = 0;
+      _dragVel = 0;
+    }
+    _lastPageUs = now;
+    _pageDrag = true;
+    _pageDragPos = disp;
+    _move.stop();
+    _move.value = disp;
+    _ensureTicker();
+    setState(() {});
+  }
 
   /// 底栏玻璃胶囊定位键：顶层水滴快照在帧末用它实测栏的屏幕位置
   final GlobalKey _barKey = GlobalKey();
@@ -279,6 +346,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   void initState() {
     super.initState();
     _move.value = _dispIndexOf(widget.index).toDouble();
+    tabSwipePageFraction.addListener(_onPageFraction);
   }
 
   @override
@@ -287,7 +355,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     // 导航栏管理改排序后 items 顺序变了但 index（分支索引）可能不变，
     // 水珠必须跟随新显示位，否则停在上一个顺序的旧位置
     final orderChanged = !_sameDisplayOrder(widget.items, oldWidget.items);
-    if (!_dragging) {
+    // 页面横拖中：水滴由 tabSwipePageFraction 逐帧驱动，index 半程变更
+    // 的弹簧不得抢写 _move（拖拽落定的收敛由 _onPageFraction 统一接管）
+    if (!_dragging && !_pageDrag) {
       if (orderChanged) {
         _move.stop();
         _move.value = _dispIndexOf(widget.index).toDouble();
@@ -321,6 +391,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       navDropletSnapshot.value = null;
     });
+    tabSwipePageFraction.removeListener(_onPageFraction);
     _coverAnim?.removeStatusListener(_onCoverAnimStatus);
     _moveC?.dispose();
     _springTickerC?.dispose();
@@ -340,11 +411,17 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           final overlayDroplet = widget.lens && widget.glassBuilder != null;
           final maxW = constraints.maxWidth;
           final maxH = overlayDroplet
-              ? 70.0
-              : (constraints.maxHeight.isFinite ? constraints.maxHeight : 70.0);
+              ? navBarContentHeight
+              : (constraints.maxHeight.isFinite
+                    ? constraints.maxHeight
+                    : navBarContentHeight);
           final tabW = (maxW - 20) / items.length;
-          final dropH = (maxH * 0.8).clamp(54.0, 60.0);
-          final pos = _dragging ? _dragPos : _move.value;
+          final dropH = (maxH * 0.8).clamp(54.0, 64.0);
+          final pos = _dragging
+              ? _dragPos
+              : _pageDrag
+              ? _pageDragPos
+              : _move.value;
 
           // 自愈兜底：水珠静息位必须等于选中页签的显示位。didUpdateWidget
           // 的弹簧动画可能被转场锁帧/外部 stop 等打断而停在半途，这里检测
@@ -355,7 +432,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           // called during build」），异常还会中止当帧子树更新——指示器冻结
           // 在旧帧、修正永不落地（debug logcat 反复复现）。改为帧末执行：
           // 帧回调里标脏合法，下一帧按修正值落位收敛，不会循环
-          if (!_dragging && !_move.isAnimating) {
+          if (!_dragging && !_pageDrag && !_move.isAnimating) {
             final target = _dispIndexOf(widget.index).toDouble();
             if ((_move.value - target).abs() > 0.001) {
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -368,24 +445,34 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             }
           }
 
-          final velPx = _dragging ? _dragVel.abs() * tabW : 0.0;
-          final dragMf = _dragging
+          final pageDragging = _dragging || _pageDrag;
+          // 速度接力：拖拽中用触点速度；松手后弹簧飞行速度接管，水滴
+          // 随减速自然收缩，避免落定瞬间形态突变
+          final velTab = pageDragging
+              ? _dragVel.abs()
+              : (_move.isAnimating ? _move.velocity.abs() : 0.0);
+          final velPx = velTab * tabW;
+          final dragMf = pageDragging
               ? math.max(0.18, (velPx / 2600).clamp(0.0, 1.0))
               : (velPx > 45 ? ((velPx - 45) / 1400).clamp(0.0, 1.0) : 0.0);
           final pressG = Curves.easeOut.transform(_press.value);
-          final mf = math.max(pressG, dragMf);
+          // 页面横拖没有 _press 按压量（那是页签自身的按下动画），水滴
+          // 只有速度分量、胀大和高光都弱于点击态。补等效按压分量 1.0，
+          // 让滑动水滴与点击水滴观感一致（速度分量继续叠加，甩动更胀）
+          final effPress = math.max(pressG, _pageDrag ? 1.0 : 0.0);
+          final mf = math.max(effPress, dragMf);
 
-          if (_dragging && !_springTicker.isActive) _ensureTicker();
+          if (pageDragging && !_springTicker.isActive) _ensureTicker();
 
-          double k = 1 + dragMf * 0.22 + pressG * 0.55;
+          double k = 1 + dragMf * 0.22 + effPress * 0.55;
           if (!overlayDroplet) {
             // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
             // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
             // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
             k = math.min(k, maxH / dropH);
           }
-          final stretchX = _dragging ? _sxPos : 0.0;
-          final stretchY = _dragging ? _syPos : 0.0;
+          final stretchX = pageDragging ? _sxPos : 0.0;
+          final stretchY = pageDragging ? _syPos : 0.0;
           // 红色胶囊（非液态）样式：滑动选择时长度收一点，松手回到原长。
           // 用 _press 驱动，收和放都是 150ms 平滑过渡，不会在松手瞬间硬跳；
           // 横向也不再跟着 k 变长，否则快速拖动时反而比静止时更长。
@@ -397,7 +484,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
           final d = dropH;
           final bool scaledIndicator = overlayDroplet;
-          final dropletOn = _dragging || pressG > 0.005 || dragMf > 0.005;
+          final dropletOn = pageDragging || pressG > 0.005 || dragMf > 0.005;
           Widget indicator;
           if (widget.lens && dropletOn) {
             final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;

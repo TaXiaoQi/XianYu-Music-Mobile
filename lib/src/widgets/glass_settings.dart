@@ -230,14 +230,19 @@ Widget frostedCardSurface({
   );
   // 转场期间路由内容已由 RouteStaticSnapshot 冻结为快照，
   // 玻璃保持全量模糊即可呈现「最后一帧」的静止观感
+  // 预算降载（仅 iOS 激活）：滚动/换页窗口 sigma 归 0 → 下方整层摘除
+  // BackdropFilter，卡片退实色透 fill（矩阵降采样链在 live backdrop 上
+  // 渲染异常读作变透明，故降载不走降采样，直接摘层）
   final sigma = wallpaperTransparent
       ? wallpaperGlassSigma(context)
-      : 8.0 * frostedBlurScale(ref);
+      : surfaceBlurSigma(
+          base: 8.0 * frostedBlurScale(ref),
+          budget: ref.watch(blurBudgetProvider(BlurSurfaceType.generic)),
+          type: BlurSurfaceType.generic,
+        );
   if (solid) return surface;
   if (sigma <= 0) return surface;
-  // 滚动档不降载：live backdrop 上矩阵降采样链在 Impeller 渲染异常
-  // （滚动中模糊失效读作变透明），且毛玻璃 sigma 小、模糊开销∝σ²，
-  // 恒用与静置一致的普通 blur 保证观感稳定
+  // 毛玻璃 sigma 小、模糊开销∝σ²，恒用与静置一致的普通 blur 保证观感稳定
   // 静态帧：转场/动画帧不重绘玻璃层，防 saveLayer 内重采样闪黑
   // 按路由实例分组的共享回读（_cardGroupFor）：同页卡片共享一次制备
   // （性能，恢复 cardGlassKey 组的既有效果），跨路由各自独立组（正确性，
