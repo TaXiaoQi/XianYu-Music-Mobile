@@ -130,6 +130,14 @@ class _SmoothFadeForwards extends StatelessWidget {
     end: 0,
   ).chain(CurveTween(curve: const Interval(0, 0.25)));
 
+  /// 预测返回手势期专用：_fadeOut 的 (0, 0.25) 区间在 300ms 正常 pop 里
+  /// 是快速让位交叉淡出，但跟手拖拽时表现为「行程刚起步就没底色」。
+  /// 手势期前半程保持完全不透明，末段随平移淡出。
+  static final Animatable<double> _gestureFadeOut = Tween<double>(
+    begin: 1,
+    end: 0,
+  ).chain(CurveTween(curve: const Interval(0.55, 1, curve: Curves.easeIn)));
+
   static final Animatable<double> _fadeIn = Tween<double>(
     begin: 0,
     end: 1,
@@ -158,31 +166,38 @@ class _SmoothFadeForwards extends StatelessWidget {
           ),
         ),
       ),
-      child: DualTransitionBuilder(
-        animation: ReverseAnimation(secondaryAnimation),
-        forwardBuilder: (context, anim, child) => FadeTransition(
-          opacity: _fadeIn.animate(anim),
-          child: SlideTransition(
-            position: _secondaryBackwardTranslation.animate(anim),
-            child: child,
-          ),
-        ),
-        reverseBuilder: (context, anim, child) => FadeTransition(
-          opacity: _fadeOut.animate(anim),
-          child: SlideTransition(
-            position: _secondaryForwardTranslation.animate(anim),
-            child: child,
-          ),
-        ),
-        // 被覆盖侧（壳层/旧界面）同样冻结为静态快照：此前只有主动画侧
-        // （推入/弹出的页面）有 RouteStaticSnapshot，壳层的淡出/淡入
-        // 全程 live 渲染——整壳 saveLayer + 壳内玻璃 BackdropFilter
-        // 逐帧重采样，是转场卡顿主源。快照包在 Fade/Slide 之内，
-        // 冻结图随转场一起淡出平移；state 稳定（不随方向重建）。
+      child: ValueListenableBuilder<bool>(
+        valueListenable: predictiveBackGestureActive,
+        // 预测返回手势期：被覆盖页跳过 status 驱动的淡入编排，直接全亮
+        // 渲染——手势期顶层路由控制器直接改 value、status 停在
+        // completed，这里的 DualTransitionBuilder(ReverseAnimation(
+        // secondary)) 也翻成 completed 走正向淡入分支，编排卡在中间
+        // 透明度上，下层页面近乎黑屏。正常 push/pop status 正常流转，
+        // 编排不受影响。快照 state 经 VLB child 传递，切换不丢状态。
         child: RouteStaticSnapshot(
           animation: ReverseAnimation(secondaryAnimation),
           child: child!,
         ),
+        builder: (context, gestureActive, kid) => gestureActive
+            ? kid!
+            : DualTransitionBuilder(
+                animation: ReverseAnimation(secondaryAnimation),
+                forwardBuilder: (context, anim, child) => FadeTransition(
+                  opacity: _fadeIn.animate(anim),
+                  child: SlideTransition(
+                    position: _secondaryBackwardTranslation.animate(anim),
+                    child: child,
+                  ),
+                ),
+                reverseBuilder: (context, anim, child) => FadeTransition(
+                  opacity: _fadeOut.animate(anim),
+                  child: SlideTransition(
+                    position: _secondaryForwardTranslation.animate(anim),
+                    child: child,
+                  ),
+                ),
+                child: kid!,
+              ),
       ),
     );
   }

@@ -118,6 +118,16 @@ class BackGestureProgressSynth {
   }
 }
 
+/// 预测返回手势进行中（含 iOS 触摸合成与 Android 系统事件两条路径）。
+/// 被覆盖页据此跳过 status 驱动的转场编排：DualTransitionBuilder 按
+/// animation.status 切正反向分支，而手势期路由控制器直接改 value、
+/// status 停在 completed，被覆盖页的 ReverseAnimation(secondary) 翻成
+/// completed 后仍走正向「淡入」分支——编排卡在中间透明度上，下层
+/// 页面近乎黑屏。正常 push/pop 不受影响（status 正常流转）。
+final ValueNotifier<bool> predictiveBackGestureActive = ValueNotifier<bool>(
+  false,
+);
+
 class PredictiveBackGestureDetector extends StatefulWidget {
   const PredictiveBackGestureDetector({super.key, required this.route, required this.builder});
 
@@ -151,6 +161,7 @@ class _PredictiveBackGestureDetectorState extends State<PredictiveBackGestureDet
   PredictiveBackPhase _phase = PredictiveBackPhase.idle;
   set phase(PredictiveBackPhase phase) {
     if (_phase != phase && mounted) {
+      predictiveBackGestureActive.value = phase != PredictiveBackPhase.idle;
       setState(() => _phase = phase);
     }
   }

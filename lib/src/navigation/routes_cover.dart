@@ -219,10 +219,36 @@ class _CoverRoute<T> extends PageRoute<T> with _CoverGestureCommit<T> {
         route: this,
         builder: (context, phase, startBackEvent, currentBackEvent) {
           if (_isSmooth(context)) {
-            return _SmoothFadeForwards(
+            final smooth = _SmoothFadeForwards(
               animation: animation,
               secondaryAnimation: secondaryAnimation,
               child: child,
+            );
+            if (phase == PredictiveBackPhase.idle) return smooth;
+            // 手势期不能用 smooth：DualTransitionBuilder 按 animation.status
+            // 切换正反向，预测返回期间控制器直接改 value、status 停在
+            // completed，正向分支一动不动（松手 pop 才开始动画）。
+            // 手势期直接用值驱动反向退出（平移+淡出）：_fadeOut/
+            // _backwardTranslation 的曲线以「pop 开始 t=0」为基准，须套
+            // ReverseAnimation 翻转时间轴——直喂原始 animation 会在拖拽
+            // 起手就算出 opacity=0（页面瞬间消失，看似丢上一页）。
+            // 内容与 cover 同款走离屏快照：实时渲染会让液态玻璃逐帧
+            // 重抓背板与平移竞速产生抽搐。不套 TransitionBackdrop：cover
+            // 样式下层页被转场隐藏需实底兜底，平移样式下层页真实渲染。
+            final rev = ReverseAnimation(animation);
+            return FadeTransition(
+              opacity: _SmoothFadeForwards._gestureFadeOut.animate(rev),
+              child: SlideTransition(
+                position: _SmoothFadeForwards._backwardTranslation.animate(rev),
+                // 页面底色/壁纸（RoutePageBackdrop）在统一包装段，提前
+                // return 会绕过它——手势期页面变透明直接透下层。包在
+                // 平移/淡出内侧，底色随页面一起位移淡出。
+                child: RoutePageBackdrop(
+                  completion: animation,
+                  location: location,
+                  child: RouteStaticSnapshot(animation: animation, child: child),
+                ),
+              ),
             );
           }
         final isPortrait =
@@ -410,12 +436,22 @@ class _CoverBackRoute extends PageRoute<void> with _CoverGestureCommit<void> {
               child: child,
             );
             if (phase == PredictiveBackPhase.idle) return smooth;
-            return TransitionBackdrop(
-              child: Stack(
-                children: [
-                  smooth,
-                  PredictiveCoverReturnView(animation: animation),
-                ],
+            // 手势期不能用 smooth：DualTransitionBuilder 按 status 切换
+            // 正反向，预测返回期间 status 停在 completed 不跟手；直接用
+            // 值驱动反向退出（同 _CoverRoute：ReverseAnimation 翻转时间
+            // 轴 + 离屏快照防玻璃抽搐，不套 TransitionBackdrop 以免盖住
+            // 真实渲染的下层页）
+            final rev = ReverseAnimation(animation);
+            return FadeTransition(
+              opacity: _SmoothFadeForwards._gestureFadeOut.animate(rev),
+              child: SlideTransition(
+                position: _SmoothFadeForwards._backwardTranslation.animate(rev),
+                // 同 _CoverRoute：提前 return 绕过了统一包装段的底色
+                child: RoutePageBackdrop(
+                  completion: animation,
+                  location: location,
+                  child: RouteStaticSnapshot(animation: animation, child: child),
+                ),
               ),
             );
           }
