@@ -248,8 +248,11 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     setGlobalDragging(true);
   }
 
-  double _playerMinTop(double paddingTop, bool landscape) =>
-      paddingTop + 8.0 + (landscape ? 44.0 : 40.0) + 8.0;
+  /// 拖拽/停靠纵向上限：让位缩放画布内的悬浮顶栏（间距与栏高都在
+  /// 缩放子树内，视觉高度随样式大小放大；安全区 padding 是真实视口
+  /// 值不缩放）。尾部 8 是自由呼吸间距，不随缩放
+  double _playerMinTop(double paddingTop, bool landscape, double uiScale) =>
+      paddingTop + 8.0 * uiScale + (landscape ? 44.0 : 40.0) * uiScale + 8.0;
 
   void _onPlayerPanUpdate(
     DragUpdateDetails details,
@@ -262,6 +265,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     double landscapeLeftBound,
     double landscapeRightBound,
     bool landscape,
+    double uiScale,
   ) {
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
@@ -271,7 +275,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     final maxLeft = landscape
         ? landscapeRightBound
         : (screenSize.width - barW - 6.0);
-    final minTop = _playerMinTop(padding.top, landscape);
+    final minTop = _playerMinTop(padding.top, landscape, uiScale);
 
     setState(() {
       _playerLeft = (currentLeft + details.delta.dx).clamp(
@@ -373,23 +377,41 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     } else {
       defaultLeft = 12.0;
     }
+    // 样式大小缩放：路由子树（含顶栏/底栏）在 app.dart 里按 FittedBox
+    // 等比放大（逻辑画布 = 视口 / 缩放），mini 条是不参与缩放的系统
+    // chrome——对缩放后 chrome 的让位高度必须乘同一缩放因子，否则
+    // 大/特大档下底栏实际占位大于预留，mini 条压进底栏/顶栏
+    //（口径同 app.dart：跟随系统档乘系统字体缩放因子，固定档查表）
+    final settings = ref.watch(settingsProvider).valueOrNull;
+    final uiIndex = uiScaleIndexFor(settings, landscape);
+    final uiScale = uiIndex < 0
+        ? MediaQuery.textScalerOf(context).scale(100) / 100
+        : uiScaleOf(uiIndex);
+
     // 低位停靠档（二级页/无底栏导航模式）：与悬浮底栏同款下沉留空
-    // （8px + 安全区 30%），不直接贴在 Home 横条上
-    final lowGap = 8.0 + safeBottom * 0.3;
+    // （8px + 安全区 30%），不直接贴在 Home 横条上；8px 在缩放画布
+    // 内布局，视觉上随样式大小放大
+    final lowGap = 8.0 * uiScale + safeBottom * 0.3;
+    // 高位停靠档让位底栏：必须用 navBarContentHeight（iOS 80pt）而非
+    // 硬编码 70——iOS 26 底栏抬到 80 后 70 会让 mini 条压住胶囊顶
+    // ~10pt，顶层水滴（居中图标、上缘贴胶囊顶）会叠到 mini 条上；
+    // 且乘样式大小缩放（底栏在缩放子树内整体放大）
+    final navH = navBarContentHeight * uiScale;
+    final chromeGap = 8.0 * uiScale;
     final defaultTop = isSide
         ? (screenSize.height - lowGap - 58.0)
         : (floating
             ? (_lowState
                 ? (screenSize.height - lowGap - 58.0)
-                : (screenSize.height - safeBottom * 0.3 - 8.0 - 70.0 - 58.0))
+                : (screenSize.height - safeBottom * 0.3 - chromeGap - navH - 58.0))
             : (_lowState
                 // 固定底栏在二级页同样塌缩隐藏（_FixedChrome 高度归零），
                 // 低位停靠档与悬浮模式一致
                 ? (screenSize.height - lowGap - 58.0)
                 : (screenSize.height -
                       safeBottom * 0.3 -
-                      8.0 -
-                      70.0 -
+                      chromeGap -
+                      navH -
                       58.0)));
 
     final batchLift = ref.watch(batchBarLiftProvider);
@@ -401,14 +423,14 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       if (floating) {
         return _lowState
             ? (screenSize.height - lowGap - barH)
-            : (screenSize.height - safeBottom * 0.3 - 8.0 - 70.0 - barH - batchLift);
+            : (screenSize.height - safeBottom * 0.3 - chromeGap - navH - barH - batchLift);
       }
       return _lowState
           ? (screenSize.height - lowGap - barH)
           : (screenSize.height -
                 safeBottom * 0.3 -
-                8.0 -
-                70.0 -
+                chromeGap -
+                navH -
                 barH -
                 batchLift);
     }();
@@ -422,7 +444,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         .clamp(shellMinLeft,
             shellMaxLeft > shellMinLeft ? shellMaxLeft : shellMinLeft)
         .toDouble();
-    final minTopClamped = _playerMinTop(padding.top, landscape);
+    final minTopClamped = _playerMinTop(padding.top, landscape, uiScale);
     final actualTop = (_playerTop ?? shared?.dy ?? liftedDefaultTop)
         .clamp(
             minTopClamped, math.max(minTopClamped, dragMaxTop.toDouble()))
@@ -482,7 +504,8 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
                   miniBarW,
                   landscapeLeftBound,
                   landscapeRightBound,
-                  landscape),
+                  landscape,
+                  uiScale),
               onPanEnd: (d) =>
                   _onPlayerPanEnd(d, defaultLeft, defaultTop, dragMaxTop),
               onPanCancel: _onPlayerPanCancel,

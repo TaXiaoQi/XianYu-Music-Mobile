@@ -1036,7 +1036,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   void _measureGeometry() {
     final ro = _surfaceKey.currentContext?.findRenderObject();
     if (ro is! RenderBox || !ro.attached || !ro.hasSize) return;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
+    // 真实视图 dpr（与液态垫 backing 同款修正）：MediaQuery 的 dpr 会被
+    // UI 缩放覆盖，采样原点必须信 view dpr——否则折射透镜全局错位，
+    // 且偏移量随玻璃尺寸/位置变化（iOS 26 水滴歪移实测）
+    final dpr = View.of(context).devicePixelRatio;
     final global = ro.localToGlobal(Offset.zero);
     _glassDx = global.dx * dpr;
     _glassDy = global.dy * dpr;
@@ -1045,7 +1048,7 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   }
 
   void _writeUniforms(ui.FragmentShader shader) {
-    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final dpr = View.of(context).devicePixelRatio;
     final view = View.of(context);
     final bg = widget.backgroundColor;
     final a = bg.a;
