@@ -182,18 +182,6 @@ typedef void(^QQApiInterfaceSendMessageResultBlock)(QQApiSendResultCode sendResu
 + (BOOL)isSupportPushToQZone;
 
 /**
- 启动QQ
- \return 成功返回YES，否则返回NO
- */
-+ (BOOL)openQQ;
-
-/**
- 启动TIM
- \return 成功返回YES，否则返回NO
- */
-+ (BOOL)openTIM;
-
-/**
  获取QQ下载地址
  
  如果App通过<code>QQApiInterface#isQQInstalled</code>和<code>QQApiInterface#isQQSupportApi</code>检测发现QQ没安装或当前版本QQ不支持API调用，可引导用户通过打开此链接下载最新版QQ。

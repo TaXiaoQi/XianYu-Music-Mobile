@@ -44,9 +44,12 @@ Pod::Spec.new do |s|
   s.dependency 'Flutter'
   s.platform = :ios, '11.0'
 
-  # v3.5.11
+  # 官方 TencentOpenAPI 3.6.20 XCFramework（适配 Xcode 26，含
+  # ios-arm64_x86_64-simulator slice，模拟器原生 arm64 可用；
+  # 旧 3.5.11 fat framework 无模拟器 slice，且新模拟器运行时已不支持
+  # Rosetta x86_64，导致模拟器构建链路不可用）
   s.subspec 'vendor' do |sp|
-    sp.vendored_frameworks = 'Libraries/*.framework'
+    sp.vendored_frameworks = 'Libraries/*.xcframework'
     sp.frameworks = 'Security', 'SystemConfiguration', 'CoreGraphics', 'CoreTelephony', 'WebKit'
     sp.libraries = 'iconv', 'sqlite3', 'stdc++', 'z'
     sp.requires_arc = true

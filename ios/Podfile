@@ -44,10 +44,9 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    # ffmpeg_kit_flutter_new 预编译 XCFramework 模拟器只有 arm64-simulator slice，
-    # 排除 arm64 以避免链接冲突（真机 arm64 不受影响）
-    installer.pods_project.build_configurations.each do |config|
-      config.build_settings["EXCLUDED_ARCHS[sdk=iphonesimulator*]"] = "arm64"
-    end
+    # TencentOpenAPI 已换官方 3.6.20 XCFramework（含 arm64-sim slice），
+    # 模拟器不再需要排除 arm64 走 Rosetta（新模拟器运行时已不支持
+    # Rosetta，x86_64 路线死亡）。SUPPORTED_PLATFORMS 已放开包含
+    # iphonesimulator（pbxproj）
   end
 end
