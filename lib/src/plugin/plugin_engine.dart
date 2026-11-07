@@ -334,6 +334,19 @@ class PluginEngine {
           '[lxRequest] ${source.name}/$action 跳过：插件未加载或未启用');
       return null;
     }
+    final platformKey = (data['source'] ?? '').toString();
+    final qualityKey = (data['type'] ?? '').toString();
+    // 确定性失败负缓存短路（仅 musicUrl：歌词/封面与音质阶梯无关，能力缺失
+    // 不代表歌词也被拒）：封 IP/实例缺失（插件级）与平台/档位能力缺失
+    // （组合级）在冷却窗口内重试注定同样失败，直接返回 null 让编排层
+    // 换下一个兜底插件，不再逐档位逐插件空转
+    if (action == 'musicUrl' &&
+        (_pluginIsDeterministicBanned(source.id) ||
+            _pluginIsCapabilityBanned(source.id, platformKey, qualityKey))) {
+      AppLog.debug('plugin',
+          '[lxRequest] ${source.name}/$action 短路：失败冷却中 ($platformKey/$qualityKey)');
+      return null;
+    }
 
     try {
       final response = await call(
@@ -352,12 +365,19 @@ class PluginEngine {
         ],
         timeoutMs: timeoutMs,
       );
+      // 请求成功说明插件实例存活且链路可用：解除插件级确定性失败冷却
+      _pluginClearDeterministicBan(source.id);
       AppLog.debug('plugin',
           '[lxRequest] ${source.name}/$action source=${data['source']} type=${data['type']} 完成');
       return response;
     } catch (e) {
       final msg = e is PluginEngineException ? e.message : e.toString();
       AppLog.warn('plugin', '[lxRequest] ${source.name}/$action 失败: $msg');
+      // 失败记账（仅 musicUrl）：命中确定性/能力型特征才生效，60s 冷却内同请求短路
+      if (action == 'musicUrl') {
+        _pluginMarkDeterministicFailure(source.id, msg);
+        _pluginMarkCapabilityFailure(source.id, platformKey, qualityKey, msg);
+      }
       if (action == 'lyric' &&
           RegExp(r'action\s+not\s+support|not\s+support', caseSensitive: false)
               .hasMatch(msg)) {
