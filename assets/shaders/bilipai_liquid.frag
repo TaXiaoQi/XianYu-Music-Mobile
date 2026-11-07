@@ -54,6 +54,9 @@ uniform float uDepthEffect;
 // 槽 19：uTime —— 持续涟漪时间（秒）。给采样点加低频正弦微位移，让玻璃
 // 自身始终带轻微液态流动（静止/拖拽/滚动皆可见），不是单纯停在模糊上。
 uniform float uTime;
+// 槽 20：连续曲率（squircle）指数，与 Dart appSquirclePath 同源：
+// 胶囊/圆形传 2.0 退化为精确圆，非胶囊恒 2.2（标定见 squircle.dart）
+uniform float uSquircleN;
 
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
@@ -74,10 +77,16 @@ void main() {
   // 玻璃局部坐标（中心为原点）——BiliPai 的 p = fragCoord - center 语义。
   vec2 c = p - (uGlassOrigin + uGlassSize * 0.5);
 
-  // 圆角矩形 SDF（BiliPai 同款；size 取半尺寸，q = |p| - (half - r)）。
+  // 连续曲率（superellipse）SDF：零线与 Dart squircle 裁剪路径精确重合
+  //（0.88 只缩放梯度≈带厚，不移动边界）。曾用圆角矩形 SDF——角部弧线
+  // 与 squircle 裁剪边错开数像素，深色下折射带在角部读成第二道「方角」
   vec2 half2size = uGlassSize * 0.5;
   vec2 q = abs(c) - max(half2size - vec2(uRadius), vec2(0.0));
-  float sd = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - uRadius;
+  vec2 qq = max(q, vec2(0.0));
+  float corner =
+      pow(pow(qq.x, uSquircleN) + pow(qq.y, uSquircleN), 1.0 / uSquircleN) -
+      uRadius;
+  float sd = corner * 0.88 + min(max(q.x, q.y), 0.0);
 
   // —— 边缘透镜折射（BiliPai Lens.kt 原版公式逐行对齐）——
   // 剖面 = circleMap(1 - depth/H) = 1 - sqrt(1 - x²)：位移在贴边处最大、
@@ -89,10 +98,10 @@ void main() {
   // —— 全表面凸透镜放大（先做，边带折射在最终屏幕空间全强度作用）——
   // depthEffect>0 的水滴：采样坐标往圆心收，内部整个背景被放大（B 站
   // 水滴「折射整个背景」的观感来源）；玻璃壳 depthEffect=0 不受影响。
-  // mix 系数上限 0.35 防过度畸变（1.2×0.25=0.3，约放大 1.43 倍）。
+  // mix 系数上限 0.45 防过度畸变（1.6×0.25=0.4，约放大 1.67 倍）。
   if (uDepthEffect > 0.0 && sd < 0.0) {
     vec2 centerUV = uGlassOrigin + uGlassSize * 0.5;
-    uv = mix(uv, centerUV, min(uDepthEffect * 0.25, 0.35));
+    uv = mix(uv, centerUV, min(uDepthEffect * 0.25, 0.45));
   }
 
   if (sd < 0.0 && uEdgeAmount > 0.0 && uRefract > 0.0) {

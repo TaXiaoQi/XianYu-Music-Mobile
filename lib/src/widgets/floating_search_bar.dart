@@ -139,8 +139,11 @@ class FloatingGlassSurface extends ConsumerWidget {
 
     if (liquid) {
       final quality = liquidGlassQualitySetting(ref);
+      // 液态分支半径视觉补偿：squircle（n=2.2）视觉角半径 0.86r，26≈
+      // 毛玻璃分支 RRect 22 的角部观感，两材质切换形状不变
+      final liquidRadius = radius / 0.86;
       final glass = BiliPaiGlass(
-        radius: radius,
+        radius: liquidRadius,
         useChromeFrame: chromeFrame,
         refract: bilipaiRefractOf(quality),
         chroma: bilipaiChromaOf(quality),
@@ -156,7 +159,7 @@ class FloatingGlassSurface extends ConsumerWidget {
         saturation: bilipaiSaturationOf(quality),
         child: child,
       );
-      return liquidGlassShell(context, child: glass, radius: radius);
+      return liquidGlassShell(context, child: glass, radius: liquidRadius);
     }
     return pseudoLiquidSurface(
       context: context,

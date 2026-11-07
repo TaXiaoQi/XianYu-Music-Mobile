@@ -303,8 +303,11 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    // 胶囊与毛玻璃分支（_frostedGlass 的 999 胶囊）同形：radius 999 由
+    // backing/rim/squircle 统一钳到半短边成 stadium，shader 侧钳制后
+    // 边带折射在胶囊上照常生效
     final glass = BiliPaiGlass(
-      radius: 30,
+      radius: 999,
       useChromeFrame: true,
       refract: bilipaiRefractOf(quality),
       chroma: bilipaiChromaOf(quality),
@@ -324,7 +327,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       saturation: bilipaiSaturationOf(quality),
       child: tabs,
     );
-    return liquidGlassShell(context, child: glass, radius: 30);
+    return liquidGlassShell(context, child: glass, radius: 999);
   }
 
   Widget _frostedGlass(
@@ -402,11 +405,9 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         borderRadius: BorderRadius.circular(999),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-          // 并入 navGlassKey 共享回读组：组捕获的模糊输入是捕获点之下
-          // 的合成内容——壁纸模式含壁纸磨砂垫的提亮输出；独立回读只
-          // 取路由原始内容（垫在底栏之上够不着），壁纸模式下胶囊整条
-          // 读暗。mini(_frostedSurface)/固定底栏/壁纸垫同组均正常互证；
-          // 第三轮的读黑源自条带垫进组扰动捕获点，该成员已退组
+          // 并入 navGlassKey 共享回读组（壁纸模式独立回读会整条读暗）。
+          // 水滴透镜采不到组内容（只折射页面内容）是已知取舍：栏内容
+          // 的放大由真实图标缩放（iconScale 1.38x）承担
           backdropGroupKey: navGlassKey,
           child: capsule,
         ),

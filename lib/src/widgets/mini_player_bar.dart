@@ -1053,6 +1053,9 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     final bg = widget.backgroundColor;
     final a = bg.a;
     final minSide = math.min(_glassW, _glassH) / dpr;
+    // 胶囊/超大半径钳到半短边再传 shader（与 bilipai_glass.backing 同款）：
+    // 原值 999 会让 SDF 零线远在玻璃外，折射带整圈失效
+    final effRadius = math.min(widget.radius, minSide / 2);
     shader
       ..setFloat(0, view.physicalSize.width)
       ..setFloat(1, view.physicalSize.height)
@@ -1065,7 +1068,7 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       ..setFloat(8, bg.b * a)
       ..setFloat(9, a)
       ..setFloat(10, widget.specular)
-      ..setFloat(11, widget.radius * dpr)
+      ..setFloat(11, effRadius * dpr)
       ..setFloat(12, _glassDx)
       ..setFloat(13, _glassDy)
       ..setFloat(14, _glassW)
@@ -1073,7 +1076,13 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       ..setFloat(16, math.min(widget.edgeAmount, minSide * 0.42) * dpr)
       ..setFloat(17, widget.saturation)
       ..setFloat(18, widget.depthEffect)
-      ..setFloat(19, _tick.value * 8.0);
+      ..setFloat(19, _tick.value * 8.0)
+      // 超椭圆指数：与 shader SDF/Dart squircle 裁剪同源（胶囊/圆形 n=2，
+      // 非胶囊恒 2.2，标定见 squircle.dart）
+      ..setFloat(
+        20,
+        effRadius >= minSide / 2 - 0.5 ? 2.0 : 2.2,
+      );
   }
 
   @override

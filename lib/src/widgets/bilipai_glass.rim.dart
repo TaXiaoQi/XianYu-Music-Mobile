@@ -49,7 +49,9 @@ class _LiquidGlassRimPainter extends CustomPainter {
     final outer = Offset.zero & size;
     final shortest = outer.shortestSide;
     if (shortest <= 0) return;
-    final rr = squircleGlassPath(
+    // 与玻璃裁剪/shader SDF 三方同款的超椭圆路径（radiusScale 1.0）：
+    // 圆形 RRect 与 squircle 裁剪角部错位数像素，亮 rim 一衬即成「方角」
+    final rr = appSquirclePath(
       outer.deflate(strokeWidth / 2),
       radius.clamp(0.0, shortest / 2),
     );
@@ -62,42 +64,52 @@ class _LiquidGlassRimPainter extends CustomPainter {
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withValues(alpha: isDark ? 0.05 : 0.09),
-          Colors.white.withValues(alpha: isDark ? 0.015 : 0.03),
+          Colors.white.withValues(alpha: isDark ? 0.014 : 0.09),
+          Colors.white.withValues(alpha: isDark ? 0.005 : 0.03),
           Colors.white.withValues(alpha: 0),
         ],
       ).createShader(Rect.fromLTWH(0, 0, outer.width, glossHeight));
     canvas.drawPath(rr, gloss);
 
-    // 左上主高光弧：沿内缘左上弧段画镜面反光亮线
-    final arcPath = squircleGlassPath(
-      outer.deflate(strokeWidth * 1.6),
-      radius.clamp(0.0, shortest / 2),
-    );
-    final metrics = arcPath.computeMetrics().toList();
-    if (metrics.isNotEmpty) {
-      final m = metrics.first;
-      final arcPaint = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth * 2.2
-        ..strokeCap = StrokeCap.round
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.2)
-        ..color = Colors.white.withValues(alpha: isDark ? 0.20 : 0.30);
-      // 从左缘中段起，扫过左上角到顶缘中段（iOS 光源左上的反光带）
-      final start = m.length * 0.60;
-      final span = m.length * 0.16;
-      canvas.drawPath(
-        m.extractPath(start, (start + span).clamp(0.0, m.length)),
-        arcPaint,
+    // 左上主高光弧：仅浅色保留（白 on 白不显形，仅为语言完整性）。
+    // 深色下弧段会叠加 rim 形成左上角亮斑——iOS 深色无局部亮角，只有
+    // rim 纵向渐变（顶亮→侧腰灭），故深色不画
+    if (!isDark) {
+      final arcPath = appSquirclePath(
+        outer.deflate(strokeWidth / 2),
+        radius.clamp(0.0, shortest / 2),
       );
+      final metrics = arcPath.computeMetrics().toList();
+      if (metrics.isNotEmpty) {
+        final m = metrics.first;
+        final arcPaint = Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0
+          ..strokeCap = StrokeCap.round
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.8)
+          ..color = Colors.white.withValues(alpha: 0.22);
+        // 路径自左缘中点起笔逆时针向上：0.06-0.26 = 左缘上段→左上角→
+        // 顶缘左段（iOS 光源左上的反光带）
+        final start = m.length * 0.06;
+        final span = m.length * 0.20;
+        canvas.drawPath(
+          m.extractPath(start, (start + span).clamp(0.0, m.length)),
+          arcPaint,
+        );
+      }
     }
 
-    // rim 主描边：纵向线性渐变（顶亮→底暗）。原生 rim 是柔光不是
-    // 实线——宽笔触 + 模糊 + 低透明度，边缘像「亮起来」而非描边。
+    // rim 主描边：纵向线性渐变。浅色=顶亮→底暗（光从上来，底暗线是
+    // 折射阴影）；深色=纯高光（iOS 深色取证：无暗线，峰值 ~29% 亮度、
+    // 宽 2-3px 紧贴轮廓；顶/底亮、侧腰最暗=高光沿轮廓有明暗节奏）。
+    // 黑 rim 在深色背景上不可见等于没有——描边是深色下的主深度线索
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.6);
+      // 深色高光=细线更亮（iOS 取证 ~1px 宽亮线）：窄笔触小模糊提 alpha；
+      // 浅色白线本就不显形，保持宽笔触柔光
+      ..strokeWidth = isDark ? 1.0 : 1.2
+      ..maskFilter = MaskFilter.blur(
+          BlurStyle.normal, isDark ? 0.5 : 1.4);
     const white = Colors.white;
     const black = Colors.black;
     paint.shader = isDark
@@ -105,10 +117,10 @@ class _LiquidGlassRimPainter extends CustomPainter {
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
-              white.withValues(alpha: 0.30),
-              white.withValues(alpha: 0.08),
-              black.withValues(alpha: 0.06),
-              black.withValues(alpha: 0.30),
+              white.withValues(alpha: 0.22),
+              white.withValues(alpha: 0.03),
+              white.withValues(alpha: 0.02),
+              white.withValues(alpha: 0.13),
             ],
           ).createShader(outer)
         : LinearGradient(

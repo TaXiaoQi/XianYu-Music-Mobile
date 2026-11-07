@@ -467,8 +467,12 @@ class RenderLiquidBacking extends RenderBox {
     final fade = _fadeBlend;
     // 转场降级窗口（_liveUseShader=false）：shader 采样失效，但 chrome
     // 缓存帧是上次正常合成的液态输出——直接画自己区域的裁剪即可复现
-    // 上次观感，无任何采样。优先级最高（覆盖兜底/交叉淡入分支）
-    if (_useChromeFrame && !_liveUseShader && _chromeFrameUsable()) {
+    // 上次观感，无任何采样。优先级最高（覆盖兜底/交叉淡入分支）。
+    // 弹窗打开中不裁帧：帧里烘的旧 chrome 文字会与实时文字叠成重影
+    if (_useChromeFrame &&
+        !_liveUseShader &&
+        !globalModalOpen.value &&
+        _chromeFrameUsable()) {
       final frame = chromeGlassFrame.value!;
       if (_paintChromeFrame(
         context,
@@ -706,11 +710,17 @@ class RenderLiquidBacking extends RenderBox {
       blurLayer = layer;
     }
 
-    final clipPath = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-        Offset.zero & size,
-        Radius.circular(_radius),
-      ));
+    // 与 shader SDF/rim/内容裁剪四方同款：超椭圆连续曲率。胶囊指数取
+    // n=2（退化圆），非胶囊恒 2.2（与 appSquirclePath 同公式，见
+    // squircle.dart 的曲率标定注释）
+    final shortest = math.min(size.width, size.height);
+    // 胶囊/超大半径钳到半短边再传 shader（复刻旧 RRect 自动钳制语义）：
+    // radius 999 原值传给 SDF 会让零线远在玻璃外（sd≈-2.8k），折射带
+    // 整圈失效——「液态感消失」；钳到半短边后 SDF 恰为 stadium，边带
+    // 折射在胶囊上恢复生效
+    final effRadius = math.min(_radius, shortest / 2);
+    final squircleN = effRadius >= shortest / 2 - 0.5 ? 2.0 : 2.2;
+    final clipPath = squircleGlassPath(Offset.zero & size, _radius);
 
     final a = bg.a;
     final refractPx =
@@ -743,7 +753,7 @@ class RenderLiquidBacking extends RenderBox {
         ..setFloat(8, bg.b * a * boot)
         ..setFloat(9, a * boot)
         ..setFloat(10, _specular * boot)
-        ..setFloat(11, _radius * dpr)
+        ..setFloat(11, effRadius * dpr)
         ..setFloat(12, glassOrigin.dx)
         ..setFloat(13, glassOrigin.dy)
         ..setFloat(14, glassSize.width)
@@ -756,7 +766,8 @@ class RenderLiquidBacking extends RenderBox {
         )
         ..setFloat(17, 1.0 + (_saturation - 1.0) * boot)
         ..setFloat(18, _depthEffect * boot)
-        ..setFloat(19, uiTime);
+        ..setFloat(19, uiTime)
+        ..setFloat(20, squircleN.toDouble());
       shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
       shaderLayer.filter = ui.ImageFilter.shader(_shader);
     } else {
