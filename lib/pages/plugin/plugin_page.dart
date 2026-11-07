@@ -303,15 +303,17 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
     final subscriptions = ref.watch(pluginSubscriptionsProvider);
     final scheme = Theme.of(context).colorScheme;
 
-    final portraitFloating =
-        !widget.embedded &&
-        MediaQuery.of(context).orientation != Orientation.landscape &&
-        (ref.watch(
+    final floatingSearch =
+        ref.watch(
               settingsProvider.select(
                 (s) => s.valueOrNull?.floatingSearchBar ?? false,
               ),
             ) ==
-            true);
+            true;
+    final portraitFloating =
+        !widget.embedded &&
+        MediaQuery.of(context).orientation != Orientation.landscape &&
+        floatingSearch;
     final contentTop = portraitFloating
         ? GlassTopBar.height(context) + 6
         : null;
@@ -330,10 +332,15 @@ class _PluginPageState extends ConsumerState<PluginPage> with HidesShellChrome {
                   ? FlatTopBar.height(context) + 18
                   // 固定态：shell 固定带（topInset 8）盖住顶部，垫带高+呼吸
                   : GlassTopBar.height(context, topInset: 8) + 12)
-              : GlassTopBar.height(
-                  context,
-                  bottom: PageSearchBarBottom(onTap: () {}),
-                ))
+              : (floatingSearch
+                  // 悬浮态：shell 悬浮搜索条贴顶，与首页/我的同款让位
+                  // （statusBar+8 顶隙+44 条高+14 呼吸）——曾按固定顶栏
+                  // 口径让位 statusBar+114，多垫 48px 顶栏下方大空隙
+                  ? MediaQuery.paddingOf(context).top + 8 + 44 + 14
+                  : GlassTopBar.height(
+                      context,
+                      bottom: PageSearchBarBottom(onTap: () {}),
+                    )))
         : (contentTop ??
               (embeddedPanel ? landscapePanelBand(context, ref) + 8 : 8));
 
