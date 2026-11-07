@@ -672,7 +672,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     specular: 0.12,
                     edgeAmount: band,
                     saturation: 1.4,
-                    depthEffect: 1.2,
+                    depthEffect: 1.0,
                     child: const SizedBox.expand(),
                   ),
                   CustomPaint(painter: _DropletEdgePainter(press, isDark)),
@@ -684,8 +684,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             indicator = DecoratedBox(
               decoration: BoxDecoration(
                 color: widget.lens
+                    // 静态胶囊深色=黑 0.24（用户指定对齐 iOS 深色水滴的
+                    // 黑色语言，与放大透镜同调）；浅色=黑 0.10
                     ? (isDark
-                          ? Colors.white.withValues(alpha: 0.10)
+                          ? Colors.black.withValues(alpha: 0.24)
                           : Colors.black.withValues(alpha: 0.10))
                     : Theme.of(
                         context,
@@ -717,7 +719,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                             ? _anchorKeys[i]
                             : null,
                         iconScale: widget.lens
-                            ? 1 + 0.2 * (1 - (i - pos).abs()).clamp(0.0, 1.0)
+                            ? 1 + 0.38 * (1 - (i - pos).abs()).clamp(0.0, 1.0)
                             : 1.0,
                         onTap: () => widget.onSelect(items[i].branchIndex),
                         suppressSplash: widget.lens,
@@ -811,11 +813,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               maxH: maxH,
               liquid: dropletOn,
               radius: d * sy / 2,
-              refract: d * 18.0 / 56.0 * mf * widget.lensBoost,
-              band: d * 16.0 / 56.0 * mf * widget.edgeBoost,
+              refract: d * 14.0 / 56.0 * mf * widget.lensBoost,
+              band: d * 18.0 / 56.0 * mf * widget.edgeBoost,
               chroma: widget.dropletChroma,
               shear: _dragVel.sign * _sxPos * 0.12,
-              depth: 1.2 * mf,
+              depth: 1.0 * mf,
               press: pressG.clamp(0.0, 1.0),
               isDark: isDark,
             );
