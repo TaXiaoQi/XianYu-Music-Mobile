@@ -182,7 +182,9 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                 child: DecoratedBox(
                                   decoration: BoxDecoration(
                                     color: s.isDark
-                                        ? Colors.white.withValues(alpha: 0.10)
+                                        // 静态胶囊深色=黑 0.24（iOS 深色水滴
+                                        // 黑色语言，与树内静态指示器同调）
+                                        ? Colors.black.withValues(alpha: 0.24)
                                         : Colors.black.withValues(alpha: 0.10),
                                     borderRadius: BorderRadius.circular(
                                       s.rect.shortestSide / 2,
@@ -1188,6 +1190,32 @@ class _DropletEdgePainter extends CustomPainter {
                 ],
         ).createShader(outer);
     canvas.drawOval(outer.deflate(1.1), rim);
+
+    // 外圈灰轮廓（仅浅色）：iOS 浅色水滴靠灰描边从白栏里读出「玻璃体」
+    // ——白 rim 叠白栏不可见，水滴放大白 fill 后读成不透明白底
+    if (!isDark) {
+      canvas.drawOval(
+        outer.deflate(0.7),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5)
+          ..color = Colors.black.withValues(alpha: 0.14 * p),
+      );
+      // 内阴影：底缘向内的柔灰渐变，给白玻璃一点厚度
+      canvas.drawOval(
+        outer.deflate(1.2),
+        Paint()
+          ..shader = LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.07 * p),
+                Colors.black.withValues(alpha: 0),
+              ],
+            ).createShader(outer),
+      );
+    }
 
     // 左上主高光弧：光源左上的镜面反光亮线，贴缘弱而模糊
     final glint = Paint()
