@@ -3,7 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
-/// 苹果式连续曲率（superellipse n=5）圆角：普通圆角在圆弧与直边交接
+/// 苹果式连续曲率（超椭圆）圆角：普通圆角在圆弧与直边交接
 /// 处曲率从 0 跳到 1/r，有可见「拐点」；超椭圆在轴点处曲率归零，与
 /// 直边连续过渡（iOS 原生圆角语言）。角部象限参数采样（每角 20 段）。
 ///
@@ -20,10 +20,15 @@ Path appSquirclePath(
     path.addRect(rect);
     return path;
   }
-  // 自适应指数：小半径下 n=5 超椭圆角部收得太平（视觉发方），苹果
-  // 对小尺寸圆角本就近圆。n 随半径从 2.2（≈圆）线性升到 5（应用
-  // 图标级），小封面近圆连续、大卡片强 squircle，轴点曲率恒为零。
-  final n = (2.2 + (r / 40) * 2.8).clamp(2.2, 5.0);
+  // 指数恒 2.2（胶囊例外）。关键约束：内接于 r 角盒的超椭圆，对角线
+  // 曲率 κ45(n) 随 n 陡增（n=2: 1/r、2.2: 1.16/r、4.3: 2.74/r、5: 3.25/r），
+  // 视觉角半径 = 1/κ45 —— 旧自适应公式（最高 n=5）把 radius 30 的角收成
+  // 0.3r≈9px，圆角读作方角（底栏实测角部 ≈16px）。n=2.2 时视觉半径
+  // 0.86r、轴点曲率 1.2/r 与圆角的 1/r 几乎一致：保留连续曲率语言又不
+  // 缩角。胶囊（radius≥半短边，如 999）：n=2 退化为精确圆弧端帽，与旧
+  // RRect 自动钳制的胶囊完全一致（钳制后若仍按高指数取值，端帽鼓成近方）
+  final isCapsule = radius * radiusScale >= rect.shortestSide / 2 - 0.5;
+  final n = isCapsule ? 2.0 : 2.2;
   const segs = 20;
   final l = rect.left, t = rect.top, rt = rect.right, b = rect.bottom;
   double sp(double v) => math.pow(v, 2 / n).toDouble();

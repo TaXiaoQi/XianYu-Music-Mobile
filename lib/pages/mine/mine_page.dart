@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:xianyu_music_mobile/src/widgets/predictive_dialog_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../src/widgets/squircle.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/auth/auth_provider.dart';
@@ -141,7 +143,7 @@ class _StatsRow extends ConsumerWidget {
     final card = Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: SquircleBorder(radius: 16),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
         child: Row(
@@ -239,16 +241,18 @@ class _QuickCards extends ConsumerWidget {
       final tile = Material(
         color: Colors.transparent,
         clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: SquircleBorder(radius: 14),
         child: InkWell(
           onTap: () => open(c),
-          borderRadius: BorderRadius.circular(14),
+          customBorder: SquircleBorder(radius: 14),
           child: Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.5),
+            decoration: ShapeDecoration(
+              shape: SquircleBorder(
+                radius: 14,
+                side: BorderSide(
+                  color: scheme.outlineVariant.withValues(alpha: 0.5),
+                ),
               ),
             ),
             child: Row(
@@ -256,9 +260,9 @@ class _QuickCards extends ConsumerWidget {
                 Container(
                   width: 38,
                   height: 38,
-                  decoration: BoxDecoration(
+                  decoration: ShapeDecoration(
                     color: const Color(0xFFEC4141),
-                    borderRadius: BorderRadius.circular(12),
+                    shape: SquircleBorder(radius: 12),
                   ),
                   child: Icon(c.$3, color: Colors.white, size: 21),
                 ),
@@ -383,10 +387,7 @@ class _AccountArea extends ConsumerWidget {
     final accountCard = Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide.none,
-      ),
+      shape: SquircleBorder(radius: 16),
       child: InkWell(
         onTap: () {
           if (isLandscape) {
@@ -395,7 +396,7 @@ class _AccountArea extends ConsumerWidget {
             context.push('/account');
           }
         },
-        borderRadius: BorderRadius.circular(16),
+        customBorder: SquircleBorder(radius: 16),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
@@ -505,7 +506,7 @@ class _QuickEntries extends ConsumerWidget {
     }) {
       final tile = InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        customBorder: SquircleBorder(radius: 14),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
@@ -551,10 +552,7 @@ class _QuickEntries extends ConsumerWidget {
     final entriesCard = Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide.none,
-      ),
+      shape: SquircleBorder(radius: 16),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
@@ -656,10 +654,7 @@ class _ReorderCard extends ConsumerWidget {
     final reorderCard = Material(
       color: Colors.transparent,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide.none,
-      ),
+      shape: SquircleBorder(radius: 16),
       child: ReorderableListView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
@@ -860,9 +855,9 @@ class _PlaylistRow extends ConsumerWidget {
                 ? Container(
                     width: 56,
                     height: 56,
-                    decoration: BoxDecoration(
+                    decoration: ShapeDecoration(
                       color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
+                      shape: SquircleBorder(radius: 12),
                     ),
                     child: Icon(
                       Icons.queue_music,

@@ -7,6 +7,7 @@ import '../core/settings.dart';
 import '../theme/page_wallpaper.dart' show pageWallpaperActiveProvider, themeWallpaperAnyProvider;
 import '../theme/theme_tint.dart';
 import 'blur_budget.dart';
+import 'squircle.dart';
 
 FrostedGlassLevel frostedGlassLevelSetting(WidgetRef ref) => ref.watch(
     settingsProvider.select((s) => s.valueOrNull?.frostedGlassLevel ??
@@ -67,11 +68,12 @@ Color wallpaperGlassFill(BuildContext context, WidgetRef ref) =>
     wallpaperBlockFill(context, ref);
 
 List<BoxShadow> navFloatShadows(BuildContext context, WidgetRef ref) {
+  // 深色不做投影（iOS 同款取舍：黑底上黑影不可见，深度线索全交给 rim）
+  if (Theme.of(context).brightness == Brightness.dark) return const [];
   if (wallpaperGlassActive(ref)) return const [];
-  final isDark = Theme.of(context).brightness == Brightness.dark;
   return [
     BoxShadow(
-      color: Colors.black.withValues(alpha: isDark ? 0.45 : 0.2),
+      color: Colors.black.withValues(alpha: 0.2),
       blurRadius: 26,
       offset: const Offset(0, 8),
     ),
@@ -214,17 +216,21 @@ Widget frostedCardSurface({
   final fill =
       themeSlot == null ? baseFill : themeTint(ref, themeSlot, baseFill);
   final border = solid
-      ? null
-      : Border.all(
+      ? BorderSide.none
+      : BorderSide(
           color: isDark
               ? Colors.white.withValues(alpha: 0.12)
               : Colors.white.withValues(alpha: 0.40),
         );
+  // 卡片圆角统一连续曲率（squircle）：普通圆角在弧线与直边交接处曲率
+  // 跳变，深色下可见「拐角」，与玻璃 chrome 的 squircle 语言不一致
   final surface = Container(
-    decoration: BoxDecoration(
+    decoration: ShapeDecoration(
       color: fill,
-      borderRadius: BorderRadius.circular(radius),
-      border: border,
+      shape: SquircleBorder(
+        radius: radius,
+        side: border,
+      ),
     ),
     child: child,
   );
@@ -248,8 +254,8 @@ Widget frostedCardSurface({
   // （性能，恢复 cardGlassKey 组的既有效果），跨路由各自独立组（正确性，
   // 修账号卡片透下层页内容）；无路由场景退独立回读
   return RepaintBoundary(
-    child: ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
+    child: ClipSquircle(
+      radius: radius,
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
         backdropGroupKey: _cardGroupFor(context),
@@ -294,13 +300,15 @@ double bilipaiChromaOf(LiquidGlassQuality q) => switch (q) {
     };
 
 Color bilipaiGlassTint(bool isDark, LiquidGlassQuality quality) {
+  // 深色玻璃底=白 ~9%（iOS 取证：tab bar fill 29 vs 背景 10 ≈ 白 8%，
+  // 灰底给玻璃「体感」，纯透明则材质打折）；浅色=白 0.40 提亮
   final a = switch (quality) {
     LiquidGlassQuality.low => 0.40,
     LiquidGlassQuality.medium => 0.40,
     LiquidGlassQuality.high => 0.40,
   };
   return isDark
-      ? Color.fromARGB((a * 255).round(), 0x26, 0x26, 0x2A)
+      ? Color.fromARGB((0.09 * 255).round(), 0xFF, 0xFF, 0xFF)
       : Color.fromARGB((a * 255).round(), 0xFF, 0xFF, 0xFF);
 }
 
