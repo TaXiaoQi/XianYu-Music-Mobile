@@ -249,7 +249,9 @@ Future<void> _capture() async {
   // 污染 origin 登记表
   if (globalIsTransitioning.value ||
       globalIsTabSwitching.value ||
-      globalIsDragging.value) {
+      globalIsDragging.value ||
+      // 弹窗/scrim 会烘进缓存帧，关闭弹窗时裁到脏帧 → 重影
+      globalModalOpen.value) {
     _retry();
     return;
   }

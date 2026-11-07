@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/settings.dart';
+import 'predictive_dialog_route.dart';
 
 final ValueNotifier<bool> globalIsScrolling = ValueNotifier(false);
 final ValueNotifier<int> globalScrollTick = ValueNotifier(0);
@@ -45,6 +46,24 @@ void releaseGlobalDragging() {
 final ValueNotifier<bool> globalIsTransitioning = ValueNotifier(false);
 Timer? _transitionTimer;
 
+/// 模态弹窗路由（PredictiveBackDialogRoute）打开中。弹窗不是页面转场：
+/// 曾被 TransitionTracker 误标成转场 → chrome 冻结 600ms 改画缓存帧，
+/// 帧里烘的旧 chrome 文字与实时文字叠加成约 1s 的重影乱码（开+关两侧
+/// 都触发）；且弹窗停留期间的 350ms 补抓会把弹窗/scrim 烘进缓存帧，
+/// 关闭时裁到脏帧。抓帧与帧绘制路径据此退避
+final ValueNotifier<bool> globalModalOpen = ValueNotifier(false);
+var _modalDepth = 0;
+
+void _enterModal() {
+  _modalDepth++;
+  globalModalOpen.value = true;
+}
+
+void _leaveModal() {
+  _modalDepth = math.max(0, _modalDepth - 1);
+  if (_modalDepth == 0) globalModalOpen.value = false;
+}
+
 void markTransitionActivity() {
   globalIsTransitioning.value = true;
   _transitionTimer?.cancel();
@@ -56,17 +75,30 @@ void markTransitionActivity() {
 class TransitionTracker extends NavigatorObserver {
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PredictiveBackDialogRoute) {
+      _enterModal();
+      return;
+    }
     markTransitionActivity();
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PredictiveBackDialogRoute) {
+      _leaveModal();
+      return;
+    }
     markTransitionActivity();
   }
 
   @override
-  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
-      markTransitionActivity();
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is PredictiveBackDialogRoute) {
+      _leaveModal();
+      return;
+    }
+    markTransitionActivity();
+  }
 }
 
 class _ValueNotifierState extends Notifier<bool> {
