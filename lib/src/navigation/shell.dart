@@ -1320,9 +1320,10 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
             Positioned(
               left: 12,
               right: 12,
-              // 自定义边距 8 + 安全区 30%（iOS 约 18px，留出 Home 横条
-              // 上沿间隙；安卓手势区同样打折，两端下沉量一致）
-              bottom: 8 + safeBottom * 0.3,
+              // 自定义边距 8 + 安全区折扣：iOS 约 18px，留出 Home 横条
+              // 上沿间隙；安卓手势区同样打折。三键导航条不打折（按键
+              // 绘制在 inset 带内），整条让出，避免胶囊叠在三大键上
+              bottom: 8 + chromeBottomSink(safeBottom),
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 240),
                 curve: Curves.easeOutCubic,

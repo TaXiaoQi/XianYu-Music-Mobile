@@ -69,11 +69,11 @@ class _FixedNavBar extends ConsumerWidget {
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
 
-    // 与悬浮底栏同款下沉：安全区打 30% 折（iOS 约 10px）+ 8px 边距，
-    // 玻璃填充仍铺到屏幕底，胶囊位置两端一致
+    // 与悬浮底栏同款下沉：手势区安全区打 30% 折 + 8px 边距，玻璃填充
+    // 仍铺到屏幕底，胶囊位置两端一致；三键导航条不打折，整条让出按键带
     final safeBottom = MediaQuery.paddingOf(context).bottom;
     final bar = Padding(
-      padding: EdgeInsets.only(bottom: 8 + safeBottom * 0.3),
+      padding: EdgeInsets.only(bottom: 8 + chromeBottomSink(safeBottom)),
       child: SizedBox(
         height: navBarContentHeight,
         child: _SlidingNavBottom(

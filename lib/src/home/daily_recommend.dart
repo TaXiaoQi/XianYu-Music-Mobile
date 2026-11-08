@@ -429,6 +429,7 @@ Future<void> _collectCloudCandidates(
         final hits = await cloudKeywordSearchAudio(
           provider: provider,
           cred: task.cred,
+          accountId: task.accountId,
           selectedRoots: task.roots,
           keyword: task.keyword,
         );

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../src/core/settings.dart';
+import '../../src/core/system_ui.dart';
 import '../../src/home/home_providers.dart';
 import '../../src/home/recommend_sheets_preview_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -83,6 +84,15 @@ class _HomePageState extends ConsumerState<HomePage> {
     final topInset = floating
         ? statusBar + 8 + 44 + 14
         : GlassTopBar.height(context, bottom: searchBar);
+    // 三键导航下悬浮底栏整条抬升：页面底部预留补差，避免列表尾项钻进底栏
+    final barFloating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingNavBar ?? true),
+    );
+    final bottomReserve = ref.watch(navBarInsetProvider) +
+        24 +
+        (barFloating
+            ? chromeBottomSinkExtra(MediaQuery.paddingOf(context).bottom)
+            : 0.0);
 
     return Scaffold(
       body: Stack(
@@ -93,7 +103,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 18,
                 topInset,
                 18,
-                ref.watch(navBarInsetProvider) + 24,
+                bottomReserve,
               ),
               children: [
                 SizedBox(height: 14),

@@ -46,3 +46,18 @@ class SystemUiChannel {
 final androidSdkIntProvider = FutureProvider<int>(
   (ref) => SystemUiChannel.androidSdkInt(),
 );
+
+/// 底部 chrome（悬浮底栏/固定底栏胶囊/mini 条/播放页控制区）相对屏幕底缘
+/// 的下沉量。手势条与 iOS Home 横条按惯例对安全区打 30% 折（留出上沿
+/// 间隙、两端下沉量一致）；三大键导航条（AOSP 48dp，按键直接绘制在
+/// inset 带内，ROM 自定义 navigation_mode 值不可靠）必须整条让出，
+/// 否则胶囊叠在三大键上（Android 12 三键实测）。手势条 inset ≤32dp，
+/// ≥40dp 即判三键；模式切换时 inset 变化经 MediaQuery 自然驱动重建。
+double chromeBottomSink(double safeBottom) =>
+    safeBottom >= 40 ? safeBottom : safeBottom * 0.3;
+
+/// 相对 30% 折扣基线的抬升差：页面底部预留（navBarInsetProvider）等
+/// 以折扣基线为口径的常量，在三键导航下需补差，避免内容钻进抬升后的
+/// chrome 底下。
+double chromeBottomSinkExtra(double safeBottom) =>
+    chromeBottomSink(safeBottom) - safeBottom * 0.3;

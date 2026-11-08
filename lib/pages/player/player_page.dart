@@ -16,6 +16,7 @@ import '../../src/cloud/cloud_head_meta.dart';
 import '../../src/core/application_logger.dart';
 import '../../src/core/db_path.dart';
 import '../../src/core/settings.dart';
+import '../../src/core/system_ui.dart';
 import '../../src/theme/theme_icon.dart';
 import '../../src/player/mv_source.dart';
 import '../../src/player/mv_provider.dart';
@@ -765,14 +766,14 @@ class _PlayerShell extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: SafeArea(
         top: true,
-        // 底部不再吃满安全区：与主页底栏同款下沉（8px + 安全区 30%），
-        // 控制区贴向屏幕底，Home 横条区仍留出间隙
+        // 底部不再吃满安全区：与主页底栏同款下沉（8px + 安全区折扣，
+        // 三键导航不打折整条让出），控制区贴向屏幕底，Home 横条区仍留间隙
         bottom: false,
         left: !isLandscape,
         right: !isLandscape,
         child: Padding(
           padding: EdgeInsets.only(
-            bottom: 8 + MediaQuery.paddingOf(context).bottom * 0.3,
+            bottom: 8 + chromeBottomSink(MediaQuery.paddingOf(context).bottom),
           ),
           child: _body(),
         ),

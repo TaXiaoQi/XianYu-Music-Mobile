@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import '../../src/auth/auth_provider.dart';
 import '../../src/cloud/cloud_registry.dart';
 import '../../src/core/settings.dart';
+import '../../src/core/system_ui.dart';
 import '../../src/theme/theme_icon.dart';
 import '../../src/favorites/favorites_provider.dart';
 import '../../src/library/library_provider.dart';
@@ -55,6 +56,15 @@ class MinePage extends ConsumerWidget {
     final topInset = floating
         ? statusBar + 8 + 44 + 14
         : GlassTopBar.height(context, bottom: searchBar);
+    // 三键导航下悬浮底栏整条抬升：页面底部预留补差，避免列表尾项钻进底栏
+    final barFloating = ref.watch(
+      settingsProvider.select((s) => s.valueOrNull?.floatingNavBar ?? true),
+    );
+    final bottomReserve = ref.watch(navBarInsetProvider) +
+        24 +
+        (barFloating
+            ? chromeBottomSinkExtra(MediaQuery.paddingOf(context).bottom)
+            : 0.0);
     final portrait = Scaffold(
       resizeToAvoidBottomInset: false,
       body: RepaintBoundary(
@@ -65,7 +75,7 @@ class MinePage extends ConsumerWidget {
                 16,
                 topInset,
                 16,
-                ref.watch(navBarInsetProvider) + 24,
+                bottomReserve,
               ),
               children: [
                 SizedBox(height: 18),

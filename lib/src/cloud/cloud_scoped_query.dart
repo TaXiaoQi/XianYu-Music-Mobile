@@ -11,6 +11,7 @@
 import 'dart:async';
 
 import 'cloud_provider.dart';
+import 'cloud_scan_cache_store.dart';
 import 'cloud_types.dart';
 import '../core/application_logger.dart';
 
@@ -26,6 +27,20 @@ bool _isUnderRoots(String path, List<String> roots) => roots.any((r) {
       return path == r || path.startsWith(base);
     });
 
+/// 范围搜索结果：[authoritative] 表示结果已等价于全盘权威搜索（百度
+/// filesearch 服务端一次拉全，含按 roots 过滤后的空结果）——调用方据此
+/// 跳过后续重复的全盘 searchFiles 请求。[walkedFiles] 为回落 BFS 遍历时
+/// 的无关键词全量收集结果（遍历网络成本与关键词过滤完全相同，过滤发生
+/// 在本地）——调用方在无既有索引时把它 save 进扫描索引，慢路径一次即
+/// 建立索引。
+class ScopedSearchOutcome {
+  ScopedSearchOutcome(this.files, this.authoritative, [this.walkedFiles]);
+
+  final List<CloudFile> files;
+  final bool authoritative;
+  final List<CloudFile>? walkedFiles;
+}
+
 /// 百度特化：filesearch 服务端全盘检索一次返回（含 path），1 次 API 替代
 /// 逐目录 listDir 遍历——几十个目录的树即使并发也要多轮往返，是百度范围
 /// 搜索慢的主因。命中按 roots 路径前缀过滤 + 文件名 contains 复核
@@ -33,7 +48,7 @@ bool _isUnderRoots(String path, List<String> roots) => roots.any((r) {
 /// 失败（OAuth 轨无搜索接口等）返回 null，调用方回落通用遍历。
 /// 注意：服务端索引对新建文件有短暂延迟，极新文件可能搜不到（通用遍历无
 /// 此差异）。filesearch 无翻页（nextCursor 恒空），一次拉全。
-Future<List<CloudFile>?> _scopedSearchAudioBaidu({
+Future<ScopedSearchOutcome?> _scopedSearchAudioBaidu({
   required CloudProvider provider,
   required Map<String, String> cred,
   required List<String> roots,
@@ -42,14 +57,17 @@ Future<List<CloudFile>?> _scopedSearchAudioBaidu({
   try {
     final all = await provider.searchFiles(cred, keyword.trim());
     final kw = keyword.trim().toLowerCase();
-    return all.files
-        .where((f) =>
-            !f.isDir &&
-            f.isAudio &&
-            f.name.toLowerCase().contains(kw) &&
-            f.path != null &&
-            _isUnderRoots(f.path!, roots))
-        .toList();
+    return ScopedSearchOutcome(
+      all.files
+          .where((f) =>
+              !f.isDir &&
+              f.isAudio &&
+              f.name.toLowerCase().contains(kw) &&
+              f.path != null &&
+              _isUnderRoots(f.path!, roots))
+          .toList(),
+      true,
+    );
   } catch (e) {
     final msg = e.toString();
     // 网络类失败（频控/断网）不回落 BFS：几十次 listDir 连击会加重百度
@@ -58,7 +76,7 @@ Future<List<CloudFile>?> _scopedSearchAudioBaidu({
     if (!msg.contains('OAuth') && !msg.contains('不支持')) {
       AppLog.warn('cloud',
           '[scopedSearch] ${provider.id} filesearch 失败(网络/风控?)，返回空: $msg');
-      return const [];
+      return ScopedSearchOutcome(const [], true);
     }
     AppLog.debug(
         'cloud', '[scopedSearch] ${provider.id} filesearch 不支持，回落遍历: $msg');
@@ -66,26 +84,55 @@ Future<List<CloudFile>?> _scopedSearchAudioBaidu({
   }
 }
 
+/// 缓存索引条目的本地关键词过滤（与搜索链路判据一致：非目录、音频、
+/// 文件名 contains 忽略大小写）。供搜索 cache-first 与慢路径回填后过滤。
+List<CloudFile> filterCachedAudio(List<CloudFile> files, String keyword) {
+  final kw = keyword.trim().toLowerCase();
+  if (kw.isEmpty) return const [];
+  return files
+      .where((f) =>
+          !f.isDir && f.isAudio && f.name.toLowerCase().contains(kw))
+      .toList();
+}
+
 /// 在 [roots] 指定的文件夹范围内搜索文件名含 [keyword] 的音频。
 /// 同 id 只留一条（目录间并发遍历，结果顺序不定）；网络异常的子文件夹跳过。
-Future<List<CloudFile>> scopedSearchAudio({
+Future<ScopedSearchOutcome> scopedSearchAudioDetailed({
   required CloudProvider provider,
   required Map<String, String> cred,
   required List<String> roots,
   required String keyword,
 }) async {
-  final kw = keyword.trim().toLowerCase();
-  if (kw.isEmpty) return const [];
+  if (keyword.trim().isEmpty) {
+    return ScopedSearchOutcome(const [], false);
+  }
   if (provider.id == 'baidu') {
     final viaApi = await _scopedSearchAudioBaidu(
         provider: provider, cred: cred, roots: roots, keyword: keyword);
     if (viaApi != null) return viaApi;
     // 回落通用遍历
   }
+  // 回落 BFS 无关键词全量收集（遍历网络成本与关键词过滤相同），本地
+  // 过滤出命中；全量结果经 walkedFiles 带回给调用方建立扫描索引。
   final outcome = await _walkAudioDirs(
-      provider: provider, cred: cred, roots: roots, keyword: kw);
-  return outcome.files;
+      provider: provider, cred: cred, roots: roots, keyword: null);
+  return ScopedSearchOutcome(
+    filterCachedAudio(outcome.files, keyword),
+    false,
+    outcome.files,
+  );
 }
+
+/// scopedSearchAudioDetailed 的薄包装（日推等只需结果列表的调用方）。
+Future<List<CloudFile>> scopedSearchAudio({
+  required CloudProvider provider,
+  required Map<String, String> cred,
+  required List<String> roots,
+  required String keyword,
+}) async =>
+    (await scopedSearchAudioDetailed(
+        provider: provider, cred: cred, roots: roots, keyword: keyword))
+        .files;
 
 /// 网盘页全量音频列举：遍历 [selectedRoots]（空 = 从全盘根目录起）收集
 /// 全部音频文件，无关键词过滤；BFS/并发/容错语义与 scopedSearchAudio 一致。
@@ -221,13 +268,18 @@ Future<WalkOutcome> _walkAudioDirs({
 }
 
 /// 网盘关键词搜索统一入口（搜索结果页 / 日推共用）：
+/// 先查 24h 全量扫描索引缓存（网盘页与搜索慢路径共用）——命中 ≥1 条直接
+/// 本地过滤返回（毫秒级）；0 命中照旧走网络（0 命中可能是缓存没收录新
+/// 上传的文件，不能只信缓存）。
 /// 已选文件夹 → 优先只遍历选定范围（快）；范围内无命中则自动扩大到
 /// 全盘（搜索是全局动作，勾选范围只是加速——勾选的文件夹未必包含
 /// 目标文件）。未选目录 → 先盘侧搜索（快且支持翻页），接口变更/限流
-/// ——如迅雷「无效的文件过滤器」——则回退根目录全盘遍历。
+/// ——如迅雷「无效的文件过滤器」——则回退根目录全盘遍历；该慢路径改
+/// 无关键词全量收集并把结果 save 进扫描索引，之后搜索全部走 cache-first。
 Future<List<CloudFile>> cloudKeywordSearchAudio({
   required CloudProvider provider,
   required Map<String, String> cred,
+  required String accountId,
   required List<String> selectedRoots,
   required String keyword,
 }) async {
@@ -235,20 +287,47 @@ Future<List<CloudFile>> cloudKeywordSearchAudio({
   if (kw.isEmpty) return const [];
   AppLog.debug('cloud',
       '[scopedSearch] ${provider.id} kw=$kw selectedRoots=$selectedRoots');
+  // cache-first：索引命中 ≥1 条直接返回
+  final cached = await CloudScanCacheStore.instance
+      .loadFresh(provider.id, accountId);
+  if (cached != null) {
+    final hits = filterCachedAudio(cached.files, kw);
+    if (hits.isNotEmpty) return hits;
+  }
+  var authoritative = false;
   if (selectedRoots.isNotEmpty) {
-    final scoped = await scopedSearchAudio(
+    final scoped = await scopedSearchAudioDetailed(
         provider: provider, cred: cred, roots: selectedRoots, keyword: kw);
-    if (scoped.isNotEmpty) return scoped;
+    authoritative = scoped.authoritative;
+    // 范围 BFS 遍历（authoritative=false 即发生了遍历）：无既有索引时把
+    // 全量收集结果 save 进扫描索引——本次遍历的网络成本已经花掉，存下
+    // 来之后 24h 内搜索全部毫秒级。已有索引时 0 命中才会走到这，此时不
+    // 强刷（0 命中是关键词没命中，索引本身有效）。
+    final walked = scoped.walkedFiles;
+    if (!authoritative &&
+        cached == null &&
+        walked != null &&
+        walked.isNotEmpty) {
+      await CloudScanCacheStore.instance.save(provider.id, accountId, walked);
+    }
+    if (scoped.files.isNotEmpty) return scoped.files;
     AppLog.debug('cloud',
         '[scopedSearch] ${provider.id} 范围内无命中，扩大到全盘遍历');
   }
-  try {
-    final res = await provider.searchFiles(cred, kw);
-    final hits = res.files.where((f) => !f.isDir && f.isAudio).toList();
-    if (hits.isNotEmpty) return hits;
-  } catch (e) {
-    AppLog.warn('cloud', '${provider.id} 盘侧搜索失败，回退全盘遍历: $e');
+  // authoritative（百度 filesearch 已一次拉全）0 命中时全盘结果同样为
+  // 空，跳过重复的盘侧搜索请求。
+  if (!authoritative || selectedRoots.isEmpty) {
+    try {
+      final res = await provider.searchFiles(cred, kw);
+      final hits = res.files.where((f) => !f.isDir && f.isAudio).toList();
+      if (hits.isNotEmpty) return hits;
+    } catch (e) {
+      AppLog.warn('cloud', '${provider.id} 盘侧搜索失败，回退全盘遍历: $e');
+    }
   }
-  return scopedSearchAudio(
-      provider: provider, cred: cred, roots: [provider.rootPath], keyword: kw);
+  // 全盘遍历改无关键词全量收集：同样慢一次，但结果反哺 24h 扫描索引。
+  final full = await cloudListAllAudio(
+      provider: provider, cred: cred, selectedRoots: const []);
+  await CloudScanCacheStore.instance.save(provider.id, accountId, full);
+  return filterCachedAudio(full, kw);
 }

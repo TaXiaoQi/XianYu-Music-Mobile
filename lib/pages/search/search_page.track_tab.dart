@@ -513,6 +513,7 @@ extension _TrackTabActions on _TrackTabState {
         final files = await cloudKeywordSearchAudio(
           provider: provider,
           cred: acc.cred,
+          accountId: acc.accountId,
           selectedRoots: roots,
           keyword: q,
         );

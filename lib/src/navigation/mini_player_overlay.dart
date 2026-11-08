@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/settings.dart';
+import '../core/system_ui.dart';
 import '../widgets/blur_budget.dart';
 import '../widgets/mini_player_bar.dart';
 import '../widgets/predictive_cover_return.dart';
@@ -389,9 +390,9 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         : uiScaleOf(uiIndex);
 
     // 低位停靠档（二级页/无底栏导航模式）：与悬浮底栏同款下沉留空
-    // （8px + 安全区 30%），不直接贴在 Home 横条上；8px 在缩放画布
-    // 内布局，视觉上随样式大小放大
-    final lowGap = 8.0 * uiScale + safeBottom * 0.3;
+    // （8px + 安全区折扣，三键导航不打折），不直接贴在 Home 横条上；
+    // 8px 在缩放画布内布局，视觉上随样式大小放大
+    final lowGap = 8.0 * uiScale + chromeBottomSink(safeBottom);
     // 高位停靠档让位底栏：必须用 navBarContentHeight（iOS 80pt）而非
     // 硬编码 70——iOS 26 底栏抬到 80 后 70 会让 mini 条压住胶囊顶
     // ~10pt，顶层水滴（居中图标、上缘贴胶囊顶）会叠到 mini 条上；
@@ -403,13 +404,13 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
         : (floating
             ? (_lowState
                 ? (screenSize.height - lowGap - 58.0)
-                : (screenSize.height - safeBottom * 0.3 - chromeGap - navH - 58.0))
+                : (screenSize.height - chromeBottomSink(safeBottom) - chromeGap - navH - 58.0))
             : (_lowState
                 // 固定底栏在二级页同样塌缩隐藏（_FixedChrome 高度归零），
                 // 低位停靠档与悬浮模式一致
                 ? (screenSize.height - lowGap - 58.0)
                 : (screenSize.height -
-                      safeBottom * 0.3 -
+                      chromeBottomSink(safeBottom) -
                       chromeGap -
                       navH -
                       58.0)));
@@ -423,12 +424,12 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       if (floating) {
         return _lowState
             ? (screenSize.height - lowGap - barH)
-            : (screenSize.height - safeBottom * 0.3 - chromeGap - navH - barH - batchLift);
+            : (screenSize.height - chromeBottomSink(safeBottom) - chromeGap - navH - barH - batchLift);
       }
       return _lowState
           ? (screenSize.height - lowGap - barH)
           : (screenSize.height -
-                safeBottom * 0.3 -
+                chromeBottomSink(safeBottom) -
                 chromeGap -
                 navH -
                 barH -
