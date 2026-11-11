@@ -297,6 +297,7 @@ class AppSettings {
     this.showRealQualitySizes = false,
     this.onlineFailureBehavior = 'stop',
     this.onlineQualityFallbackBehavior = 'lower',
+    this.preferredOnlineSource = '',
     this.usbExclusiveDeviceId = -1,
     this.songClickAction = 'single',
     this.enablePredictiveBack = false,
@@ -491,6 +492,9 @@ class AppSettings {
 
   final String onlineQualityFallbackBehavior;
 
+  /// 首选换源音源（落雪平台键：kw/wy/kg/tx/mg/qs；空 = 自动按默认顺序）
+  final String preferredOnlineSource;
+
   final int usbExclusiveDeviceId;
 
   final String songClickAction;
@@ -670,6 +674,7 @@ class AppSettings {
     bool? showRealQualitySizes,
     String? onlineFailureBehavior,
     String? onlineQualityFallbackBehavior,
+    String? preferredOnlineSource,
     int? usbExclusiveDeviceId,
     String? songClickAction,
     bool? enablePredictiveBack,
@@ -816,6 +821,8 @@ class AppSettings {
           onlineFailureBehavior ?? this.onlineFailureBehavior,
       onlineQualityFallbackBehavior:
           onlineQualityFallbackBehavior ?? this.onlineQualityFallbackBehavior,
+      preferredOnlineSource:
+          preferredOnlineSource ?? this.preferredOnlineSource,
       usbExclusiveDeviceId: usbExclusiveDeviceId ?? this.usbExclusiveDeviceId,
       songClickAction: songClickAction ?? this.songClickAction,
       enablePredictiveBack: enablePredictiveBack ?? this.enablePredictiveBack,
@@ -1030,6 +1037,9 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
           : 'stop',
       onlineQualityFallbackBehavior:
           prefs.getString('onlineQualityFallbackBehavior') ?? 'lower',
+      preferredOnlineSource: _preferredSourceValid(
+        prefs.getString('preferredOnlineSource') ?? '',
+      ),
       usbExclusiveDeviceId: prefs.getInt('usbExclusiveDeviceId') ?? -1,
       songClickAction: prefs.getString('songClickAction') ?? 'single',
       enablePredictiveBack: prefs.getBool('enablePredictiveBack') ?? false,

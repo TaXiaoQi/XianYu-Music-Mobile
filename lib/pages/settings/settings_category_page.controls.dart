@@ -556,6 +556,14 @@ extension _SettingsCategoryPageControls on _SettingsCategoryPageState {
     _ => tr('跳到下一首'),
   };
 
+  String _preferredSourceLabel(String v) {
+    if (v.isEmpty) return tr('自动');
+    for (final s in kOnlineSources) {
+      if (s.id == v) return s.label;
+    }
+    return tr('自动');
+  }
+
   String _sharePlaybackFailureBehaviorLabel(String v) =>
       v == 'pause' ? tr('暂停播放') : tr('替换播放');
 

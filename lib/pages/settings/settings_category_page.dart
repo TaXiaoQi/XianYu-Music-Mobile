@@ -40,6 +40,7 @@ import '../../src/library/saf_channel.dart';
 import '../../src/watch_link/watch_link_channel.dart';
 import '../../src/watch_link/watch_link_provider.dart';
 import '../../src/widgets/dlna_device_dialog.dart';
+import '../../src/online/online_search_provider.dart';
 import '../../src/navigation/shell.dart'
     show landscapeSettingsCategoryProvider;
 import 'desktop_link_page.dart';

@@ -87,6 +87,25 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       }
       if (playable.isEmpty) return false;
 
+      // 用户设置了首选音源：声明了该平台子源的插件排到队首（稳定排序，
+      // 同级保持原顺序），重搜时优先命中用户偏好的平台
+      final prefSource = _ref
+          .read(settingsProvider)
+          .valueOrNull
+          ?.preferredOnlineSource ?? '';
+      if (prefSource.isNotEmpty) {
+        final indexed = [for (var i = 0; i < playable.length; i++) (i, playable[i])];
+        indexed.sort((a, b) {
+          final ar = a.$2.sources.contains(prefSource) ? 0 : 1;
+          final br = b.$2.sources.contains(prefSource) ? 0 : 1;
+          if (ar != br) return ar.compareTo(br);
+          return a.$1.compareTo(b.$1);
+        });
+        for (var i = 0; i < playable.length; i++) {
+          playable[i] = indexed[i].$2;
+        }
+      }
+
       // 上次该源重搜命中的插件置顶优先：跨平台兜底成功后，
       // 同源后续歌曲直达命中插件，免去逐首全量重搜
       final sourceKey = _onlineSourceKey(item);
@@ -337,21 +356,43 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
 
     final fb = settings?.onlineQualityFallbackBehavior ?? 'lower';
     final preferred = settings?.onlineDefaultQuality ?? '320k';
+    final prefSource = settings?.preferredOnlineSource ?? '';
     final sourceLabels = {for (final s in kOnlineSources) s.id: s.label};
 
+    // 用户设置了首选换源音源：先定向只搜该平台（把其余平台全部传入
+    // 失败清单，rust 侧按平台串行搜索时即只命中首选平台），无果再回
+    // 落默认优先级 kw > tx > wy > kg > mg
+    var preferredProbe = prefSource.isNotEmpty &&
+        prefSource != curKey &&
+        kOnlineSources.any((s) => s.id == prefSource);
+
     while (true) {
+      final wasPreferredProbe = preferredProbe;
+      preferredProbe = false;
       final String rawJson;
       try {
         rawJson = await findAlternativeLxSource(
           songName: item.title,
           songArtist: item.artist,
           songDuration: item.durationMs / 1000.0,
-          failedSourcesJson: jsonEncode(_failedSources.toList()),
+          failedSourcesJson: jsonEncode(
+            wasPreferredProbe
+                ? [
+                    for (final s in kOnlineSources)
+                      if (s.id != prefSource) s.id,
+                  ]
+                : _failedSources.toList(),
+          ),
         );
       } catch (_) {
+        if (wasPreferredProbe) continue;
         break;
       }
-      if (rawJson.isEmpty || rawJson == 'null') break;
+      if (rawJson.isEmpty || rawJson == 'null') {
+        // 首选平台没搜到同名歌：回默认优先级继续，不整体放弃
+        if (wasPreferredProbe) continue;
+        break;
+      }
       final Map<String, dynamic> raw;
       try {
         raw = jsonDecode(rawJson) as Map<String, dynamic>;

@@ -901,6 +901,16 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             ),
             onTap: () => _pickFailureBehavior(context, ref, s),
           ),
+          _tile(
+            context,
+            icon: Icons.swap_horiz_outlined,
+            title: tr('首选换源音源'),
+            subtitle: tr('起播失败自动换源或重搜时，优先使用所选音源'),
+            trailing: Text(
+              _preferredSourceLabel(s?.preferredOnlineSource ?? ''),
+            ),
+            onTap: () => _pickPreferredSource(context, ref, s),
+          ),
         ],
       ),
       _sectionHeader(context, tr('输出')),

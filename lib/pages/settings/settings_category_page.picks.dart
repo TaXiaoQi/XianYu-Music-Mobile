@@ -556,6 +556,32 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
     }
   }
 
+  /// 首选换源音源：换源/重搜时优先命中的平台，空 = 按默认顺序
+  Future<void> _pickPreferredSource(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings? s,
+  ) async {
+    final cur = s?.preferredOnlineSource ?? '';
+    final choice = await showSheetDialog<_Choice>(
+      context,
+      (_) => _choiceSheet(
+        context,
+        [
+          _Choice(tr('自动'), '', subtitle: tr('按默认优先级换源（酷我 > QQ音乐 > 网易云 > 酷狗 > 咪咕）')),
+          for (final src in kOnlineSources) _Choice(src.label, src.id),
+        ],
+        cur,
+        labelOf: (v) => _preferredSourceLabel(v as String),
+      ),
+    );
+    if (choice != null) {
+      await ref
+          .read(settingsProvider.notifier)
+          .setPreferredOnlineSource(choice.value as String);
+    }
+  }
+
   Future<void> _pickShareFailureBehavior(
     BuildContext context,
     WidgetRef ref,

@@ -134,6 +134,7 @@ class SettingsStore {
         'onlineQualityFallbackBehavior',
         next.onlineQualityFallbackBehavior,
       ),
+      prefs.setString('preferredOnlineSource', next.preferredOnlineSource),
       prefs.setInt('usbExclusiveDeviceId', next.usbExclusiveDeviceId),
       prefs.setString('songClickAction', next.songClickAction),
       prefs.setBool('enablePredictiveBack', next.enablePredictiveBack),
@@ -303,6 +304,12 @@ extension SettingsNotifierMethods on SettingsNotifier {
     'en' => AppLanguage.en,
     'zhCN' => AppLanguage.zhCN,
     _ => AppLanguage.system,
+  };
+
+  /// 首选换源音源合法性校验：仅接受落雪平台键，其余值回退空（自动）
+  String _preferredSourceValid(String v) => switch (v) {
+    'kw' || 'wy' || 'kg' || 'tx' || 'mg' || 'qs' => v,
+    _ => '',
   };
 
   PerformanceMode _perfFromString(String v) => switch (v) {
@@ -526,6 +533,8 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(onlineFailureBehavior: v));
   Future<void> setOnlineQualityFallbackBehavior(String v) => _settingsStore
       .update((s) => s.copyWith(onlineQualityFallbackBehavior: v));
+  Future<void> setPreferredOnlineSource(String v) =>
+      _settingsStore.update((s) => s.copyWith(preferredOnlineSource: v));
   Future<void> setUsbExclusiveDeviceId(int v) =>
       _settingsStore.update((s) => s.copyWith(usbExclusiveDeviceId: v));
   Future<void> setSongClickAction(String v) =>

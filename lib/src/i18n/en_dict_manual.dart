@@ -1226,6 +1226,22 @@ const Map<String, String> enDictManual = {
   '自定义歌词字体': 'Custom lyrics font',
   '自定义颜色': 'Custom color',
   '自动': 'Auto',
+  '首选换源音源': 'Preferred fallback source',
+  '起播失败自动换源或重搜时，优先使用所选音源':
+      'When playback fails and the app switches or re-searches sources, prefer the selected source',
+  '按默认优先级换源（酷我 > QQ音乐 > 网易云 > 酷狗 > 咪咕）':
+      'Switch sources in default priority order (Kuwo > QQ Music > NetEase > Kugou > Migu)',
+  '音源触发人机验证，请稍后重试': 'Source triggered CAPTCHA, try again later',
+  '音源暂无可播放的音质，请尝试其他音质或更换音源':
+      'No playable quality available from this source, try another quality or source',
+  '音源暂无{q}音质可播放，请尝试其他音质或更换音源':
+      'No playable {q} stream from this source, try another quality or source',
+  '无密损音质': 'MGG',
+  '无损': 'Lossless',
+  '无损 24bit': 'Lossless 24bit',
+  '臻品全景声': 'Super Spatial Audio',
+  '臻品全空间声': 'Super Full-space Audio',
+  '臻品母带': 'Super Master',
   '自建歌单': 'My playlists',
   '总榜': 'Overall chart',
   '总时长': 'Total duration',
