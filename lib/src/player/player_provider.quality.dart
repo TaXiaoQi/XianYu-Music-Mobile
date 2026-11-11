@@ -41,14 +41,44 @@ extension PlayerNotifierQuality on PlayerNotifier {
     if (raw.contains('鉴权') || raw.contains('卡密') || raw.contains('不支持')) {
       return '音源鉴权失败';
     }
+    if (raw.contains('人机验证')) return '音源触发人机验证，请稍后重试';
     if (raw.contains('超时') || raw.toLowerCase().contains('timeout')) {
       return '音源请求超时';
     }
     if (raw.contains('rate') || raw.contains('限') || raw.contains('429')) {
       return '音源请求被限流';
     }
+    // 品质档位探明无结果：把内部档位名翻成用户可读的音质名，
+    // 避免出现「Bad state: flac24bit: 无结果」这类原始报错
+    if (raw.contains('无结果') || raw.contains('直链预检不可播')) {
+      final q = raw.split(':').first.trim();
+      if (q.isEmpty) {
+        return tr('音源暂无可播放的音质，请尝试其他音质或更换音源');
+      }
+      return tr('音源暂无{q}音质可播放，请尝试其他音质或更换音源', {
+        'q': _qualityDisplayName(q),
+      });
+    }
     final s = raw.trim();
     return s.length > 24 ? '${s.substring(0, 24)}…' : s;
+  }
+
+  String _qualityDisplayName(String q) {
+    final names = {
+      'mgg': tr('无密损音质'),
+      '128k': '128K',
+      '192k': '192K',
+      '320k': '320K',
+      'flac': tr('无损'),
+      'flac24bit': tr('无损 24bit'),
+      'hires': 'Hi-Res',
+      'vinyl': tr('黑胶'),
+      'dolby': tr('杜比全景声'),
+      'atmos': tr('臻品全景声'),
+      'atmos_plus': tr('臻品全空间声'),
+      'master': tr('臻品母带'),
+    };
+    return names[q] ?? q;
   }
 
   String _songProbeKey(Map<String, dynamic> songJson, QueueItem item) {

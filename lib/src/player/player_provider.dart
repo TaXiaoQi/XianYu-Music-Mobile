@@ -237,7 +237,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
   String _mediaSessionSig = '';
   double _stallLastPos = -1;
   int _stallTicks = 0;
+  /// 音源失败标记：键 → 失效时刻。临时性故障（熔断/鉴权/人机验证等，
+  /// 插件层熔断秒级自愈）只记短 TTL，避免一次抖动把整源歌曲毒化 10 分钟
   final Map<String, DateTime> _failedOnlineSources = {};
+  final Set<String> _failedOnlineSourcesTemporary = {};
 
   /// 重搜换源学习映射：源键（plugin:xxx / lx:xxx）→ 上次重搜命中的插件 id。
   /// 跨平台兜底成功后，同源后续歌曲直达命中插件，免去逐首全量重搜
@@ -735,6 +738,11 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     // 「切过去」的意图，失败死在原地（+DNS 故障下分钟级静默解析）
     // 即反馈的「切歌卡住」。
     bool manualNav = false,
+    // 用户点播标记（点歌/播放全部/队列点歌）：跳过「已失败音源」快速
+    // 拦截，真实尝试播放。失败标记只代表「当时的源」失败过（可能只是
+    // 一次秒级熔断），用户明确点了这首歌就不该被静默跳到别的歌
+    // ——beta7 反馈的「明明点的是这个歌，却跳到另一首歌」。
+    bool userPicked = false,
   }) async {
     if (index < 0 || index >= state.queue.length) return;
     // 「同时播放」切换后的首次起播：播放器的会话激活行为构造期固定，
@@ -781,6 +789,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
       }
     }
     if (item.isOnline &&
+        !userPicked &&
         _skipDepth < state.queue.length &&
         _isOnlineSourceFailed(item)) {
       // 「自动换源」模式下失败标记不拦截：标记只代表「当时的源」失败过，
@@ -1055,7 +1064,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
             _ref.read(settingsProvider).valueOrNull?.onlineFailureBehavior ??
             'stop';
         if (behavior == 'skip' || manualNav) {
-          _markOnlineSourceFailed(item);
+          _markOnlineSourceFailed(item, error: e);
           _skipDepth++;
           final next = _pickNextIndex();
           if (next >= 0 && next != index) {
@@ -1189,12 +1198,14 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         return;
       }
       final reason = probe.lastFailureReason;
-      throw StateError(
+      // PluginEngineException 的 toString 即 message 本体：toast 直接展示
+      // 文案，不像 StateError 会带「Bad state: 」内部前缀
+      throw PluginEngineException(
         reason == null ? tr('无法获取播放链接') : _shortResolveReason(reason),
       );
     }
     final url = await _resolveOnlineUrl(item);
-    if (url == null) throw StateError(tr('无法获取播放链接'));
+    if (url == null) throw PluginEngineException(tr('无法获取播放链接'));
     final infoJson = item.onlineInfoJson;
     if (infoJson != null && infoJson.isNotEmpty) {
       try {
@@ -1731,7 +1742,7 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
         if (switched) return;
         if (state.current?.path != item.path) return;
         if (behavior == 'skip') {
-          _markOnlineSourceFailed(item);
+          _markOnlineSourceFailed(item, error: e);
           _skipDepth++;
           final next = _pickNextIndex();
           if (next >= 0 && next != state.queueIndex) {
@@ -1856,12 +1867,31 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     return null;
   }
 
-  void _markOnlineSourceFailed(QueueItem item) {
+  /// 临时性故障特征：插件层熔断（鉴权失效临时熔断）、人机验证、限流、
+  /// 超时等会自愈的错误。这些不该按「源已废」处理——熔断通常十几秒即恢复，
+  /// 而 _isOnlineSourceFailed 的标记会长达 10 分钟，导致用户点该源的任何歌
+  /// 都被「快速跳过」到别的歌（beta7 用户反馈的主因）。
+  static final RegExp _temporarySourceFailurePattern = RegExp(
+    r'熔断|鉴权失效|人机验证|请求过于频繁|访问过于频繁|频率限制|rate.?limit|'
+    r'too many requests|频繁|超时|timeout|timed out',
+    caseSensitive: false,
+  );
+
+  void _markOnlineSourceFailed(QueueItem item, {Object? error}) {
     final key = _onlineSourceKey(item);
     if (key == null) return;
+    final temporary =
+        error != null && _temporarySourceFailurePattern.hasMatch(error.toString());
     _failedOnlineSources[key] = DateTime.now();
+    if (temporary) {
+      _failedOnlineSourcesTemporary.add(key);
+    } else {
+      _failedOnlineSourcesTemporary.remove(key);
+    }
     if (_failedOnlineSources.length > 32) {
-      _failedOnlineSources.remove(_failedOnlineSources.keys.first);
+      final evict = _failedOnlineSources.keys.first;
+      _failedOnlineSources.remove(evict);
+      _failedOnlineSourcesTemporary.remove(evict);
     }
   }
 
@@ -1870,8 +1900,13 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     if (key == null) return false;
     final t = _failedOnlineSources[key];
     if (t == null) return false;
-    if (DateTime.now().difference(t) > const Duration(minutes: 10)) {
+    // 临时性故障 30 秒即过期（对齐插件熔断量级），持久性故障 10 分钟
+    final ttl = _failedOnlineSourcesTemporary.contains(key)
+        ? const Duration(seconds: 30)
+        : const Duration(minutes: 10);
+    if (DateTime.now().difference(t) > ttl) {
       _failedOnlineSources.remove(key);
+      _failedOnlineSourcesTemporary.remove(key);
       return false;
     }
     return true;

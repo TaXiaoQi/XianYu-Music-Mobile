@@ -38,7 +38,8 @@ extension PlayerNotifierQueue on PlayerNotifier {
     );
     _syncShuffleRemaining();
     try {
-      await _playAt(startIndex);
+      // 起始曲是用户点播的：不做「已失败音源」快速拦截，真实尝试播放
+      await _playAt(startIndex, userPicked: true);
     } catch (e, st) {
       AppLog.error('play', 'playQueue 异常: $e\n$st');
       state = state.copyWith(isPlaying: false, resolving: false);
@@ -119,7 +120,7 @@ extension PlayerNotifierQueue on PlayerNotifier {
 
   Future<void> playQueueItem(int index) async {
     if (index < 0 || index >= state.queue.length) return;
-    await _playAt(index);
+    await _playAt(index, userPicked: true);
   }
 
   Future<void> playNextShare(QueueItem item) async {
