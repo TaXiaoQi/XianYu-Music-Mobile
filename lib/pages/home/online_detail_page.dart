@@ -205,7 +205,12 @@ class _OnlineDetailPageState extends ConsumerState<OnlineDetailPage>
         if (!silent) _loading = false;
         if (!silent) _stagger.start();
       }
-      if (widget.args.type != OnlineDetailType.playlist && reset) {
+      // 歌手/专辑一次取全，首屏后即到底；榜单支持分页（MF 插件
+      // getTopListDetail(item, page) / LX 分页链路），保持可加载更多，
+      // 由下方「不足 30 条 / 零新增」判定收尾
+      if (reset &&
+          (widget.args.type == OnlineDetailType.artist ||
+              widget.args.type == OnlineDetailType.album)) {
         _isEnd = true;
       }
       if (pluginIsEnd ?? list.length < 30) _isEnd = true;
