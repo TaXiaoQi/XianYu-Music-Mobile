@@ -97,6 +97,14 @@ class LyricsOverlayService : Service() {
         FlutterMessengerHolder.messenger?.let {
             eventsChannel = MethodChannel(it, EVENTS_CHANNEL)
         }
+        // 消费服务未就绪期间缓存的推送：Flutter 侧 _show() 先 startService
+        // （异步）再立即推设置/歌词，此前这些推送会因 instance 仍为 null 被
+        // 静默丢弃——悬浮窗就以默认位置+默认色停留（「概率性恢复默认」的
+        // 另一触发源，进程被系统回收重建后必现竞态窗口）。
+        pendingSettingsJson?.let { setSettings(it); pendingSettingsJson = null }
+        pendingLyricsJson?.let { setLyrics(it); pendingLyricsJson = null }
+        pendingPlayback?.let { (pos, play) -> setPlayback(pos, play); pendingPlayback = null }
+        pendingLocked?.let { setLocked(it); pendingLocked = null }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -415,8 +423,13 @@ class LyricsOverlayService : Service() {
             width = overlayWidth()
             height = overlayHeight()
         }
-        params.x = xPos
-        params.y = yPos
+        // 拖拽进行中不回写窗口坐标：此刻 params.x/y 是实时拖拽位置，
+        // 而 xPos/yPos 还是上一次落点——设置同步若在此刻用旧值覆盖，
+        // 窗口会中途回弹，且 ACTION_UP 会把回弹后的旧值当新位置持久化。
+        if (!movedDuringTouch) {
+            params.x = xPos
+            params.y = yPos
+        }
         clampToScreen(root, params)
         runCatching { windowManager.updateViewLayout(root, params) }
     }
@@ -487,7 +500,10 @@ class LyricsOverlayService : Service() {
                     params.x = startX + dx.roundToInt()
                     params.y = startY + dy.roundToInt()
                     clampToScreen(root, params)
-                    windowManager.updateViewLayout(root, params)
+                    // OEM ROM（如 Funtouch）对越界/保护区位置可能抛异常，
+                    // 拖拽路径吞掉异常避免整个进程被带崩（崩溃重启后悬浮窗
+                    // 会以默认位置+默认色重建，即用户反馈的「恢复默认」）。
+                    runCatching { windowManager.updateViewLayout(root, params) }
                 }
             }
             MotionEvent.ACTION_UP -> {
@@ -606,7 +622,10 @@ class LyricsOverlayService : Service() {
         val maxX = (resources.displayMetrics.widthPixels / 2 - width / 2).coerceAtLeast(0)
         val maxY = (resources.displayMetrics.heightPixels - height).coerceAtLeast(0)
         params.x = params.x.coerceIn(-maxX, maxX)
-        params.y = params.y.coerceIn(-statusBarHeight(), maxY)
+        // 下界取 0：不允许拖入状态栏/刘海保护区。此前放行到 -statusBarHeight，
+        // Funtouch 等 ROM 对该区域的 overlay 会异常重置窗口（用户反馈拖到
+        // 边界外后「概率性恢复默认位置默认颜色」的触发源之一）。
+        params.y = params.y.coerceIn(0, maxY)
     }
 
     private fun overlayWidth(): Int {
@@ -616,11 +635,6 @@ class LyricsOverlayService : Service() {
     }
 
     private fun overlayHeight(): Int = dp(150)
-
-    private fun statusBarHeight(): Int {
-        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
-    }
 
     // ---- 锁定通知 ----
 
@@ -750,6 +764,38 @@ class LyricsOverlayService : Service() {
 
         @Volatile
         var instance: LyricsOverlayService? = null
+
+        // 服务未就绪（instance==null）期间由 MainActivity 缓存的最新推送，
+        // onCreate 时按序消费。各槽位只留最新值即可。
+        @Volatile var pendingSettingsJson: String? = null
+        @Volatile var pendingLyricsJson: String? = null
+        @Volatile var pendingPlayback: Pair<Long, Boolean>? = null
+        @Volatile var pendingLocked: Boolean? = null
+
+        /** 投递设置：服务未就绪时缓存，避免推送被静默丢弃。 */
+        fun deliverSettings(json: String) {
+            val service = instance
+            if (service != null) service.setSettings(json) else pendingSettingsJson = json
+        }
+
+        fun deliverLyrics(json: String) {
+            val service = instance
+            if (service != null) service.setLyrics(json) else pendingLyricsJson = json
+        }
+
+        fun deliverPlayback(posMs: Long, playing: Boolean) {
+            val service = instance
+            if (service != null) {
+                service.setPlayback(posMs, playing)
+            } else {
+                pendingPlayback = posMs to playing
+            }
+        }
+
+        fun deliverLocked(lock: Boolean) {
+            val service = instance
+            if (service != null) service.setLocked(lock) else pendingLocked = lock
+        }
 
         fun canDraw(context: Context): Boolean =
             Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)

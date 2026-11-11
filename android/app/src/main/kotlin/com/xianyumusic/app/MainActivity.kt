@@ -1001,24 +1001,24 @@ class MainActivity : AudioServiceActivity() {
                         result.success(null)
                     }
                     "setLyrics" -> {
-                        LyricsOverlayService.instance?.setLyrics(
+                        LyricsOverlayService.deliverLyrics(
                             call.argument<String>("json") ?: "")
                         result.success(null)
                     }
                     "setPlayback" -> {
                         val posMs = (call.argument<Number>("positionMs")?.toLong()) ?: 0L
-                        LyricsOverlayService.instance?.setPlayback(
+                        LyricsOverlayService.deliverPlayback(
                             posMs,
                             call.argument<Boolean>("isPlaying") ?: false)
                         result.success(null)
                     }
                     "setSettings" -> {
-                        LyricsOverlayService.instance?.setSettings(
+                        LyricsOverlayService.deliverSettings(
                             call.argument<String>("json") ?: "")
                         result.success(null)
                     }
                     "setLocked" -> {
-                        LyricsOverlayService.instance?.setLocked(
+                        LyricsOverlayService.deliverLocked(
                             call.argument<Boolean>("locked") ?: false)
                         result.success(null)
                     }
