@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import '../core/application_logger.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/settings.dart';
 import '../player/player_provider.dart';
@@ -143,10 +144,56 @@ Widget playbarGlassSurface(
   );
 }
 
+/// mini 播放条拖放位置存储：横竖屏各自记忆并持久化（SharedPreferences），
+/// 重启保留；「位置固定」开启后按当前方向恢复记忆位置并锁死
 class MiniBarPositionStore {
   MiniBarPositionStore._();
 
-  static Offset? shared;
+  static Offset? _portrait;
+  static Offset? _landscape;
+  static Future<void>? _hydration;
+  static const _kPortrait = 'miniBarPosPortrait';
+  static const _kLandscape = 'miniBarPosLandscape';
+
+  /// 首次访问时从磁盘水合（幂等）
+  static Future<void> hydrate() {
+    return _hydration ??= () async {
+      final prefs = await SharedPreferences.getInstance();
+      _portrait = _parse(prefs.getString(_kPortrait));
+      _landscape = _parse(prefs.getString(_kLandscape));
+    }();
+  }
+
+  static Offset? get(bool landscape) => landscape ? _landscape : _portrait;
+
+  static void set(bool landscape, Offset? pos) {
+    if (landscape) {
+      _landscape = pos;
+    } else {
+      _portrait = pos;
+    }
+    unawaited(_write(landscape ? _kLandscape : _kPortrait, pos));
+  }
+
+  static Future<void> _write(String key, Offset? pos) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (pos == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setString(
+          key, '${pos.dx.toStringAsFixed(1)},${pos.dy.toStringAsFixed(1)}');
+    }
+  }
+
+  static Offset? _parse(String? raw) {
+    if (raw == null) return null;
+    final parts = raw.split(',');
+    if (parts.length != 2) return null;
+    final dx = double.tryParse(parts[0]);
+    final dy = double.tryParse(parts[1]);
+    if (dx == null || dy == null) return null;
+    return Offset(dx, dy);
+  }
 }
 
 class MiniPlayerBar extends ConsumerStatefulWidget {
@@ -201,6 +248,17 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       MediaQuery.of(context).size.width >=
       MediaQuery.of(context).size.height * 1.05;
 
+  /// 位置固定（外观设置「mini播放条」分组）：开启后不可拖拽、固定在该
+  /// 方向记忆的拖放位置（无记忆则默认位）。仅宿主 mini 条生效；播放页
+  /// 内嵌条（onPanUpdate 外接）有自己的拖拽展开语义，不受此开关约束
+  bool get _posLocked {
+    if (widget.onPanUpdate != null) return false;
+    final s = ref.read(settingsProvider).valueOrNull;
+    return (_isLandscape
+            ? (s?.miniBarLockLandscape ?? false)
+            : (s?.miniBarLockPortrait ?? false));
+  }
+
   /// 横屏播放条档位高度：0 小 / 1 标准 / 2 大 / 3 更大；竖屏恒为标准
   static const List<double> _barHeights = [46.0, 58.0, 72.0, 88.0];
 
@@ -242,16 +300,22 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
       _router = appRouter;
       _router!.routerDelegate.addListener(_onRouteChanged);
     }
-    if (widget.onPanUpdate == null && _lastLandscape == null) {
-      final shared = MiniBarPositionStore.shared;
-      if (shared != null) {
-        _pos = _clampToPageGeometry(shared);
-      }
-    }
     final landscape = _isLandscape;
-    if (_lastLandscape != null && _lastLandscape != landscape) {
-      _pos = null;
-      MiniBarPositionStore.shared = null;
+    if (_lastLandscape == null) {
+      // 首次进入：异步水合磁盘记忆位并恢复；锁定时由 build 走锁定位置路径
+      unawaited(MiniBarPositionStore.hydrate().then((_) {
+        if (!mounted) return;
+        setState(() {
+          final p = MiniBarPositionStore.get(_isLandscape);
+          if (p != null && !_posLocked) {
+            _pos = _clampToPageGeometry(p);
+          }
+        });
+      }));
+    } else if (_lastLandscape != landscape) {
+      // 方向切换：横竖屏位置独立，恢复另一方向各自的记忆位置
+      final p = MiniBarPositionStore.get(landscape);
+      _pos = (p == null || _posLocked) ? null : _clampToPageGeometry(p);
     }
     _lastLandscape = landscape;
   }
@@ -404,7 +468,8 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     if ((current - defaultPos).distance < 60.0) {
       setState(() => _pos = null);
     }
-    MiniBarPositionStore.shared = _pos;
+    // 记忆（含持久化）当前方向拖放位；贴近默认位时记 null 回默认
+    MiniBarPositionStore.set(_isLandscape, _pos);
   }
 
   void _handlePanStart(DragStartDetails d) {
@@ -470,6 +535,14 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final barSize = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.landscapeBarSize ?? 1),
     );
+    // 位置固定开关：watch 触发即时上锁/解锁重建（上锁时条动画弹回默认位）
+    final posLocked = ref.watch(settingsProvider.select((s) {
+      final v = s.valueOrNull;
+      return _isLandscape
+          ? (v?.miniBarLockLandscape ?? false)
+          : (v?.miniBarLockPortrait ?? false);
+    })) &&
+        widget.onPanUpdate == null;
     final barH = _isLandscape ? _barHeights[barSize.clamp(0, 3)] : 58.0;
     final k = barH / 58.0;
     final coverSize = barH - 12.0;
@@ -620,10 +693,11 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
     final bar = PressableScale(
       pressScale: 0.92,
       child: GestureDetector(
-        onPanStart: _handlePanStart,
-        onPanUpdate: _handlePanUpdate,
-        onPanEnd: _handlePanEnd,
-        onPanCancel: _handlePanCancel,
+        // 位置固定：不挂 pan 手势，条恒在默认位置（点击进播放页不受影响）
+        onPanStart: posLocked ? null : _handlePanStart,
+        onPanUpdate: posLocked ? null : _handlePanUpdate,
+        onPanEnd: posLocked ? null : _handlePanEnd,
+        onPanCancel: posLocked ? null : _handlePanCancel,
         onTap: () {
           final ro = _coverKey.currentContext?.findRenderObject();
           if (ro is RenderBox && ro.hasSize) {
@@ -661,15 +735,21 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         }
         return const SizedBox.shrink();
       }
+      // 锁定＝固定在该方向记忆的拖放位置（无记忆则默认位）；解锁恢复
+      // 可拖拽，拖放位置实时记忆并持久化
+      final lockedPos = posLocked
+          ? _clampToPageGeometry(MiniBarPositionStore.get(_isLandscape) ??
+              Offset(_defaultLeft, _defaultTop))
+          : Offset(_defaultLeft, _defaultTop);
       return Stack(
         children: [
           AnimatedPositioned(
-            duration: (_pos == null)
+            duration: (posLocked || _pos == null)
                 ? const Duration(milliseconds: 320)
                 : Duration.zero,
             curve: Curves.easeOutCubic,
-            left: _pos?.dx ?? _defaultLeft,
-            top: _pos?.dy ?? _defaultTop,
+            left: posLocked ? lockedPos.dx : (_pos?.dx ?? _defaultLeft),
+            top: posLocked ? lockedPos.dy : (_pos?.dy ?? _defaultTop),
             width: _barWidth,
             child: bar,
           ),

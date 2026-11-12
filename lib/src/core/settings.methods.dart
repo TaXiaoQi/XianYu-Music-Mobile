@@ -191,6 +191,8 @@ class SettingsStore {
         next.floatingLyricsHideInLandscape,
       ),
       prefs.setInt('landscapeBarSize', next.landscapeBarSize),
+      prefs.setBool('miniBarLockPortrait', next.miniBarLockPortrait),
+      prefs.setBool('miniBarLockLandscape', next.miniBarLockLandscape),
       prefs.setInt(
         'floatingLyricsWidthPercent',
         next.floatingLyricsWidthPercent,
@@ -622,6 +624,10 @@ extension SettingsNotifierMethods on SettingsNotifier {
 
   Future<void> setLandscapeBarSize(int v) =>
       _settingsStore.update((s) => s.copyWith(landscapeBarSize: v));
+  Future<void> setMiniBarLockPortrait(bool v) =>
+      _settingsStore.update((s) => s.copyWith(miniBarLockPortrait: v));
+  Future<void> setMiniBarLockLandscape(bool v) =>
+      _settingsStore.update((s) => s.copyWith(miniBarLockLandscape: v));
   Future<void> setFloatingLyricsWidthPercent(int v) =>
       _settingsStore.update((s) => s.copyWith(floatingLyricsWidthPercent: v));
   Future<void> setFloatingLyricsUseLyricFont(bool v) =>

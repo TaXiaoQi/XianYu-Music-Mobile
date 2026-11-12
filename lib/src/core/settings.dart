@@ -328,6 +328,8 @@ class AppSettings {
     this.floatingLyricsHideWhenPaused = false,
     this.floatingLyricsHideInLandscape = false,
     this.landscapeBarSize = 1,
+    this.miniBarLockPortrait = false,
+    this.miniBarLockLandscape = false,
     this.floatingLyricsWidthPercent = 92,
     this.floatingLyricsUseLyricFont = false,
     this.statusBarLyricsEnabled = false,
@@ -556,6 +558,12 @@ class AppSettings {
   /// 横屏迷你播放条尺寸档位：0 小 / 1 标准 / 2 大 / 3 更大（竖屏恒为标准）
   final int landscapeBarSize;
 
+  /// 竖屏 mini 播放条位置固定：开启后不可拖拽，恒在默认位置
+  final bool miniBarLockPortrait;
+
+  /// 横屏 mini 播放条位置固定：开启后不可拖拽，恒在默认位置
+  final bool miniBarLockLandscape;
+
   final int floatingLyricsWidthPercent;
 
   final bool floatingLyricsUseLyricFont;
@@ -704,6 +712,8 @@ class AppSettings {
     bool? floatingLyricsHideWhenPaused,
     bool? floatingLyricsHideInLandscape,
     int? landscapeBarSize,
+    bool? miniBarLockPortrait,
+    bool? miniBarLockLandscape,
     int? floatingLyricsWidthPercent,
     bool? floatingLyricsUseLyricFont,
     bool? statusBarLyricsEnabled,
@@ -869,6 +879,9 @@ class AppSettings {
       floatingLyricsHideInLandscape:
           floatingLyricsHideInLandscape ?? this.floatingLyricsHideInLandscape,
       landscapeBarSize: landscapeBarSize ?? this.landscapeBarSize,
+      miniBarLockPortrait: miniBarLockPortrait ?? this.miniBarLockPortrait,
+      miniBarLockLandscape:
+          miniBarLockLandscape ?? this.miniBarLockLandscape,
       floatingLyricsWidthPercent:
           floatingLyricsWidthPercent ?? this.floatingLyricsWidthPercent,
       floatingLyricsUseLyricFont:
@@ -1082,6 +1095,10 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       floatingLyricsHideInLandscape:
           prefs.getBool('floatingLyricsHideInLandscape') ?? false,
       landscapeBarSize: prefs.getInt('landscapeBarSize') ?? 1,
+      miniBarLockPortrait:
+          prefs.getBool('miniBarLockPortrait') ?? false,
+      miniBarLockLandscape:
+          prefs.getBool('miniBarLockLandscape') ?? false,
       floatingLyricsWidthPercent:
           prefs.getInt('floatingLyricsWidthPercent') ?? 92,
       floatingLyricsUseLyricFont:

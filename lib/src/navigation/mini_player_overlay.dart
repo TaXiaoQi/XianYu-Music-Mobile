@@ -240,11 +240,28 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     _lastSide = side;
   }
 
+  bool get _currentLandscape {
+    final screen = MediaQuery.maybeOf(context);
+    return screen == null || screen.size.width >= screen.size.height * 1.05;
+  }
+
+  /// 当前方向的位置固定开关（外观设置「mini播放条」分组）：与 shell 条
+  /// 共用 store，锁定时 overlay 条同样禁拖（位置即锁定位置）
+  bool get _posLockedNow => _posLockedFor(_currentLandscape);
+
+  bool _posLockedFor(bool landscape) {
+    final s = ref.read(settingsProvider).valueOrNull;
+    return landscape
+        ? (s?.miniBarLockLandscape ?? false)
+        : (s?.miniBarLockPortrait ?? false);
+  }
+
   void _onPlayerPanStart(DragStartDetails details) {
+    if (_posLockedNow) return;
     setState(() {
       _isPlayerDragging = true;
-      _playerLeft ??= MiniBarPositionStore.shared?.dx;
-      _playerTop ??= MiniBarPositionStore.shared?.dy;
+      _playerLeft ??= MiniBarPositionStore.get(_currentLandscape)?.dx;
+      _playerTop ??= MiniBarPositionStore.get(_currentLandscape)?.dy;
     });
     setGlobalDragging(true);
   }
@@ -268,6 +285,7 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
     bool landscape,
     double uiScale,
   ) {
+    if (_posLockedNow) return;
     final currentLeft = _playerLeft ?? defaultLeft;
     final currentTop = _playerTop ?? defaultTop;
 
@@ -311,10 +329,10 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
       // 条永远回不到停靠档）
       _playerLeft = null;
       _playerTop = null;
-      MiniBarPositionStore.shared = null;
+      MiniBarPositionStore.set(_currentLandscape, null);
       return;
     }
-    MiniBarPositionStore.shared = Offset(l, t);
+    MiniBarPositionStore.set(_currentLandscape, Offset(l, t));
     _playerLeft = null;
     _playerTop = null;
   }
@@ -436,7 +454,15 @@ class _MiniPlayerOverlayState extends ConsumerState<MiniPlayerOverlay> {
                 batchLift);
     }();
 
-    final shared = MiniBarPositionStore.shared;
+    // 位置固定开关：watch 触发即时上锁/解锁重建（与 shell 条同语义，
+    // 手势层经 _posLockedNow 判定禁拖）
+    ref.watch(settingsProvider.select((s) {
+      final v = s.valueOrNull;
+      return landscape
+          ? (v?.miniBarLockLandscape ?? false)
+          : (v?.miniBarLockPortrait ?? false);
+    }));
+    final shared = MiniBarPositionStore.get(landscape);
     final shellMinLeft = landscape ? landscapeLeftBound : 6.0;
     final shellMaxLeft = landscape
         ? landscapeRightBound

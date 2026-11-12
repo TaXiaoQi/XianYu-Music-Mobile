@@ -432,6 +432,11 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
             value: s?.landscapeTransitionEnabled ?? true,
             onChanged: (v) => n.setLandscapeTransitionEnabled(v),
           ),
+        ],
+      ),
+      _sectionHeader(context, tr('mini播放条')),
+      _CardGroup(
+        children: [
           _tile(
             context,
             icon: Icons.picture_in_picture_alt_outlined,
@@ -444,6 +449,22 @@ extension _SettingsCategoryPageSections on _SettingsCategoryPageState {
               _ => tr('标准'),
             }),
             onTap: () => _pickLandscapeBarSize(context, ref, s),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.lock_outline,
+            title: tr('竖屏模式播放条位置固定'),
+            subtitle: tr('开启后竖屏 mini 播放条固定在当前拖放位置，不可拖动'),
+            value: s?.miniBarLockPortrait ?? false,
+            onChanged: (v) => n.setMiniBarLockPortrait(v),
+          ),
+          _switchTile(
+            context,
+            icon: Icons.lock_outline,
+            title: tr('横屏模式播放条位置固定'),
+            subtitle: tr('开启后横屏 mini 播放条固定在当前拖放位置，不可拖动'),
+            value: s?.miniBarLockLandscape ?? false,
+            onChanged: (v) => n.setMiniBarLockLandscape(v),
           ),
         ],
       ),

@@ -1226,6 +1226,13 @@ const Map<String, String> enDictManual = {
   '自定义歌词字体': 'Custom lyrics font',
   '自定义颜色': 'Custom color',
   '自动': 'Auto',
+  'mini播放条': 'Mini player bar',
+  '竖屏模式播放条位置固定': 'Lock bar position in portrait',
+  '横屏模式播放条位置固定': 'Lock bar position in landscape',
+  '开启后竖屏 mini 播放条固定在当前拖放位置，不可拖动':
+      'When enabled, the portrait mini bar stays where you left it and cannot be dragged',
+  '开启后横屏 mini 播放条固定在当前拖放位置，不可拖动':
+      'When enabled, the landscape mini bar stays where you left it and cannot be dragged',
   '首选换源音源': 'Preferred fallback source',
   '起播失败自动换源或重搜时，优先使用所选音源':
       'When playback fails and the app switches or re-searches sources, prefer the selected source',
