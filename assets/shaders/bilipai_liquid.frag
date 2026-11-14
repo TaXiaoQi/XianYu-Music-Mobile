@@ -98,10 +98,11 @@ void main() {
   // —— 全表面凸透镜放大（先做，边带折射在最终屏幕空间全强度作用）——
   // depthEffect>0 的水滴：采样坐标往圆心收，内部整个背景被放大（B 站
   // 水滴「折射整个背景」的观感来源）；玻璃壳 depthEffect=0 不受影响。
-  // mix 系数上限 0.45 防过度畸变（1.6×0.25=0.4，约放大 1.67 倍）。
+  // 系数 0.40：depthEffect=1 时 mix 0.40（缘部采样收到 0.6r，约放大
+  // 1.67 倍，「整个圆内都在折射」的透镜感更强）；上限 0.5 防过度畸变
   if (uDepthEffect > 0.0 && sd < 0.0) {
     vec2 centerUV = uGlassOrigin + uGlassSize * 0.5;
-    uv = mix(uv, centerUV, min(uDepthEffect * 0.25, 0.45));
+    uv = mix(uv, centerUV, min(uDepthEffect * 0.40, 0.5));
   }
 
   if (sd < 0.0 && uEdgeAmount > 0.0 && uRefract > 0.0) {

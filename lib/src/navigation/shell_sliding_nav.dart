@@ -174,24 +174,11 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                   ],
                                 ),
                               )
-                            : SizedBox.expand(
-                                // SizedBox.expand 必须保留：外层 Stack（暗晕
-                                // 宿主）给非定位子项的是松约束，裸 DecoratedBox
-                                // 会塌缩成 0×0——静息胶囊整体消失（paint 探针
-                                // 实测 size=0.0x0.0 的根因）
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: s.isDark
-                                        // 静态胶囊深色=黑 0.24（iOS 深色水滴
-                                        // 黑色语言，与树内静态指示器同调）
-                                        ? Colors.black.withValues(alpha: 0.24)
-                                        : Colors.black.withValues(alpha: 0.10),
-                                    borderRadius: BorderRadius.circular(
-                                      s.rect.shortestSide / 2,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                            : const SizedBox.shrink(),
+                            // 静息态 overlay 不画：静息水滴由底栏树内渲染
+                            //（图标之下，折射不作用图标）；overlay 只在按压/
+                            // 拖动胀大（liquid=true）时接管，让水鼓出栏缘
+                            // 覆盖上方内容
                       ),
                     ],
                   ),
@@ -633,12 +620,16 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
           if (pageDragging && !_springTicker.isActive) _ensureTicker();
 
-          double k = 1 + dragMf * 0.22 + effPress * 0.55;
+          // 按压胀大系数对齐 BiliPai HyperIsland：按压 bloom 上限
+          // 78/56 ≈ 1.39（LiquidIndicator 56dp→78dp），0.55 会推到 1.55+
+          double k = 1 + dragMf * 0.22 + effPress * 0.39;
           if (!overlayDroplet) {
             // 树内水滴（玻璃引擎降级路径）嵌入玻璃内部，按住胀大被玻璃裁剪，
             // 上限钳到栏高防硬切边。overlay 顶层水滴不钳——它画在 mini 播放条
             // 之上，鼓出栏缘覆盖折射上方内容正是设计意图。
             k = math.min(k, maxH / dropH);
+          } else {
+            k = math.min(k, 1.39);
           }
           final stretchX = pageDragging ? _sxPos : 0.0;
           final stretchY = pageDragging ? _syPos : 0.0;
@@ -653,11 +644,16 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
           final d = dropH;
           final bool scaledIndicator = overlayDroplet;
+          // 静息态 = 深色底座胶囊（对齐 BiliPai：静息是深色玻璃底片，
+          // 不做折射）；按下/拖动放大时才切液态透镜（通透折射整个背景）
           final dropletOn = pageDragging || pressG > 0.005 || dragMf > 0.005;
           Widget indicator;
           if (widget.lens && dropletOn) {
-            final band = d * 16.0 / 56.0 * mf * widget.edgeBoost;
-            final amount = d * 18.0 / 56.0 * mf * widget.lensBoost;
+            // 折射参数对齐 BiliPai LiquidGlassTuning：refractionHeight 10dp、
+            // refractionAmount 14dp（按 56dp 水滴比例换算）——band 16/amount 18
+            // 的旧配方边带近参考 2 倍厚，色散被摊薄成宽白边
+            final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
+            final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final press = pressG.clamp(0.0, 1.0);
             indicator = ClipOval(
@@ -677,27 +673,60 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     depthEffect: 1.0,
                     child: const SizedBox.expand(),
                   ),
-                  CustomPaint(painter: _DropletEdgePainter(press, isDark)),
+                  CustomPaint(
+                    painter: _DropletEdgePainter(press, isDark),
+                  ),
                 ],
               ),
             );
           } else {
             final isDark = Theme.of(context).brightness == Brightness.dark;
-            indicator = DecoratedBox(
-              decoration: BoxDecoration(
-                color: widget.lens
-                    // 静态胶囊深色=黑 0.24（用户指定对齐 iOS 深色水滴的
-                    // 黑色语言，与放大透镜同调）；浅色=黑 0.10
-                    ? (isDark
-                          ? Colors.black.withValues(alpha: 0.24)
-                          : Colors.black.withValues(alpha: 0.10))
-                    : Theme.of(
-                        context,
-                      ).colorScheme.primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(d / 2),
-              ),
-              child: const SizedBox.expand(),
-            );
+            if (widget.lens) {
+              // 静息液态水滴：树内渲染、图标之下（使用处的 Stack 顺序控制）。
+              // 边带折射恒定全强度（BiliPai 10dp/14dp 恒定生效），零放大
+              // （depth=0，静息放大斑已否决）。采样的是栏后内容——图标由
+              // tabRow 在本层之上绘制，不被折射/染色，保持清晰（BiliPai
+              // 同构层级：indicator 在 icon 层之下）
+              indicator = ClipOval(
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    LiveLiquidSurface(
+                      radius: d / 2,
+                      refract: d * 14.0 / 56.0 * widget.lensBoost,
+                      chroma: widget.dropletChroma,
+                      blurSigma: 0,
+                      backgroundColor: Colors.transparent,
+                      specular: 0.12,
+                      edgeAmount: d * 10.0 / 56.0 * widget.edgeBoost,
+                      saturation: 1.4,
+                      depthEffect: 0,
+                      child: const SizedBox.expand(),
+                    ),
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? Colors.black.withValues(alpha: 0.20)
+                            : Colors.black.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    CustomPaint(painter: _DropletEdgePainter(0.55, isDark)),
+                  ],
+                ),
+              );
+            } else {
+              // 非液态：红色胶囊
+              indicator = DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(d / 2),
+                ),
+                child: const SizedBox.expand(),
+              );
+            }
           }
 
           final indicatorW = widget.lens ? d : (tabW - 8);
@@ -747,8 +776,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               onHorizontalDragCancel: () => _onDragCancel(items.length - 1),
               child: Stack(
                 children: [
-                  tabRow,
-                  if (!overlayDroplet)
+                  // 树内水滴渲染在 tabRow 之下（BiliPai 同构：indicator 在
+                  // icon 层下层，折射只作用栏后内容，图标始终清晰在最上）。
+                  // 玻璃引擎可用时静息也走树内（!dropletOn），按压胀大才
+                  // 交给顶层 overlay（!dropletOn 时 overlay 静息不画）
+                  if (!overlayDroplet || !dropletOn)
                     Builder(
                       builder: (context) {
                         // 树内水滴（降级路径）同样锚定实测内容组中心：
@@ -786,6 +818,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                         );
                       },
                     ),
+                  tabRow,
                 ],
               ),
             ),
@@ -815,8 +848,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               maxH: maxH,
               liquid: dropletOn,
               radius: d * sy / 2,
-              refract: d * 14.0 / 56.0 * mf * widget.lensBoost,
-              band: d * 18.0 / 56.0 * mf * widget.edgeBoost,
+              // 边带折射恒定全强度（BiliPai LiquidIndicator：10dp/14dp 恒定
+              // 生效，不随按压缩放——静息水滴也保持折射）；放大(depth)留给
+              // 按压，静息为 0
+              refract: d * 14.0 / 56.0 * widget.lensBoost,
+              band: d * 10.0 / 56.0 * widget.edgeBoost,
               chroma: widget.dropletChroma,
               shear: _dragVel.sign * _sxPos * 0.12,
               depth: 1.0 * mf,
@@ -1145,6 +1181,10 @@ class _DropletHaloPainter extends CustomPainter {
       old.press != press || old.isDark != isDark;
 }
 
+/// 水滴表面材质：对齐 BiliPai LiquidIndicator.drawLiquidSphereSurface——
+/// 中央径向高光 + 顶部透光/底部厚度 + sweep 环形 rim + 左上镜面反光弧。
+/// 全部为清晰渐变，不用 MaskFilter 模糊笔触——白底栏上叠糊白高光只会
+/// 糊成一团。不做主题色微染（用户指定：水滴应是透明玻璃，不染色）
 class _DropletEdgePainter extends CustomPainter {
   const _DropletEdgePainter(this.progress, this.isDark);
 
@@ -1155,96 +1195,75 @@ class _DropletEdgePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final p = progress.clamp(0.0, 1.0);
     if (p <= 0) return;
-    final rx = size.width / 2;
-    final ry = size.height / 2;
-    if (rx <= 0 || ry <= 0) return;
+    if (size.width <= 0 || size.height <= 0) return;
     final outer = Offset.zero & size;
-
-    // 与顶栏/底栏同款 rim 材质（bilipai_glass.rim 同参数，形状走
-    // 圆形贴合 ClipOval）：rim 双色描边（顶亮→底暗）+ 左上贴缘镜面
-    // 反光弧 + 顶部泛光。透明度随按压进度 p 淡入，与液态胀大同节奏；
-    // 内缩弧线放大态会读成悬浮白线，反光必须贴缘（内缩仅 1.6px）
     const white = Colors.white;
 
-    // rim 主描边：纵向线性渐变柔光（顶亮→底暗），宽笔触+模糊+低
-    // 透明度，边缘像「亮起来」而非描边
-    final rim = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.6)
-      ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: isDark
-              ? [
-                  white.withValues(alpha: 0.30 * p),
-                  white.withValues(alpha: 0.08 * p),
-                  Colors.black.withValues(alpha: 0.06 * p),
-                  Colors.black.withValues(alpha: 0.30 * p),
-                ]
-              : [
-                  white.withValues(alpha: 0.42 * p),
-                  white.withValues(alpha: 0.10 * p),
-                  Colors.black.withValues(alpha: 0.03 * p),
-                  Colors.black.withValues(alpha: 0.18 * p),
-                ],
-        ).createShader(outer);
-    canvas.drawOval(outer.deflate(1.1), rim);
-
-    // 外圈灰轮廓（仅浅色）：iOS 浅色水滴靠灰描边从白栏里读出「玻璃体」
-    // ——白 rim 叠白栏不可见，水滴放大白 fill 后读成不透明白底
-    if (!isDark) {
-      canvas.drawOval(
-        outer.deflate(0.7),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5)
-          ..color = Colors.black.withValues(alpha: 0.14 * p),
-      );
-      // 内阴影：底缘向内的柔灰渐变，给白玻璃一点厚度
-      canvas.drawOval(
-        outer.deflate(1.2),
-        Paint()
-          ..shader = LinearGradient(
-              begin: Alignment.bottomCenter,
-              end: Alignment.topCenter,
-              colors: [
-                Colors.black.withValues(alpha: 0.07 * p),
-                Colors.black.withValues(alpha: 0),
-              ],
-            ).createShader(outer),
-      );
-    }
-
-    // 左上主高光弧：光源左上的镜面反光亮线，贴缘弱而模糊
-    final glint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.8
-      ..strokeCap = StrokeCap.round
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3.2)
-      ..color = white.withValues(alpha: (isDark ? 0.20 : 0.30) * p);
-    canvas.drawArc(
-      outer.deflate(1.6),
-      math.pi * 1.05,
-      math.pi * 0.35,
-      false,
-      glint,
+    // ② 中央径向高光：中心亮→外缘消失（BiliPai centerGlow radial）
+    final glow = 0.10 + 0.16 * p;
+    canvas.drawRect(
+      outer,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, 0.08),
+          radius: 0.9,
+          colors: [
+            white.withValues(alpha: glow),
+            white.withValues(alpha: glow * 0.35),
+            white.withValues(alpha: 0),
+          ],
+        ).createShader(outer),
     );
 
-    // 顶部泛光：上半段白色透光渐变（玻璃透光语言，画在内容之上）
-    final glossHeight = outer.height * 0.55;
-    final gloss = Paint()
-      ..shader = LinearGradient(
+    // ③ 纵向渐变：顶部透光 → 底部厚度阴影（BiliPai verticalGradient）
+    canvas.drawRect(
+      outer,
+      Paint()
+        ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            white.withValues(alpha: (isDark ? 0.05 : 0.09) * p),
-            white.withValues(alpha: (isDark ? 0.015 : 0.03) * p),
+            white.withValues(alpha: (isDark ? 0.06 : 0.08) + 0.03 * p),
             white.withValues(alpha: 0),
+            Colors.black.withValues(
+              alpha: (isDark ? 0.10 : 0.08) * (0.5 + 0.5 * p),
+            ),
           ],
-        ).createShader(Rect.fromLTWH(0, 0, outer.width, glossHeight));
-    canvas.drawOval(outer, gloss);
+        ).createShader(outer),
+    );
+
+    // ④ 环形 rim：sweep 渐变描边（顶亮→侧中→底暗），清晰不模糊，
+    // 中性白/黑配色——不掺主题色，保持透明玻璃观感
+    final ringAlpha = 0.16 + 0.08 * p;
+    final ringStroke = math.max(size.shortestSide * 0.05, 1.0);
+    canvas.drawOval(
+      outer.deflate(ringStroke / 2 + 0.5),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = ringStroke
+        ..shader = SweepGradient(
+          colors: [
+            white.withValues(alpha: ringAlpha),
+            white.withValues(alpha: ringAlpha * 0.86),
+            Colors.black.withValues(alpha: ringAlpha * 0.70),
+            white.withValues(alpha: ringAlpha * 0.86),
+            white.withValues(alpha: ringAlpha),
+          ],
+        ).createShader(outer),
+    );
+
+    // ⑤ 左上镜面反光弧：贴缘细线，清晰不 blur（BiliPai 无模糊笔触）
+    canvas.drawArc(
+      outer.deflate(ringStroke + 0.8),
+      math.pi * 1.05,
+      math.pi * 0.35,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeWidth = 1.6
+        ..color = white.withValues(alpha: (isDark ? 0.16 : 0.26) * p),
+    );
   }
 
   @override
