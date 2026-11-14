@@ -130,20 +130,9 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      // 外圈柔光暗晕：浅色栏上白玻璃放大水滴对比太弱，rim
-                      // 外一圈向外的软阴影把水滴从栏背景里「托」出来。只画
-                      // 环带不铺底——BoxShadow 铺底会把半透玻璃内部压灰。
-                      // 静息胶囊不加（保持轻量默认观感），仅液态放大态画
-                      if (s.liquid)
-                        Positioned(
-                          left: -6,
-                          top: -6,
-                          width: s.rect.width + 12,
-                          height: s.rect.height + 12,
-                          child: CustomPaint(
-                            painter: _DropletHaloPainter(s.press, s.isDark),
-                          ),
-                        ),
+                      // 暗晕已删除（用户否决「外面一圈东西」）：黑模糊环在
+                      // 彩色内容上读成脏晕，BiliPai 水滴外圈就是干净的，
+                      // 立体感由 rim/反光弧承担，不靠外阴影
                       Transform(
                         alignment: Alignment.center,
                         transform: Matrix4.identity()..setEntry(0, 1, s.shear),
@@ -560,7 +549,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     ? constraints.maxHeight
                     : navBarContentHeight);
           final tabW = (maxW - 20) / items.length;
-          final dropH = (maxH * 0.8).clamp(54.0, 64.0);
+          // 水滴直径：0.95 倍内容高（用户要求加大——0.8 倍圈住图标+文字
+          // 太紧，BiliPai 水滴几乎占满栏内容高）。按压胀大走 overlay 不受
+          // 此限；树内降级路径的 k 钳（maxH/dropH）仅兜底防溢出
+          final dropH = (maxH * 0.95).clamp(56.0, 72.0);
           final pos = _dragging
               ? _dragPos
               : _pageDrag
@@ -666,7 +658,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     refract: amount,
                     chroma: widget.dropletChroma,
                     blurSigma: 0,
-                    backgroundColor: Colors.transparent,
+                    // 底栏同款玻璃底色：树内采样的是未经白 tint 的原始页面
+                    // 内容（玻璃引擎子树里嵌套 BackdropFilter 拿不到栏面
+                    // 玻璃），深色内容经边带向内压会聚成一圈深色环；混入
+                    // 栏面 tint 后水滴材质与栏面一致，环消失
+                    backgroundColor: bilipaiGlassTint(
+                      Theme.of(context).brightness == Brightness.dark,
+                      LiquidGlassQuality.medium,
+                    ),
                     specular: 0.12,
                     edgeAmount: band,
                     saturation: 1.4,
@@ -694,12 +693,19 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                   children: [
                     LiveLiquidSurface(
                       radius: d / 2,
-                      refract: d * 14.0 / 56.0 * widget.lensBoost,
+                      // 静息零折射：树内嵌套采样拿不到玻璃引擎的磨砂 backdrop，
+                      // 边带把周遭原始内容压进圆缘，先后读成深色环/脏晕
+                      //（用户两轮否决）；静息观感=玻璃底色 tint + rim 材质，
+                      // 边带折射只在按压放大的 overlay 全量开启
+                      refract: 0,
                       chroma: widget.dropletChroma,
                       blurSigma: 0,
+                      // 底色透明：白 0.40 混底是压边带深环的临时手段，静息
+                      // 零折射后不需要——它把静息水滴洗成浅灰（用户反馈
+                      // 不够黑）。加深靠下方黑色 tint 层
                       backgroundColor: Colors.transparent,
                       specular: 0.12,
-                      edgeAmount: d * 10.0 / 56.0 * widget.edgeBoost,
+                      edgeAmount: 0,
                       saturation: 1.4,
                       depthEffect: 0,
                       child: const SizedBox.expand(),
@@ -707,8 +713,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     DecoratedBox(
                       decoration: BoxDecoration(
                         color: isDark
-                            ? Colors.black.withValues(alpha: 0.20)
-                            : Colors.black.withValues(alpha: 0.12),
+                            ? Colors.black.withValues(alpha: 0.30)
+                            : Colors.black.withValues(alpha: 0.22),
                       ),
                     ),
                     CustomPaint(painter: _DropletEdgePainter(0.55, isDark)),
@@ -830,9 +836,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             var cx = 10 + pos * tabW + tabW / 2;
             // 栏缘墙：放大水滴的渲染落点钳在栏内容区内。只钳快照 cx、
             // 不钳 pos 本体——弹簧回弹与拖拽插值不受影响，撞墙段由
-            // 尺寸脉冲继续表达回弹。墙深 16 = 8 基础余量 + 6 暗晕外扩
-            //（_DropletHaloPainter 宿主每边多画 6px 且 Clip.none，只钳
-            // rect 的话暗晕会替水滴越出玻璃缘，取证日志+截图实测吻合）
+            // 尺寸脉冲继续表达回弹。墙深 16 = 8 基础余量 + 6 外扩余量
             // + 2 贴壁微露
             cx = cx.clamp(16 + w / 2, maxW - 16 - w / 2);
             // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
@@ -1152,39 +1156,11 @@ class _NavTab extends ConsumerWidget {
   }
 }
 
-/// 水滴外圈柔光暗晕：画布比水滴每边多留 6px 模糊余量，环带以 rim 为
-/// 中心（内外各一半），外侧在栏背景上形成「托起」软阴影，内侧被上层的
-/// 玻璃水滴盖住只隐约透出——贴合 rim 的立体感。press 越大（放大/液态）
-/// 晕越重，凸显水滴存在感
-class _DropletHaloPainter extends CustomPainter {
-  const _DropletHaloPainter(this.press, this.isDark);
-
-  final double press;
-  final bool isDark;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 5
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
-      ..color = Colors.black.withValues(alpha: 0.20 + 0.08 * press);
-    canvas.drawCircle(
-      size.center(Offset.zero),
-      size.shortestSide / 2 - 6, // 减去画布每边 6px 余量，环带贴住水滴 rim
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_DropletHaloPainter old) =>
-      old.press != press || old.isDark != isDark;
-}
-
 /// 水滴表面材质：对齐 BiliPai LiquidIndicator.drawLiquidSphereSurface——
-/// 中央径向高光 + 顶部透光/底部厚度 + sweep 环形 rim + 左上镜面反光弧。
-/// 全部为清晰渐变，不用 MaskFilter 模糊笔触——白底栏上叠糊白高光只会
-/// 糊成一团。不做主题色微染（用户指定：水滴应是透明玻璃，不染色）
+/// 中央径向高光 + 顶部透光/底部厚度 + sweep 环形 rim（左上反光弧已删，
+/// 用户否决）。全部为清晰渐变，不用 MaskFilter 模糊笔触——白底栏上叠
+/// 糊白高光只会糊成一团。不做主题色微染（用户指定：水滴应是透明玻璃，
+/// 不染色）
 class _DropletEdgePainter extends CustomPainter {
   const _DropletEdgePainter(this.progress, this.isDark);
 
@@ -1199,8 +1175,9 @@ class _DropletEdgePainter extends CustomPainter {
     final outer = Offset.zero & size;
     const white = Colors.white;
 
-    // ② 中央径向高光：中心亮→外缘消失（BiliPai centerGlow radial）
-    final glow = 0.10 + 0.16 * p;
+    // ② 中央径向高光：中心亮→外缘消失（BiliPai centerGlow radial）。
+    // 白量已压低（用户反馈静态不够黑）
+    final glow = 0.06 + 0.10 * p;
     canvas.drawRect(
       outer,
       Paint()
@@ -1223,7 +1200,7 @@ class _DropletEdgePainter extends CustomPainter {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            white.withValues(alpha: (isDark ? 0.06 : 0.08) + 0.03 * p),
+            white.withValues(alpha: (isDark ? 0.04 : 0.05) + 0.02 * p),
             white.withValues(alpha: 0),
             Colors.black.withValues(
               alpha: (isDark ? 0.10 : 0.08) * (0.5 + 0.5 * p),
@@ -1232,38 +1209,9 @@ class _DropletEdgePainter extends CustomPainter {
         ).createShader(outer),
     );
 
-    // ④ 环形 rim：sweep 渐变描边（顶亮→侧中→底暗），清晰不模糊，
-    // 中性白/黑配色——不掺主题色，保持透明玻璃观感
-    final ringAlpha = 0.16 + 0.08 * p;
-    final ringStroke = math.max(size.shortestSide * 0.05, 1.0);
-    canvas.drawOval(
-      outer.deflate(ringStroke / 2 + 0.5),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = ringStroke
-        ..shader = SweepGradient(
-          colors: [
-            white.withValues(alpha: ringAlpha),
-            white.withValues(alpha: ringAlpha * 0.86),
-            Colors.black.withValues(alpha: ringAlpha * 0.70),
-            white.withValues(alpha: ringAlpha * 0.86),
-            white.withValues(alpha: ringAlpha),
-          ],
-        ).createShader(outer),
-    );
-
-    // ⑤ 左上镜面反光弧：贴缘细线，清晰不 blur（BiliPai 无模糊笔触）
-    canvas.drawArc(
-      outer.deflate(ringStroke + 0.8),
-      math.pi * 1.05,
-      math.pi * 0.35,
-      false,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeWidth = 1.6
-        ..color = white.withValues(alpha: (isDark ? 0.16 : 0.26) * p),
-    );
+    // ④ 环形 rim 已删除（用户否决）：暗色描边叠在 tint 上读成"一圈更黑
+    // 的边"。圆界由 tint 对比自然显形，立体感只靠中心微亮+底部厚度
+    // ⑤ 左上镜面反光弧已删除（用户否决）：小圆上读成左侧一道怪弧线
   }
 
   @override
