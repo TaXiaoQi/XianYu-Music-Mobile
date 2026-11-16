@@ -1119,11 +1119,15 @@ Map<String, int>? sanitizeSectionTs(Object? candidate) {
 Future<Map<String, int>> readSettingsSectionTs() async {
   final prefs = await SharedPreferences.getInstance();
   final raw = prefs.getString(_settingsSectionTsKey);
-  if (raw == null || raw.isEmpty) return const {};
+  // 必须返回可变 map：writeSettingsSectionTs / markSettingsSectionsChanged
+  // 会原地写入，const {} 会让首次写账本抛
+  // "Unsupported operation: Cannot modify unmodifiable map"（移动端设置
+  // 上传因此永久失败，用户反馈 bin283543：PC 上传设置后移动端卡上传）
+  if (raw == null || raw.isEmpty) return <String, int>{};
   try {
-    return sanitizeSectionTs(jsonDecode(raw)) ?? const {};
+    return sanitizeSectionTs(jsonDecode(raw)) ?? <String, int>{};
   } catch (_) {
-    return const {};
+    return <String, int>{};
   }
 }
 
@@ -1137,7 +1141,7 @@ Future<void> markSettingsSectionsChanged(
       .toList();
   if (valid.isEmpty) return;
   final ts = at ?? DateTime.now().millisecondsSinceEpoch;
-  final table = await readSettingsSectionTs();
+  final table = Map<String, int>.from(await readSettingsSectionTs());
   for (final k in valid) {
     table[k] = ts;
   }
@@ -1148,7 +1152,7 @@ Future<void> markSettingsSectionsChanged(
 /// 按映射写入分节时间戳（合并语义，用于同步后对齐账本）；非法值忽略
 Future<void> writeSettingsSectionTs(Map<String, int> table) async {
   if (table.isEmpty) return;
-  final merged = await readSettingsSectionTs();
+  final merged = Map<String, int>.from(await readSettingsSectionTs());
   table.forEach((key, value) {
     if (key.isNotEmpty && value >= 0) merged[key] = value;
   });
