@@ -1,4 +1,4 @@
-﻿part of 'watch_link_provider.dart';
+part of 'watch_link_provider.dart';
 
 extension WatchLinkControllerPlayback on WatchLinkController {
   // ---- 状态推送 ----

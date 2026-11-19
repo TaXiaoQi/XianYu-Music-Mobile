@@ -326,9 +326,18 @@ class PluginUpdateService {
         sourceUrl: checkResult.updateUrl,
       );
       if (newSource.id != source.id) {
+        // 更新换 id 后保持原插件在列表中的排序位置（用户反馈：更新即沉底）。
+        // 旧记录此时仍在 state 中，先取其 sortOrder（老数据无该字段时用
+        // 当前列表位置兜底），再移除旧插件并让新插件继承该位置。
+        final oldSources = manager.sources;
+        final oldIndex = oldSources.indexWhere((s) => s.id == source.id);
+        final oldOrder =
+            oldIndex >= 0 ? (oldSources[oldIndex].sortOrder ?? oldIndex) : null;
         await manager.remove(source.id);
-        // 补别名：收藏/播放队列存的旧 pluginId 仍可换算到现行插件
         await manager.linkPluginAlias(source.id, newSource.id);
+        if (oldOrder != null) {
+          await manager.inheritSortOrder(newSource.id, oldOrder);
+        }
         // 同步记账：更新即换 id，云端仍存的旧脚本会被「先拉后推」的
         // download 按 id 原样恢复，旧脚本一跑又自报更新，弹窗因此
         // 反复出现（#666888）。对齐删除流程的云端语义：旧版本从云端

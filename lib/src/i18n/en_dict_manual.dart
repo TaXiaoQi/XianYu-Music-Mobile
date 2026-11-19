@@ -949,8 +949,9 @@ const Map<String, String> enDictManual = {
   '新建': 'New',
   '性能模式': 'Performance mode',
   '性能优先': 'Performance first',
-  '修改成功后需要重新登录，验证码将发送到注册邮箱：{email}':
-      'You will be signed out after the change. A code will be sent to {email}',
+  '当前密码（忘记可留空）': 'Current password (leave empty if forgotten)',
+  '修改成功后需要重新登录。忘记原密码可留空当前密码，用邮箱验证码验证身份。验证码发送到注册邮箱：{email}':
+      'You will be signed out after the change. If you forgot the current password, leave it empty and verify with the email code sent to {email}',
   '修改将写入音频文件标签（ID3/Vorbis/MP4）':
       'Changes are written to audio file tags (ID3/Vorbis/MP4)',
   '修改密码失败': 'Failed to change the password',
@@ -1660,6 +1661,8 @@ const Map<String, String> enDictManual = {
   '已同步 {n} 个订阅链接': 'Synced {n} subscriptions',
   '插件 "{name}" 脚本解码失败': 'Plugin "{name}" script decode failed',
   '插件 "{name}" 脚本为空，已跳过': 'Plugin "{name}" script is empty, skipped',
+  '插件 "{name}" 为链接型且源链接拉取失败（源可能已失效）':
+      'Plugin "{name}" is link-type and fetching from its source URL failed (the source may be unavailable)',
   '插件 {name} 恢复失败: {e}': 'Plugin {name} restore failed: {e}',
   '插件 "{name}" 恢复失败：{e}': 'Plugin "{name}" restore failed: {e}',
   '已恢复 {n} 个插件{subs}': 'Restored {n} plugins{subs}',

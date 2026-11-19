@@ -462,6 +462,17 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
                                     .rename(playlist.id, name.trim());
                               },
                             ),
+                            // 删除入口补齐：此前删除只在「我的」页歌单行更多
+                            // 菜单里，详情页找不到删除（用户反馈「整个歌单无法
+                            // 删除」）。删除后 provider state 移除该歌单，
+                            // build 自动落到「歌单已不存在」占位页
+                            const SizedBox(width: 10),
+                            BiliPaiIconButton(
+                              icon: Icons.delete_outline,
+                              tooltip: tr('删除歌单'),
+                              onTap: () =>
+                                  confirmRemovePlaylist(context, ref, playlist),
+                            ),
                           ],
                         ),
                       )
@@ -480,6 +491,13 @@ class _PlaylistDetailPageState extends ConsumerState<PlaylistDetailPage>
                               await manager
                                   .rename(playlist.id, name.trim());
                             },
+                          ),
+                          // 删除入口补齐（同悬浮顶栏分支）
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            tooltip: tr('删除歌单'),
+                            onPressed: () =>
+                                confirmRemovePlaylist(context, ref, playlist),
                           ),
                         ],
                       ),

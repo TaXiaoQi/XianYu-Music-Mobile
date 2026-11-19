@@ -179,9 +179,22 @@ impl Resolve for OutboundDnsResolver {
         Box::pin(async move {
             let ips: Vec<IpAddr> = match pinned_anchor(&host) {
                 Some(ips) if !ips.is_empty() => ips,
-                _ => resolve_allowed_ips(&host, 443)
-                    .await
-                    .map_err(boxed_io_err)?,
+                _ => {
+                    let mut raw = resolve_allowed_ips(&host, 443)
+                        .await
+                        .map_err(boxed_io_err)?;
+                    // fake-ip 环境（系统 DNS 被代理接管返回 198.18.0.0/15 假地址，且本应用
+                    // 被代理分应用排除、未走其隧道时，直连假地址必然黑洞直至超时）：
+                    // 尝试 DoH 独立解析真实 IP 并替换——排除场景直连真实 IP 可达，TUN
+                    // 场景连真实 IP 仍会被代理接管，两种链路形态都不劣于现状。DoH 失败
+                    // 时保留 fake-ip 结果，维持 TUN 兼容行为不回退。
+                    if !raw.is_empty() && raw.iter().all(is_fake_ipv4) {
+                        if let Ok(real) = resolve_real_ips_via_doh(&host).await {
+                            raw = real;
+                        }
+                    }
+                    raw
+                }
             };
             // reqwest 会用 URL 端口覆盖此处 SocketAddr 的端口，故端口先置 0
             let addrs: Box<dyn Iterator<Item = SocketAddr> + Send> =

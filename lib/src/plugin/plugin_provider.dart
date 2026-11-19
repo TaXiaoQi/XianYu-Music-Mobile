@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -510,6 +510,19 @@ class PluginManager extends StateNotifier<PluginListState> {
             : s)
         .toList();
     final list = sortPluginSources(remapped);
+    await engine.store.saveSources(list);
+    state = state.copyWith(sources: list);
+    SyncTrigger.markDirty(const {SyncTrigger.plugins});
+  }
+
+  /// 更新换 id 后沿用旧插件的排序位置，避免更新后插件沉底（用户反馈）。
+  Future<void> inheritSortOrder(String id, int sortOrder) async {
+    final current = state.sources.where((s) => s.id == id).toList();
+    if (current.isEmpty || current.first.sortOrder == sortOrder) return;
+    final engine = await _getEngine();
+    final list = sortPluginSources(state.sources
+        .map((s) => s.id == id ? s.copyWith(sortOrder: sortOrder) : s)
+        .toList());
     await engine.store.saveSources(list);
     state = state.copyWith(sources: list);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});

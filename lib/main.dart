@@ -24,6 +24,7 @@ import 'src/lyrics/floating_lyrics.dart';
 import 'src/lyrics/status_bar_lyrics.dart';
 import 'src/navigation/routes.dart';
 import 'src/watch_link/watch_link_provider.dart';
+import 'src/widgets/bilipai_glass.dart' show ensureIconSamplerPlaceholder;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -45,6 +46,11 @@ Future<void> main() async {
   AppLog.info('startup', '应用启动（main 开始）');
 
   container.read(rustInitProvider);
+
+  // ImageFilter.shader 校验要求索引 ≥1 的采样器已绑定：预热 1×1 占位图，
+  // 栏内容纹理未捕获时兜底（运行期才创建会与首帧渲染竞态抛
+  // "missing a sampler uniform"）
+  await ensureIconSamplerPlaceholder();
 
   unawaited(LiquidGlassWidgets.initialize().catchError((Object _) {}));
 

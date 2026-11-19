@@ -1,5 +1,23 @@
 part of 'sync_provider.dart';
 
+/// http(s) URL 前缀判定（大小写不敏感，对齐桌面端正则）
+final RegExp _httpPrefixRe = RegExp(r'^https?://', caseSensitive: false);
+
+/// 链接型插件判定：导入来源为 http(s) URL（sourceUrl 优先，兼容未转正的
+/// URL filePath）。这类插件云同步只传链接元数据不传脚本本体，云端恢复时
+/// 从源链接现拉脚本（对齐桌面端 pluginHasHttpSource）
+bool _pluginHasHttpSource(String sourceUrl, String filePath) =>
+    _httpPrefixRe.hasMatch(sourceUrl) || _httpPrefixRe.hasMatch(filePath);
+
+/// 插件内容指纹：脚本全文 + 用户变量（键排序）联合哈希，用于增量同步跳过
+/// 判定（算法对齐桌面端 contentHash）
+String _pluginContentHash(String script, Map<String, String> userVars) {
+  final keys = userVars.keys.toList()..sort();
+  final payload =
+      '$script\u0000${[for (final k in keys) '$k=${userVars[k]}'].join('\u0001')}';
+  return sha256.convert(utf8.encode(payload)).toString();
+}
+
 /// 插件同步服务：由 [SyncNotifier] 装配，状态经 [SyncDomainLens] 读写。
 class PluginsSyncService {
   PluginsSyncService(this._ref, this._lens);
@@ -35,17 +53,29 @@ class PluginsSyncService {
         final dir = await _dataDir();
         final ciyuanxiId = _api.ciyuanxiId;
         final items = <Map<String, dynamic>>[];
+        final batchHashes = <String, String>{};
         var readFailed = false;
         final batchErrors = <String>[];
         for (final p in targets) {
           try {
-            final script =
-                await rust.readPluginFile(path: '$dir/plugins/${p.id}.js');
-            if (script.trim().isEmpty) {
-              batchErrors.add(
-                  tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
-              readFailed = true;
-              continue;
+            // 链接型插件只同步链接元数据；仅本地文件导入的插件同步脚本本体
+            final isLinkOnly = _pluginHasHttpSource(p.sourceUrl, p.filePath);
+            var script = '';
+            if (!isLinkOnly) {
+              script =
+                  await rust.readPluginFile(path: '$dir/plugins/${p.id}.js');
+              if (script.trim().isEmpty) {
+                batchErrors.add(
+                    tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
+                readFailed = true;
+                continue;
+              }
+            }
+            final userVars = await _ref
+                .read(pluginUserVarValuesProvider.notifier)
+                .valuesOf(p.id);
+            if (!isLinkOnly) {
+              batchHashes[p.id] = _pluginContentHash(script, userVars);
             }
             final plugin = <String, dynamic>{
               'id': p.id,
@@ -58,13 +88,10 @@ class PluginsSyncService {
               'sources': p.sources,
               'filePath': '$dir/plugins/${p.id}.js',
               'sourceUrl': p.sourceUrl,
-              'script': SyncNotifier._encodeRevBase64(script),
-              'scriptEncoded': true,
+              'script': isLinkOnly ? '' : SyncNotifier._encodeRevBase64(script),
+              'scriptEncoded': !isLinkOnly,
             };
             if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) {
-              final userVars = await _ref
-                  .read(pluginUserVarValuesProvider.notifier)
-                  .valuesOf(p.id);
               if (userVars.isNotEmpty) {
                 final block =
                     PluginUserVarCrypto.encrypt(ciyuanxiId, userVars);
@@ -94,6 +121,7 @@ class PluginsSyncService {
             await _api.uploadPluginsBatch(items, subscriptions: subs);
             await PluginSyncState.setSyncedIds(
                 items.map((p) => p['id'] as String).toList());
+            await PluginSyncState.recordUploadedScriptHashes(batchHashes);
             _lens.item = _lens.item.copyWith(
               syncing: false,
               lastSummary: items.isNotEmpty
@@ -154,6 +182,9 @@ class PluginsSyncService {
       final errors = <String>[];
       var uploaded = 0;
       final uploadedIds = <String>[];
+      final ciyuanxiId = _api.ciyuanxiId;
+      final uploadedHashes = await PluginSyncState.uploadedScriptHashes();
+      final newHashes = <String, String>{};
       for (var i = 0; i < targets.length; i++) {
         // 软取消：下一项边界停止，已完成项保留（对齐桌面端）
         if (manual?.cancelled == true) break;
@@ -161,10 +192,26 @@ class PluginsSyncService {
         manual?.onStep?.call(i + 1, targets.length, p.name);
         final scriptPath = '$dir/plugins/${p.id}.js';
         try {
-          final script = await rust.readPluginFile(path: scriptPath);
-          if (script.trim().isEmpty) {
-            errors.add(tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
-            continue;
+          // 链接型插件只同步链接元数据；仅本地文件导入的插件同步脚本本体
+          final isLinkOnly = _pluginHasHttpSource(p.sourceUrl, p.filePath);
+          var script = '';
+          if (!isLinkOnly) {
+            script = await rust.readPluginFile(path: scriptPath);
+            if (script.trim().isEmpty) {
+              errors.add(tr('插件 "{name}" 脚本读取失败，已跳过', {'name': p.name}));
+              continue;
+            }
+          }
+          final userVars =
+              await _ref.read(pluginUserVarValuesProvider.notifier).valuesOf(p.id);
+          String? hash;
+          if (!isLinkOnly) {
+            // 增量跳过：脚本与用户变量均未变化（与上次成功上传一致）则不再重传
+            hash = _pluginContentHash(script, userVars);
+            if (uploadedHashes[p.id] == hash) {
+              uploadedIds.add(p.id);
+              continue;
+            }
           }
           final plugin = <String, dynamic>{
             'id': p.id,
@@ -177,13 +224,10 @@ class PluginsSyncService {
             'sources': p.sources,
             'filePath': scriptPath,
             'sourceUrl': p.sourceUrl,
-            'script': SyncNotifier._encodeRevBase64(script),
-            'scriptEncoded': true,
+            'script': isLinkOnly ? '' : SyncNotifier._encodeRevBase64(script),
+            'scriptEncoded': !isLinkOnly,
           };
-          final ciyuanxiId = _api.ciyuanxiId;
           if (ciyuanxiId != null && ciyuanxiId.isNotEmpty) {
-            final userVars =
-                await _ref.read(pluginUserVarValuesProvider.notifier).valuesOf(p.id);
             if (userVars.isNotEmpty) {
               final block = PluginUserVarCrypto.encrypt(ciyuanxiId, userVars);
               if (block != null) plugin['userVariablesEncrypted'] = block;
@@ -192,12 +236,14 @@ class PluginsSyncService {
           await _api.uploadPlugin(plugin, isFirst: i == 0, subscriptions: subs);
           uploaded++;
           uploadedIds.add(p.id);
+          if (hash != null) newHashes[p.id] = hash;
         } catch (e) {
           AppLog.warn('sync', '插件 ${p.name} 上传失败: $e');
           errors.add(tr('插件 "{name}" 上传失败', {'name': p.name}));
         }
       }
       await PluginSyncState.setSyncedIds(uploadedIds);
+      await PluginSyncState.recordUploadedScriptHashes(newHashes);
       _lens.item = _lens.item.copyWith(
         syncing: false,
         lastSummary: uploaded > 0
@@ -299,6 +345,7 @@ class PluginsSyncService {
       final errors = <String>[];
       var installed = 0;
       final restoredIds = <String>[];
+      final restoredHashes = <String, String>{};
       // 覆盖下载忽略「仅删本地」墓碑：云端快照即本地目标状态
       final downloadSkip = overwrite
           ? const <String>{}
@@ -325,9 +372,23 @@ class PluginsSyncService {
             continue;
           }
         }
+        // 链接型插件（云端只存链接元数据，script 为空）：从源链接现拉脚本，
+        // 拉取失败报错跳过（对齐桌面端）
         if (script.trim().isEmpty) {
-          errors.add(tr('插件 "{name}" 脚本为空，已跳过', {'name': name}));
-          continue;
+          final srcUrl = ((item['sourceUrl'] as String?) ??
+                  (item['filePath'] as String?) ??
+                  '')
+              .trim();
+          if (_httpPrefixRe.hasMatch(srcUrl)) {
+            AppLog.info('sync', '恢复 $name：链接型插件，从源链接拉取脚本');
+            final fetched = await fetchPluginScriptWithRetry(srcUrl);
+            if (fetched != null && fetched.trim().isNotEmpty) script = fetched;
+          }
+          if (script.trim().isEmpty) {
+            errors.add(tr('插件 "{name}" 为链接型且源链接拉取失败（源可能已失效）',
+                {'name': name}));
+            continue;
+          }
         }
         try {
           final version = (item['version'] as String?)?.trim() ?? '';
@@ -365,11 +426,23 @@ class PluginsSyncService {
           }
           installed++;
           restoredIds.add(source.id);
+          // 登记内容指纹：本机刚从云端恢复的内容与云端一致，
+          // 下次自动同步无需将其再回传（增量跳过，对齐桌面端）
+          try {
+            restoredHashes[source.id] = _pluginContentHash(
+                script,
+                await _ref
+                    .read(pluginUserVarValuesProvider.notifier)
+                    .valuesOf(source.id));
+          } catch (_) {
+            // 哈希登记失败仅影响下次增量跳过，不阻断恢复
+          }
         } catch (e) {
           AppLog.warn('sync', '插件 $name 恢复失败: $e');
           errors.add(tr('插件 "{name}" 恢复失败：{e}', {'name': name, 'e': e}));
         }
       }
+      await PluginSyncState.recordUploadedScriptHashes(restoredHashes);
       if (overwrite) {
         // 覆盖下载后本机与云端一致：同步账本重置为云端快照，并清掉这些插件
         // 的「仅保留本地/仅删本地」墓碑残留，避免阻断后续同步（快照即弃）

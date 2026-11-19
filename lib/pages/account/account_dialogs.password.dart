@@ -84,8 +84,10 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     final newPwd = _newCtrl.text;
     final confirm = _confirmCtrl.text;
     final code = _codeCtrl.text.trim();
-    if (oldPwd.isEmpty || newPwd.isEmpty || confirm.isEmpty) {
-      _toast(tr('请填写完整的密码信息'));
+    // 当前密码可留空：忘记原密码时凭注册邮箱验证码即可改密（服务端
+    // 以 change_password 类型验证码验证身份），不想起密码不再被锁死
+    if (newPwd.isEmpty || confirm.isEmpty) {
+      _toast(tr('请填写完整的新密码'));
       return;
     }
     if (newPwd != confirm) {
@@ -127,11 +129,11 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              tr('修改成功后需要重新登录，验证码将发送到注册邮箱：{email}', {'email': email}),
+              tr('修改成功后需要重新登录。忘记原密码可留空当前密码，用邮箱验证码验证身份。验证码发送到注册邮箱：{email}', {'email': email}),
               style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
-            _pwdField(_oldCtrl, tr('当前密码'), _obscureOld, (v) {
+            _pwdField(_oldCtrl, tr('当前密码（忘记可留空）'), _obscureOld, (v) {
               setState(() => _obscureOld = v);
             }),
             _pwdField(_newCtrl, tr('新密码'), _obscureNew, (v) {
