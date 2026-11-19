@@ -15,6 +15,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
     required this.edgeAmount,
     required this.saturation,
     required this.depthEffect,
+    this.dropletLens,
     this.frozen,
     this.fadeBlend = 1.0,
     this.bootBlend = 1.0,
@@ -36,6 +37,9 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
   final double edgeAmount;
   final double saturation;
   final double depthEffect;
+
+  /// 水滴透镜（底栏液态导航专用）：null=关闭
+  final GlassDropletLens? dropletLens;
 
   final ui.Image? frozen;
 
@@ -72,6 +76,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       edgeAmount: edgeAmount,
       saturation: saturation,
       depthEffect: depthEffect,
+      dropletLens: dropletLens,
       frozen: frozen,
       fadeBlend: fadeBlend,
       bootBlend: bootBlend,
@@ -106,6 +111,7 @@ class _LiquidBacking extends SingleChildRenderObjectWidget {
       ..edgeAmount = edgeAmount
       ..saturation = saturation
       ..depthEffect = depthEffect
+      ..dropletLens = dropletLens
       ..frozen = frozen
     ..bootBlend = bootBlend
     ..freshBackdrop = freshBackdrop
@@ -131,6 +137,7 @@ class RenderLiquidBacking extends RenderBox {
     required double edgeAmount,
     required double saturation,
     required double depthEffect,
+    GlassDropletLens? dropletLens,
     required ui.Image? frozen,
     required double fadeBlend,
     double bootBlend = 1.0,
@@ -152,6 +159,7 @@ class RenderLiquidBacking extends RenderBox {
        _edgeAmount = edgeAmount,
        _saturation = saturation,
        _depthEffect = depthEffect,
+       _dropletLens = dropletLens,
        _frozen = frozen,
        _fadeBlend = fadeBlend,
        _bootBlend = bootBlend,
@@ -241,6 +249,14 @@ class RenderLiquidBacking extends RenderBox {
   set depthEffect(double value) {
     if (_depthEffect == value) return;
     _depthEffect = value;
+    markNeedsPaint();
+  }
+
+  GlassDropletLens? _dropletLens;
+  GlassDropletLens? get dropletLens => _dropletLens;
+  set dropletLens(GlassDropletLens? value) {
+    if (_dropletLens == value) return;
+    _dropletLens = value;
     markNeedsPaint();
   }
 
@@ -731,13 +747,28 @@ class RenderLiquidBacking extends RenderBox {
     // 所以必须由 _onTransitionBlurSync 在边沿重绘换层。
     // 未验证实例（_solidOnly）一律禁 shader：backdrop 未经烘焙确认，
     // 裸采样有闪黑风险；纯 blur（毛玻璃路径）无此风险——不透明实底
-    // 兜底由此替换为 blur+tint 兜底，首烘完成后才启用液态 shader
-    final useShader = _liveUseShader && !_solidOnly;
+    // 兜底由此替换为 blur+tint 兜底，首烘完成后才启用液态 shader。
+    // 占位图未就绪时同样禁 shader：ImageFilter.shader 校验要求采样器 1
+    // 已绑定（占位图失败会抛 "missing a sampler uniform"），回退纯 blur
+    final useShader = _liveUseShader &&
+        !_solidOnly &&
+        (iconSamplerPlaceholder != null || _dropletLens?.iconImage != null);
     // 首烘渐显：boot=0 时液态参数归零、观感与兜底 blur+tint 一致，
     // 1.0 为完整液态；平面 tint 以 (1-boot) 反向退场与 shader 内 tint
     // 接力（总 tint 恒定），折射/高光/边缘平滑浮现——替代烘焙完成的
     // 下一帧突变。不可用 opacity 包 shader：saveLayer 内采样黑底
     final boot = _bootBlend;
+    // 水滴透镜 uniform：快照几何为逻辑屏幕坐标（与 glassOrigin 同一
+    // localToGlobal 坐标系），乘 viewDpr 转物理像素；深度/边带随首烘
+    // boot 渐显。null 时 radius=0 → shader 透镜关闭，其余实例不受影响
+    final lens = _dropletLens;
+    final lensCx = (lens?.center.dx ?? 0.0) * _viewDpr;
+    final lensCy = (lens?.center.dy ?? 0.0) * _viewDpr;
+    final lensR = (lens?.radius ?? 0.0) * _viewDpr;
+    final lensDepth = (lens?.depth ?? 0.0) * boot;
+    final lensBand = (lens?.band ?? 0.0) * _viewDpr * boot;
+    final lensRefract = (lens?.refract ?? 0.0) * _viewDpr * boot;
+    final lensChroma = lens?.chroma ?? 0.0;
     final BackdropFilterLayer? shaderLayer;
     if (useShader) {
       _shader
@@ -767,7 +798,34 @@ class RenderLiquidBacking extends RenderBox {
         ..setFloat(17, 1.0 + (_saturation - 1.0) * boot)
         ..setFloat(18, _depthEffect * boot)
         ..setFloat(19, uiTime)
-        ..setFloat(20, squircleN.toDouble());
+        ..setFloat(20, squircleN.toDouble())
+        // 水滴透镜（槽 21-27，见 bilipai_liquid.frag）
+        ..setFloat(21, lensCx)
+        ..setFloat(22, lensCy)
+        ..setFloat(23, lensR)
+        ..setFloat(24, lensDepth)
+        ..setFloat(25, lensBand)
+        ..setFloat(26, lensRefract)
+        ..setFloat(27, lensChroma)
+        // 栏内容捕获纹理（槽 28-32，采样器 1）：BiliPai tabsBackdrop 等价
+        // 物，透镜折射「整个底部栏」的图标供给。逻辑屏幕坐标统一乘 viewDpr
+        ..setFloat(28, lens != null && lens.iconImage != null &&
+                lens.iconSize.width > 0
+            ? 1.0
+            : 0.0)
+        ..setFloat(29, (lens?.iconOrigin.dx ?? 0.0) * _viewDpr)
+        ..setFloat(30, (lens?.iconOrigin.dy ?? 0.0) * _viewDpr)
+        ..setFloat(31, (lens?.iconSize.width ?? 0.0) * _viewDpr)
+        ..setFloat(32, (lens?.iconSize.height ?? 0.0) * _viewDpr);
+      // 采样器 1 永久绑定：引擎 ValidateImageFilter 要求索引 ≥1 的采样器
+      // 非 null（索引 0 由引擎绑 backdrop），纹理未捕获时绑 1×1 占位图；
+      // uIconOn 只认真实图标纹理，占位图不会被采样
+      final hasIconTex =
+          lens != null && lens.iconImage != null && lens.iconSize.width > 0;
+      final iconTex = hasIconTex ? lens.iconImage : iconSamplerPlaceholder;
+      if (iconTex != null) {
+        _shader.setImageSampler(1, iconTex);
+      }
       shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
       shaderLayer.filter = ui.ImageFilter.shader(_shader);
     } else {

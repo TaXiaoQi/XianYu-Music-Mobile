@@ -15,6 +15,8 @@ class NavDropletSnapshot {
     required this.depth,
     required this.press,
     required this.isDark,
+    required this.barTop,
+    required this.barHeight,
   });
 
   /// 水滴屏幕坐标矩形（帧末实测，含底栏显隐动画变换）
@@ -34,6 +36,17 @@ class NavDropletSnapshot {
   final double depth;
   final double press;
   final bool isDark;
+
+  /// 底栏玻璃面顶缘的全局逻辑 Y（_barKey RenderBox 实测）。顶层水滴的
+  /// 反圆孔裁剪（_DropletHoleClipper）按此取「栏顶以下」条带：真实图标
+  /// 只在栏内让位折射图标，越过栏顶的 badge 不裁
+  final double barTop;
+
+  /// 底栏玻璃面的视觉高度（含显隐动画/FittedBox 变换，逻辑口径）。
+  /// 色散外溢带 = 水滴半径 − 栏轨半高（BiliPai
+  /// resolveFloatingDockChromaticGapBand 同构：彩虹只在水滴超出栏缘的
+  /// 月牙带）
+  final double barHeight;
 }
 
 
@@ -90,11 +103,15 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
   void initState() {
     super.initState();
     navDropletSnapshot.addListener(_onSnapshot);
+    // 栏内容捕获纹理到货（液态起始帧 postFrame，约滞后 1-2 帧）：重建
+    // 把纹理传给水滴透镜，圆内开始合成锐利折射图标
+    navDropletTabTexture.addListener(_onSnapshot);
   }
 
   @override
   void dispose() {
     navDropletSnapshot.removeListener(_onSnapshot);
+    navDropletTabTexture.removeListener(_onSnapshot);
     super.dispose();
   }
 
@@ -136,38 +153,87 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                       Transform(
                         alignment: Alignment.center,
                         transform: Matrix4.identity()..setEntry(0, 1, s.shear),
-                        child: s.liquid
-                            ? ClipOval(
+                        child: ClipRRect(
+                                // 胶囊水滴（BiliPai LiquidIndicator 同构）：
+                                // 圆角 = rect 高/2 成 stadium，契合底栏
+                                borderRadius: BorderRadius.circular(
+                                  s.rect.height / 2,
+                                ),
                                 clipBehavior: Clip.antiAlias,
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
+                                    // 整圆水滴透镜（对齐 BiliPai LiquidIndicator
+                                    // 单一渲染者架构）：overlay 位于 mini 播放条
+                                    // 之上，其 backdrop = 页面 + 底栏完整渲染
+                                    // 结果（combinedBackdrop 的 Flutter 等价物
+                                    // ——底栏此时不再开透镜，见
+                                    // shell_bottom_bar._liquidGlass）。shader
+                                    // 走水滴分支：blur 后的合成面 + 白雾 tint
+                                    // = B 站「白色玻璃面」，捕获纹理合成锐利
+                                    // 放大图标，边带折射 + 7 谱色散全量生效。
+                                    // 底色用栏面同款玻璃 tint；壳路径折射/
+                                    // 放大全关（edgeAmount/depthEffect/chroma
+                                    // 归零），避免与水滴分支双重作用
                                     LiveLiquidSurface(
                                       radius: s.radius,
-                                      refract: s.refract,
-                                      chroma: s.chroma,
-                                      blurSigma: 0,
-                                      backgroundColor: Colors.transparent,
+                                      refract: 0,
+                                      chroma: 0,
+                                      blurSigma: bilipaiBackdropBlurOf(
+                                        liquidGlassQualitySetting(ref),
+                                      ),
+                                      backgroundColor: bilipaiGlassTint(
+                                        s.isDark,
+                                        LiquidGlassQuality.medium,
+                                      ),
                                       specular: 0.12,
-                                      edgeAmount: s.band,
-                                      saturation: 1.4,
-                                      depthEffect: s.depth,
+                                      edgeAmount: 0,
+                                      saturation: 1.5,
+                                      depthEffect: 0,
+                                      droplet: true,
+                                      // 静息与按压同一管线（用户要求对齐）：
+                                      // 静息 depth=0 零放大，图标 1:1 清晰
+                                      // 入玻璃面；按压渐强放大
+                                      dropletDepth: s.liquid
+                                          ? s.depth.clamp(0.0, 1.0)
+                                          : 0.0,
+                                      dropletBand: s.band,
+                                      dropletRefract: s.refract,
+                                      // 色散下限 0.5：栏面为均匀白底，色散
+                                      // 只在外溢月牙带可读，档位值（0.25）
+                                      // 幅度太小读不出彩虹
+                                      dropletChroma: math.max(0.5, s.chroma),
+                                      // 色散外溢带（BiliPai
+                                      // chromaticEdgeBand）：水滴超出栏缘的
+                                      // 溢出量，彩虹只画上下缘外溢月牙带；
+                                      // 未溢出（静息）为 0=无色散
+                                      dropletGapBand: math.max(
+                                        0.0,
+                                        s.radius - s.barHeight / 2,
+                                      ),
+                                      iconImage: navDropletTabTexture.value?.image,
+                                      iconOrigin:
+                                          navDropletTabTexture.value?.rect
+                                              .topLeft ??
+                                          Offset.zero,
+                                      iconSize:
+                                          navDropletTabTexture.value?.rect.size ??
+                                          Size.zero,
                                       child: const SizedBox.expand(),
                                     ),
+                                    // 阴影已删（用户反馈：放大水滴带阴影）：
+                                    // 黑 tint 厚度阴影是「烟熏圆」观感的来源，
+                                    // 通透透镜只留中心高光与顶部透光
                                     CustomPaint(
                                       painter: _DropletEdgePainter(
                                         s.press,
                                         s.isDark,
+                                        thicknessShadow: false,
                                       ),
                                     ),
                                   ],
                                 ),
-                              )
-                            : const SizedBox.shrink(),
-                            // 静息态 overlay 不画：静息水滴由底栏树内渲染
-                            //（图标之下，折射不作用图标）；overlay 只在按压/
-                            // 拖动胀大（liquid=true）时接管，让水鼓出栏缘
-                            // 覆盖上方内容
+                              ),
                       ),
                     ],
                   ),
@@ -386,6 +452,19 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   /// 树内水滴（降级路径）用的内容组中心纵坐标缓存（NaN=未量到，回退 bar 中心）
   double _anchorCyLocal = double.nan;
 
+  /// 栏内容捕获键：包住 tabRow（图标+文字）的 RepaintBoundary。液态
+  /// 期间低频 toImage 成纹理喂底栏玻璃 shader 采样器 1（BiliPai
+  /// tabsBackdrop 等价物），水滴圆内折射出整个底部栏图标
+  final GlobalKey _tabCaptureKey = GlobalKey();
+
+  /// 最近一次栏内容捕获（null=尚未捕获，shader uIconOn=0 仅折射玻璃面）
+  NavDropletTabTexture? _tabTex;
+
+  /// 上次捕获时刻（120ms 节流：图标 accent 变色/布局微动重捕获）
+  DateTime _tabTexAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool _tabCaptureScheduled = false;
+
   /// 本页被覆盖路由的转场动画。壳层视差平移（_SmoothFadeForwards 的
   /// -25% 平移）由它驱动：转场每帧 tick 重建底栏 → _syncSnapshot 帧末
   /// 量到实时几何 → 顶层水滴全程跟随，不会把转场中间几何烙进快照。
@@ -515,8 +594,71 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     return true;
   }
 
+  /// 栏内容纹理捕获（overlay 水滴存在期间低频，静息含在内）：帧末对
+  /// tabRow 的 RepaintBoundary toImage。子树无 backdrop 滤镜，离屏渲染
+  /// 采样不会黑帧；捕获区域同帧实测（与 NavDropletSnapshot.rect 同一
+  /// localToGlobal 坐标系，含底栏显隐动画 paint 变换）。旧图在替换帧末
+  /// 释放（shader/raster 可能仍在采样上一帧的层）
+  void _scheduleTabCapture({required bool liquid}) {
+    if (!liquid || _tabCaptureScheduled) return;
+    if (_tabTex != null &&
+        DateTime.now().difference(_tabTexAt).inMilliseconds < 120) {
+      return;
+    }
+    _tabCaptureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _tabCaptureScheduled = false;
+      if (!mounted) return;
+      final ro = _tabCaptureKey.currentContext?.findRenderObject();
+      if (ro is! RenderRepaintBoundary ||
+          !ro.attached ||
+          !ro.hasSize ||
+          ro.size.isEmpty) {
+        return;
+      }
+      if (kDebugMode && ro.debugNeedsPaint) return;
+      // rect 必须用变换后尺寸：app 内容在 FittedBox 缩放内，ro.size 是
+      // 布局尺寸（未含缩放），而 shader 采样坐标是屏上物理像素——
+      // uIconSize = rect.size × viewDpr 必须等于栏内容的屏上物理尺寸
+      //（= 布局 × 缩放 dpr），用布局尺寸会让 UV 放大 1/缩放倍，折射
+      // 内容随距离线性偏移
+      final topLeft = ro.localToGlobal(Offset.zero);
+      final bottomRight =
+          ro.localToGlobal(Offset(ro.size.width, ro.size.height));
+      final rect = Rect.fromPoints(topLeft, bottomRight);
+      try {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final img = await ro.toImage(pixelRatio: dpr);
+        if (!mounted) {
+          img.dispose();
+          return;
+        }
+        final old = _tabTex;
+        setState(() {
+          _tabTex = NavDropletTabTexture(image: img, rect: rect);
+          _tabTexAt = DateTime.now();
+        });
+        navDropletTabTexture.value = _tabTex;
+        if (old != null) {
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => old.image.dispose(),
+          );
+        }
+      } catch (_) {
+        // 捕获失败保持上次纹理（透镜退化为纯玻璃面折射，不闪黑）
+      }
+    });
+  }
+
   @override
   void dispose() {
+    // 栏内容纹理随栏卸载释放：帧末清通知值（dispose 可能发生在 finalizeTree
+    // 锁定窗口，同步写 notifier 会通知消费方在锁定树中 setState）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navDropletTabTexture.value = null;
+      _tabTex?.image.dispose();
+      _tabTex = null;
+    });
     // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影。
     // 推迟到帧末：dispose 可能发生在 finalizeTree 的锁定窗口（chrome
     // 整树卸载帧），同步写 ValueNotifier 会通知 NavDropletOverlay 在
@@ -673,54 +815,25 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     child: const SizedBox.expand(),
                   ),
                   CustomPaint(
-                    painter: _DropletEdgePainter(press, isDark),
+                    painter: _DropletEdgePainter(
+                      press,
+                      isDark,
+                      // 放大态同为通透透镜：阴影只属于静息深色底座
+                      thicknessShadow: false,
+                    ),
                   ),
                 ],
               ),
             );
           } else {
-            final isDark = Theme.of(context).brightness == Brightness.dark;
             if (widget.lens) {
-              // 静息液态水滴：树内渲染、图标之下（使用处的 Stack 顺序控制）。
-              // 边带折射恒定全强度（BiliPai 10dp/14dp 恒定生效），零放大
-              // （depth=0，静息放大斑已否决）。采样的是栏后内容——图标由
-              // tabRow 在本层之上绘制，不被折射/染色，保持清晰（BiliPai
-              // 同构层级：indicator 在 icon 层之下）
-              indicator = ClipOval(
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    LiveLiquidSurface(
-                      radius: d / 2,
-                      // 静息零折射：树内嵌套采样拿不到玻璃引擎的磨砂 backdrop，
-                      // 边带把周遭原始内容压进圆缘，先后读成深色环/脏晕
-                      //（用户两轮否决）；静息观感=玻璃底色 tint + rim 材质，
-                      // 边带折射只在按压放大的 overlay 全量开启
-                      refract: 0,
-                      chroma: widget.dropletChroma,
-                      blurSigma: 0,
-                      // 底色透明：白 0.40 混底是压边带深环的临时手段，静息
-                      // 零折射后不需要——它把静息水滴洗成浅灰（用户反馈
-                      // 不够黑）。加深靠下方黑色 tint 层
-                      backgroundColor: Colors.transparent,
-                      specular: 0.12,
-                      edgeAmount: 0,
-                      saturation: 1.4,
-                      depthEffect: 0,
-                      child: const SizedBox.expand(),
-                    ),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.black.withValues(alpha: 0.30)
-                            : Colors.black.withValues(alpha: 0.22),
-                      ),
-                    ),
-                    CustomPaint(painter: _DropletEdgePainter(0.55, isDark)),
-                  ],
-                ),
-              );
+              // 静息液态水滴已并入顶层 overlay，与按压水滴同一渲染管线
+              // （用户要求「和放大的水滴对齐」）：树内不再渲染。原因——
+              // 树内嵌套采样拿不到玻璃引擎的磨砂 backdrop，shader 玻璃面
+              // 回退成不透明灰块且盖住图标（用户截图否决）；overlay 的
+              // backdrop = 页面+栏面完整渲染结果，白玻璃面/捕获图标纹理/
+              // 边带折射与按压态完全一致，静息仅 depth=0（零放大）
+              indicator = const SizedBox.shrink();
             } else {
               // 非液态：红色胶囊
               indicator = DecoratedBox(
@@ -735,7 +848,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             }
           }
 
-          final indicatorW = widget.lens ? d : (tabW - 8);
+          // 液态指示器横向 1.3 倍纵轴：按压水滴成宽 stadium（BiliPai
+          // LiquidIndicator 同构，用户实测认可），静息底座同宽但形状是
+          // 连续曲率圆角矩形（「和底栏一样的长方形圆」，纯椭圆已否决）
+          final indicatorW = widget.lens ? d * 1.30 : (tabW - 8);
 
           if (_anchorKeys.length != items.length) {
             _anchorKeys = List.generate(items.length, (_) => GlobalKey());
@@ -766,6 +882,23 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               ),
             ),
           );
+
+          // 液态路径：真实图标在水滴圆内让位 shader 折射图标（反圆裁剪，
+          // 仅栏顶以下——越过栏顶的 badge 不裁，overlay 折射层不含栏内容，
+          // 裁掉会凭空消失）；RepaintBoundary 在裁剪内侧，捕获的纹理不裁
+          //（完整图标行）。非液态/降级路径不裁不包。裁剪必须只作用于
+          // 绘制（_PaintOnlyHoleClip）——静息水滴也由 overlay 重画图标后
+          // 孔恒存在，ClipPath 连命中一起裁会让图标区域的点击/长按穿透
+          // 底栏落到页面内容（误开歌单/来源弹层、长按无水滴的根因）
+          final tabRowVisible = overlayDroplet
+              ? _PaintOnlyHoleClip(
+                  clipper: _DropletHoleClipper(
+                    contentKey: _tabCaptureKey,
+                    barKey: _barKey,
+                  ),
+                  child: RepaintBoundary(key: _tabCaptureKey, child: tabRow),
+                )
+              : tabRow;
 
           final gestures = Listener(
             onPointerDown: widget.lens
@@ -824,7 +957,7 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                         );
                       },
                     ),
-                  tabRow,
+                  tabRowVisible,
                 ],
               ),
             ),
@@ -832,7 +965,10 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
           if (overlayDroplet) {
             final w = indicatorW * sx;
-            final h = dropH * sy;
+            // 胶囊水滴（BiliPai 同构）：横向绽放全量、纵向留 60% 胀幅
+            // ——高度贴近栏轨高，宽椭圆契合底栏形状；上下缘外溢量
+            //（h − 栏高）/2 由 overlay 折算成色散外溢带（彩虹月牙）
+            final h = dropH * (1 + (sy - 1) * 0.60);
             var cx = 10 + pos * tabW + tabW / 2;
             // 栏缘墙：放大水滴的渲染落点钳在栏内容区内。只钳快照 cx、
             // 不钳 pos 本体——弹簧回弹与拖拽插值不受影响，撞墙段由
@@ -854,8 +990,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               radius: d * sy / 2,
               // 边带折射恒定全强度（BiliPai LiquidIndicator：10dp/14dp 恒定
               // 生效，不随按压缩放——静息水滴也保持折射）；放大(depth)留给
-              // 按压，静息为 0
-              refract: d * 14.0 / 56.0 * widget.lensBoost,
+              // 按压，静息为 0。×1.25 观感强化：栏面为均匀白色，弯曲只在
+              // 图标/栏缘/上方内容处可读，需要比 BiliPai 更大的位移才醒目
+              refract: d * 14.0 / 56.0 * widget.lensBoost * 1.25,
               band: d * 10.0 / 56.0 * widget.edgeBoost,
               chroma: widget.dropletChroma,
               shear: _dragVel.sign * _sxPos * 0.12,
@@ -863,6 +1000,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               press: pressG.clamp(0.0, 1.0),
               isDark: isDark,
             );
+            // 捕获 tabRow 纹理（shader 采样器 1）：水滴圆内合成图标。
+            // 静息也捕获——静息水滴已并入 overlay 同一管线（图标来自
+            // 纹理，实图标被孔裁剪让位），只在液态捕获会让静息玻璃面
+            // 空白无图标（用户截图否决）
+            _scheduleTabCapture(liquid: overlayDroplet);
             return widget.glassBuilder!(
               SizedBox(key: _barKey, height: maxH, child: gestures),
             );
@@ -943,6 +1085,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       final topLeft = b.localToGlobal(Offset(cx - w / 2, cy - h / 2));
       final bottomRight = b.localToGlobal(Offset(cx + w / 2, cy + h / 2));
       final rect = Rect.fromPoints(topLeft, bottomRight);
+      // 玻璃面顶缘全局 Y：顶层水滴折射层的上/栏内分界（见 snapshot.barTop）
+      final barTop = b.localToGlobal(Offset.zero).dy;
+      // 玻璃面视觉高度（逻辑口径）：色散外溢带 = 水滴半径 − 栏轨半高
+      final barHeight =
+          (b.localToGlobal(Offset(0, b.size.height)).dy - barTop).abs();
       // 变换后 rect 的视觉尺寸随底栏同步放大，作用半径取短边一半
       // 保持全局像素口径一致（overlay 的 liquid shader/胶囊圆角按
       // rect 实际尺寸取形）
@@ -960,7 +1107,9 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           prev.refract != refract ||
           prev.band != band ||
           prev.depth != depth ||
-          prev.shear != shear;
+          prev.shear != shear ||
+          prev.barTop != barTop ||
+          prev.barHeight != barHeight;
       if (changed) {
         navDropletSnapshot.value = NavDropletSnapshot(
           rect: rect,
@@ -973,6 +1122,8 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           depth: depth,
           press: press,
           isDark: isDark,
+          barTop: barTop,
+          barHeight: barHeight,
         );
       }
       if (!rectStable) {
@@ -1156,16 +1307,148 @@ class _NavTab extends ConsumerWidget {
   }
 }
 
+/// 水滴圆孔裁剪：液态期间真实 tabRow 在水滴圆内让位 shader 折射图标
+///（圆内 shader 已用捕获纹理重画折射图标，实图标不裁会以原样叠在折射
+/// 图上方成双影）；圆外照常显示。仅裁栏顶以下——overlay 折射层只含
+/// 页面内容（不含栏子树），越过栏顶的 badge 若被裁会凭空消失
+class _DropletHoleClipper extends CustomClipper<Path> {
+  const _DropletHoleClipper({required this.contentKey, required this.barKey});
+
+  /// tabRow 的 RepaintBoundary 键（兼作坐标换算盒：Center 撑满 bar 盒）
+  final GlobalKey contentKey;
+
+  /// 底栏盒键（栏顶全局 y 换算）
+  final GlobalKey barKey;
+
+  @override
+  Path getClip(Size size) {
+    final base = Path()..addRect(Offset.zero & size);
+    final snap = navDropletSnapshot.value;
+    // 静息也裁：静息水滴同样由 overlay 用捕获纹理重画图标（与按压态
+    // 同一管线），实图标不裁会在玻璃面内叠成双影
+    if (snap == null) return base;
+    final ro = contentKey.currentContext?.findRenderObject();
+    if (ro is! RenderBox || !ro.attached || !ro.hasSize) return base;
+    // 快照几何为全局逻辑坐标（与 _syncSnapshot 同帧实测、含 paint 变换），
+    // 换算到裁剪盒本地。胶囊孔与 overlay 的 ClipRRect 同形（横向半长 =
+    // rect 宽/2、圆角 = rect 高/2），真实图标在整颗胶囊内让位折射图标
+    final center = ro.globalToLocal(snap.rect.center);
+    final capsuleRect = Rect.fromCenter(
+      center: center,
+      width: snap.rect.width,
+      height: snap.rect.height,
+    );
+    final capsule = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          capsuleRect,
+          Radius.circular(snap.rect.height / 2),
+        ),
+      );
+    final barRo = barKey.currentContext?.findRenderObject();
+    var barTopLocal = 0.0;
+    if (barRo is RenderBox && barRo.attached && barRo.hasSize) {
+      barTopLocal = ro.globalToLocal(Offset(0, snap.barTop)).dy;
+    }
+    // 孔 = 胶囊 ∩ 栏顶以下条带
+    final strip = Path()
+      ..addRect(
+        Rect.fromLTRB(
+          -size.width,
+          barTopLocal,
+          size.width * 2,
+          size.height * 2,
+        ),
+      );
+    final hole = Path.combine(PathOperation.intersect, capsule, strip);
+    return Path.combine(PathOperation.difference, base, hole);
+  }
+
+  @override
+  bool shouldReclip(_DropletHoleClipper oldClipper) => true;
+}
+
+/// 仅裁剪绘制、不裁剪命中的胶囊孔裁剪容器：真实 tabRow 在水滴胶囊内
+/// 让位 overlay 重画图标（paint 裁剪），但命中测试保持完整——若用
+/// ClipPath，孔连命中一起裁掉，图标区域的点击/长按会穿透底栏落到
+/// 页面内容上（误触页面元素）
+class _PaintOnlyHoleClip extends SingleChildRenderObjectWidget {
+  const _PaintOnlyHoleClip({required this.clipper, super.child});
+
+  final CustomClipper<Path> clipper;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPaintOnlyHoleClip(clipper);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderPaintOnlyHoleClip renderObject,
+  ) {
+    renderObject.clipper = clipper;
+  }
+}
+
+class _RenderPaintOnlyHoleClip extends RenderProxyBox {
+  _RenderPaintOnlyHoleClip(this._clipper);
+
+  CustomClipper<Path> _clipper;
+
+  set clipper(CustomClipper<Path> value) {
+    if (identical(_clipper, value)) return;
+    if (attached) _clipper.removeListener(_markNeedsPaint);
+    _clipper = value;
+    if (attached) _clipper.addListener(_markNeedsPaint);
+    _markNeedsPaint();
+  }
+
+  void _markNeedsPaint() {
+    if (attached) markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _clipper.addListener(_markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _clipper.removeListener(_markNeedsPaint);
+    super.detach();
+  }
+
+  // 命中测试沿用 RenderProxyBox 默认（子树原样命中、不被孔裁）——
+  // 裁剪只发生在 paint
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    if (child == null) return;
+    context.pushClipPath(
+      needsCompositing,
+      offset,
+      Offset.zero & size,
+      _clipper.getClip(size),
+      super.paint,
+      clipBehavior: Clip.antiAlias,
+    );
+  }
+}
+
 /// 水滴表面材质：对齐 BiliPai LiquidIndicator.drawLiquidSphereSurface——
 /// 中央径向高光 + 顶部透光/底部厚度 + sweep 环形 rim（左上反光弧已删，
 /// 用户否决）。全部为清晰渐变，不用 MaskFilter 模糊笔触——白底栏上叠
 /// 糊白高光只会糊成一团。不做主题色微染（用户指定：水滴应是透明玻璃，
 /// 不染色）
 class _DropletEdgePainter extends CustomPainter {
-  const _DropletEdgePainter(this.progress, this.isDark);
+  const _DropletEdgePainter(this.progress, this.isDark, {this.thicknessShadow = true});
 
   final double progress;
   final bool isDark;
+
+  /// 底部「厚度阴影」渐变开关：放大水滴（顶层 overlay/树内放大态）关闭——
+  /// 用户反馈放大的水滴带阴影像烟熏圆；静息深色底座水滴保留
+  final bool thicknessShadow;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1192,7 +1475,8 @@ class _DropletEdgePainter extends CustomPainter {
         ).createShader(outer),
     );
 
-    // ③ 纵向渐变：顶部透光 → 底部厚度阴影（BiliPai verticalGradient）
+    // ③ 纵向渐变：顶部透光 → 底部厚度阴影（BiliPai verticalGradient）。
+    // thicknessShadow=false（放大水滴）时底部黑量归零，只留顶部透光
     canvas.drawRect(
       outer,
       Paint()
@@ -1203,7 +1487,9 @@ class _DropletEdgePainter extends CustomPainter {
             white.withValues(alpha: (isDark ? 0.04 : 0.05) + 0.02 * p),
             white.withValues(alpha: 0),
             Colors.black.withValues(
-              alpha: (isDark ? 0.10 : 0.08) * (0.5 + 0.5 * p),
+              alpha: thicknessShadow
+                  ? (isDark ? 0.10 : 0.08) * (0.5 + 0.5 * p)
+                  : 0,
             ),
           ],
         ).createShader(outer),

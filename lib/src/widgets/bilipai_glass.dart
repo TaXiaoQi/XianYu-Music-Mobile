@@ -19,6 +19,121 @@ part 'bilipai_glass.rim.dart';
 typedef BackingOverlayCallback =
     void Function(PaintingContext context, Offset offset);
 
+/// 栏内容捕获纹理：底栏液态期间低频 toImage tabRow（图标+文字的
+/// RepaintBoundary）产物。喂给底栏玻璃 shader 采样器 1 —— BiliPai
+/// combinedBackdrop（materialBackdrop + tabsBackdrop 回放）的 Flutter
+/// 等价物：嵌套 backdrop 采不到栏面图标，水滴透镜折射「整个底部栏」
+/// 必须显式喂纹理。
+class NavDropletTabTexture {
+  const NavDropletTabTexture({required this.image, required this.rect});
+
+  /// tabRow 捕获图（pixelRatio = 视图 dpr，透明底、预乘 alpha）
+  final ui.Image image;
+
+  /// 捕获区域（逻辑屏幕坐标，与 NavDropletSnapshot.rect 同一坐标系）
+  final Rect rect;
+}
+
+final ValueNotifier<NavDropletTabTexture?> navDropletTabTexture = ValueNotifier(
+  null,
+);
+
+/// ImageFilter.shader 的引擎校验（ReusableFragmentShader::ValidateImageFilter）
+/// 要求索引 ≥1 的采样器在创建滤镜前已绑定（索引 0 由引擎绑 backdrop 输入）。
+/// 栏内容纹理未捕获时绑定 1×1 透明占位图，保证采样器 1 永不为 null——
+/// 漏绑会抛 "missing a sampler uniform"（shader 侧 uIconOn=0 时从不采样
+/// 该纹理，占位图无视觉副作用）。main() 在 runApp 前 await 预热
+ui.Image? _iconSamplerPlaceholder;
+bool _iconPlaceholderPending = false;
+
+Future<void> ensureIconSamplerPlaceholder() async {
+  if (_iconSamplerPlaceholder != null || _iconPlaceholderPending) return;
+  _iconPlaceholderPending = true;
+  try {
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 1, 1),
+      Paint()..color = const Color(0x00000000),
+    );
+    final picture = recorder.endRecording();
+    final img = await picture.toImage(1, 1);
+    picture.dispose();
+    _iconSamplerPlaceholder = img;
+  } catch (_) {
+    // 占位图创建失败：_paintLive 的 useShader 门回退纯 blur 路径
+  } finally {
+    _iconPlaceholderPending = false;
+  }
+}
+
+ui.Image? get iconSamplerPlaceholder => _iconSamplerPlaceholder;
+
+/// 水滴透镜参数（逻辑屏幕坐标，backing 统一乘 viewDpr 转物理像素）。
+/// 底栏玻璃专用：shader 在该圆内对玻璃面自身采样做放大+边带折射
+///（BiliPai LiquidLens 同构），圆外像素不变。null=透镜关闭。
+class GlassDropletLens {
+  const GlassDropletLens({
+    required this.center,
+    required this.radius,
+    required this.depth,
+    required this.band,
+    required this.refract,
+    required this.chroma,
+    this.iconImage,
+    this.iconOrigin = Offset.zero,
+    this.iconSize = Size.zero,
+  });
+
+  /// 水滴圆心（逻辑屏幕坐标）
+  final Offset center;
+
+  /// 水滴半径（逻辑像素）
+  final double radius;
+
+  /// 全表面放大深度（0..1）
+  final double depth;
+
+  /// 边带厚度（逻辑像素）
+  final double band;
+
+  /// 边带折射量（逻辑像素）
+  final double refract;
+
+  /// 色差强度
+  final double chroma;
+
+  /// 栏内容捕获纹理（tabRow 的 RepaintBoundary toImage 产物）。BiliPai
+  /// combinedBackdrop（materialBackdrop+tabsBackdrop）的 Flutter 等价物：
+  /// 嵌套 backdrop 采不到图标，透镜折射「整个底部栏」必须显式喂纹理。
+  /// null=纯玻璃面折射（无图标）。
+  final ui.Image? iconImage;
+
+  /// 捕获纹理左上角（逻辑屏幕坐标，与 [center] 同一坐标系）
+  final Offset iconOrigin;
+
+  /// 捕获纹理逻辑尺寸（捕获 pixelRatio=viewDpr，物理尺寸=逻辑×viewDpr）
+  final Size iconSize;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GlassDropletLens &&
+      other.center == center &&
+      other.radius == radius &&
+      other.depth == depth &&
+      other.band == band &&
+      other.refract == refract &&
+      other.chroma == chroma &&
+      identical(other.iconImage, iconImage) &&
+      other.iconOrigin == iconOrigin &&
+      other.iconSize == iconSize;
+
+  @override
+  int get hashCode => Object.hash(
+      center, radius, depth, band, refract, chroma, iconImage, iconOrigin,
+      iconSize);
+}
+
 class BiliPaiGlass extends StatefulWidget {
   const BiliPaiGlass({
     super.key,
@@ -31,6 +146,7 @@ class BiliPaiGlass extends StatefulWidget {
     required this.edgeAmount,
     this.saturation = 1.0,
     this.depthEffect = 0.0,
+    this.dropletLens,
     this.alwaysLive = false,
     this.freshBackdrop = false,
     this.useChromeFrame = false,
@@ -54,6 +170,9 @@ class BiliPaiGlass extends StatefulWidget {
   final double saturation;
 
   final double depthEffect;
+
+  /// 水滴透镜（底栏液态导航专用）：null=关闭
+  final GlassDropletLens? dropletLens;
 
   final bool alwaysLive;
 
@@ -556,6 +675,7 @@ class _BiliPaiGlassState extends State<BiliPaiGlass>
               edgeAmount: widget.edgeAmount,
               saturation: widget.saturation,
               depthEffect: widget.depthEffect,
+              dropletLens: widget.dropletLens,
               frozen: _frozen,
               fadeBlend: _fade.value,
               bootBlend: _boot.value,

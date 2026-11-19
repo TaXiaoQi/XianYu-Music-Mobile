@@ -3,6 +3,10 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kBackMouseButton;
 import 'package:flutter/material.dart';
+// 仅引入 tabRow 纹理捕获所需的类型：rendering 全量导出会与 material 的
+// Image 等撞名（shell 部件内 dart:ui 为无前缀导入）
+import 'package:flutter/rendering.dart'
+    show PipelineOwner, RenderProxyBox, RenderRepaintBoundary;
 import 'package:flutter/physics.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';

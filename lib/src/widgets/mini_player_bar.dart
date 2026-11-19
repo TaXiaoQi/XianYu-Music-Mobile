@@ -993,6 +993,19 @@ class LiveLiquidSurface extends StatefulWidget {
     required this.saturation,
     this.depthEffect = 0.0,
     this.degraded = false,
+    // 水滴透镜（底栏顶层水滴专用）：droplet=true 时 shader 走水滴分支
+    //（全表面放大 + 边带折射 + 7 谱色散 + 图标纹理合成，即 BiliPai
+    // LiquidIndicator 采样 combinedBackdrop 的完整公式）。mini 播放条等
+    // 其余实例保持默认关闭
+    this.droplet = false,
+    this.dropletDepth = 0.0,
+    this.dropletBand = 0.0,
+    this.dropletRefract = 0.0,
+    this.dropletChroma = 0.0,
+    this.dropletGapBand = 0.0,
+    this.iconImage,
+    this.iconOrigin = Offset.zero,
+    this.iconSize = Size.zero,
     required this.child,
   });
 
@@ -1010,6 +1023,35 @@ class LiveLiquidSurface extends StatefulWidget {
   /// 磨砂降级（透明度<1 的 saveLayer 窗口内 shader 采样失效 → 黑底）
   final bool degraded;
 
+  /// 水滴透镜开关：true 时透镜圆心/半径由 _measureGeometry 实测的面几何
+  /// 推导（surface 即水滴包围圆），无需外部传几何
+  final bool droplet;
+
+  /// 水滴全表面放大深度（0..1，随按压 mf 渐强）
+  final double dropletDepth;
+
+  /// 水滴边带厚度（逻辑像素）
+  final double dropletBand;
+
+  /// 水滴边带折射量（逻辑像素）
+  final double dropletRefract;
+
+  /// 水滴色差强度
+  final double dropletChroma;
+
+  /// 色散外溢带（逻辑像素，BiliPai chromaticEdgeBand）：水滴超出栏缘的
+  /// 溢出量，彩虹只画上下缘外溢月牙带；0=无色散
+  final double dropletGapBand;
+
+  /// 栏内容捕获纹理（tabRow 图标+文字的 toImage 产物）；null 时绑占位图
+  final ui.Image? iconImage;
+
+  /// 栏内容纹理左上角（逻辑屏幕坐标，与 localToGlobal 同系）
+  final Offset iconOrigin;
+
+  /// 栏内容纹理尺寸（逻辑）
+  final Size iconSize;
+
   final Widget child;
 
   @override
@@ -1021,6 +1063,8 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   static Future<ui.FragmentProgram>? _programFuture;
 
   static bool _kCapabilityWarned = false;
+  // 水滴透镜诊断日志节流（每次冷启前 4 帧，供 adb 联调核对 uniform 值）
+  static int _kDropletDiagCount = 0;
 
   AnimationController? _tickC;
   AnimationController get _tick =>
@@ -1048,7 +1092,17 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         ui.FragmentProgram.fromAsset('assets/shaders/bilipai_liquid.frag');
     _programFuture!.then((p) {
       if (!mounted) return;
+      // 引擎 ValidateImageFilter 要求索引 ≥1 的采样器在创建
+      // ImageFilter.shader 前已绑定：本路径无图标纹理，绑 1×1 占位图兜底
+      //（uIconOn=0 时 shader 不采样它）。占位图缺失则保持 _shader=null
+      // 走磨砂降级分支，避免抛 "missing a sampler uniform"
+      final placeholder = iconSamplerPlaceholder;
+      if (placeholder == null) {
+        AppLog.warn('glass', '液态玻璃降级：占位采样图未就绪');
+        return;
+      }
       _shader = p.fragmentShader();
+      _shader!.setImageSampler(1, placeholder);
       _writeUniforms(_shader!);
       setState(() {});
     }).catchError((Object e) {
@@ -1163,6 +1217,62 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         20,
         effRadius >= minSide / 2 - 0.5 ? 2.0 : 2.2,
       );
+    if (widget.droplet) {
+      // 水滴透镜（槽 21-27）：圆心/半径由实测面几何推导——surface 即水滴
+      // 包围圆（Transform 剪切时 localToGlobal 已含变换，透镜跟随可见圆）
+      // 坐标系与 backing 一致：屏幕物理像素 = 逻辑 × 真实视图 dpr
+      final dpr = View.of(context).devicePixelRatio;
+      final hasIcon =
+          widget.iconImage != null && widget.iconSize.width > 0;
+      if (_kDropletDiagCount < 4) {
+        _kDropletDiagCount++;
+        AppLog.warn(
+          'glass',
+          '[XYDropletDiag] center=(${_glassDx + _glassW / 2},'
+          '${_glassDy + _glassH / 2}) halfW=${_glassW / 2} '
+          'r=${math.min(_glassW, _glassH) / 2} depth=${widget.dropletDepth} '
+          'band=${widget.dropletBand * dpr} '
+          'refract=${widget.dropletRefract * dpr} '
+          'chroma=${widget.dropletChroma} '
+          'gap=${widget.dropletGapBand * dpr} icon=$hasIcon '
+          'iconSize=${widget.iconSize} origin=${widget.iconOrigin}',
+        );
+      }
+      shader
+        ..setFloat(21, _glassDx + _glassW / 2)
+        ..setFloat(22, _glassDy + _glassH / 2)
+        // 胶囊水滴：纵向半径取短边一半，横向半长 = 宽一半（BiliPai
+        // LiquidIndicator stadium 同构；两者相等时 shader 退化圆）
+        ..setFloat(23, math.min(_glassW, _glassH) / 2)
+        ..setFloat(34, _glassW / 2)
+        ..setFloat(24, widget.dropletDepth)
+        ..setFloat(25, widget.dropletBand * dpr)
+        ..setFloat(26, widget.dropletRefract * dpr)
+        ..setFloat(27, widget.dropletChroma)
+        // 色散外溢带（槽 33）：逻辑 × 真实视图 dpr，与 band/refract 同规
+        ..setFloat(33, widget.dropletGapBand * dpr)
+        // 栏内容捕获纹理（槽 28-32，采样器 1）：BiliPai tabsBackdrop 等价
+        ..setFloat(28, hasIcon ? 1.0 : 0.0)
+        ..setFloat(29, widget.iconOrigin.dx * dpr)
+        ..setFloat(30, widget.iconOrigin.dy * dpr)
+        ..setFloat(31, widget.iconSize.width * dpr)
+        ..setFloat(32, widget.iconSize.height * dpr);
+      // 采样器 1 每帧绑定：真实图标纹理 ?? 1×1 占位图（引擎
+      // ValidateImageFilter 要求索引 ≥1 采样器非 null）
+      final iconTex = widget.iconImage;
+      if (iconTex != null) {
+        shader.setImageSampler(1, iconTex);
+      } else {
+        final placeholder = iconSamplerPlaceholder;
+        if (placeholder != null) shader.setImageSampler(1, placeholder);
+      }
+    } else {
+      // 非水滴实例（mini 播放条壳路径）：显式归零，防 didUpdateWidget
+      // 切换透镜开关后残留旧透镜几何
+      for (var i = 21; i <= 34; i++) {
+        shader.setFloat(i, 0.0);
+      }
+    }
   }
 
   @override

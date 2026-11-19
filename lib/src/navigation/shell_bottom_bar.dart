@@ -303,6 +303,11 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
   Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
     final quality = liquidGlassQualitySetting(ref);
     final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    // 液态水滴整圆由顶层 NavDropletOverlay 的 LiveLiquidSurface 水滴分支
+    // 渲染（blur 后「页面+栏面」合成面 + 捕获纹理锐利图标，BiliPai
+    // combinedBackdrop 同构）；底栏玻璃本体只渲染栏面，不开透镜分支——
+    // 嵌套 backdrop 采不到栏面玻璃输出，在栏内开透镜只会折射原始页面
+    // 内容（白团违和），且会被顶层整圆透镜覆盖成双渲染
     // 胶囊与毛玻璃分支（_frostedGlass 的 999 胶囊）同形：radius 999 由
     // backing/rim/squircle 统一钳到半短边成 stadium，shader 侧钳制后
     // 边带折射在胶囊上照常生效
