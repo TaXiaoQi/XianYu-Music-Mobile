@@ -8,6 +8,7 @@ import '../core/application_logger.dart';
 import '../i18n/i18n.dart';
 import '../rust/api.dart';
 import 'host_sheet_import.dart';
+import 'lx_plugin_gate.dart';
 import 'plugin_backup_import.dart' show lxSourceKeyForPlatform;
 import 'plugin_engine.dart';
 import 'plugin_host_fallback.dart';
@@ -68,7 +69,8 @@ class PluginCatalogService {
     final applicable = KgSheetImport.isKgKeyword(keyword) ||
         (looksLikeSheetLinkOrId(keyword) &&
             KgSheetImport.isKgSource(source.name, source.sources));
-    if (!applicable) return null;
+    // 内置 lx 兜底仅在对应平台有启用插件时可用
+    if (!applicable || !hasEnabledLxPluginFor(sources, 'kg')) return null;
     final kg = await KgSheetImport.import(keyword);
     if (kg == null || kg.tracks.isEmpty) return null;
     return _hostImportSheetItem(source, keyword, kg);
@@ -80,7 +82,8 @@ class PluginCatalogService {
     final applicable = QishuiSheetImport.isQishuiKeyword(keyword) ||
         (looksLikeSheetLinkOrId(keyword) &&
             QishuiSheetImport.isQishuiSource(source.name, source.sources));
-    if (!applicable) return null;
+    // 内置兜底仅在存在启用的汽水相关插件时可用
+    if (!applicable || !hasEnabledLxPluginFor(sources, 'qishui')) return null;
     final qs = await QishuiSheetImport.import(keyword);
     if (qs == null || qs.tracks.isEmpty) return null;
     return _hostImportSheetItem(source, keyword, qs);
@@ -92,7 +95,8 @@ class PluginCatalogService {
     final applicable = WySheetImport.isWyKeyword(keyword) ||
         (looksLikeSheetLinkOrId(keyword) &&
             WySheetImport.isWySource(source.name, source.sources));
-    if (!applicable) return null;
+    // 内置 lx 兜底仅在对应平台有启用插件时可用
+    if (!applicable || !hasEnabledLxPluginFor(sources, 'wy')) return null;
     final wy = await WySheetImport.import(keyword);
     if (wy == null || wy.tracks.isEmpty) return null;
     return _hostImportSheetItem(source, keyword, wy);
@@ -104,7 +108,8 @@ class PluginCatalogService {
     final applicable = TxSheetImport.isTxKeyword(keyword) ||
         (looksLikeSheetLinkOrId(keyword) &&
             TxSheetImport.isTxSource(source.name, source.sources));
-    if (!applicable) return null;
+    // 内置 lx 兜底仅在对应平台有启用插件时可用
+    if (!applicable || !hasEnabledLxPluginFor(sources, 'tx')) return null;
     final tx = await TxSheetImport.import(keyword);
     if (tx == null || tx.tracks.isEmpty) return null;
     return _hostImportSheetItem(source, keyword, tx);
@@ -116,7 +121,8 @@ class PluginCatalogService {
     final applicable = KwSheetImport.isKwKeyword(keyword) ||
         (looksLikeSheetLinkOrId(keyword) &&
             KwSheetImport.isKwSource(source.name, source.sources));
-    if (!applicable) return null;
+    // 内置 lx 兜底仅在对应平台有启用插件时可用
+    if (!applicable || !hasEnabledLxPluginFor(sources, 'kw')) return null;
     final kw = await KwSheetImport.import(keyword);
     if (kw == null || kw.tracks.isEmpty) return null;
     return _hostImportSheetItem(source, keyword, kw);
@@ -128,7 +134,8 @@ class PluginCatalogService {
     final applicable = MgSheetImport.isMgKeyword(keyword) ||
         (looksLikeSheetLinkOrId(keyword) &&
             MgSheetImport.isMgSource(source.name, source.sources));
-    if (!applicable) return null;
+    // 内置 lx 兜底仅在对应平台有启用插件时可用
+    if (!applicable || !hasEnabledLxPluginFor(sources, 'mg')) return null;
     final mg = await MgSheetImport.import(keyword);
     if (mg == null || mg.tracks.isEmpty) return null;
     return _hostImportSheetItem(source, keyword, mg);

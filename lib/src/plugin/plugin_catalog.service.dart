@@ -780,7 +780,10 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
     PluginSource source,
     String urlLike,
   ) async {
-    final kg = await KgSheetImport.import(urlLike);
+    // 内置 lx 兜底仅在对应平台有启用插件时可用（无插件不兜底）
+    final kg = hasEnabledLxPluginFor(sources, 'kg')
+        ? await KgSheetImport.import(urlLike)
+        : null;
     if (kg != null && kg.tracks.isNotEmpty) {
       final songs = kg.tracks
           .map((e) => mfItemToSearchResult(e, source))
@@ -788,7 +791,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
           .toList();
       if (songs.isNotEmpty) return kg.tracks;
     }
-    final qs = await QishuiSheetImport.import(urlLike);
+    final qs = hasEnabledLxPluginFor(sources, 'qishui')
+        ? await QishuiSheetImport.import(urlLike)
+        : null;
     if (qs != null && qs.tracks.isNotEmpty) {
       final songs = qs.tracks
           .map((e) => mfItemToSearchResult(e, source))
@@ -796,8 +801,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
           .toList();
       if (songs.isNotEmpty) return qs.tracks;
     }
-    if (WySheetImport.isWyKeyword(urlLike) ||
-        WySheetImport.isWySource(source.name, source.sources)) {
+    if ((WySheetImport.isWyKeyword(urlLike) ||
+            WySheetImport.isWySource(source.name, source.sources)) &&
+        hasEnabledLxPluginFor(sources, 'wy')) {
       final wy = await WySheetImport.import(urlLike);
       if (wy != null && wy.tracks.isNotEmpty) {
         final songs = wy.tracks
@@ -807,8 +813,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         if (songs.isNotEmpty) return wy.tracks;
       }
     }
-    if (TxSheetImport.isTxKeyword(urlLike) ||
-        TxSheetImport.isTxSource(source.name, source.sources)) {
+    if ((TxSheetImport.isTxKeyword(urlLike) ||
+            TxSheetImport.isTxSource(source.name, source.sources)) &&
+        hasEnabledLxPluginFor(sources, 'tx')) {
       final tx = await TxSheetImport.import(urlLike);
       if (tx != null && tx.tracks.isNotEmpty) {
         final songs = tx.tracks
@@ -818,8 +825,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         if (songs.isNotEmpty) return tx.tracks;
       }
     }
-    if (KwSheetImport.isKwKeyword(urlLike) ||
-        KwSheetImport.isKwSource(source.name, source.sources)) {
+    if ((KwSheetImport.isKwKeyword(urlLike) ||
+            KwSheetImport.isKwSource(source.name, source.sources)) &&
+        hasEnabledLxPluginFor(sources, 'kw')) {
       final kw = await KwSheetImport.import(urlLike);
       if (kw != null && kw.tracks.isNotEmpty) {
         final songs = kw.tracks
@@ -829,8 +837,9 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
         if (songs.isNotEmpty) return kw.tracks;
       }
     }
-    if (MgSheetImport.isMgKeyword(urlLike) ||
-        MgSheetImport.isMgSource(source.name, source.sources)) {
+    if ((MgSheetImport.isMgKeyword(urlLike) ||
+            MgSheetImport.isMgSource(source.name, source.sources)) &&
+        hasEnabledLxPluginFor(sources, 'mg')) {
       final mg = await MgSheetImport.import(urlLike);
       if (mg != null && mg.tracks.isNotEmpty) {
         final songs = mg.tracks
