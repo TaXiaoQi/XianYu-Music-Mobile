@@ -816,7 +816,9 @@ class RenderLiquidBacking extends RenderBox {
         ..setFloat(29, (lens?.iconOrigin.dx ?? 0.0) * _viewDpr)
         ..setFloat(30, (lens?.iconOrigin.dy ?? 0.0) * _viewDpr)
         ..setFloat(31, (lens?.iconSize.width ?? 0.0) * _viewDpr)
-        ..setFloat(32, (lens?.iconSize.height ?? 0.0) * _viewDpr);
+        ..setFloat(32, (lens?.iconSize.height ?? 0.0) * _viewDpr)
+        // 槽 35 tint 动态反色：栏面壳走 uBackgroundColor 栏面 tint，恒关
+        ..setFloat(35, 0.0);
       // 采样器 1 永久绑定：引擎 ValidateImageFilter 要求索引 ≥1 的采样器
       // 非 null（索引 0 由引擎绑 backdrop），纹理未捕获时绑 1×1 占位图；
       // uIconOn 只认真实图标纹理，占位图不会被采样

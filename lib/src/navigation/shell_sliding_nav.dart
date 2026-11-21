@@ -169,10 +169,16 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                     // 结果（combinedBackdrop 的 Flutter 等价物
                                     // ——底栏此时不再开透镜，见
                                     // shell_bottom_bar._liquidGlass）。shader
-                                    // 走水滴分支：blur 后的合成面 + 白雾 tint
+                                    // 走水滴分支：blur 后的合成面 + tint
                                     // = B 站「白色玻璃面」，捕获纹理合成锐利
                                     // 放大图标，边带折射 + 7 谱色散全量生效。
-                                    // 底色用栏面同款玻璃 tint；壳路径折射/
+                                    // tint 动态反色（BiliPai 空闲水滴面
+                                    // Shadow/Highlight 同构）：按水滴圆心处
+                                    // 实时折射内容亮度选黑/白 10%——纯色
+                                    // 白底上白 tint 水滴完全隐形（用户截图
+                                    // 否决），壁纸/暗色页面同理自适应。
+                                    // backgroundColor 仅作 shader 不可用
+                                    // 时的纯 blur 兜底 tint；壳路径折射/
                                     // 放大全关（edgeAmount/depthEffect/chroma
                                     // 归零），避免与水滴分支双重作用
                                     LiveLiquidSurface(
@@ -186,6 +192,7 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                         s.isDark,
                                         LiquidGlassQuality.medium,
                                       ),
+                                      tintInvert: true,
                                       specular: 0.12,
                                       edgeAmount: 0,
                                       saturation: 1.5,
@@ -800,14 +807,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                     refract: amount,
                     chroma: widget.dropletChroma,
                     blurSigma: 0,
-                    // 底栏同款玻璃底色：树内采样的是未经白 tint 的原始页面
-                    // 内容（玻璃引擎子树里嵌套 BackdropFilter 拿不到栏面
-                    // 玻璃），深色内容经边带向内压会聚成一圈深色环；混入
-                    // 栏面 tint 后水滴材质与栏面一致，环消失
+                    // 栏面同款玻璃底色仅作 shader 不可用时的兜底 tint；
+                    // 启用后按折射内容亮度动态反色（同顶层静息水滴，
+                    // 浅色内容上深色环/白水滴隐形一并修复）
                     backgroundColor: bilipaiGlassTint(
                       Theme.of(context).brightness == Brightness.dark,
                       LiquidGlassQuality.medium,
                     ),
+                    tintInvert: true,
                     specular: 0.12,
                     edgeAmount: band,
                     saturation: 1.4,
@@ -988,11 +995,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               maxH: maxH,
               liquid: dropletOn,
               radius: d * sy / 2,
-              // 边带折射恒定全强度（BiliPai LiquidIndicator：10dp/14dp 恒定
-              // 生效，不随按压缩放——静息水滴也保持折射）；放大(depth)留给
-              // 按压，静息为 0。×1.25 观感强化：栏面为均匀白色，弯曲只在
-              // 图标/栏缘/上方内容处可读，需要比 BiliPai 更大的位移才醒目
-              refract: d * 14.0 / 56.0 * widget.lensBoost * 1.25,
+              // 边带折射恒定全强度（用户否决随按压缩放：静息水滴在内容
+              // 丰富背景上没有折射定义就糊成一团看不见）。方向分流在
+              // shader 内做：静息向内（旧观感）、按住向外（BiliPai 吸入）。
+              // 按压额外 ×(1+0.4mf) 增强扭曲（用户反馈按压扭曲不如
+              // BiliPai 明显）；×1.25 基础强化：栏面为均匀白色，弯曲只在
+              // 图标/栏缘/上方内容处可读
+              refract:
+                  d * 14.0 / 56.0 * widget.lensBoost * 1.25 * (1.0 + 0.4 * mf),
               band: d * 10.0 / 56.0 * widget.edgeBoost,
               chroma: widget.dropletChroma,
               shear: _dragVel.sign * _sxPos * 0.12,

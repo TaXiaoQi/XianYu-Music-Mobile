@@ -1003,6 +1003,10 @@ class LiveLiquidSurface extends StatefulWidget {
     this.dropletRefract = 0.0,
     this.dropletChroma = 0.0,
     this.dropletGapBand = 0.0,
+    // 水滴面 tint 动态反色（BiliPai 空闲水滴面同构）：shader 按水滴圆心
+    // 处实时折射内容亮度选 tint——亮背景黑 10%、暗背景白 10%，修复
+    // 纯色白底上白 tint 水滴隐形。仅 droplet 实例有意义
+    this.tintInvert = false,
     this.iconImage,
     this.iconOrigin = Offset.zero,
     this.iconSize = Size.zero,
@@ -1026,6 +1030,9 @@ class LiveLiquidSurface extends StatefulWidget {
   /// 水滴透镜开关：true 时透镜圆心/半径由 _measureGeometry 实测的面几何
   /// 推导（surface 即水滴包围圆），无需外部传几何
   final bool droplet;
+
+  /// 水滴面 tint 动态反色开关（shader 槽 35，见 bilipai_liquid.frag）
+  final bool tintInvert;
 
   /// 水滴全表面放大深度（0..1，随按压 mf 渐强）
   final double dropletDepth;
@@ -1256,7 +1263,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         ..setFloat(29, widget.iconOrigin.dx * dpr)
         ..setFloat(30, widget.iconOrigin.dy * dpr)
         ..setFloat(31, widget.iconSize.width * dpr)
-        ..setFloat(32, widget.iconSize.height * dpr);
+        ..setFloat(32, widget.iconSize.height * dpr)
+        // tint 动态反色开关（槽 35）：BiliPai Shadow/Highlight 空闲
+        // 水滴面同构，亮背景黑 10%/暗背景白 10%
+        ..setFloat(35, widget.tintInvert ? 1.0 : 0.0);
       // 采样器 1 每帧绑定：真实图标纹理 ?? 1×1 占位图（引擎
       // ValidateImageFilter 要求索引 ≥1 采样器非 null）
       final iconTex = widget.iconImage;
@@ -1269,7 +1279,7 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     } else {
       // 非水滴实例（mini 播放条壳路径）：显式归零，防 didUpdateWidget
       // 切换透镜开关后残留旧透镜几何
-      for (var i = 21; i <= 34; i++) {
+      for (var i = 21; i <= 35; i++) {
         shader.setFloat(i, 0.0);
       }
     }
