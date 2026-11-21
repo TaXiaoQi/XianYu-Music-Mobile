@@ -1256,83 +1256,73 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
-          // 页面原始内容捕获层（RepaintBoundary）：背景色+页面内容，不含
-          // 任何 chrome/玻璃效果。液态水滴按压期间 _schedulePageCapture
-          // 逐帧 toImageSync 产 GPU 纹理喂 shader 采样器 2（BiliPai
-          // materialBackdrop 等价物）——透镜折射原始页面而非毛玻璃合成结果
           Positioned.fill(
-            child: RepaintBoundary(
-              key: _pageCaptureKey,
+            child: ColoredBox(color: Theme.of(context).scaffoldBackgroundColor),
+          ),
+          ValueListenableBuilder<double>(
+            valueListenable: orientationContentFade,
+            builder: (context, fade, child) =>
+                Opacity(opacity: fade, child: child),
+            child: Padding(
+              // 只垫横向；竖向由页面自垫（悬浮态垫 chrome、固定态垫带高）。
+              // 壳层垫 top 会把滚动视口压到带底——内容滚到带下缘就出视口，
+              // 顶栏实时模糊永远采不到穿过带下的内容（设置页能透正是因为
+              // 其面板页面自垫）。tab 页固定态自垫 GlassTopBar.height(topInset:8)
+              padding: EdgeInsets.only(
+                left: landscape ? _railWidth : 0,
+                right: (landscape && !useCameraArea) ? padding.right : 0,
+              ),
               child: Stack(
                 children: [
                   Positioned.fill(
-                    child: ColoredBox(
-                      color: Theme.of(context).scaffoldBackgroundColor,
+                    // 页面原始内容捕获层（RepaintBoundary）：仅包页面内容，
+                    // 不含背景色/chrome/玻璃效果——不新增中间 Stack 层级
+                    //（曾把背景色+内容重组成内层 Stack，FittedBox 样式缩放
+                    // 的 loose/unbounded 约束下整棵页面子树布局退化，顶栏
+                    // 底栏页面全部不渲染）。液态水滴按压期间
+                    // _schedulePageCapture 逐帧 toImageSync 产 GPU 纹理喂
+                    // shader 采样器 2（BiliPai materialBackdrop 等价物）
+                    child: RepaintBoundary(
+                      key: _pageCaptureKey,
+                      child: _landscapeFadePanel(
+                        useCameraArea: useCameraArea,
+                        padding: padding,
+                        context: context,
+                        child: landscapeHome,
+                      ),
                     ),
                   ),
-                  ValueListenableBuilder<double>(
-                    valueListenable: orientationContentFade,
-                    builder: (context, fade, child) =>
-                        Opacity(opacity: fade, child: child),
-                    child: Padding(
-                      // 只垫横向；竖向由页面自垫（悬浮态垫 chrome、固定态垫带高）。
-                      // 壳层垫 top 会把滚动视口压到带底——内容滚到带下缘就出视口，
-                      // 顶栏实时模糊永远采不到穿过带下的内容（设置页能透正是因为
-                      // 其面板页面自垫）。tab 页固定态自垫 GlassTopBar.height(topInset:8)
-                      padding: EdgeInsets.only(
-                        left: landscape ? _railWidth : 0,
-                        right: (landscape && !useCameraArea) ? padding.right : 0,
-                      ),
-                      child: Stack(
-                        children: [
-                          Positioned.fill(
-                            // 悬浮/固定顶栏本体都挂外层全屏 Stack（悬浮胶囊行从屏
-                            // 幕左缘起排、固定玻璃贯通到屏幕左缘），此处只放页面内容
-                            child: _landscapeFadePanel(
-                              useCameraArea: useCameraArea,
-                              padding: padding,
-                              context: context,
-                              child: landscapeHome,
-                            ),
-                          ),
-                          if (landscape)
-                            Positioned.fill(
-                              child: useCameraArea
-                                  ? MediaQuery(
-                                      data: MediaQuery.of(context).copyWith(
-                                        padding: padding.copyWith(
-                                          left: 0,
-                                          right: 0,
-                                        ),
-                                      ),
-                                      child: _landscapeSlide(
-                                        enabled: landscapeFadeEnabled,
-                                        open: anyPaneOpen,
-                                        trigger: landPaneTrigger,
-                                        child: landPane,
-                                      ),
-                                    )
-                                  : _landscapeSlide(
-                                      enabled: landscapeFadeEnabled,
-                                      open: anyPaneOpen,
-                                      trigger: landPaneTrigger,
-                                      child: landPane,
-                                    ),
-                            ),
-                          if (landscape && anyPaneOpen)
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              child: LandscapeGlobalTopBar(
-                                currentIndex: widget.index,
-                                floating: floatingSearchBar,
+                  if (landscape)
+                    Positioned.fill(
+                      child: useCameraArea
+                          ? MediaQuery(
+                              data: MediaQuery.of(context).copyWith(
+                                padding: padding.copyWith(left: 0, right: 0),
                               ),
+                              child: _landscapeSlide(
+                                enabled: landscapeFadeEnabled,
+                                open: anyPaneOpen,
+                                trigger: landPaneTrigger,
+                                child: landPane,
+                              ),
+                            )
+                          : _landscapeSlide(
+                              enabled: landscapeFadeEnabled,
+                              open: anyPaneOpen,
+                              trigger: landPaneTrigger,
+                              child: landPane,
                             ),
-                        ],
+                    ),
+                  if (landscape && anyPaneOpen)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LandscapeGlobalTopBar(
+                        currentIndex: widget.index,
+                        floating: floatingSearchBar,
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

@@ -1020,8 +1020,16 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
             // 栏缘墙：放大水滴的渲染落点钳在栏内容区内。只钳快照 cx、
             // 不钳 pos 本体——弹簧回弹与拖拽插值不受影响，撞墙段由
             // 尺寸脉冲继续表达回弹。墙深 16 = 8 基础余量 + 6 外扩余量
-            // + 2 贴壁微露
-            cx = cx.clamp(16 + w / 2, maxW - 16 - w / 2);
+            // + 2 贴壁微露。
+            // 钳制前校验区间：转场/首帧布局 maxW 可能极小（push 期间
+            // 0 宽过场），此时 16+w/2 > maxW-16-w/2，clamp 直接抛
+            // ArgumentError 且每帧 fatal——底栏整树不渲染（真机日志
+            // Invalid argument(s): 59.225 定位）。退化时跳过钳制
+            final wallLo = 16 + w / 2;
+            final wallHi = maxW - 16 - w / 2;
+            if (wallHi >= wallLo) {
+              cx = cx.clamp(wallLo, wallHi);
+            }
             // 顶层水滴快照：水滴不再渲染在底栏树内，而是逐帧把几何/参数写进
             // navDropletSnapshot，由 app.dart 顶层 NavDropletOverlay（位于
             // mini 播放条之上）绘制——水滴独立于底栏边界，长按放大可鼓出
