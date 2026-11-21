@@ -38,6 +38,15 @@ final ValueNotifier<NavDropletTabTexture?> navDropletTabTexture = ValueNotifier(
   null,
 );
 
+/// 页面原始内容捕获纹理：app 内容（背景色+页面，不含 chrome/玻璃效果）
+/// 的 RepaintBoundary toImageSync 产物。液态水滴按压期间逐帧更新，喂
+/// 底栏水滴透镜 shader 采样器 2 —— BiliPai materialBackdrop 等价物：
+/// 透镜直接折射原始页面内容，不再折射毛玻璃合成结果。null=未捕获
+///（uPageOn=0，shader 退回玻璃面分支）
+final ValueNotifier<NavDropletTabTexture?> navDropletPageTexture = ValueNotifier(
+  null,
+);
+
 /// ImageFilter.shader 的引擎校验（ReusableFragmentShader::ValidateImageFilter）
 /// 要求索引 ≥1 的采样器在创建滤镜前已绑定（索引 0 由引擎绑 backdrop 输入）。
 /// 栏内容纹理未捕获时绑定 1×1 透明占位图，保证采样器 1 永不为 null——

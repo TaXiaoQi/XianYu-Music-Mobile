@@ -473,6 +473,69 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
 
   static bool _isRootPathOf(String path) => _rootPaths.contains(path);
 
+  /// 页面原始内容捕获键：包住「背景色+页面内容」的 RepaintBoundary（见
+  /// body Stack 首子层）。液态水滴按压期间逐帧 toImageSync 产 GPU 纹理，
+  /// 喂底栏水滴透镜 shader 采样器 2（BiliPai materialBackdrop 等价物）
+  final GlobalKey _pageCaptureKey = GlobalKey();
+
+  /// 最近一次页面原始内容捕获（null=尚未捕获，shader uPageOn=0 退回
+  /// 玻璃面分支）
+  NavDropletTabTexture? _pageTex;
+
+  bool _pageCaptureScheduled = false;
+
+  /// 液态水滴按压期间逐帧捕获原始页面内容：toImageSync 同步直产 GPU
+  /// 纹理（无 await，逐帧无延迟）。由 navDropletSnapshot 驱动——按压/
+  /// 拖拽中快照逐帧更新触发监听，帧末捕获下一帧纹理；液态结束停止，
+  /// 最后一张保留供松手收缩动画采样
+  void _schedulePageCapture() {
+    if (_pageCaptureScheduled) return;
+    final s = navDropletSnapshot.value;
+    // 仅液态水滴存在期间捕获；静息水滴走玻璃面分支不需要原始纹理
+    if (s == null || !s.liquid) return;
+    // chrome 隐藏（二级页/显隐动画）水滴不渲染快照，无需捕获
+    if (ref.read(navBarHiddenProvider) > 0 || !_isRootPath) return;
+    _pageCaptureScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pageCaptureScheduled = false;
+      if (!mounted) return;
+      final cur = navDropletSnapshot.value;
+      if (cur == null || !cur.liquid) return;
+      final ro = _pageCaptureKey.currentContext?.findRenderObject();
+      if (ro is! RenderRepaintBoundary ||
+          !ro.attached ||
+          !ro.hasSize ||
+          ro.size.isEmpty) {
+        return;
+      }
+      if (kDebugMode && ro.debugNeedsPaint) return;
+      // rect 用 localToGlobal（含 FittedBox 样式缩放等祖先变换），与
+      // shader 的屏幕物理像素采样坐标系一致（同 tabRow 捕获管线）
+      final topLeft = ro.localToGlobal(Offset.zero);
+      final bottomRight =
+          ro.localToGlobal(Offset(ro.size.width, ro.size.height));
+      final rect = Rect.fromPoints(topLeft, bottomRight);
+      try {
+        // 用真实视图 dpr：与 LiveLiquidSurface 的 uniform 坐标换算同源
+        //（MediaQuery dpr 会被 UI 缩放覆盖，两者必须一致否则 UV 错位）
+        final dpr = View.of(context).devicePixelRatio;
+        final img = ro.toImageSync(pixelRatio: dpr);
+        final old = _pageTex;
+        _pageTex = NavDropletTabTexture(image: img, rect: rect);
+        navDropletPageTexture.value = _pageTex;
+        if (old != null) {
+          // 帧末释放旧纹理（shader/raster 可能仍在采样上一帧的层）
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => old.image.dispose(),
+          );
+        }
+      } catch (_) {
+        // 捕获失败保持上次纹理（uPageOn 维持旧值）；从未成功则 shader
+        // 走玻璃面分支，不闪黑
+      }
+    });
+  }
+
   /// hidden 变化时调度悬浮 chrome 的整树卸载/挂回：淡出动画（240ms）结束后
   /// 停绘，恢复时先挂回并按隐藏目标渲染一帧再翻回真实目标，保住淡入/缩放
   /// 隐式动画。与 mini 播放条 _syncBarGone 同构。
@@ -536,6 +599,8 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
     ref.listenManual(navOnRootPathProvider, (_, _) => _syncChromeHidden());
     // 冷启动直接落在二级页时上面两个监听都不会触发，先同步一次
     _syncChromeGone(ref.read(navBarHiddenProvider) > 0 || !_isRootPath);
+    // 液态水滴按压期间逐帧捕获原始页面内容（快照逐帧更新触发）
+    navDropletSnapshot.addListener(_schedulePageCapture);
     if (defaultTargetPlatform == TargetPlatform.android) {
       _rotationSub = const EventChannel(
         'xianyu/rotation/events',
@@ -577,6 +642,15 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _router.routerDelegate.removeListener(_onRouteChanged);
+    navDropletSnapshot.removeListener(_schedulePageCapture);
+    // 帧末清理页面纹理：dispose 中同步置空/释放可能仍被当前帧 raster
+    // 采样，延迟到下一帧末（同 navDropletTabTexture 清理时序）
+    final pageTex = _pageTex;
+    _pageTex = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      navDropletPageTexture.value = null;
+      pageTex?.image.dispose();
+    });
     _libPaneMountTimer?.cancel();
     _rotationSub?.cancel();
     _chromeGoneTimer?.cancel();
@@ -1182,65 +1256,83 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
       resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
+          // 页面原始内容捕获层（RepaintBoundary）：背景色+页面内容，不含
+          // 任何 chrome/玻璃效果。液态水滴按压期间 _schedulePageCapture
+          // 逐帧 toImageSync 产 GPU 纹理喂 shader 采样器 2（BiliPai
+          // materialBackdrop 等价物）——透镜折射原始页面而非毛玻璃合成结果
           Positioned.fill(
-            child: ColoredBox(color: Theme.of(context).scaffoldBackgroundColor),
-          ),
-          ValueListenableBuilder<double>(
-            valueListenable: orientationContentFade,
-            builder: (context, fade, child) =>
-                Opacity(opacity: fade, child: child),
-            child: Padding(
-              // 只垫横向；竖向由页面自垫（悬浮态垫 chrome、固定态垫带高）。
-              // 壳层垫 top 会把滚动视口压到带底——内容滚到带下缘就出视口，
-              // 顶栏实时模糊永远采不到穿过带下的内容（设置页能透正是因为
-              // 其面板页面自垫）。tab 页固定态自垫 GlassTopBar.height(topInset:8)
-              padding: EdgeInsets.only(
-                left: landscape ? _railWidth : 0,
-                right: (landscape && !useCameraArea) ? padding.right : 0,
-              ),
+            child: RepaintBoundary(
+              key: _pageCaptureKey,
               child: Stack(
                 children: [
                   Positioned.fill(
-                    // 悬浮/固定顶栏本体都挂外层全屏 Stack（悬浮胶囊行从屏
-                    // 幕左缘起排、固定玻璃贯通到屏幕左缘），此处只放页面内容
-                    child: _landscapeFadePanel(
-                      useCameraArea: useCameraArea,
-                      padding: padding,
-                      context: context,
-                      child: landscapeHome,
+                    child: ColoredBox(
+                      color: Theme.of(context).scaffoldBackgroundColor,
                     ),
                   ),
-                  if (landscape)
-                    Positioned.fill(
-                      child: useCameraArea
-                          ? MediaQuery(
-                              data: MediaQuery.of(context).copyWith(
-                                padding: padding.copyWith(left: 0, right: 0),
-                              ),
-                              child: _landscapeSlide(
-                                enabled: landscapeFadeEnabled,
-                                open: anyPaneOpen,
-                                trigger: landPaneTrigger,
-                                child: landPane,
-                              ),
-                            )
-                          : _landscapeSlide(
-                              enabled: landscapeFadeEnabled,
-                              open: anyPaneOpen,
-                              trigger: landPaneTrigger,
-                              child: landPane,
+                  ValueListenableBuilder<double>(
+                    valueListenable: orientationContentFade,
+                    builder: (context, fade, child) =>
+                        Opacity(opacity: fade, child: child),
+                    child: Padding(
+                      // 只垫横向；竖向由页面自垫（悬浮态垫 chrome、固定态垫带高）。
+                      // 壳层垫 top 会把滚动视口压到带底——内容滚到带下缘就出视口，
+                      // 顶栏实时模糊永远采不到穿过带下的内容（设置页能透正是因为
+                      // 其面板页面自垫）。tab 页固定态自垫 GlassTopBar.height(topInset:8)
+                      padding: EdgeInsets.only(
+                        left: landscape ? _railWidth : 0,
+                        right: (landscape && !useCameraArea) ? padding.right : 0,
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            // 悬浮/固定顶栏本体都挂外层全屏 Stack（悬浮胶囊行从屏
+                            // 幕左缘起排、固定玻璃贯通到屏幕左缘），此处只放页面内容
+                            child: _landscapeFadePanel(
+                              useCameraArea: useCameraArea,
+                              padding: padding,
+                              context: context,
+                              child: landscapeHome,
                             ),
-                    ),
-                  if (landscape && anyPaneOpen)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: LandscapeGlobalTopBar(
-                        currentIndex: widget.index,
-                        floating: floatingSearchBar,
+                          ),
+                          if (landscape)
+                            Positioned.fill(
+                              child: useCameraArea
+                                  ? MediaQuery(
+                                      data: MediaQuery.of(context).copyWith(
+                                        padding: padding.copyWith(
+                                          left: 0,
+                                          right: 0,
+                                        ),
+                                      ),
+                                      child: _landscapeSlide(
+                                        enabled: landscapeFadeEnabled,
+                                        open: anyPaneOpen,
+                                        trigger: landPaneTrigger,
+                                        child: landPane,
+                                      ),
+                                    )
+                                  : _landscapeSlide(
+                                      enabled: landscapeFadeEnabled,
+                                      open: anyPaneOpen,
+                                      trigger: landPaneTrigger,
+                                      child: landPane,
+                                    ),
+                            ),
+                          if (landscape && anyPaneOpen)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: LandscapeGlobalTopBar(
+                                currentIndex: widget.index,
+                                floating: floatingSearchBar,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
+                  ),
                 ],
               ),
             ),

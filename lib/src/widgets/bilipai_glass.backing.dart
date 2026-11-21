@@ -828,6 +828,12 @@ class RenderLiquidBacking extends RenderBox {
       if (iconTex != null) {
         _shader.setImageSampler(1, iconTex);
       }
+      // 采样器 2（页面原始内容纹理）：栏面壳实例不喂页面纹理（槽 37-41
+      // 保持默认 0 = uPageOn 关），仅绑占位图满足引擎校验
+      final pagePlaceholder = iconSamplerPlaceholder;
+      if (pagePlaceholder != null) {
+        _shader.setImageSampler(2, pagePlaceholder);
+      }
       shaderLayer = _shaderHandle.layer = BackdropFilterLayer();
       shaderLayer.filter = ui.ImageFilter.shader(_shader);
     } else {

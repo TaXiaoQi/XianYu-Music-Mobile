@@ -106,12 +106,16 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
     // 栏内容捕获纹理到货（液态起始帧 postFrame，约滞后 1-2 帧）：重建
     // 把纹理传给水滴透镜，圆内开始合成锐利折射图标
     navDropletTabTexture.addListener(_onSnapshot);
+    // 页面原始内容捕获纹理到货（按压起始帧）：重建把纹理传给透镜，
+    // 按压态启用原始内容折射（uPageOn=1）
+    navDropletPageTexture.addListener(_onSnapshot);
   }
 
   @override
   void dispose() {
     navDropletSnapshot.removeListener(_onSnapshot);
     navDropletTabTexture.removeListener(_onSnapshot);
+    navDropletPageTexture.removeListener(_onSnapshot);
     super.dispose();
   }
 
@@ -233,6 +237,20 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                           Offset.zero,
                                       iconSize:
                                           navDropletTabTexture.value?.rect.size ??
+                                          Size.zero,
+                                      // 页面原始内容捕获纹理（采样器 2）：
+                                      // 按压态透镜折射原始页面内容
+                                      //（BiliPai materialBackdrop 等价物）；
+                                      // null 时 shader 退回玻璃面分支
+                                      pageImage:
+                                          navDropletPageTexture.value?.image,
+                                      pageOrigin:
+                                          navDropletPageTexture.value?.rect
+                                              .topLeft ??
+                                          Offset.zero,
+                                      pageSize:
+                                          navDropletPageTexture.value?.rect
+                                              .size ??
                                           Size.zero,
                                       child: const SizedBox.expand(),
                                     ),

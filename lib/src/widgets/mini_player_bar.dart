@@ -1011,6 +1011,12 @@ class LiveLiquidSurface extends StatefulWidget {
     this.iconImage,
     this.iconOrigin = Offset.zero,
     this.iconSize = Size.zero,
+    // 页面原始内容捕获纹理（采样器 2）：app 内容 RepaintBoundary
+    // toImageSync 产物，BiliPai materialBackdrop 等价物。null 时绑占位图
+    //（uPageOn=0，shader 退回玻璃面分支）
+    this.pageImage,
+    this.pageOrigin = Offset.zero,
+    this.pageSize = Size.zero,
     required this.child,
   });
 
@@ -1065,6 +1071,16 @@ class LiveLiquidSurface extends StatefulWidget {
   /// 栏内容纹理尺寸（逻辑）
   final Size iconSize;
 
+  /// 页面原始内容捕获纹理（BiliPai materialBackdrop 等价物）；null 时绑
+  /// 占位图，shader uPageOn=0 走玻璃面分支
+  final ui.Image? pageImage;
+
+  /// 页面纹理左上角（逻辑屏幕坐标，与 localToGlobal 同系）
+  final Offset pageOrigin;
+
+  /// 页面纹理尺寸（逻辑）
+  final Size pageSize;
+
   final Widget child;
 
   @override
@@ -1116,6 +1132,9 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
       }
       _shader = p.fragmentShader();
       _shader!.setImageSampler(1, placeholder);
+      // 采样器 2（页面原始内容纹理）同样必须预绑占位图：shader 声明了
+      // uPageTex，ValidateImageFilter 要求索引 ≥1 的采样器全部非 null
+      _shader!.setImageSampler(2, placeholder);
       _writeUniforms(_shader!);
       setState(() {});
     }).catchError((Object e) {
@@ -1276,7 +1295,16 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         // 栏顶全局 y（槽 36，逻辑 px，与槽 21-22 同空间）：按压镜面
         // 采样点落入栏条带时替换为干净玻璃色，栏顶以上保持透出
         ..setFloat(36, widget.barTop);
-      // 采样器 1 每帧绑定：真实图标纹理 ?? 1×1 占位图（引擎
+      // 页面原始内容捕获纹理（槽 37-41，采样器 2）：BiliPai
+      // materialBackdrop 等价物，按压透镜折射原始页面内容
+      final hasPage = widget.pageImage != null && widget.pageSize.width > 0;
+      shader
+        ..setFloat(37, hasPage ? 1.0 : 0.0)
+        ..setFloat(38, widget.pageOrigin.dx * dpr)
+        ..setFloat(39, widget.pageOrigin.dy * dpr)
+        ..setFloat(40, widget.pageSize.width * dpr)
+        ..setFloat(41, widget.pageSize.height * dpr);
+      // 采样器 1/2 每帧绑定：真实纹理 ?? 1×1 占位图（引擎
       // ValidateImageFilter 要求索引 ≥1 采样器非 null）
       final iconTex = widget.iconImage;
       if (iconTex != null) {
@@ -1285,10 +1313,17 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         final placeholder = iconSamplerPlaceholder;
         if (placeholder != null) shader.setImageSampler(1, placeholder);
       }
+      final pageTex = widget.pageImage;
+      if (pageTex != null) {
+        shader.setImageSampler(2, pageTex);
+      } else {
+        final placeholder = iconSamplerPlaceholder;
+        if (placeholder != null) shader.setImageSampler(2, placeholder);
+      }
     } else {
       // 非水滴实例（mini 播放条壳路径）：显式归零，防 didUpdateWidget
       // 切换透镜开关后残留旧透镜几何
-      for (var i = 21; i <= 36; i++) {
+      for (var i = 21; i <= 41; i++) {
         shader.setFloat(i, 0.0);
       }
     }

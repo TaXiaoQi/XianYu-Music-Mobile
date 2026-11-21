@@ -99,6 +99,13 @@ uniform float uDropletTintInvert;
 // 未被栏模糊触碰，保持全透明透出
 uniform float uDropletBarTop;
 
+// 槽 37：页面原始内容纹理开关（1=采样器 2 已绑定 app 内容捕获图）。
+uniform float uPageOn;
+// 槽 38-39：页面纹理左上角（屏幕物理像素，与 uGlassOrigin 同一坐标系）。
+uniform vec2 uPageOrigin;
+// 槽 40-41：页面纹理尺寸（物理像素；捕获 pixelRatio 与 viewDpr 一致）。
+uniform vec2 uPageSize;
+
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
 // 栏内容捕获图（采样器 1，Dart 侧 setImageSampler(1) 绑定）：tabRow
@@ -106,6 +113,11 @@ uniform sampler2D uImage;
 //（materialBackdrop + tabsBackdrop）的 Flutter 等价物——嵌套 backdrop
 // 采不到栏面玻璃与图标，透镜要折射「整个底部栏」必须显式喂纹理。
 uniform sampler2D uIconTex;
+// app 内容捕获图（采样器 2，Dart 侧 setImageSampler(2) 绑定）：页面层
+// RepaintBoundary 的 toImageSync 产物（背景色+页面原始内容，不含任何
+// 玻璃模糊/栏面 chrome）。BiliPai materialBackdrop 等价物——按压透镜
+// 直接折射原始页面内容，不再折射毛玻璃合成结果
+uniform sampler2D uPageTex;
 
 out vec4 fragColor;
 
@@ -161,6 +173,24 @@ vec3 compositeIcon(vec3 face, vec2 uv) {
     }
   }
   return face;
+}
+
+// 页面原始内容采样（toImageSync 产物为预乘 alpha；捕获层含背景色填充，
+// 边界内 alpha=1）。矩形外返回透明黑——水滴永不越出页面矩形，纯兜底
+vec3 tapPage(vec2 screenPos) {
+  vec2 uv = (screenPos - uPageOrigin) / max(uPageSize, vec2(1.0));
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    return vec3(0.0);
+  }
+  return texture(uPageTex, uv).rgb;
+}
+
+// 水滴透镜单点采样：玻璃面（毛玻璃合成结果）与页面原始内容按 rawMix
+// 交叉淡化（BiliPai drawHomeIndicatorSurface 的 idle tint 随 progress
+// 退场同构），按压态（iconOn）合成图标纹理副本
+vec3 lensTap(vec2 pageC, vec2 iconC, float rawMix, float iconOn) {
+  vec3 face = mix(glassFace(pageC), tapPage(pageC), rawMix);
+  return iconOn > 0.5 ? compositeIcon(face, iconC) : face;
 }
 
 void main() {
@@ -309,7 +339,6 @@ void main() {
       // 左右方向（横向 stadium 的液感来自两端圆弧的水平弯）。纵向位移
       // 会把水滴上下方的密集内容（封面/文字）拉成竖向色条——「水滴脏」
       // 的主因（用户对比截图：人家左右才弯曲）
-      vec2 rc = mag - dsh * vec2(grad.x, grad.y * 0.25);
       // 光谱色散（BiliPai dispersedCoord = d·grad·intensity 同构）：
       // 偏移幅度正比折射位移 d。权重 = 贴边一个 band 宽内非零
       //（BiliPai chromaticEdgeBand 同构：彩虹环整圈水滴边缘，含左右
@@ -318,49 +347,46 @@ void main() {
       float dispW =
           1.0 - smoothstep(uDropletBand - 1.0, uDropletBand, fromEdge);
       vec3 droplet;
-      // 图标纹理并入折射采样（BiliPai tabsBackdrop 同构：隐藏捕获的
-      // 图标行合成进 backdrop，随透镜边带一起弯曲——「底栏被水滴
-      // 弯曲」的来源）。本 app 栏内真实图标已被孔裁剪移除，backdrop
-      // 水滴下方是空白玻璃，弯曲无从谈起；此前图标在折射之后单独
-      // 1:1 叠加，永不参与弯折。采样 = 玻璃面 + 图标纹理：带内样本
-      // 坐标 rc 已含折射位移，图标副本随之弯折；色散各谱档同样携带
-      // 图标（BiliPai 色散作用于含图标的整个 backdrop）。
-      // 仅按压态启用（用户要求：默认小水滴不应用，图标保持锐利）；
-      // 弯折副本之外始终叠加 1:1 锐利图标（BiliPai 真实图标在指示器
-      // 之上同构），静息观感与旧版完全一致
+      // —— 原始内容透镜（BiliPai combinedBackdrop 同构）——uPageOn=1 时
+      // 按压态直接采样页面原始内容捕获纹理（RepaintBoundary toImageSync
+      // 产物，无模糊烘焙，materialBackdrop 等价物），图标采样自栏内容
+      // 捕获纹理（tabsBackdrop 等价物）。rawMix 随按压 0→0.3 渐入，与
+      // 玻璃面交叉淡化；捕获失败/未捕获 uPageOn=0 恒走玻璃面分支——
+      // 回退观感与旧版逐字节一致
+      float rawMix =
+          uPageOn > 0.5 ? smoothstep(0.0, 0.3, pressedSh) : 0.0;
+      // 页面折射坐标：全表面放大基础上边带向内偏（BiliPai
+      // refractionAmount 负值同构——边缘带把内部内容向外拉伸）。弯折仅
+      // 横向（竖向位移把水滴上下方的密集内容拉成竖向色条，用户否决）
+      vec2 pc = mag - dsh * vec2(grad.x, grad.y * 0.25);
+      // 栏内容折射坐标：采样点远离圆心（随按压渐强）——采样坐标膨胀 =
+      // 内容收缩，图标行随按压读成「底栏被水滴缩小」（BiliPai 指示器
+      // 节点放大而捕获层栏内容 1:1 的相对观感同构），再叠加边带横向弯折
+      vec2 shrinkC = uDropletCenter +
+          dc * (1.0 + pressedSh * 0.15) - dsh * vec2(grad.x, grad.y * 0.25);
+      // 图标坐标随 rawMix 从放大坐标（玻璃面回退观感不变）滑向收缩坐标
+      vec2 ic = mix(pc, shrinkC, rawMix);
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
         // 色散同样水平约束：竖向彩虹条=图标红色被拉成上下色柱（脏）
         vec2 off = vec2(dsh * grad.x * uDropletChroma * dispW, 0.0);
-        vec3 red = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc + off), rc + off)
-            : glassFace(rc + off);
-        vec3 orange = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc + off * (2.0 / 3.0)), rc + off * (2.0 / 3.0))
-            : glassFace(rc + off * (2.0 / 3.0));
-        vec3 yellow = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc + off * (1.0 / 3.0)), rc + off * (1.0 / 3.0))
-            : glassFace(rc + off * (1.0 / 3.0));
-        vec3 green = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc), rc)
-            : glassFace(rc);
-        vec3 cyan = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc - off * (1.0 / 3.0)), rc - off * (1.0 / 3.0))
-            : glassFace(rc - off * (1.0 / 3.0));
-        vec3 blue = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc - off * (2.0 / 3.0)), rc - off * (2.0 / 3.0))
-            : glassFace(rc - off * (2.0 / 3.0));
-        vec3 purple = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc - off), rc - off)
-            : glassFace(rc - off);
+        vec3 red = lensTap(pc + off, ic + off, rawMix, pressedSh);
+        vec3 orange = lensTap(pc + off * (2.0 / 3.0), ic + off * (2.0 / 3.0),
+            rawMix, pressedSh);
+        vec3 yellow = lensTap(pc + off * (1.0 / 3.0), ic + off * (1.0 / 3.0),
+            rawMix, pressedSh);
+        vec3 green = lensTap(pc, ic, rawMix, pressedSh);
+        vec3 cyan = lensTap(pc - off * (1.0 / 3.0), ic - off * (1.0 / 3.0),
+            rawMix, pressedSh);
+        vec3 blue = lensTap(pc - off * (2.0 / 3.0), ic - off * (2.0 / 3.0),
+            rawMix, pressedSh);
+        vec3 purple = lensTap(pc - off, ic - off, rawMix, pressedSh);
         droplet = vec3(
           (red.r + orange.r + yellow.r) / 3.5 + purple.r / 7.0,
           orange.g / 7.0 + (yellow.g + green.g + cyan.g) / 3.5,
           (cyan.b + blue.b + purple.b) / 3.0
         );
       } else {
-        droplet = pressedSh > 0.001
-            ? compositeIcon(glassFace(rc), rc)
-            : glassFace(rc);
+        droplet = lensTap(pc, ic, rawMix, pressedSh);
       }
       // 1:1 锐利图标叠加：仅静息态（真实图标在指示器之上，BiliPai
       // 同构）。按压态不叠加——透镜中心本来就是图标位置，1:1 副本
