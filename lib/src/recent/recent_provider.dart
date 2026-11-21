@@ -133,12 +133,18 @@ class RecentManager extends StateNotifier<RecentState> {
       // 网盘播放标识：走 online 分支从 onlineMeta 恢复标题/歌手
       path.startsWith('cloud://');
 
-  Future<void> play(int index) async {
+  /// 按条目播放：点击时在【当前】最近播放列表里按 path 实时解析索引。
+  /// 页面闭包预算的索引会因列表刷新错位（同收藏页 -1 崩溃根因），
+  /// 且 toQueueItem 过滤 null 后 items 与 entries 坐标不同，必须
+  /// 在过滤后的 items 里解析
+  Future<void> playEntry(RecentEntry entry) async {
     final items = state.entries
         .map((e) => e.toQueueItem())
         .whereType<QueueItem>()
         .toList();
     if (items.isEmpty) return;
+    final index = items.indexWhere((q) => q.path == entry.songPath);
+    if (index < 0) return;
     await _ref
         .read(playerProvider.notifier)
         .playQueue(items, startIndex: index);

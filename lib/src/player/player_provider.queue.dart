@@ -28,18 +28,23 @@ extension PlayerNotifierQueue on PlayerNotifier {
     _lastPlayQueueAt = DateTime.now();
     _lastPlayQueueSig = sig;
     AppLog.info('play', 'playQueue ${items.length} 首 startIndex=$startIndex');
+    // 防御钳制：调用方传入越界索引（如收藏页列表换血后 indexOf=-1）
+    // 曾在 items[startIndex] 处 RangeError 直接崩 UI 线程（try 只包
+    // 到 _playAt）。任何非法索引都回落到 0，保证不崩
+    final start =
+        (startIndex < 0 || startIndex >= items.length) ? 0 : startIndex;
     _shareLinkPlayback = shareLinkPlayback;
     _tempQueue.clear();
     _resetShuffleState();
     state = state.copyWith(
       queue: items,
-      queueIndex: startIndex,
-      current: items[startIndex],
+      queueIndex: start,
+      current: items[start],
     );
     _syncShuffleRemaining();
     try {
       // 起始曲是用户点播的：不做「已失败音源」快速拦截，真实尝试播放
-      await _playAt(startIndex, userPicked: true);
+      await _playAt(start, userPicked: true);
     } catch (e, st) {
       AppLog.error('play', 'playQueue 异常: $e\n$st');
       state = state.copyWith(isPlaying: false, resolving: false);

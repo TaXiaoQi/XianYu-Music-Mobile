@@ -464,7 +464,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
           }
           return _FavoriteTile(
             entry: entry,
-            onPlay: () => widget.notifier.play(i),
+            onPlay: () => widget.notifier.playEntry(entry),
             onRemove: () => widget.notifier.remove(entry.path),
           );
         }
@@ -494,7 +494,6 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                 itemCount: visible.length,
                 itemBuilder: (context, i) {
                   final entry = visible[i];
-                  final orig = entries.indexOf(entry);
                   return _stagger.wrap(
                     i,
                     Stack(
@@ -503,7 +502,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                           padding: const EdgeInsets.only(left: 34),
                           child: _FavoriteTile(
                             entry: entry,
-                            onPlay: () => widget.notifier.play(orig),
+                            onPlay: () => widget.notifier.playEntry(entry),
                             onRemove: () => widget.notifier.remove(entry.path),
                           ),
                         ),
@@ -629,7 +628,6 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                     itemCount: visible.length,
                     itemBuilder: (context, i) {
                       final entry = visible[i];
-                      final orig = entries.indexOf(entry);
                       return _stagger.wrap(
                         i,
                         Stack(
@@ -638,7 +636,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                               padding: const EdgeInsets.only(left: 34),
                               child: _FavoriteTile(
                                 entry: entry,
-                                onPlay: () => widget.notifier.play(orig),
+                                onPlay: () => widget.notifier.playEntry(entry),
                                 onRemove: () =>
                                     widget.notifier.remove(entry.path),
                               ),
@@ -671,7 +669,6 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                   itemCount: visible.length,
                   itemBuilder: (context, i) {
                     final entry = visible[i];
-                    final orig = entries.indexOf(entry);
                     return _stagger.wrap(
                       i,
                       Stack(
@@ -680,7 +677,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                             padding: const EdgeInsets.only(left: 34),
                             child: _FavoriteTile(
                               entry: entry,
-                              onPlay: () => widget.notifier.play(orig),
+                              onPlay: () => widget.notifier.playEntry(entry),
                               onRemove: () => widget.notifier.remove(entry.path),
                             ),
                           ),
@@ -760,7 +757,7 @@ class _SongsTabState extends ConsumerState<_SongsTab> {
                             padding: const EdgeInsets.only(left: 34),
                             child: _FavoriteTile(
                               entry: entry,
-                              onPlay: () => widget.notifier.play(i),
+                              onPlay: () => widget.notifier.playEntry(entry),
                               onRemove: () =>
                                   widget.notifier.remove(entry.path),
                             ),

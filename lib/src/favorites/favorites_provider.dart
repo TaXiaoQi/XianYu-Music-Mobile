@@ -402,9 +402,15 @@ class FavoritesManager extends StateNotifier<FavoritesState> {
     state = state.copyWith(collections: result);
   }
 
-  Future<void> play(int index) async {
+  /// 按条目播放：点击时在【当前】收藏列表里按 path 实时解析索引。
+  /// 页面闭包持有的行快照可能因同步/刷新与 provider 最新状态错位
+  ///（旧实现先 indexOf 预算索引再透传，列表换血后得到 -1，
+  /// playQueue 里 items[-1] 直接 RangeError 崩 UI 线程）。
+  Future<void> playEntry(FavoriteEntry entry) async {
     final entries = state.entries;
     if (entries.isEmpty) return;
+    final index = entries.indexWhere((e) => e.path == entry.path);
+    if (index < 0) return;
     final items = entries.map((e) => e.toQueueItem()).toList();
     await _ref.read(playerProvider.notifier).playQueue(items, startIndex: index);
   }

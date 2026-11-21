@@ -510,7 +510,6 @@ class _RecentListState extends ConsumerState<_RecentList> {
               itemCount: visible.length,
               itemBuilder: (context, i) {
                 final entry = visible[i];
-                final orig = all.indexOf(entry);
                 return _stagger.wrap(
                   i,
                   Stack(
@@ -519,7 +518,7 @@ class _RecentListState extends ConsumerState<_RecentList> {
                         padding: const EdgeInsets.only(left: 34),
                         child: _RecentTile(
                           entry: entry,
-                          onPlay: () => widget.notifier.play(orig),
+                          onPlay: () => widget.notifier.playEntry(entry),
                           onRemove: () =>
                               widget.notifier.remove(entry.songPath),
                         ),
@@ -551,7 +550,6 @@ class _RecentListState extends ConsumerState<_RecentList> {
             itemCount: visible.length,
             itemBuilder: (context, i) {
               final entry = visible[i];
-              final orig = all.indexOf(entry);
               return _stagger.wrap(
                 i,
                 Stack(
@@ -560,7 +558,7 @@ class _RecentListState extends ConsumerState<_RecentList> {
                       padding: const EdgeInsets.only(left: 34),
                       child: _RecentTile(
                         entry: entry,
-                        onPlay: () => widget.notifier.play(orig),
+                        onPlay: () => widget.notifier.playEntry(entry),
                         onRemove: () => widget.notifier.remove(entry.songPath),
                       ),
                     ),
