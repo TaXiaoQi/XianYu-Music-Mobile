@@ -185,14 +185,22 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                       radius: s.radius,
                                       refract: 0,
                                       chroma: 0,
-                                      blurSigma: bilipaiBackdropBlurOf(
-                                        liquidGlassQualitySetting(ref),
-                                      ),
+                                      // 水滴预模糊 0（BiliPai 透镜清晰
+                                      // 同构）：镜面采样原始合成结果，
+                                      // 此前 2.5σ 经按压放大 1.39× 变
+                                      // ≈3.5σ 显糊（用户截图「怎么这么
+                                      // 糊」）。玻璃感由 tint/阴影承担
+                                      blurSigma: 0,
                                       backgroundColor: bilipaiGlassTint(
                                         s.isDark,
                                         LiquidGlassQuality.medium,
                                       ),
                                       tintInvert: true,
+                                      // 栏顶 y（槽 36）：按压镜面采样点
+                                      // 落入栏条带时替换干净玻璃色，
+                                      // 栏顶以上保持透出（BiliPai
+                                      // combinedBackdrop 等效观感）
+                                      barTop: s.barTop,
                                       specular: 0.12,
                                       edgeAmount: 0,
                                       saturation: 1.5,
@@ -608,6 +616,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
   /// 释放（shader/raster 可能仍在采样上一帧的层）
   void _scheduleTabCapture({required bool liquid}) {
     if (!liquid || _tabCaptureScheduled) return;
+    // 按压/拖动期间跳过：此时栏内容行带 14% 压扁变换，toImage 图像
+    // （边界自身图层，不含祖先变换）与 localToGlobal rect（含变换）
+    // 不匹配 → UV 映射把图标压歪；这张歪纹理会被静息水滴沿用（「移动
+    // 后静态水滴图标歪」）。松手后 build 重跑会以恒等变换补捕
+    if (_press.value > 0.001 || _dragging || _pageDrag) return;
     if (_tabTex != null &&
         DateTime.now().difference(_tabTexAt).inMilliseconds < 120) {
       return;
@@ -792,8 +805,12 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           if (widget.lens && dropletOn) {
             // 折射参数对齐 BiliPai LiquidGlassTuning：refractionHeight 10dp、
             // refractionAmount 14dp（按 56dp 水滴比例换算）——band 16/amount 18
-            // 的旧配方边带近参考 2 倍厚，色散被摊薄成宽白边
-            final band = d * 10.0 / 56.0 * mf * widget.edgeBoost;
+            // 的旧配方边带近参考 2 倍厚，色散被摊薄成宽白边。
+            // band 随按压 10→30dp：BiliPai 按压态 refractionHeight 放大到
+            // 接近水滴半径，底栏边缘穿过水滴中部也在折射带内被大幅弯折
+            //（「底栏弯曲」的核心）；固定 10dp 只弯贴边细环，栏缘穿过
+            // 内部 1:1 区纹丝不动（用户对比截图否决）
+            final band = d * (10.0 + 20.0 * mf) / 56.0 * widget.edgeBoost;
             final amount = d * 14.0 / 56.0 * mf * widget.lensBoost;
             final isDark = Theme.of(context).brightness == Brightness.dark;
             final press = pressG.clamp(0.0, 1.0);
@@ -964,6 +981,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
                         );
                       },
                     ),
+                  // 行压扁已撤（几何自洽优先）：按压时压扁变换会让
+                  // 水滴圆心/孔洞（跟行实测，含变换）与图标纹理（恒
+                  // 等变换的捕获 rect）三方错位——真实图标被孔盖住、
+                  // 图标副本偏位（用户截图）。底栏缩小感由透镜边带
+                  // 折射弯折内容表达
                   tabRowVisible,
                 ],
               ),
@@ -998,12 +1020,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
               // 边带折射恒定全强度（用户否决随按压缩放：静息水滴在内容
               // 丰富背景上没有折射定义就糊成一团看不见）。方向分流在
               // shader 内做：静息向内（旧观感）、按住向外（BiliPai 吸入）。
-              // 按压额外 ×(1+0.4mf) 增强扭曲（用户反馈按压扭曲不如
-              // BiliPai 明显）；×1.25 基础强化：栏面为均匀白色，弯曲只在
-              // 图标/栏缘/上方内容处可读
-              refract:
-                  d * 14.0 / 56.0 * widget.lensBoost * 1.25 * (1.0 + 0.4 * mf),
-              band: d * 10.0 / 56.0 * widget.edgeBoost,
+              // ×1.25 基础强化：栏面为均匀白色，弯曲只在图标/栏缘/上方
+              // 内容处可读。按压不再额外增益——band 同步放大到 30dp 后
+              // 弯折已覆盖大半水滴面，位移再增益会过冲
+              refract: d * 14.0 / 56.0 * widget.lensBoost * 1.25,
+              // band 随按压 10→30dp（同树内按压路径）：BiliPai 按压态
+              // refractionHeight 接近水滴半径，底栏边缘穿过水滴中部也
+              // 被大幅弯折；固定 10dp 栏缘在内部 1:1 区不动（用户否决）
+              band: d * (10.0 + 20.0 * mf) / 56.0 * widget.edgeBoost,
               chroma: widget.dropletChroma,
               shear: _dragVel.sign * _sxPos * 0.12,
               depth: 1.0 * mf,

@@ -93,6 +93,12 @@ uniform float uDropletHalfW;
 // 与任意纯色页面，修复白底上白 tint 水滴完全隐形
 uniform float uDropletTintInvert;
 
+// 栏顶全局 y（逻辑 px）：按压镜面采样点落入栏条带时替换为干净玻璃色。
+// 采样源差异的等效解——栏区 backdrop 已烘焙 20σ 毛玻璃（BiliPai 从
+// combinedBackdrop 原始层重渲染故能透出），直接透出=奶白；页面区域
+// 未被栏模糊触碰，保持全透明透出
+uniform float uDropletBarTop;
+
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
 // 栏内容捕获图（采样器 1，Dart 侧 setImageSampler(1) 绑定）：tabRow
@@ -266,6 +272,8 @@ void main() {
     float coreX = max(abs(dc.x) - (halfW - uDropletRadius), 0.0);
     float coreLen = max(length(vec2(coreX, dc.y)), 1e-3);
     float sd = coreLen - uDropletRadius;
+    // 按压进度（BiliPai progress）：水滴/外投影两分支共用，声明在外层
+    float pressedSh = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
     if (sd < 0.0) {
       // 边带折射：贴边 band 宽内剖面 circleMap（1 - sqrt(1-x²)），
       // 位移贴边最大、向内沿弧快速衰减（与壳层边带同一公式）
@@ -286,8 +294,6 @@ void main() {
           grad = normalize(eg + uDropletDepth * normalize(dc));
         }
       }
-      // 按压进度（BiliPai progress）：驱动放大/内阴影/图标弯折门限
-      float pressedSh = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
       // 全表面放大（BiliPai pressedScale 同构：其按住时指示器绘制整体
       // scale(78/56=1.39)，backdrop 捕获随节点缩放——透过水滴的内容
       // 放大 1.39 倍且图标弯曲变形（用户对比截图确认的核心观感）。
@@ -298,8 +304,12 @@ void main() {
       // 其 LiquidLens.kt:139 setFloatUniform("refractionAmount", 负值)，
       // shader 的 coord + d·grad（grad 外法向）实际向内采样：边缘带把
       // 内部内容向外拉伸（放大镜边缘拉伸观感）；此前误读为向外吸入，
-      // 用户截图否决）
-      vec2 rc = mag - dsh * grad;
+      // 用户截图否决）。
+      // 位移水平约束（BiliPai chromaticBandHorizontal 同构）：弯折只在
+      // 左右方向（横向 stadium 的液感来自两端圆弧的水平弯）。纵向位移
+      // 会把水滴上下方的密集内容（封面/文字）拉成竖向色条——「水滴脏」
+      // 的主因（用户对比截图：人家左右才弯曲）
+      vec2 rc = mag - dsh * vec2(grad.x, grad.y * 0.25);
       // 光谱色散（BiliPai dispersedCoord = d·grad·intensity 同构）：
       // 偏移幅度正比折射位移 d。权重 = 贴边一个 band 宽内非零
       //（BiliPai chromaticEdgeBand 同构：彩虹环整圈水滴边缘，含左右
@@ -319,7 +329,8 @@ void main() {
       // 弯折副本之外始终叠加 1:1 锐利图标（BiliPai 真实图标在指示器
       // 之上同构），静息观感与旧版完全一致
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
-        vec2 off = dsh * grad * uDropletChroma * dispW;
+        // 色散同样水平约束：竖向彩虹条=图标红色被拉成上下色柱（脏）
+        vec2 off = vec2(dsh * grad.x * uDropletChroma * dispW, 0.0);
         vec3 red = pressedSh > 0.001
             ? compositeIcon(glassFace(rc + off), rc + off)
             : glassFace(rc + off);
@@ -351,19 +362,26 @@ void main() {
             ? compositeIcon(glassFace(rc), rc)
             : glassFace(rc);
       }
-      // 1:1 锐利图标叠加（真实图标在指示器之上，BiliPai 同构）：
-      // 静息态图标清晰；按压态真实位置保持锐利，弯折副本只在其周围
-      // 显现（弯折位移把图标内容拉离原位的部分）
-      droplet = compositeIcon(droplet, p);
-      // 按压内阴影（BiliPai floatingDockIndicatorOptics 的 InnerShadow
-      // 8dp×15%×progress 同构）：贴边最浓、向内一个 band 宽衰减。白
-      // 内容上按压透镜只剩 3% 黑会糊成平面白团（用户截图否决），内
-      // 阴影给边缘加深度让透镜轮廓可读。静息 progress=0 无内阴影，
-      // 不影响已认可的静息观感（外阴影此前已删，内阴影只属于按压态）
-      float innerSh = 0.15 * pressedSh *
-          (1.0 - smoothstep(0.0, max(uDropletBand, 1.0), fromEdge));
-      result = droplet * (1.0 - innerSh);
-    }
+      // 1:1 锐利图标叠加：仅静息态（真实图标在指示器之上，BiliPai
+      // 同构）。按压态不叠加——透镜中心本来就是图标位置，1:1 副本
+      // 会把放大弯折的图标副本完全盖住，水滴放大时图标不跟着变大
+      //（用户截图：放大水滴不放大图标）。按压态只保留放大+弯折副本
+      droplet = pressedSh < 0.001 ? compositeIcon(droplet, p) : droplet;
+      // —— 按压态玻璃球质感（全部 ×pressedSh，静息=0）——
+      float rn = coreLen / uDropletRadius;
+      float vy = dc.y / uDropletRadius;
+      // 栏条带替换已回退（不透明白蛋，用户截图否决）：完全替换干净
+      // 玻璃色会让栏区镜面变成实心白蛋。采样源差异（BiliPai 从原始层
+      // 重渲染 vs 本管线只能采样毛玻璃合成结果）没有表面级近似解，
+      // 需要原始内容捕获纹理才能做对。槽 36 保留 0 权重占位防剔除错位
+      droplet =
+          mix(droplet, uBackgroundColor.rgb / max(uBackgroundColor.a, 1e-3),
+              0.0 * uDropletBarTop);
+      // —— 按压态纯透明（BiliPai 实拍确认：透镜面除折射/放大/色散/
+      // 图标合成外无任何叠加效果）——此前的内阴影/顶部高光/外投影
+      // 全部移除，所见即放大弯折的内容本身
+      result = droplet;
+    } // sd < 0（水滴内部）
   }
 
   // 槽位保留：Impeller 会剔除未引用的 uniform，导致后续槽位整体错位；
