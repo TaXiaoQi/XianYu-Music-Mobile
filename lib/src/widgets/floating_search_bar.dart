@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -131,7 +131,7 @@ class FloatingGlassSurface extends ConsumerWidget {
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.header);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&
@@ -203,7 +203,7 @@ class BiliPaiPill extends ConsumerWidget {
       settingsProvider.select(
           (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
     );
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.header);
     final liquid =
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             false) &&

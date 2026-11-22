@@ -1,4 +1,4 @@
-part of 'shell.dart';
+﻿part of 'shell.dart';
 
 class _ThreeBarsIcon extends StatelessWidget {
   const _ThreeBarsIcon({required this.color});
@@ -205,7 +205,7 @@ class _SideNavRailState extends ConsumerState<_SideNavRail>
             true) &&
         !lowPerf;
     // 与悬浮顶栏胶囊同预算口径（header），液态/降级两分支观感完全同款
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.header));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.header);
 
     const double approxExpandedH = 330.0;
 

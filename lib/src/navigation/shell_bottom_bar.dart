@@ -1,4 +1,4 @@
-part of 'shell.dart';
+﻿part of 'shell.dart';
 
 class _FixedChrome extends StatelessWidget {
   const _FixedChrome({
@@ -37,7 +37,7 @@ class _FixedChrome extends StatelessWidget {
   final wallpaper = wallpaperGlassActive(ref);
   // 壁纸模式同步顶栏材质：不实底，恒走组件色块+导航面档位模糊
   final solid = !wallpaper && glassShouldUseSolid(ref, lowPerf: lowPerf);
-  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+  final budget = watchBlurBudget(ref, BlurSurfaceType.bottomBar);
   // 实底兜底与顶栏/scaffold 同色全不透明，避免停靠栏透出页面内容
   final fill = solid
       ? (isDark ? const Color(0xFF222222) : const Color(0xFFF4F4F6))
@@ -262,10 +262,18 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final haptic = hapticStrengthFromInt(
       ref.watch(settingsProvider.select((s) => s.valueOrNull?.hapticStrength)),
     );
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.bottomBar);
 
     final realLiquid = liquidGlassOn;
     final dropletQuality = liquidGlassQualitySetting(ref);
+    // glassBuilder 布局期调用链（_liquidGlass）内的订阅全部提前到此处：
+    // 布局阶段 provider 脏检查+notify 会 markNeedsBuild 抛 setState
+    // during build（启动期真机 fatal）
+    final liquidBgTint = themeTint(
+      ref,
+      'nav.bar',
+      bilipaiSurfaceTint(context, ref, dropletQuality),
+    );
     final tabs = _SlidingNavBottom(
       index: index,
       items: navItemsFor(
@@ -279,7 +287,14 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
       edgeBoost: bilipaiIndicatorEdgeBoostOf(dropletQuality),
       dropletChroma: bilipaiIndicatorChromaOf(dropletQuality),
       glassBuilder: liquid
-          ? (Widget content) => _liquidGlass(context, ref, content)
+          ? (Widget content) => _liquidGlass(
+                context,
+                ref,
+                content,
+                quality: dropletQuality,
+                budget: budget,
+                backgroundColor: liquidBgTint,
+              )
           : null,
       onSelect: (i) {
         triggerHaptic(haptic);
@@ -300,9 +315,14 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     );
   }
 
-  Widget _liquidGlass(BuildContext context, WidgetRef ref, Widget tabs) {
-    final quality = liquidGlassQualitySetting(ref);
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+  Widget _liquidGlass(
+    BuildContext context,
+    WidgetRef ref,
+    Widget tabs, {
+    required LiquidGlassQuality quality,
+    required BlurBudget budget,
+    required Color backgroundColor,
+  }) {
     // 液态水滴整圆由顶层 NavDropletOverlay 的 LiveLiquidSurface 水滴分支
     // 渲染（blur 后「页面+栏面」合成面 + 捕获纹理锐利图标，BiliPai
     // combinedBackdrop 同构）；底栏玻璃本体只渲染栏面，不开透镜分支——
@@ -310,7 +330,11 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     // 内容（白团违和），且会被顶层整圆透镜覆盖成双渲染
     // 胶囊与毛玻璃分支（_frostedGlass 的 999 胶囊）同形：radius 999 由
     // backing/rim/squircle 统一钳到半短边成 stadium，shader 侧钳制后
-    // 边带折射在胶囊上照常生效
+    // 边带折射在胶囊上照常生效。
+    // glassBuilder 在 _SlidingNavBottom 的 LayoutBuilder 布局阶段才被
+    // 调用——本方法体内严禁 ref.watch/themeTint 等订阅（脏 provider 在
+    // 布局期 notify 会 markNeedsBuild 抛 setState during build，启动期
+    // 真机 fatal 实录）；全部依赖由 build() 期预计算传入
     final glass = BiliPaiGlass(
       radius: 999,
       useChromeFrame: true,
@@ -322,11 +346,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
         type: BlurSurfaceType.bottomBar,
         crispAtRest: true,
       ),
-      backgroundColor: themeTint(
-        ref,
-        'nav.bar',
-        bilipaiSurfaceTint(context, ref, quality),
-      ),
+      backgroundColor: backgroundColor,
       specular: bilipaiSpecularOf(quality),
       edgeAmount: bilipaiEdgeOf(quality),
       saturation: bilipaiSaturationOf(quality),
@@ -347,7 +367,7 @@ class _LiquidNavBarState extends ConsumerState<_LiquidNavBar> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefSolid = glassShouldUseSolid(ref, lowPerf: lowPerf);
     final effBudget =
-        budget ?? ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar))!;
+        budget ?? watchBlurBudget(ref, BlurSurfaceType.bottomBar);
     final wallpaper = wallpaperGlassActive(ref);
     // 液态降级:用户开了液态但引擎不支持 shader,胶囊走磨砂玻璃观感
     // (半透+标准 blur),禁实底兜底——否则实底挡住页面,水滴折射不可见。

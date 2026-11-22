@@ -1,4 +1,4 @@
-part of 'player_page.dart';
+﻿part of 'player_page.dart';
 
 class _GlassControlCard extends ConsumerWidget {
   const _GlassControlCard({
@@ -31,7 +31,7 @@ class _GlassControlCard extends ConsumerWidget {
     final frosted = ref.watch(
       settingsProvider.select((s) => s.valueOrNull?.frostedGlass ?? false),
     );
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.drawerOrSheet));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.drawerOrSheet);
     final error = ref.watch(playerProvider.select((s) => s.error));
 
     final content = Padding(

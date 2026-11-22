@@ -1,4 +1,4 @@
-import 'dart:ui' show ImageFilter;
+﻿import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -243,7 +243,7 @@ Widget frostedCardSurface({
       ? wallpaperGlassSigma(context)
       : surfaceBlurSigma(
           base: 8.0 * frostedBlurScale(ref),
-          budget: ref.watch(blurBudgetProvider(BlurSurfaceType.generic)),
+          budget: watchBlurBudget(ref, BlurSurfaceType.generic),
           type: BlurSurfaceType.generic,
         );
   if (solid) return surface;

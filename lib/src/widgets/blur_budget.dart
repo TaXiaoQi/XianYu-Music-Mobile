@@ -256,21 +256,31 @@ double surfaceBlurSigma({
 
 Color surfaceFillWithBudget(Color baseFill, BlurBudget budget) => baseFill;
 
-final blurBudgetProvider = Provider.family<BlurBudget, BlurSurfaceType>(
-  (ref, type) {
-    final lowPerf = ref.watch(settingsProvider.select(
-        (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
-    // 换页横移降载仅 iOS 激活（用户决策 2026-11）：安卓/鸿蒙不监听该
-    // 信号，观感与重建行为零变化
-    final iosMotion =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
-    return resolveBlurBudget(
-      type: type,
-      motionTier: lowPerf ? MotionTier.reduced : MotionTier.normal,
-      isScrolling: ref.watch(isScrollingProvider),
-      isTransitionRunning: ref.watch(isTransitioningProvider),
-      isTabSwitching: iosMotion && ref.watch(isTabSwitchingProvider),
-      forceLowBudget: lowPerf,
-    );
-  },
-);
+/// 消费端直接 watch flags 并本地计算预算（勿改回派生 Provider）。
+///
+/// 曾经的 `blurBudgetProvider`（Provider.family 派生自 flags）存在
+/// 「setState during build」崩溃：派生 Provider 的 flush 是懒的——上游
+/// flags 变更只打 `_dependencyMayHaveChanged` 懒标记，直到某消费者读时
+/// 才 flush 重算。若该次读取发生在某 widget 的 build 期（该消费者因
+/// 其它原因当帧重建），重算后的 notify 会 markNeedsBuild 其它已构建/
+/// 未调度的同型消费者（header 的 FloatingGlassSurface 与 BiliPaiPill
+/// 互为 Row 兄弟）→ Flutter 仅允许标记当前构建目标的后代 → throw
+/// （riverpod element.dart setState 对 Notifier 是同步 notify，而
+/// Provider 依赖 _performBuild，时序不同）。改为消费端直接 watch
+/// flags 的 NotifierProvider：flags 变更在 microtask 里同步 notify，
+/// 消费者标记发生在 build 期之外，结构上消除中途 flush。
+BlurBudget watchBlurBudget(WidgetRef ref, BlurSurfaceType type) {
+  final lowPerf = ref.watch(settingsProvider.select(
+      (s) => performancePriority(s.valueOrNull ?? const AppSettings())));
+  // 换页横移降载仅 iOS 激活（用户决策 2026-11）：安卓/鸿蒙不监听该
+  // 信号，观感与重建行为零变化
+  final iosMotion = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+  return resolveBlurBudget(
+    type: type,
+    motionTier: lowPerf ? MotionTier.reduced : MotionTier.normal,
+    isScrolling: ref.watch(isScrollingProvider),
+    isTransitionRunning: ref.watch(isTransitioningProvider),
+    isTabSwitching: iosMotion && ref.watch(isTabSwitchingProvider),
+    forceLowBudget: lowPerf,
+  );
+}

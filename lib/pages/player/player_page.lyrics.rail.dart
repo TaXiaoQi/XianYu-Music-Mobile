@@ -1,4 +1,4 @@
-part of 'player_page.dart';
+﻿part of 'player_page.dart';
 
 class _LyricSettingsRail extends ConsumerStatefulWidget {
   const _LyricSettingsRail({
@@ -36,7 +36,7 @@ class _LyricSettingsRailState extends ConsumerState<_LyricSettingsRail> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final panelWidth = _expanded ? 46.0 : 40.0;
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.overlay));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.overlay);
     final sigma = surfaceBlurSigma(
       base: 14,
       budget: budget,

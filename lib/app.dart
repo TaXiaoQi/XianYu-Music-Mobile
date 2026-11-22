@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -37,7 +37,7 @@ import 'src/widgets/liquid_wave.dart';
 import 'src/widgets/bilipai_glass.dart';
 import 'src/widgets/press_scale.dart';
 import 'src/widgets/blur_budget.dart'
-    show BlurSurfaceType, blurBudgetProvider, surfaceBlurSigma,
+    show BlurSurfaceType, watchBlurBudget, surfaceBlurSigma,
         globalIsTransitioning, globalIsTabSwitching;
 import 'l10n/gen/app_localizations.dart';
 
@@ -104,7 +104,7 @@ class _SystemNavLiquidPadState extends ConsumerState<_SystemNavLiquidPad> {
   @override
   Widget build(BuildContext context) {
     final quality = liquidGlassQualitySetting(ref);
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.bottomBar);
     return RepaintBoundary(
       child: ClipRect(
         child: _degraded

@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'dart:ui' show ImageFilter;
@@ -44,7 +44,7 @@ Widget playbarGlassSurface(
     settingsProvider.select(
         (s) => performancePriority(s.valueOrNull ?? const AppSettings())),
   );
-  final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+  final budget = watchBlurBudget(ref, BlurSurfaceType.bottomBar);
   final wallpaper = wallpaperGlassActive(ref);
   // 壁纸模式与悬浮顶栏同轨：液态开即上液态（顶栏液态判断无壁纸排除）
   final liquid =
@@ -529,7 +529,7 @@ class _MiniPlayerBarState extends ConsumerState<MiniPlayerBar>
         (ref.watch(settingsProvider.select((s) => s.valueOrNull?.liquidGlass)) ??
             true) &&
             !lowPerf;
-    final budget = ref.watch(blurBudgetProvider(BlurSurfaceType.bottomBar));
+    final budget = watchBlurBudget(ref, BlurSurfaceType.bottomBar);
 
     // 横屏播放条档位（竖屏恒标准）：watch 触发换档重建，几何回调经 _barH 读取
     final barSize = ref.watch(
