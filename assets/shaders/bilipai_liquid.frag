@@ -229,7 +229,12 @@ vec3 tapPage(vec2 screenPos) {
 //（B 站按压图标放大弹出同构），矩形外自动不采样
 vec3 lensTap(vec2 pageC, float rawMix) {
   float pressed = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
-  float k = 1.0 - 0.45 * pressed;
+  // 收缩幅度 0.25：满按压 k=0.75，白面顶缘 ≈0.75·rh/(1-m) ≈ 1.04·rh
+  // ——与真实栏缘基本对齐（BiliPai 1:1 同构），白面占透镜纵向 ~2/3
+  // 主导可读；此前 0.45（k=0.55）把白面压成窄带、月牙内容盖满透镜，
+  // 用户截图否决「完全看不出来底栏折射」。按压 ramp 中栏缘从 1.39·rh
+  // 内收到 1.04·rh，「底栏被吞进去缩小」的动感保留
+  float k = 1.0 - 0.25 * pressed;
   vec2 barC = uDropletCenter + (pageC - uDropletCenter) / max(k, 0.4);
   float faceMix = smoothstep(0.0, 0.3, pressed);
   vec3 face = glassFace(pageC);
@@ -393,12 +398,20 @@ void main() {
       // 会把水滴上下方的密集内容（封面/文字）拉成竖向色条——「水滴脏」
       // 的主因（用户对比截图：人家左右才弯曲）
       // 光谱色散（BiliPai dispersedCoord = d·grad·intensity 同构）：
-      // 偏移幅度正比折射位移 d。权重 = 贴边一个 band 宽内非零
-      //（BiliPai chromaticEdgeBand 同构：彩虹环整圈水滴边缘，含左右
-      // 圆端与上下长边——五彩观感的来源；此前误读为只在纵向外溢
-      // 月牙带，栏内边缘无彩色，用户对比截图否决）
-      float dispW =
-          1.0 - smoothstep(uDropletBand - 1.0, uDropletBand, fromEdge);
+      // 偏移幅度正比折射位移 d、方向全径向（只取 grad.x 时水滴顶部
+      // grad.x≈0，鼓出月牙永远无彩虹——用户截图否决「外面的部分要
+      // 加彩色」）。
+      // 掩膜 = dock 指示器同构（FloatingBottomBarGeometryTest：
+      // "The two colored bands end exactly at the track boundaries,
+      // leaving the label and central glass area outside the dispersion
+      // mask"）：weight 只在水滴上下缘外溢带（edgeDistY < gapBand，
+      // 即水滴超出栏轨的月牙）内非零——中央白玻璃面与弯折线保持
+      // crisp，「底栏折射」可读（此前整圈贴边带掩膜 + 径向方向把白面
+      // 边界糊成彩虹，用户截图否决「完全看不出来底栏折射」）。
+      // 静息 gapBand=0 → weight 恒 0
+      float dispW = 1.0 -
+          smoothstep(uDropletGapBand - 1.0, uDropletGapBand,
+                     uDropletRadius - abs(dc.y));
       vec3 droplet;
       // —— 原始内容透镜（BiliPai combinedBackdrop 同构）——uPageOn=1 时
       // 按压态直接采样页面原始内容捕获纹理（RepaintBoundary toImageSync
