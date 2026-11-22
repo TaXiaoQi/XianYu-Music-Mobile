@@ -210,27 +210,40 @@ vec3 tapPage(vec2 screenPos) {
 }
 
 // 水滴透镜单点采样：透镜采样「虚拟合成栈」（BiliPai combinedBackdrop
-// 同构——materialBackdrop + tabsBackdrop 叠在一起被折射）。带内/带外按
-// **屏幕坐标 p** 判（不是采样坐标 pageC）：全表面放大 + 向内折射会把
-// 采样点压回栏带内（r·(1-m) − dsh·0.25 < rh），采样坐标判带时按压透镜
-// 连鼓出栏顶的月牙都读成白面——整个透镜纯白（用户截图否决）。屏幕坐标
-// 判带则分界线正好落在栏顶真实边缘：带内 dock 白面 + 图标随透镜放大，
-// 带外（鼓出月牙）透出放大折射的页面内容
-// - 静息（pressed≈0）：带内保持原玻璃面（tintInvert 动态反色轻霜 +
-//   1:1 清晰图标）——用户确认过的静息观感，勿改回强白 dockFace
-// - 按压：带内 dockFace 白面（B 站 dock 烘焙白面等效）；带外原始页面
-//   内容折射（rawMix 随按压渐入；无页面捕获回退玻璃面）
-vec3 lensTap(vec2 p, vec2 pageC, float rawMix) {
-  if (p.y >= uDropletBarTop) {
-    float pressed = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
-    vec3 face = pressed > 0.001 ? dockFace(pageC) : glassFace(pageC);
-    return compositeIcon(face, pageC);
-  }
+// 同构——materialBackdrop + tabsBackdrop 叠在一起被折射）。
+//
+// 栏带判据回到**采样坐标**（dc7f2005 的弯折观感来源：放大+内折后的
+// 采样坐标系里，栏顶边缘作为弯折线落进透镜内），但边界用**收缩后的
+// 虚拟栏顶**：栏带向水滴圆心收缩 k（随按压 1→0.55），barC = 圆心 +
+// (采样点-圆心)/k 是收缩逆映射——
+// - 「底栏被水滴缩小」：透镜内白栏面只占 |y-圆心| < k·rh/(1-m) ≈
+//   0.76·rh，与镜外真实栏面（rh）在镜缘处形成高度落差，读成底栏被
+//   水滴吞进去缩小（dc7f2005 shrinkC 观感恢复）
+// - 纯白 bug（用户截图否决）根因：边界按真实 barTop 时，采样点被全
+//   表面放大 + 向内折射压回带内（r·(1-m) − dsh·0.25 < rh）永远出不了
+//   带 → 整颗透镜纯白。边界收缩到 0.55·rh 后采样点轻松越过虚拟栏顶，
+//   鼓出月牙透出放大折射的页面内容 + 弯折线，三效果同时恢复
+// - 静息（pressed=0 → k=1、barC=采样点）：glassFace 轻霜 + 1:1 图标，
+//   用户确认过的静息观感不变
+// 图标无条件合成（放大坐标）：按压图标随透镜放大盖在收缩栏面上
+//（B 站按压图标放大弹出同构），矩形外自动不采样
+vec3 lensTap(vec2 pageC, float rawMix) {
+  float pressed = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
+  float k = 1.0 - 0.45 * pressed;
+  vec2 barC = uDropletCenter + (pageC - uDropletCenter) / max(k, 0.4);
+  float faceMix = smoothstep(0.0, 0.3, pressed);
   vec3 face = glassFace(pageC);
-  if (uPageOn > 0.5 && rawMix > 0.0) {
+  if (barC.y >= uDropletBarTop) {
+    // 带内：轻霜 → dockFace 白面随按压渐入（B 站 dock 烘焙白面等效，
+    // 修复彩色内容糊团淹没图标——用户截图否决）；采样走收缩逆映射，
+    // 白面随底栏一起缩小
+    face = mix(face, dockFace(barC), faceMix);
+  } else if (uPageOn > 0.5 && rawMix > 0.0) {
+    // 带外（鼓出月牙）：原始页面内容折射（rawMix 随按压渐入；无页面
+    // 捕获回退玻璃面）
     face = mix(face, tapPage(pageC), rawMix);
   }
-  return face;
+  return compositeIcon(face, pageC);
 }
 
 void main() {
@@ -402,20 +415,20 @@ void main() {
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
         // 色散同样水平约束：竖向彩虹条=图标红色被拉成上下色柱（脏）
         vec2 off = vec2(dsh * grad.x * uDropletChroma * dispW, 0.0);
-        vec3 red = lensTap(p, pc + off, rawMix);
-        vec3 orange = lensTap(p, pc + off * (2.0 / 3.0), rawMix);
-        vec3 yellow = lensTap(p, pc + off * (1.0 / 3.0), rawMix);
-        vec3 green = lensTap(p, pc, rawMix);
-        vec3 cyan = lensTap(p, pc - off * (1.0 / 3.0), rawMix);
-        vec3 blue = lensTap(p, pc - off * (2.0 / 3.0), rawMix);
-        vec3 purple = lensTap(p, pc - off, rawMix);
+        vec3 red = lensTap(pc + off, rawMix);
+        vec3 orange = lensTap(pc + off * (2.0 / 3.0), rawMix);
+        vec3 yellow = lensTap(pc + off * (1.0 / 3.0), rawMix);
+        vec3 green = lensTap(pc, rawMix);
+        vec3 cyan = lensTap(pc - off * (1.0 / 3.0), rawMix);
+        vec3 blue = lensTap(pc - off * (2.0 / 3.0), rawMix);
+        vec3 purple = lensTap(pc - off, rawMix);
         droplet = vec3(
           (red.r + orange.r + yellow.r) / 3.5 + purple.r / 7.0,
           orange.g / 7.0 + (yellow.g + green.g + cyan.g) / 3.5,
           (cyan.b + blue.b + purple.b) / 3.0
         );
       } else {
-        droplet = lensTap(p, pc, rawMix);
+        droplet = lensTap(pc, rawMix);
       }
       // 图标合成已并入 lensTap 带内分支：静息（pc=p）1:1 清晰图标、
       // 按压随透镜放大弯折，与 BiliPai 指示器节点缩放同构；旧版静息
