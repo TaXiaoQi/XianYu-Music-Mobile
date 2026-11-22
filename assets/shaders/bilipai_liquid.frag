@@ -185,12 +185,25 @@ vec3 tapPage(vec2 screenPos) {
   return texture(uPageTex, uv).rgb;
 }
 
-// 水滴透镜单点采样：玻璃面（毛玻璃合成结果）与页面原始内容按 rawMix
-// 交叉淡化（BiliPai drawHomeIndicatorSurface 的 idle tint 随 progress
-// 退场同构），按压态（iconOn）合成图标纹理副本
+// 水滴透镜单点采样：按压态透镜采样「虚拟合成栈」（BiliPai
+// combinedBackdrop 同构——materialBackdrop + tabsBackdrop 叠在一起被
+// 折射）：采样坐标落在栏条带内 = 栏自身外观（玻璃面+图标一起随透镜
+// 放大弯折，「带上底栏一起折射」），栏顶以上 = 原始页面内容。静息态
+//（rawMix=0）与无页面捕获（uPageOn=0）回退玻璃面+图标收缩坐标旧观感
 vec3 lensTap(vec2 pageC, vec2 iconC, float rawMix, float iconOn) {
-  vec3 face = mix(glassFace(pageC), tapPage(pageC), rawMix);
-  return iconOn > 0.5 ? compositeIcon(face, iconC) : face;
+  vec3 face = glassFace(pageC);
+  if (uPageOn > 0.5 && rawMix > 0.0) {
+    // 栏带判据：采样坐标 y ≥ 栏顶（uDropletBarTop，屏幕物理像素，与
+    // uDropletCenter 同空间）。放大采样坐标拉向圆心 → 栏带被拉宽，
+    // 栏顶边缘作为弯折亮线读进透镜内（B 站按压观感同构）
+    vec3 stack = (pageC.y >= uDropletBarTop)
+        ? compositeIcon(glassFace(pageC), pageC)
+        : tapPage(pageC);
+    face = mix(face, stack, rawMix);
+  } else if (iconOn > 0.5) {
+    face = compositeIcon(face, iconC);
+  }
+  return face;
 }
 
 void main() {

@@ -1292,9 +1292,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         // tint 动态反色开关（槽 35）：BiliPai Shadow/Highlight 空闲
         // 水滴面同构，亮背景黑 10%/暗背景白 10%
         ..setFloat(35, widget.tintInvert ? 1.0 : 0.0)
-        // 栏顶全局 y（槽 36，逻辑 px，与槽 21-22 同空间）：按压镜面
-        // 采样点落入栏条带时替换为干净玻璃色，栏顶以上保持透出
-        ..setFloat(36, widget.barTop);
+        // 栏顶全局 y（槽 36，物理 px = 逻辑 × dpr，与槽 21-22 同空间）：
+        // 按压透镜「虚拟合成栈」的栏带判据——采样坐标 y ≥ 栏顶读栏自身
+        //（玻璃面+图标一起弯折），栏顶以上读原始页面
+        ..setFloat(36, widget.barTop * dpr);
       // 页面原始内容捕获纹理（槽 37-41，采样器 2）：BiliPai
       // materialBackdrop 等价物，按压透镜折射原始页面内容
       final hasPage = widget.pageImage != null && widget.pageSize.width > 0;
