@@ -413,8 +413,14 @@ void main() {
       // 横向（竖向位移把水滴上下方的密集内容拉成竖向色条，用户否决）
       vec2 pc = mag - dsh * vec2(grad.x, grad.y * 0.25);
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
-        // 色散同样水平约束：竖向彩虹条=图标红色被拉成上下色柱（脏）
-        vec2 off = vec2(dsh * grad.x * uDropletChroma * dispW, 0.0);
+        // 色散全径向（BiliPai dispersedCoord = d·grad·intensity 原版）：
+        // 只取 grad.x 时水滴顶部 grad.x≈0，鼓出月牙永远无彩虹（用户
+        // 截图否决「外面的部分要加彩色」）。改径向后栏内白面均匀无
+        // 色散可读、图标在色散之后合成不参与偏移——旧「竖向彩虹条拉
+        // 歪图标红」的前提（色散作用于彩色内容糊团+图标）已不存在，
+        // 彩虹集中在有内容梯度的月牙带（BiliPai dock 指示器上下缘
+        // chromaticEdgeBand 同构）
+        vec2 off = dsh * grad * uDropletChroma * dispW;
         vec3 red = lensTap(pc + off, rawMix);
         vec3 orange = lensTap(pc + off * (2.0 / 3.0), rawMix);
         vec3 yellow = lensTap(pc + off * (1.0 / 3.0), rawMix);
