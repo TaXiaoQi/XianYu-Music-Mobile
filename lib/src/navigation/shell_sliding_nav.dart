@@ -200,11 +200,14 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                         LiquidGlassQuality.medium,
                                       ),
                                       tintInvert: true,
-                                      // 栏顶 y（槽 36）：按压镜面采样点
-                                      // 落入栏条带时替换干净玻璃色，
-                                      // 栏顶以上保持透出（BiliPai
+                                      // 栏顶/栏底 y（槽 36/42）：独立透镜
+                                      // 「完整区域画面」归属判据——压缩
+                                      // 采样坐标落在栏上下缘之间读栏面
+                                      //（缩小的底栏），缘外读缩栏露出的
+                                      // 上下原始内容（BiliPai
                                       // combinedBackdrop 等效观感）
                                       barTop: s.barTop,
+                                      barBottom: s.barTop + s.barHeight,
                                       specular: 0.12,
                                       edgeAmount: 0,
                                       saturation: 1.5,
@@ -498,6 +501,19 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
   bool _tabCaptureScheduled = false;
 
+  /// 上一帧帧末实测的 tabRow 屏幕矩形（几何稳定门）：与当前帧不同 =
+  /// 入场动画/视图尺寸未定，localToGlobal rect 与 toImage 内容不一致
+  Rect? _lastTabRect;
+
+  /// 几何稳定探测续帧计数（上限 40 帧 ≈ 670ms，防动画永不落定时空旋）
+  int _tabRectRetries = 0;
+
+  /// State 装载时刻：冷启动入场动画（栏内容 stagger/pop，图标内容级
+  /// 放大，rect 稳定门探不到）结束前的首捕会把放大帧烘焙进纹理并被静
+  /// 息水滴永久沿用（用户截图：巨大红图标+双胶囊弧+黑缺口）——首捕
+  /// 推迟到装载 2.5s 后
+  final DateTime _bornAt = DateTime.now();
+
   /// 本页被覆盖路由的转场动画。壳层视差平移（_SmoothFadeForwards 的
   /// -25% 平移）由它驱动：转场每帧 tick 重建底栏 → _syncSnapshot 帧末
   /// 量到实时几何 → 顶层水滴全程跟随，不会把转场中间几何烙进快照。
@@ -637,34 +653,84 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
     // 按压/拖动期间跳过：此时栏内容行带 14% 压扁变换，toImage 图像
     // （边界自身图层，不含祖先变换）与 localToGlobal rect（含变换）
     // 不匹配 → UV 映射把图标压歪；这张歪纹理会被静息水滴沿用（「移动
-    // 后静态水滴图标歪」）。松手后 build 重跑会以恒等变换补捕
-    if (_press.value > 0.001 || _dragging || _pageDrag) return;
+    // 后静态水滴图标歪」）。松手后 build 重跑会以恒等变换补捕。
+    // 飞行切换期间同样跳过：页签图标 pop 缩放动画进行中，toImage 抓到
+    // 放大中的图标 → 巨大图标烘焙进纹理；飞行落定后无新 build 补捕，
+    // 脏纹理永久留在静息水滴（用户截图：静息双胶囊+巨大红图标）。
+    // 落定帧 setState 会以恒等变换补捕干净纹理
+    if (_press.value > 0.001 || _dragging || _pageDrag || _flight) return;
     if (_tabTex != null &&
         DateTime.now().difference(_tabTexAt).inMilliseconds < 120) {
       return;
     }
     _tabCaptureScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       _tabCaptureScheduled = false;
       if (!mounted) return;
-      final ro = _tabCaptureKey.currentContext?.findRenderObject();
-      if (ro is! RenderRepaintBoundary ||
-          !ro.attached ||
-          !ro.hasSize ||
-          ro.size.isEmpty) {
-        return;
+      _captureTabRowWhenStable();
+    });
+  }
+
+  /// 帧末几何稳定探测 + 捕获：tabRow 屏幕矩形连续两帧一致才落捕——
+  /// 冷启动入场动画/视图尺寸未定期间 localToGlobal rect 与 toImage
+  /// 内容不一致，巨大错位图标 + 越界内容被烘焙进纹理且此后无 build
+  /// 补捕，静息水滴永久显示垃圾（用户截图：巨大红图标+双胶囊弧+黑缺
+  /// 口）。动画期间自续 postFrame 重探，落定帧必然触发捕获（无需额外
+  /// build）；上限 40 帧 ≈ 670ms 防永不落定空旋
+  Future<void> _captureTabRowWhenStable() async {
+    // 探针期间新按压/拖拽/飞行：变形中的栏面不捕（同 _scheduleTabCapture）
+    if (_press.value > 0.001 || _dragging || _pageDrag || _flight) return;
+    // 底栏卸载重挂（二级页 push/pop 触发 _FixedChrome AnimatedSize 卸载）
+    // 时继承上一次挂载的捕获纹理：dispose 不再清纹理（所有权移交本
+    // 挂载），直接沿用即刻恢复静息水滴图标，跳过下方 2.5s 首捕门——
+    // 否则每次切页回来图标都要等 2.5s 才出现（用户报障）。rect 稳定门
+    // 保留，重挂后正常补捕会以新纹理替换
+    if (_tabTex == null) {
+      final inherited = navDropletTabTexture.value;
+      if (inherited != null) {
+        _tabTex = inherited;
+        _tabTexAt = DateTime.now();
+        _lastTabRect = null;
+        _tabRectRetries = 0;
       }
-      if (kDebugMode && ro.debugNeedsPaint) return;
-      // rect 必须用变换后尺寸：app 内容在 FittedBox 缩放内，ro.size 是
-      // 布局尺寸（未含缩放），而 shader 采样坐标是屏上物理像素——
-      // uIconSize = rect.size × viewDpr 必须等于栏内容的屏上物理尺寸
-      //（= 布局 × 缩放 dpr），用布局尺寸会让 UV 放大 1/缩放倍，折射
-      // 内容随距离线性偏移
-      final topLeft = ro.localToGlobal(Offset.zero);
-      final bottomRight =
-          ro.localToGlobal(Offset(ro.size.width, ro.size.height));
-      final rect = Rect.fromPoints(topLeft, bottomRight);
-      try {
+    }
+    // 首捕入场动画窗口：自续 postFrame 重探，2.5s 后自然落捕
+    if (_tabTex == null &&
+        DateTime.now().difference(_bornAt).inMilliseconds < 2500) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _captureTabRowWhenStable();
+      });
+      return;
+    }
+    final ro = _tabCaptureKey.currentContext?.findRenderObject();
+    if (ro is! RenderRepaintBoundary ||
+        !ro.attached ||
+        !ro.hasSize ||
+        ro.size.isEmpty) {
+      return;
+    }
+    if (kDebugMode && ro.debugNeedsPaint) return;
+    // rect 必须用变换后尺寸：app 内容在 FittedBox 缩放内，ro.size 是
+    // 布局尺寸（未含缩放），而 shader 采样坐标是屏上物理像素——
+    // uIconSize = rect.size × viewDpr 必须等于栏内容的屏上物理尺寸
+    //（= 布局 × 缩放 dpr），用布局尺寸会让 UV 放大 1/缩放倍，折射
+    // 内容随距离线性偏移
+    final topLeft = ro.localToGlobal(Offset.zero);
+    final bottomRight =
+        ro.localToGlobal(Offset(ro.size.width, ro.size.height));
+    final rect = Rect.fromPoints(topLeft, bottomRight);
+    if (_lastTabRect != rect) {
+      _lastTabRect = rect;
+      if (_tabRectRetries < 40) {
+        _tabRectRetries++;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _captureTabRowWhenStable();
+        });
+      }
+      return;
+    }
+    _tabRectRetries = 0;
+    try {
         final dpr = MediaQuery.devicePixelRatioOf(context);
         final img = await ro.toImage(pixelRatio: dpr);
         if (!mounted) {
@@ -676,6 +742,11 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           _tabTex = NavDropletTabTexture(image: img, rect: rect);
           _tabTexAt = DateTime.now();
         });
+        AppLog.debug(
+          'glass',
+          '[XYTabCap] rect=$rect roSize=${ro.size} dpr=$dpr '
+          'img=${img.width}x${img.height}',
+        );
         navDropletTabTexture.value = _tabTex;
         if (old != null) {
           WidgetsBinding.instance.addPostFrameCallback(
@@ -685,18 +756,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
       } catch (_) {
         // 捕获失败保持上次纹理（透镜退化为纯玻璃面折射，不闪黑）
       }
-    });
   }
 
   @override
   void dispose() {
-    // 栏内容纹理随栏卸载释放：帧末清通知值（dispose 可能发生在 finalizeTree
-    // 锁定窗口，同步写 notifier 会通知消费方在锁定树中 setState）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      navDropletTabTexture.value = null;
-      _tabTex?.image.dispose();
-      _tabTex = null;
-    });
+    // 栏内容纹理不清不释放：底栏卸载重挂（二级页 push/pop）时后继挂载
+    // 在 _captureTabRowWhenStable 开头继承该纹理，静息水滴图标即时恢复；
+    // 若此后永久不再挂载（横屏侧栏模式），仅滞留一张 ui.Image 至进程
+    // 结束（可接受）。旧图统一在替换路径帧末释放（_captureTabRowWhenStable）
     // 底栏卸载（横屏侧栏/固定底栏切换等）时清顶层水滴快照，防残影。
     // 推迟到帧末：dispose 可能发生在 finalizeTree 的锁定窗口（chrome
     // 整树卸载帧），同步写 ValueNotifier 会通知 NavDropletOverlay 在
@@ -1012,10 +1079,14 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
 
           if (overlayDroplet) {
             final w = indicatorW * sx;
-            // 胶囊水滴（BiliPai 同构）：横向绽放全量、纵向留 60% 胀幅
-            // ——高度贴近栏轨高，宽椭圆契合底栏形状；上下缘外溢量
-            //（h − 栏高）/2 由 overlay 折算成色散外溢带（彩虹月牙）
-            final h = dropH * (1 + (sy - 1) * 0.60);
+            // 胶囊水滴（BiliPai 同构）：横向绽放全量、纵向按压凸出栏缘
+            //——BiliPai 白底效果图：透镜上下真实鼓出 dock（78dp 透镜 /
+            // 56dp dock），凸出月牙直接透栏外页面内容。旧 0.60 纵向阻尼
+            // 把水滴压在栏高内，露出带只能靠 shader 竖向键控合成——黑带
+            // /连接处下潜两轮修复的根源；凸出后 shader 回归 BiliPai 纯
+            // 径向场，合成边界整体撤销。×1.35：栏高 86dp 下按压胀幅
+            //（sy 至多 1.39）换算出 ~15dp 总凸出，接近 BiliPai 比例
+            final h = dropH * (1 + (sy - 1) * 1.35);
             var cx = 10 + pos * tabW + tabW / 2;
             // 栏缘墙：放大水滴的渲染落点钳在栏内容区内。只钳快照 cx、
             // 不钳 pos 本体——弹簧回弹与拖拽插值不受影响，撞墙段由

@@ -93,10 +93,9 @@ uniform float uDropletHalfW;
 // 与任意纯色页面，修复白底上白 tint 水滴完全隐形
 uniform float uDropletTintInvert;
 
-// 栏顶全局 y（逻辑 px）：按压镜面采样点落入栏条带时替换为干净玻璃色。
-// 采样源差异的等效解——栏区 backdrop 已烘焙 20σ 毛玻璃（BiliPai 从
-// combinedBackdrop 原始层重渲染故能透出），直接透出=奶白；页面区域
-// 未被栏模糊触碰，保持全透明透出
+// 栏顶全局 y（物理 px = 逻辑 × dpr）：独立透镜「完整区域画面」归属判据
+// 之一（与槽 42 uDropletBarBottom 成对）——压缩采样坐标落在栏上下缘
+// 之间读栏面（dockFace 半透白罩），缘外读缩栏露出的上下原始内容
 uniform float uDropletBarTop;
 
 // 槽 37：页面原始内容纹理开关（1=采样器 2 已绑定 app 内容捕获图）。
@@ -105,6 +104,11 @@ uniform float uPageOn;
 uniform vec2 uPageOrigin;
 // 槽 40-41：页面纹理尺寸（物理像素；捕获 pixelRatio 与 viewDpr 一致）。
 uniform vec2 uPageSize;
+
+// 槽 42：栏底全局 y（物理 px）：与 uDropletBarTop 成对——独立透镜的
+//「完整区域画面」归属判据（barC 落在栏上下缘之间=栏面，缘外=缩栏露出
+// 的上下原始内容）
+uniform float uDropletBarBottom;
 
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
@@ -157,30 +161,6 @@ vec3 glassFace(vec2 uv) {
   return s * (1.0 - uBackgroundColor.a) + uBackgroundColor.rgb;
 }
 
-// 栏带白面（BiliPai dock 指示器同构）：B 站指示器折射的
-// combinedBackdrop 里 dock 白面已烘焙进捕获层——透镜带内读出的就是
-// 白玻璃面，默认/按压都是白胶囊 + 清晰图标。本管线无烘焙层，用强白
-// tint 等效（0.78，比栏面 0.40 明显更实）：胶囊在栏上清晰可读，灰色
-// 非活跃图标不被内容糊团淹没（用户对比 B 站截图确认的观感；此前
-// 「不透明白蛋」否决的是无图标无弯折的整圆实心替换，带判据+图标
-// 合成不属此列）。tint 用标准 uBackgroundColor（themeAware 明暗适配），
-// 不走 tintInvert 动态反色——白胶囊观感对齐 B 站
-vec3 dockFace(vec2 uv) {
-  vec2 mn = vec2(0.0);
-  vec2 mx = max(uSize - vec2(1.0), vec2(1.0));
-  vec3 s = tapRGB(clamp(uv, mn, mx));
-  float luma = dot(s, vec3(0.2126, 0.7152, 0.0722));
-  s = mix(vec3(luma), s, uSaturation);
-  const float dockWhite = 0.78;
-  // uBackgroundColor 为预乘 alpha（rgb 已乘 a≈0.40）——直接混会把白面上限
-  // 压到 0.4 灰（真机截图验证：水滴读成灰团）。反预乘回实体白再按
-  // dockWhite 权重混合
-  vec3 solid = uBackgroundColor.a > 0.001
-      ? uBackgroundColor.rgb / uBackgroundColor.a
-      : vec3(0.0);
-  return s * (1.0 - dockWhite) + solid * dockWhite;
-}
-
 // 水滴透镜的玻璃面采样（blur 后的 backdrop，不含图标）。图标由
 // compositeIcon 单独锐利合成——图标若随折射坐标一起弯折/色散偏移，
 // 会读成「图标被折歪」，故前景与折射面分离（BiliPai 前景不被透镜
@@ -212,43 +192,43 @@ vec3 tapPage(vec2 screenPos) {
 // 水滴透镜单点采样：透镜采样「虚拟合成栈」（BiliPai combinedBackdrop
 // 同构——materialBackdrop + tabsBackdrop 叠在一起被折射）。
 //
-// 栏带判据回到**采样坐标**（dc7f2005 的弯折观感来源：放大+内折后的
-// 采样坐标系里，栏顶边缘作为弯折线落进透镜内），但边界用**收缩后的
-// 虚拟栏顶**：栏带向水滴圆心收缩 k（随按压 1→0.55），barC = 圆心 +
-// (采样点-圆心)/k 是收缩逆映射——
-// - 「底栏被水滴缩小」：透镜内白栏面只占 |y-圆心| < k·rh/(1-m) ≈
-//   0.76·rh，与镜外真实栏面（rh）在镜缘处形成高度落差，读成底栏被
-//   水滴吞进去缩小（dc7f2005 shrinkC 观感恢复）
-// - 纯白 bug（用户截图否决）根因：边界按真实 barTop 时，采样点被全
-//   表面放大 + 向内折射压回带内（r·(1-m) − dsh·0.25 < rh）永远出不了
-//   带 → 整颗透镜纯白。边界收缩到 0.55·rh 后采样点轻松越过虚拟栏顶，
-//   鼓出月牙透出放大折射的页面内容 + 弯折线，三效果同时恢复
-// - 静息（pressed=0 → k=1、barC=采样点）：glassFace 轻霜 + 1:1 图标，
-//   用户确认过的静息观感不变
-// 图标无条件合成（放大坐标）：按压图标随透镜放大盖在收缩栏面上
-//（B 站按压图标放大弹出同构），矩形外自动不采样
+// —— 独立透镜透「整个区域的完整画面」（用户定稿模型）——镜心 1:1 不
+// 放大（BiliPai 实机：中心内容原样），「底栏被缩小」完全由边带折射完成
+//（采样向外弯折，见水滴分支 pc 注释）：栏缘上下的原始内容被压缩进镜缘
+// 边带、栏缘线向镜心弯折。按压态（用户对比图定稿）：栏带内全强度采
+// uImage 真实栏面（玻璃霜+图标+文字已烘焙，随径向场放大弯折进镜内
+// ——BiliPai 镜内白栏面+放大弯折图标+彩虹缘同构），栏带外采原始页面
+// 内容；静息 pc=p、透镜全落栏内 = 已确认静息观感逐字节一致。
+// 注意：图标不在此合成——色散会对本函数连调 7 次（7 个色散偏移坐
+// 标），带内合成会让外溢带内的图标被叠 7 次 = 七彩鬼影（真机截图
+// 屋顶橙弧/底部红绿条）；图标由调用方在色散混合完成后一次性合成
 vec3 lensTap(vec2 pageC, float rawMix) {
-  float pressed = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
-  // 收缩幅度 0.25：满按压 k=0.75，白面顶缘 ≈0.75·rh/(1-m) ≈ 1.04·rh
-  // ——与真实栏缘基本对齐（BiliPai 1:1 同构），白面占透镜纵向 ~2/3
-  // 主导可读；此前 0.45（k=0.55）把白面压成窄带、月牙内容盖满透镜，
-  // 用户截图否决「完全看不出来底栏折射」。按压 ramp 中栏缘从 1.39·rh
-  // 内收到 1.04·rh，「底栏被吞进去缩小」的动感保留
-  float k = 1.0 - 0.25 * pressed;
-  vec2 barC = uDropletCenter + (pageC - uDropletCenter) / max(k, 0.4);
-  float faceMix = smoothstep(0.0, 0.3, pressed);
-  vec3 face = glassFace(pageC);
-  if (barC.y >= uDropletBarTop) {
-    // 带内：轻霜 → dockFace 白面随按压渐入（B 站 dock 烘焙白面等效，
-    // 修复彩色内容糊团淹没图标——用户截图否决）；采样走收缩逆映射，
-    // 白面随底栏一起缩小
-    face = mix(face, dockFace(barC), faceMix);
-  } else if (uPageOn > 0.5 && rawMix > 0.0) {
-    // 带外（鼓出月牙）：原始页面内容折射（rawMix 随按压渐入；无页面
-    // 捕获回退玻璃面）
-    face = mix(face, tapPage(pageC), rawMix);
+  if (uPageOn > 0.5 && rawMix > 0.0) {
+    vec2 puv = (pageC - uPageOrigin) / max(uPageSize, vec2(1.0));
+    bool inPage = puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 &&
+        puv.y <= 1.0;
+    vec2 clampedC = clamp(pageC, vec2(0.0), max(uSize - vec2(1.0), vec2(1.0)));
+    // 栏带外 = 原始页面内容（捕获层 Positioned.fill 覆盖全屏，栏背后
+    // 的区域也在纹理里；越出页面捕获矩形回退 backdrop 直采——tapPage
+    // 矩形外返回透明黑=黑色空带的根因）。栏带外 uImage 与页面捕获
+    // 内容一致（都是未被栏面覆盖的真实页面），tapPage 保留 = 采样器
+    // 2 引用（Impeller 剔除未引用 sampler 会让绑定错位）+ 捕获兜底
+    vec3 rawFace = inPage ? tapPage(pageC) : tapRGB(clampedC);
+    // 栏归属掩膜（槽 36/42，1.5px 物理过渡防栏缘线锯齿）：掩膜按采样
+    // 坐标（内容空间）判定——采样点落在栏内就读真实栏面，透镜径向场
+    // 把栏缘线/图标推弯进镜缘（BiliPai 镜内栏缘弯折同构）
+    float band =
+        smoothstep(uDropletBarTop - 1.5, uDropletBarTop + 1.5, pageC.y) *
+        (1.0 - smoothstep(uDropletBarBottom - 1.5, uDropletBarBottom + 1.5,
+                          pageC.y));
+    // 栏带内全强度直采 uImage（真实栏面：霜化/图标/文字已烘焙）——
+    // 不用 glassFace（其 tint 叠加在已含霜化+tint 的栏面上 = 双重加白
+    // 奶白，历史教训）。此前「rawPage + 15% 白纱」把栏面从镜内抹掉
+    //（用户对比图否决：「放大水滴把底栏忽略了」）
+    return mix(rawFace, tapRGB(clampedC), band);
   }
-  return compositeIcon(face, pageC);
+  // 静息（rawMix=0）/无页面纹理：玻璃面（已确认静息观感逐字节一致）
+  return glassFace(pageC);
 }
 
 void main() {
@@ -362,15 +342,20 @@ void main() {
     float sd = coreLen - uDropletRadius;
     // 按压进度（BiliPai progress）：水滴/外投影两分支共用，声明在外层
     float pressedSh = clamp(max(uDropletDepth, uDepthEffect), 0.0, 1.0);
-    if (sd < 0.0) {
-      // 边带折射：贴边 band 宽内剖面 circleMap（1 - sqrt(1-x²)），
-      // 位移贴边最大、向内沿弧快速衰减（与壳层边带同一公式）
-      float dsh = 0.0;
-      vec2 grad = vec2(0.0);
-      float fromEdge = -sd;
-      if (uDropletBand > 0.0 && uDropletRefract > 0.0 &&
-          fromEdge < uDropletBand) {
-        float x = 1.0 - fromEdge / uDropletBand;
+    // 整矩形走透镜分支：rect 与 SDF 几何失配的兜底条带（按压 swell 期间
+    // rect 与 lensR 不同步的边缘区）旧结构回落壳层玻璃路径——backdrop
+    // 含真实栏面图标文字，与放大捕获图标叠成双影（用户截图否决）。失配
+    // 区 fromEdge=0 零折射，但仍走透镜面采样保持观感一致
+    float fromEdge = max(-sd, 0.0);
+    // 折射剖面半径：静息=贴边带（原 band 行为不变），按压随进度展开
+    // 到全半径——BiliPai 实机按压（用户要求上机对照）：内容弯曲横跨
+    // 整个透镜（黑色封面从边缘一直弯进镜心），非仅贴边带
+    float profR = mix(uDropletBand, uDropletRadius, pressedSh);
+    float dsh = 0.0;
+    vec2 grad = vec2(0.0);
+    if (sd < 0.0 && uDropletRefract > 0.0 && profR > 0.0 &&
+        fromEdge < profR) {
+        float x = 1.0 - fromEdge / profR;
         dsh = (1.0 - sqrt(max(0.0, 1.0 - x * x))) * uDropletRefract;
         if (dsh > 0.001) {
           // 位移方向（BiliPai grad = normalize(gradSd + depthEffect·
@@ -382,21 +367,10 @@ void main() {
           grad = normalize(eg + uDropletDepth * normalize(dc));
         }
       }
-      // 全表面放大（BiliPai pressedScale 同构：其按住时指示器绘制整体
-      // scale(78/56=1.39)，backdrop 捕获随节点缩放——透过水滴的内容
-      // 放大 1.39 倍且图标弯曲变形（用户对比截图确认的核心观感）。
-      // 放大采样：uv = center + (p-center)/s = mix(p, center, 1-1/s)，
-      // 1-1/1.39 = 0.282；随按压渐入，静息=0 不影响静息观感）
-      vec2 mag = mix(p, uDropletCenter, min(pressedSh * 0.282, 0.5));
-      // 折射采样坐标：放大基础上再向内偏（BiliPai LiquidLens 同构——
-      // 其 LiquidLens.kt:139 setFloatUniform("refractionAmount", 负值)，
-      // shader 的 coord + d·grad（grad 外法向）实际向内采样：边缘带把
-      // 内部内容向外拉伸（放大镜边缘拉伸观感）；此前误读为向外吸入，
-      // 用户截图否决）。
-      // 位移水平约束（BiliPai chromaticBandHorizontal 同构）：弯折只在
-      // 左右方向（横向 stadium 的液感来自两端圆弧的水平弯）。纵向位移
-      // 会把水滴上下方的密集内容（封面/文字）拉成竖向色条——「水滴脏」
-      // 的主因（用户对比截图：人家左右才弯曲）
+      // 镜心 1:1（dsh(镜心)=0）+ 镜缘压缩放大：径向场 pc = p - dsh·grad
+      //（grad 外向）采样向镜心收——BiliPai circleMap 原版观感。静息与
+      // 按压同一方向同一公式，区别只在 profR（band→全半径）与捕获纹理
+      // 分支（rawMix）
       // 光谱色散（BiliPai dispersedCoord = d·grad·intensity 同构）：
       // 偏移幅度正比折射位移 d、方向全径向（只取 grad.x 时水滴顶部
       // grad.x≈0，鼓出月牙永远无彩虹——用户截图否决「外面的部分要
@@ -413,18 +387,23 @@ void main() {
           smoothstep(uDropletGapBand - 1.0, uDropletGapBand,
                      uDropletRadius - abs(dc.y));
       vec3 droplet;
-      // —— 原始内容透镜（BiliPai combinedBackdrop 同构）——uPageOn=1 时
-      // 按压态直接采样页面原始内容捕获纹理（RepaintBoundary toImageSync
-      // 产物，无模糊烘焙，materialBackdrop 等价物），图标采样自栏内容
-      // 捕获纹理（tabsBackdrop 等价物）。rawMix 随按压 0→0.3 渐入，与
-      // 玻璃面交叉淡化；捕获失败/未捕获 uPageOn=0 恒走玻璃面分支——
-      // 回退观感与旧版逐字节一致
+      // —— 真实合成面透镜（BiliPai combinedBackdrop 同构）——uPageOn=1
+      // 时按压态由 lensTap 采样：栏带内直采 uImage 真实栏面（霜化/图标
+      // /文字已烘焙，tabsBackdrop+materialBackdrop 合成面等价物）、栏带
+      // 外采页面原始内容捕获纹理（materialBackdrop 等价物）。rawMix 随
+      // 按压 0→0.3 渐入，与玻璃面交叉淡化；捕获失败/未捕获 uPageOn=0
+      // 恒走玻璃面分支——回退观感与旧版逐字节一致
       float rawMix =
           uPageOn > 0.5 ? smoothstep(0.0, 0.3, pressedSh) : 0.0;
-      // 页面折射坐标：全表面放大基础上边带向内偏（BiliPai
-      // refractionAmount 负值同构——边缘带把内部内容向外拉伸）。弯折仅
-      // 横向（竖向位移把水滴上下方的密集内容拉成竖向色条，用户否决）
-      vec2 pc = mag - dsh * vec2(grad.x, grad.y * 0.25);
+      // 页面折射坐标：径向内拉（BiliPai Lens circleMap 原版，静息/按压
+      // 同一公式，pc = p - dsh·grad）——按压仅 profR 由 band 展开到全
+      // 半径（L352），折射场随之覆盖整镜：镜缘采样向镜心收 = 镜缘内容
+      // 压缩 + 镜心区域放大。白底效果图的可见信号即此场：中心「态」字
+      // /铃铛放大 ~1.5x、缘部「我的」径向弯折、栏缘线被推离向镜外弯折。
+      // 旧竖向键控（合成露出带：黑带/连接处下潜两轮修复的折衷）已随
+      // 水滴凸出栏缘的几何改动撤销——凸出月牙直接透栏外真实内容，
+      // 无需合成边界，径向场与 BiliPai 完全同构
+      vec2 pc = p - dsh * grad;
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
         // 色散全径向（BiliPai dispersedCoord = d·grad·intensity 原版）：
         // 只取 grad.x 时水滴顶部 grad.x≈0，鼓出月牙永远无彩虹（用户
@@ -433,7 +412,8 @@ void main() {
         // 歪图标红」的前提（色散作用于彩色内容糊团+图标）已不存在，
         // 彩虹集中在有内容梯度的月牙带（BiliPai dock 指示器上下缘
         // chromaticEdgeBand 同构）
-        vec2 off = dsh * grad * uDropletChroma * dispW;
+        // 色散偏移跟随折射位移场（p - pc = 当前位移矢量 = 径向 dsh·grad）
+        vec2 off = (p - pc) * (uDropletChroma * dispW);
         vec3 red = lensTap(pc + off, rawMix);
         vec3 orange = lensTap(pc + off * (2.0 / 3.0), rawMix);
         vec3 yellow = lensTap(pc + off * (1.0 / 3.0), rawMix);
@@ -449,15 +429,24 @@ void main() {
       } else {
         droplet = lensTap(pc, rawMix);
       }
-      // 图标合成已并入 lensTap 带内分支：静息（pc=p）1:1 清晰图标、
-      // 按压随透镜放大弯折，与 BiliPai 指示器节点缩放同构；旧版静息
-      // 单独 1:1 叠 + 按压整段无图标（iconOn 分支被短路）双缺陷都由此
-      // 统一修掉。按压态纯透明（BiliPai 实拍确认：透镜面除白栏面/
-      // 折射/放大/色散/图标合成外无任何叠加效果）——内阴影/顶部高光/
-      // 外投影此前已全部移除，所见即放大弯折的合成栈本身
-      result = droplet;
-    } // sd < 0（水滴内部）
-  }
+      // 图标合成（一次性，色散混合完成后）：静息 1:1 原位合成捕获图标
+      //（crisp，用户确认的静息样式）；按压且页面捕获可用（rawMix>0）时
+      // 跳过——栏带内 uImage 真实栏面已含图标/文字（随栏按压压扁动画
+      // 实时变化），再叠静息位置捕获的图标 = 双影错位；且 uImage 图标
+      // 经 7 次色散采样自带彩虹缘（BiliPai 实机按压同构）。无页面捕获
+      // 回退：捕获图标随 pc 弯折放大（旧兜底行为不变）
+      if (rawMix <= 0.0) {
+        vec2 iconC = pressedSh < 0.001 ? p : pc;
+        result = compositeIcon(droplet, iconC);
+      }
+      // 边缘高光（BiliPai 实机按压同构：顶缘亮带 ~8px 且明显）：贴边
+      // 6px 亮环，玻璃胶囊厚度感。仅按压态生效——静息多出一圈亮环被
+      // 读成第二个圆（用户截图否决「现在这是什么东西」），静息样式
+      // 保持无 rim 的已确认观感
+      float rimW = 1.0 - smoothstep(0.0, 6.0, fromEdge);
+      result = mix(result, vec3(1.0),
+          rimW * 0.55 * smoothstep(0.0, 0.3, pressedSh));
+  } // uDropletRadius > 0.5（水滴实例：整矩形透镜分支）
 
   // 槽位保留：Impeller 会剔除未引用的 uniform，导致后续槽位整体错位；
   // 显式乘 0 占位（uScrollOffset/uBlurSigma/uSpecular 本配方不参与渲染）。

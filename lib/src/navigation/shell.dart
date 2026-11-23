@@ -38,7 +38,8 @@ import '../widgets/page_search_bar.dart';
 import '../widgets/press_scale.dart';
 import '../widgets/bilipai_glass.dart';
 import '../widgets/chrome_glass_frame.dart';
-import '../widgets/custom_background.dart' show PageWallpaperScope;
+import '../widgets/custom_background.dart'
+    show CustomBackgroundLayer, PageWallpaperScope;
 import '../../pages/library/library_page.dart';
 import '../../pages/library/library_folder_page.dart';
 import '../../pages/library/song_list_page.dart';
@@ -1284,11 +1285,25 @@ class _ShellScaffoldState extends ConsumerState<_ShellScaffold>
                     // shader 采样器 2（BiliPai materialBackdrop 等价物）
                     child: RepaintBoundary(
                       key: _pageCaptureKey,
-                      child: _landscapeFadePanel(
-                        useCameraArea: useCameraArea,
-                        padding: padding,
-                        context: context,
-                        child: landscapeHome,
+                      // 捕获边界内垫根层同款背景（appSurfaceBg + 全局壁纸
+                      // 层）：页面内容本身透明，背景画在 app 根层（边界外）
+                      // ——未配置页面级壁纸的设备上 toImageSync 产物全图
+                      // alpha≈0，预乘 rgb=内容×alpha → 按压透镜采到黑图
+                      //（NOH-AN00 实机：透镜灰黑只余内容残影）。垫齐后
+                      // 捕获图与根层合成结果一致；页面级壁纸已配时页面
+                      // 自带不透明垫底，此层被完全盖住无副作用
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ColoredBox(color: appSurfaceBg(context)),
+                          const CustomBackgroundLayer(),
+                          _landscapeFadePanel(
+                            useCameraArea: useCameraArea,
+                            padding: padding,
+                            context: context,
+                            child: landscapeHome,
+                          ),
+                        ],
                       ),
                     ),
                   ),

@@ -1008,6 +1008,7 @@ class LiveLiquidSurface extends StatefulWidget {
     // 纯色白底上白 tint 水滴隐形。仅 droplet 实例有意义
     this.tintInvert = false,
     this.barTop = 0.0,
+    this.barBottom = 0.0,
     this.iconImage,
     this.iconOrigin = Offset.zero,
     this.iconSize = Size.zero,
@@ -1045,6 +1046,11 @@ class LiveLiquidSurface extends StatefulWidget {
   /// 的采样替换为干净玻璃色，栏顶以上保持透出（BiliPai combinedBackdrop
   /// 等效观感）
   final double barTop;
+
+  /// 栏底全局 y（逻辑 px，水滴实例槽 42）：与 [barTop] 成对——独立透镜
+  /// 「完整区域画面」归属判据（barC 落在栏上下缘之间=栏面，缘外=缩栏
+  /// 露出的上下原始内容）
+  final double barBottom;
 
   /// 水滴全表面放大深度（0..1，随按压 mf 渐强）
   final double dropletDepth;
@@ -1293,9 +1299,10 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
         // 水滴面同构，亮背景黑 10%/暗背景白 10%
         ..setFloat(35, widget.tintInvert ? 1.0 : 0.0)
         // 栏顶全局 y（槽 36，物理 px = 逻辑 × dpr，与槽 21-22 同空间）：
-        // 按压透镜「虚拟合成栈」的栏带判据——采样坐标 y ≥ 栏顶读栏自身
-        //（玻璃面+图标一起弯折），栏顶以上读原始页面
-        ..setFloat(36, widget.barTop * dpr);
+        // 按压透镜「虚拟合成栈」的栏带判据——采样坐标 y 落在栏上下缘
+        // 之间读栏面（玻璃面+图标一起弯折），缘外读缩栏露出的原始页面
+        ..setFloat(36, widget.barTop * dpr)
+        ..setFloat(42, widget.barBottom * dpr);
       // 页面原始内容捕获纹理（槽 37-41，采样器 2）：BiliPai
       // materialBackdrop 等价物，按压透镜折射原始页面内容
       final hasPage = widget.pageImage != null && widget.pageSize.width > 0;
@@ -1324,7 +1331,7 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
     } else {
       // 非水滴实例（mini 播放条壳路径）：显式归零，防 didUpdateWidget
       // 切换透镜开关后残留旧透镜几何
-      for (var i = 21; i <= 41; i++) {
+      for (var i = 21; i <= 42; i++) {
         shader.setFloat(i, 0.0);
       }
     }
