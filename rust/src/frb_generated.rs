@@ -3995,11 +3995,15 @@ fn wire__crate__api__parse_audio_files_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_paths = <Vec<String>>::sse_decode(&mut deserializer);
             let api_minimum_duration_seconds = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_minimum_file_size_bytes = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::parse_audio_files(api_paths, api_minimum_duration_seconds)?;
+                    let output_ok = crate::api::parse_audio_files(
+                        api_paths,
+                        api_minimum_duration_seconds,
+                        api_minimum_file_size_bytes,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -4145,12 +4149,14 @@ fn wire__crate__api__parse_music_folder_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_folder_path = <String>::sse_decode(&mut deserializer);
             let api_minimum_duration_seconds = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_minimum_file_size_bytes = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::parse_music_folder(
                         api_folder_path,
                         api_minimum_duration_seconds,
+                        api_minimum_file_size_bytes,
                     )?;
                     Ok(output_ok)
                 })())
@@ -4901,6 +4907,7 @@ fn wire__crate__api__refresh_folder_songs_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_folder_path = <String>::sse_decode(&mut deserializer);
             let api_minimum_duration_seconds = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_minimum_file_size_bytes = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -4908,6 +4915,7 @@ fn wire__crate__api__refresh_folder_songs_impl(
                         api_db_path,
                         api_folder_path,
                         api_minimum_duration_seconds,
+                        api_minimum_file_size_bytes,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5593,11 +5601,15 @@ fn wire__crate__api__scan_library_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_minimum_duration_seconds = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_minimum_file_size_bytes = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
-                    let output_ok =
-                        crate::api::scan_library(api_db_path, api_minimum_duration_seconds)?;
+                    let output_ok = crate::api::scan_library(
+                        api_db_path,
+                        api_minimum_duration_seconds,
+                        api_minimum_file_size_bytes,
+                    )?;
                     Ok(output_ok)
                 })())
             }
@@ -5629,6 +5641,7 @@ fn wire__crate__api__scan_music_folder_impl(
             let api_db_path = <String>::sse_decode(&mut deserializer);
             let api_folder_path = <String>::sse_decode(&mut deserializer);
             let api_minimum_duration_seconds = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_minimum_file_size_bytes = <Option<i64>>::sse_decode(&mut deserializer);
             let api_allowed_formats = <Option<Vec<String>>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -5637,6 +5650,7 @@ fn wire__crate__api__scan_music_folder_impl(
                         api_db_path,
                         api_folder_path,
                         api_minimum_duration_seconds,
+                        api_minimum_file_size_bytes,
                         api_allowed_formats,
                     )?;
                     Ok(output_ok)
@@ -5671,6 +5685,7 @@ fn wire__crate__api__scan_saf_songs_commit_impl(
             let api_folder_key = <String>::sse_decode(&mut deserializer);
             let api_songs_json = <String>::sse_decode(&mut deserializer);
             let api_minimum_duration_seconds = <Option<u32>>::sse_decode(&mut deserializer);
+            let api_minimum_file_size_bytes = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, String>((move || {
@@ -5679,6 +5694,7 @@ fn wire__crate__api__scan_saf_songs_commit_impl(
                         api_folder_key,
                         api_songs_json,
                         api_minimum_duration_seconds,
+                        api_minimum_file_size_bytes,
                     )?;
                     Ok(output_ok)
                 })())

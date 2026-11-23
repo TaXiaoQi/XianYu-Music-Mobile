@@ -435,12 +435,16 @@ pub fn scan_music_folder(
     db_path: String,
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<i64>,
     allowed_formats: Option<Vec<String>>,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let options =
-        crate::music::scanner::ScanOptions::new(minimum_duration_seconds, allowed_formats);
+    let options = crate::music::scanner::ScanOptions::new(
+        minimum_duration_seconds,
+        allowed_formats,
+    )
+    .with_minimum_file_size_bytes(minimum_file_size_bytes.map(|v| v.max(0) as u64));
     let cover_cache_dir = crate::music::scanner::derive_cover_cache_dir(&db_path);
     let songs = crate::music::scanner::scan_single_directory_internal(
         folder_path,
@@ -459,8 +463,13 @@ pub fn scan_music_folder(
 pub fn parse_audio_files(
     paths: Vec<String>,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
-    let songs = crate::music::scanner::parse_audio_files(paths, minimum_duration_seconds)?;
+    let songs = crate::music::scanner::parse_audio_files(
+        paths,
+        minimum_duration_seconds,
+        minimum_file_size_bytes.map(|v| v.max(0) as u64),
+    )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
@@ -469,8 +478,13 @@ pub fn parse_audio_files(
 pub fn parse_music_folder(
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
-    let songs = crate::music::scanner::parse_music_folder(folder_path, minimum_duration_seconds)?;
+    let songs = crate::music::scanner::parse_music_folder(
+        folder_path,
+        minimum_duration_seconds,
+        minimum_file_size_bytes.map(|v| v.max(0) as u64),
+    )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
@@ -531,11 +545,13 @@ pub fn scan_saf_songs_commit(
     folder_key: String,
     songs_json: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
     let songs: Vec<crate::music::types::Song> =
         serde_json::from_str(&songs_json).map_err(|e| e.to_string())?;
     let mut conn = open_conn(&db_path)?;
-    let options = crate::music::scanner::ScanOptions::new(minimum_duration_seconds, None);
+    let options = crate::music::scanner::ScanOptions::new(minimum_duration_seconds, None)
+        .with_minimum_file_size_bytes(minimum_file_size_bytes.map(|v| v.max(0) as u64));
     crate::music::scanner::commit_saf_scan_songs(&mut conn, &folder_key, songs, &options)?;
     Ok("ok".to_string())
 }
@@ -989,6 +1005,7 @@ pub fn refresh_folder_songs(
     db_path: String,
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
@@ -997,6 +1014,7 @@ pub fn refresh_folder_songs(
         db_conn,
         folder_path,
         minimum_duration_seconds,
+        minimum_file_size_bytes.map(|v| v.max(0) as u64),
         cover_cache_dir,
     )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
@@ -1894,12 +1912,17 @@ pub fn get_library_song_paths_for_all_view(
 pub fn scan_library(
     db_path: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let shared = std::sync::Arc::new(std::sync::Mutex::new(conn));
     let cover_cache_dir = crate::music::scanner::derive_cover_cache_dir(&db_path);
-    let songs =
-        crate::music::library::scan_library(shared, minimum_duration_seconds, cover_cache_dir)?;
+    let songs = crate::music::library::scan_library(
+        shared,
+        minimum_duration_seconds,
+        minimum_file_size_bytes.map(|v| v.max(0) as u64),
+        cover_cache_dir,
+    )?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 

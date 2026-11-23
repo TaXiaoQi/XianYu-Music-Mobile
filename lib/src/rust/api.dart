@@ -327,11 +327,13 @@ Future<String> scanMusicFolder({
   required String dbPath,
   required String folderPath,
   int? minimumDurationSeconds,
+  PlatformInt64? minimumFileSizeBytes,
   List<String>? allowedFormats,
 }) => RustLib.instance.api.crateApiScanMusicFolder(
   dbPath: dbPath,
   folderPath: folderPath,
   minimumDurationSeconds: minimumDurationSeconds,
+  minimumFileSizeBytes: minimumFileSizeBytes,
   allowedFormats: allowedFormats,
 );
 
@@ -339,9 +341,11 @@ Future<String> scanMusicFolder({
 Future<String> parseAudioFiles({
   required List<String> paths,
   int? minimumDurationSeconds,
+  PlatformInt64? minimumFileSizeBytes,
 }) => RustLib.instance.api.crateApiParseAudioFiles(
   paths: paths,
   minimumDurationSeconds: minimumDurationSeconds,
+  minimumFileSizeBytes: minimumFileSizeBytes,
 );
 
 /// 递归扫描文件夹内全部受支持音频并解析元数据（不写库），返回 `Song[]` JSON。
@@ -349,9 +353,11 @@ Future<String> parseAudioFiles({
 Future<String> parseMusicFolder({
   required String folderPath,
   int? minimumDurationSeconds,
+  PlatformInt64? minimumFileSizeBytes,
 }) => RustLib.instance.api.crateApiParseMusicFolder(
   folderPath: folderPath,
   minimumDurationSeconds: minimumDurationSeconds,
+  minimumFileSizeBytes: minimumFileSizeBytes,
 );
 
 /// Android SAF：从一个已被 Android 侧通过 ContentResolver 打开的 fd 解析单个音频，
@@ -403,11 +409,13 @@ Future<String> scanSafSongsCommit({
   required String folderKey,
   required String songsJson,
   int? minimumDurationSeconds,
+  PlatformInt64? minimumFileSizeBytes,
 }) => RustLib.instance.api.crateApiScanSafSongsCommit(
   dbPath: dbPath,
   folderKey: folderKey,
   songsJson: songsJson,
   minimumDurationSeconds: minimumDurationSeconds,
+  minimumFileSizeBytes: minimumFileSizeBytes,
 );
 
 /// 列出全部远程源（返回 [`RemoteSource`] 数组 JSON）。
@@ -775,10 +783,12 @@ Future<String> refreshFolderSongs({
   required String dbPath,
   required String folderPath,
   int? minimumDurationSeconds,
+  PlatformInt64? minimumFileSizeBytes,
 }) => RustLib.instance.api.crateApiRefreshFolderSongs(
   dbPath: dbPath,
   folderPath: folderPath,
   minimumDurationSeconds: minimumDurationSeconds,
+  minimumFileSizeBytes: minimumFileSizeBytes,
 );
 
 /// 根据歌曲信息构建下载文件名并解析非冲突完整路径（单次调用）。
@@ -1424,9 +1434,11 @@ Future<String> getLibrarySongPathsForAllView({
 Future<String> scanLibrary({
   required String dbPath,
   int? minimumDurationSeconds,
+  PlatformInt64? minimumFileSizeBytes,
 }) => RustLib.instance.api.crateApiScanLibrary(
   dbPath: dbPath,
   minimumDurationSeconds: minimumDurationSeconds,
+  minimumFileSizeBytes: minimumFileSizeBytes,
 );
 
 /// 获取文件夹的直接子目录节点（返回 `FolderNode[]`）。

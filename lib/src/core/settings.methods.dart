@@ -44,6 +44,7 @@ class SettingsStore {
       prefs.setBool('enableScrollToTopButton', next.enableScrollToTopButton),
       prefs.setString('onlineDefaultQuality', next.onlineDefaultQuality),
       prefs.setInt('libraryMinDurationSeconds', next.libraryMinDurationSeconds),
+      prefs.setDouble('libraryMinFileSizeMb', next.libraryMinFileSizeMb),
       prefs.setBool('showLyricsTranslation', next.showLyricsTranslation),
       prefs.setBool('showLyricsRomaji', next.showLyricsRomaji),
       prefs.setString('lyricFontName', next.lyricFontName),
@@ -401,6 +402,8 @@ extension SettingsNotifierMethods on SettingsNotifier {
       _settingsStore.update((s) => s.copyWith(onlineDefaultQuality: q));
   Future<void> setLibraryMinDurationSeconds(int s) =>
       _settingsStore.update((st) => st.copyWith(libraryMinDurationSeconds: s));
+  Future<void> setLibraryMinFileSizeMb(double mb) =>
+      _settingsStore.update((st) => st.copyWith(libraryMinFileSizeMb: mb));
   Future<void> setShowLyricsTranslation(bool v) =>
       _settingsStore.update((s) => s.copyWith(showLyricsTranslation: v));
   Future<void> setShowLyricsRomaji(bool v) =>

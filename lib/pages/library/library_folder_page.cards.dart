@@ -99,13 +99,23 @@ class _ScanHero extends StatelessWidget {
 class _FilterCard extends ConsumerWidget {
   const _FilterCard({
     required this.minDuration,
+    required this.minFileSizeMb,
     required this.onToggle,
     required this.onPick,
+    required this.onToggleSize,
+    required this.onPickSize,
   });
 
   final int minDuration;
+  final double minFileSizeMb;
   final ValueChanged<bool> onToggle;
   final VoidCallback onPick;
+  final ValueChanged<bool> onToggleSize;
+  final VoidCallback onPickSize;
+
+  /// 1.0 → "1"，1.5 → "1.5"，避免界面上出现多余的 ".0"。
+  static String _formatMb(double value) =>
+      value == value.roundToDouble() ? value.toInt().toString() : value.toStringAsFixed(1);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -118,17 +128,34 @@ class _FilterCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(16),
         side: BorderSide.none,
       ),
-      child: ListTile(
-        leading: Icon(Icons.timer_outlined, color: scheme.primary),
-        title: Text(tr('按时长过滤')),
-        subtitle: Text(
-          minDuration > 0
-              ? tr('已过滤时长小于 {n} 秒的音频文件', {'n': minDuration})
-              : tr('可过滤掉时长过短的音频文件（点按调整阈值）'),
-          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-        ),
-        trailing: Switch(value: minDuration > 0, onChanged: onToggle),
-        onTap: onPick,
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(Icons.timer_outlined, color: scheme.primary),
+            title: Text(tr('按时长过滤')),
+            subtitle: Text(
+              minDuration > 0
+                  ? tr('已过滤时长小于 {n} 秒的音频文件', {'n': minDuration})
+                  : tr('可过滤掉时长过短的音频文件（点按调整阈值）'),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            trailing: Switch(value: minDuration > 0, onChanged: onToggle),
+            onTap: onPick,
+          ),
+          Divider(height: 1, indent: 56, color: scheme.outlineVariant),
+          ListTile(
+            leading: Icon(Icons.sd_storage_outlined, color: scheme.primary),
+            title: Text(tr('按文件大小过滤')),
+            subtitle: Text(
+              minFileSizeMb > 0
+                  ? tr('已过滤小于 {n} MB 的音频文件', {'n': _formatMb(minFileSizeMb)})
+                  : tr('可过滤掉体积过小的音频文件（点按调整阈值）'),
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+            trailing: Switch(value: minFileSizeMb > 0, onChanged: onToggleSize),
+            onTap: onPickSize,
+          ),
+        ],
       ),
     );
     return PressableScale(child: card);

@@ -222,6 +222,7 @@ class AppBackupService {
     'showQualityBadges': s.showQualityBadges,
     'onlineDefaultQuality': s.onlineDefaultQuality,
     'libraryMinDurationSeconds': s.libraryMinDurationSeconds,
+    'libraryMinFileSizeMb': s.libraryMinFileSizeMb,
     'showLyricsTranslation': s.showLyricsTranslation,
     'enableWordEffect': s.enableWordEffect,
     'downloadPath': s.downloadPath,
@@ -512,6 +513,9 @@ class AppBackupService {
       showQualityBadges: asBool('showQualityBadges'),
       onlineDefaultQuality: asStr('onlineDefaultQuality'),
       libraryMinDurationSeconds: asInt('libraryMinDurationSeconds'),
+      libraryMinFileSizeMb: j['libraryMinFileSizeMb'] is num
+          ? (j['libraryMinFileSizeMb'] as num).toDouble()
+          : null,
       showLyricsTranslation: asBool('showLyricsTranslation'),
       enableWordEffect: asBool('enableWordEffect'),
       downloadPath: asStr('downloadPath'),

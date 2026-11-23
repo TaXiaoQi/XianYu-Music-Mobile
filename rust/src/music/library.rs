@@ -8,7 +8,7 @@ use super::types::{AlbumCatalogItem, ArtistCatalogItem, FolderNode, LibraryFolde
 use super::utils::{
     // 实现
     clamp_i64_to_u32,
-    descendant_like_patterns,
+    descendant_prefixes,
     i64_to_u64_opt,
     i64_to_u8_opt,
     normalize_path,
@@ -91,20 +91,20 @@ fn remove_library_folder_from_conn(
         rows
     };
 
-    let (forward_like, backward_like) = descendant_like_patterns(folder_path);
+    let (prefix_forward, prefix_back) = descendant_prefixes(folder_path);
     let candidate_paths = {
         let mut stmt = tx
             .prepare(
                 "SELECT path
                  FROM songs
                  WHERE path = ?1 
-                    OR path LIKE ?2 ESCAPE '^' 
-                    OR path LIKE ?3 ESCAPE '^'",
+                    OR substr(path, 1, length(?2)) = ?2 
+                    OR substr(path, 1, length(?3)) = ?3",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(
-                rusqlite::params![folder_path, forward_like, backward_like],
+                rusqlite::params![folder_path, prefix_forward, prefix_back],
                 |row| row.get::<_, String>(0),
             )
             .map_err(|e| e.to_string())?
@@ -450,7 +450,10 @@ fn parse_song_from_row(row: &rusqlite::Row) -> rusqlite::Result<LibrarySong> {
 const SONG_SELECT_COLUMNS: &str = "id, path, title, artist, artist_names, effective_artist_names, album, album_artist, album_key, is_various_artists_album, collapse_artist_credits, duration, cover_thumb_path, bitrate, sample_rate, bit_depth, format, container, codec, file_size, track_number, disc_number, added_at, file_modified_at, cue_source_path, cue_start_offset, cue_end_offset, source_type, remote_source_id, comment";
 
 fn load_cached_songs(conn: &Connection) -> Result<Vec<LibrarySong>, String> {
-    let sql = format!("SELECT {} FROM songs", SONG_SELECT_COLUMNS);
+    let sql = format!(
+        "SELECT {} FROM songs WHERE COALESCE(scan_excluded, 0) = 0",
+        SONG_SELECT_COLUMNS
+    );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
 
     let rows = stmt
@@ -539,7 +542,10 @@ fn search_cached_songs(
                 .any(|v| v.contains(needle) || v.replace(' ', "").contains(needle))
     };
 
-    let sql = format!("SELECT {} FROM songs", SONG_SELECT_COLUMNS);
+    let sql = format!(
+        "SELECT {} FROM songs WHERE COALESCE(scan_excluded, 0) = 0",
+        SONG_SELECT_COLUMNS
+    );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], parse_song_from_row)
@@ -577,8 +583,10 @@ pub fn get_library_folders(conn: &Connection) -> Result<Vec<LibraryFolder>, Stri
         .filter_map(|r| r.ok())
         .collect();
 
+    let paths = dedupe_library_roots(paths);
+
     let mut song_stmt = conn
-        .prepare("SELECT path FROM songs")
+        .prepare("SELECT path FROM songs WHERE COALESCE(scan_excluded, 0) = 0")
         .map_err(|e| e.to_string())?;
     let song_paths: Vec<String> = song_stmt
         .query_map([], |row| row.get(0))
@@ -603,6 +611,39 @@ pub fn get_library_folders(conn: &Connection) -> Result<Vec<LibraryFolder>, Stri
 
 pub fn add_library_folder(conn: &Connection, path: String) -> Result<(), String> {
     let normalized = normalize_path(&path);
+    let key = folder_path_key(&normalized);
+    if key.is_empty() {
+        return Ok(());
+    }
+
+    let existing: Vec<String> = conn
+        .prepare("SELECT path FROM library_folders")
+        .map_err(|e| e.to_string())?
+        .query_map([], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|row| row.ok())
+        .collect();
+
+    // 同一个真实目录（含仅大小写不同）或已被更上层目录覆盖：无需重复登记。
+    for root in &existing {
+        let root_key = folder_path_key(root);
+        if root_key.is_empty() {
+            continue;
+        }
+        if key == root_key || key.starts_with(&format!("{root_key}/")) {
+            return Ok(());
+        }
+    }
+
+    // 新目录是部分已登记目录的祖先：用上层目录替换下层登记（歌曲记录保留）。
+    for root in &existing {
+        let root_key = folder_path_key(root);
+        if root_key.starts_with(&format!("{key}/")) {
+            conn.execute("DELETE FROM library_folders WHERE path = ?1", [root])
+                .ok();
+        }
+    }
+
     conn.execute(
         "INSERT OR REPLACE INTO library_folders (path, added_at) VALUES (?1, ?2)",
         [
@@ -616,6 +657,33 @@ pub fn add_library_folder(conn: &Connection, path: String) -> Result<(), String>
     )
     .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// 路径大小写不敏感键：用于识别 `Download` / `download` 这类同一目录的重复登记。
+fn folder_path_key(path: &str) -> String {
+    path.trim_end_matches(['/', '\\'])
+        .replace('\\', "/")
+        .to_ascii_lowercase()
+}
+
+/// 去掉重复、互相包含的登记目录，避免目录页把同一批歌曲重复计数。
+fn dedupe_library_roots(roots: Vec<String>) -> Vec<String> {
+    let mut kept: Vec<(String, String)> = Vec::new();
+    for root in roots {
+        let key = folder_path_key(&root);
+        if key.is_empty() {
+            continue;
+        }
+        let covered = kept.iter().any(|(_, existing)| {
+            key == *existing || key.starts_with(&format!("{existing}/"))
+        });
+        if covered {
+            continue;
+        }
+        kept.retain(|(_, existing)| !existing.starts_with(&format!("{key}/")));
+        kept.push((root, key));
+    }
+    kept.into_iter().map(|(root, _)| root).collect()
 }
 
 pub fn remove_library_folder(conn: &mut Connection, path: String) -> Result<(), String> {
@@ -657,12 +725,15 @@ pub fn get_library_artist_catalog(conn: &Connection) -> Result<Vec<ArtistCatalog
                         FROM song_artists AS nested_song_artists
                         JOIN songs ON songs.id = nested_song_artists.song_id
                         WHERE nested_song_artists.artist_id = artists.id
+                          AND COALESCE(songs.scan_excluded, 0) = 0
                         ORDER BY songs.added_at DESC, songs.id ASC
                         LIMIT 1
                     ), ''),
                     artists.avatar_path
              FROM artists
              JOIN song_artists ON song_artists.artist_id = artists.id
+             JOIN songs ON songs.id = song_artists.song_id
+             WHERE COALESCE(songs.scan_excluded, 0) = 0
              GROUP BY artists.id, artists.name
              ORDER BY artists.name COLLATE NOCASE ASC",
         )
@@ -699,11 +770,13 @@ pub fn get_library_album_catalog(conn: &Connection) -> Result<Vec<AlbumCatalogIt
                         AND COALESCE(NULLIF(TRIM(nested.album), ''), 'Unknown') = COALESCE(NULLIF(TRIM(songs.album), ''), 'Unknown')
                         AND COALESCE(NULLIF(TRIM(nested.album_artist), ''), NULLIF(TRIM(nested.artist), ''), 'Unknown')
                             = COALESCE(NULLIF(TRIM(songs.album_artist), ''), NULLIF(TRIM(songs.artist), ''), 'Unknown')
+                        AND COALESCE(nested.scan_excluded, 0) = 0
                     )
                     ORDER BY nested.added_at DESC, nested.id ASC
                     LIMIT 1
                 ), '') AS first_song_path
              FROM songs
+             WHERE COALESCE(scan_excluded, 0) = 0
              GROUP BY
                 COALESCE(NULLIF(TRIM(album_key), ''), ''),
                 COALESCE(NULLIF(TRIM(album), ''), 'Unknown'),
@@ -752,6 +825,7 @@ pub fn get_library_song_paths_by_artist(
              JOIN song_artists ON song_artists.song_id = songs.id
              JOIN artists ON artists.id = song_artists.artist_id
              WHERE artists.name = ?1 COLLATE NOCASE
+               AND COALESCE(songs.scan_excluded, 0) = 0
              GROUP BY songs.id, songs.path
              ORDER BY COALESCE(NULLIF(TRIM(songs.title), ''), songs.path) COLLATE NOCASE ASC",
         )
@@ -780,6 +854,7 @@ pub fn get_library_song_paths_by_album(
                   COALESCE(NULLIF(TRIM(album_artist), ''), NULLIF(TRIM(artist), ''), 'Unknown')
                 )
              ) = LOWER(?1)
+               AND COALESCE(scan_excluded, 0) = 0
              ORDER BY COALESCE(NULLIF(TRIM(title), ''), path) COLLATE NOCASE ASC",
         )
         .map_err(|e| e.to_string())?;
@@ -802,7 +877,7 @@ pub fn get_library_song_paths_for_all_view(
     let mut sql = String::from(
         "SELECT songs.path
          FROM songs
-         WHERE 1 = 1",
+         WHERE COALESCE(songs.scan_excluded, 0) = 0",
     );
     let mut params: Vec<String> = Vec::new();
 
@@ -931,20 +1006,21 @@ pub fn get_library_song_paths_for_folder_view(
 ) -> Result<Vec<String>, String> {
     // 实现
     let normalized_folder = normalize_path(&folder_path);
-    let (forward_like, backward_like) = super::utils::descendant_like_patterns(&normalized_folder);
+    let (prefix_forward, prefix_back) = descendant_prefixes(&normalized_folder);
     let mut stmt = conn
         .prepare(
             "SELECT path, title, artist, artist_names, effective_artist_names, album, album_artist, added_at, track_number, disc_number
              FROM songs
-             WHERE path = ?1
-                OR path LIKE ?2 ESCAPE '^'
-                OR path LIKE ?3 ESCAPE '^'",
+             WHERE COALESCE(scan_excluded, 0) = 0
+               AND (path = ?1
+                OR substr(path, 1, length(?2)) = ?2
+                OR substr(path, 1, length(?3)) = ?3)",
         )
         .map_err(|e| e.to_string())?;
 
     let rows = stmt
         .query_map(
-            rusqlite::params![normalized_folder, forward_like, backward_like],
+            rusqlite::params![normalized_folder, prefix_forward, prefix_back],
             |row| {
                 Ok(FolderViewSongRow {
                     path: row.get::<_, String>(0)?,
@@ -1059,22 +1135,24 @@ pub fn get_library_song_paths_for_folder_view(
 pub fn scan_library(
     db_conn: Arc<Mutex<Connection>>,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<u64>,
     cover_cache_dir: Option<PathBuf>,
 ) -> Result<Vec<LibrarySong>, String> {
     // 实现
-    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+        .with_minimum_file_size_bytes(minimum_file_size_bytes);
 
     let folder_paths: Vec<String> = {
         let conn = db_conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare("SELECT path FROM library_folders")
             .map_err(|e| e.to_string())?;
-        let rows = stmt
+        let rows: Vec<String> = stmt
             .query_map([], |row| row.get(0))
             .map_err(|e| e.to_string())?
             .filter_map(|r| r.ok())
             .collect();
-        rows
+        dedupe_library_roots(rows)
     };
 
     let folder_total = folder_paths.len();
@@ -1105,12 +1183,14 @@ pub fn get_library_hierarchy(conn: &Connection) -> Result<Vec<FolderNode>, Strin
         .filter_map(|r| r.ok())
         .collect();
 
+    let roots = dedupe_library_roots(roots);
+
     // SAF 根（content:// tree）无法用文件系统 read_dir 构建层级，改为按歌曲
     // path（`{tree}/document/{docId}`）在内存中聚合出目录树。
     let has_saf_root = roots.iter().any(|r| r.starts_with("content://"));
     let all_song_paths: Vec<String> = if has_saf_root {
         let mut s = conn
-            .prepare("SELECT path FROM songs")
+            .prepare("SELECT path FROM songs WHERE COALESCE(scan_excluded, 0) = 0")
             .map_err(|e| e.to_string())?;
         let rows = s
             .query_map([], |row| row.get::<_, String>(0))
@@ -1377,7 +1457,8 @@ mod tests {
                 cue_end_offset INTEGER, 
                 source_type TEXT, 
                 remote_source_id TEXT, 
-                comment TEXT 
+                comment TEXT,
+                scan_excluded INTEGER NOT NULL DEFAULT 0
             )",
             [],
         )

@@ -1,4 +1,4 @@
-use super::super::utils::{descendant_like_patterns, is_cue_file_extension, normalize_path};
+use super::super::utils::{descendant_prefixes, is_cue_file_extension, normalize_path};
 use super::parser::{
     // 实现
     build_cue_track_song,
@@ -33,7 +33,18 @@ pub(super) struct ScanDiff {
     pub(super) to_add: Vec<Song>,
     pub(super) to_update: Vec<Song>,
     pub(super) to_delete: Vec<String>,
+    /// 通过时长/体积门槛的歌曲路径：扫描后清除 scan_excluded 标记。
+    pub(super) to_include: Vec<String>,
+    /// 未通过门槛的歌曲路径：保留记录但标记 scan_excluded，不再物理删除。
+    pub(super) to_exclude: Vec<String>,
     pub(super) has_disk_songs: bool,
+}
+
+/// 磁盘候选集合：`cue_referenced_audio` 是被 CUE 接管的整轨文件，
+/// 它们需要连同库内旧记录一起移除（由 CUE 分轨取代），属于有意删除。
+struct DiskCandidates {
+    candidates: Vec<DiskCandidate>,
+    cue_referenced_audio: HashSet<String>,
 }
 
 struct DiskCandidate {
@@ -54,20 +65,23 @@ struct ParseTask {
 
 struct ParsedTaskResult {
     index: usize,
-    path_str: String,
     song: Option<Song>,
     is_add: bool,
 }
 
 fn song_meets_duration_threshold(song: &Song, options: &ScanOptions) -> bool {
-    options.minimum_duration_seconds == 0 || song.duration >= options.minimum_duration_seconds
+    let duration_ok =
+        options.minimum_duration_seconds == 0 || song.duration >= options.minimum_duration_seconds;
+    let size_ok = options.minimum_file_size_bytes == 0
+        || song.file_size >= options.minimum_file_size_bytes;
+    duration_ok && size_ok
 }
 
 pub(super) fn load_db_snapshot_for_folder(
     conn: &rusqlite::Connection,
     normalized_folder: &str,
 ) -> Result<HashMap<String, DbSongSnapshot>, String> {
-    let (pattern_forward, pattern_back) = descendant_like_patterns(normalized_folder);
+    let (prefix_forward, prefix_back) = descendant_prefixes(normalized_folder);
     let mut snapshot = HashMap::new();
 
     let mut stmt = conn
@@ -75,14 +89,14 @@ pub(super) fn load_db_snapshot_for_folder(
                 "SELECT id, path, title, artist, artist_names, effective_artist_names, album, album_artist, album_key, is_various_artists_album, collapse_artist_credits, duration, cover_thumb_path, bitrate, sample_rate, bit_depth, format, container, codec, file_size, track_number, disc_number, added_at, file_modified_at, cue_source_path, cue_start_offset, cue_end_offset, comment 
              FROM songs
              WHERE path = ?1 
-                OR path LIKE ?2 ESCAPE '^' 
-                OR path LIKE ?3 ESCAPE '^'", 
+                OR substr(path, 1, length(?2)) = ?2 
+                OR substr(path, 1, length(?3)) = ?3", 
         )
         .map_err(|error| error.to_string())?; // 实现
 
     let rows = stmt
         .query_map(
-            params![normalized_folder, pattern_forward, pattern_back],
+            params![normalized_folder, prefix_forward, prefix_back],
             |row| {
                 let path: String = row.get(1)?;
                 let duration = clamp_i64_to_u32(row.get::<_, Option<i64>>(11)?.unwrap_or(0));
@@ -159,7 +173,7 @@ fn collect_disk_candidates(
     normalized_folder: &str,
     reporter: Option<&ScanProgressReporter>,
     options: &ScanOptions,
-) -> Vec<DiskCandidate> {
+) -> DiskCandidates {
     let mut candidates = Vec::new();
     let mut discovered = 0usize;
 
@@ -281,13 +295,16 @@ fn collect_disk_candidates(
         );
     }
 
-    candidates
+    DiskCandidates {
+        candidates,
+        cue_referenced_audio,
+    }
 }
 
 fn parse_tasks_in_parallel(
     tasks: Vec<ParseTask>,
     reporter: Option<ScanProgressReporter>,
-    options: &ScanOptions,
+    _options: &ScanOptions,
 ) -> Result<Vec<ParsedTaskResult>, String> {
     if tasks.is_empty() {
         return Ok(Vec::new());
@@ -310,22 +327,10 @@ fn parse_tasks_in_parallel(
                     reporter.advance_parsing(total);
                 }
 
-                parsed.and_then(|song| {
-                    if song_meets_duration_threshold(&song, options) {
-                        return Some(ParsedTaskResult {
-                            index: task.index,
-                            path_str: task.path_str,
-                            song: Some(song),
-                            is_add: task.is_add,
-                        });
-                    }
-
-                    (!task.is_add).then(|| ParsedTaskResult {
-                        index: task.index,
-                        path_str: task.path_str,
-                        song: None,
-                        is_add: task.is_add,
-                    })
+                parsed.map(|song| ParsedTaskResult {
+                    index: task.index,
+                    song: Some(song),
+                    is_add: task.is_add,
                 })
             })
             .collect()
@@ -367,7 +372,7 @@ fn probe_audio_duration_ms(path: &Path) -> Option<u32> {
     Some((seconds.min(u32::MAX as u64) * 1000) as u32)
 }
 
-fn process_cue_parse_tasks(tasks: &[ParseTask], options: &ScanOptions) -> Vec<ParsedTaskResult> {
+fn process_cue_parse_tasks(tasks: &[ParseTask], _options: &ScanOptions) -> Vec<ParsedTaskResult> {
     if tasks.is_empty() {
         return Vec::new();
     }
@@ -413,21 +418,11 @@ fn process_cue_parse_tasks(tasks: &[ParseTask], options: &ScanOptions) -> Vec<Pa
                 sheet.album_performer.as_deref(),
                 flac_duration_ms,
             ) {
-                if song_meets_duration_threshold(&song, options) {
-                    results.push(ParsedTaskResult {
-                        index: task.index,
-                        path_str: task.path_str.clone(),
-                        song: Some(song),
-                        is_add: task.is_add,
-                    });
-                } else if !task.is_add {
-                    results.push(ParsedTaskResult {
-                        index: task.index,
-                        path_str: task.path_str.clone(),
-                        song: None,
-                        is_add: task.is_add,
-                    });
-                }
+                results.push(ParsedTaskResult {
+                    index: task.index,
+                    song: Some(song),
+                    is_add: task.is_add,
+                });
             }
         }
     }
@@ -441,7 +436,8 @@ pub(super) fn collect_scan_diff(
     reporter: Option<&ScanProgressReporter>,
     options: &ScanOptions,
 ) -> Result<ScanDiff, String> {
-    let candidates = collect_disk_candidates(normalized_folder, reporter, options);
+    let disk = collect_disk_candidates(normalized_folder, reporter, options);
+    let candidates = disk.candidates;
     let has_disk_songs = !candidates.is_empty();
     let mut songs_by_index: Vec<Option<Song>> = vec![None; candidates.len()];
     let mut parse_tasks = Vec::new();
@@ -462,10 +458,9 @@ pub(super) fn collect_scan_diff(
                     ext: candidate.ext.clone(),
                     is_add: false,
                 });
-            } else if song_meets_duration_threshold(&db_info.song, options) {
-                songs_by_index[candidate_index] = Some(db_info.song);
             } else {
-                to_delete.push(candidate.path_str.clone());
+                // 即使当前不满足门槛也保留记录，扫描结束后统一标记 excluded。
+                songs_by_index[candidate_index] = Some(db_info.song);
             }
         } else {
             parse_tasks.push(ParseTask {
@@ -502,9 +497,9 @@ pub(super) fn collect_scan_diff(
             } else {
                 to_update.push(song);
             }
-        } else if !result.is_add {
-            to_delete.push(result.path_str);
         }
+        // 解析失败不再删除库内旧记录：可能是暂时无权限/文件被占用/解码器缺失，
+        // 保留记录避免"越扫越少"，只有确认文件已不存在时才在下方统一清理。
     }
 
     // Merge CUE track results
@@ -516,15 +511,37 @@ pub(super) fn collect_scan_diff(
             } else {
                 to_update.push(song);
             }
-        } else if !result.is_add {
-            to_delete.push(result.path_str);
         }
     }
 
     let mut songs: Vec<Song> = songs_by_index.into_iter().flatten().collect();
-    to_delete.extend(db_snapshot.keys().cloned());
+
+    // 被 CUE 接管的整轨文件：用分轨取代原始行，属于有意删除。
+    for path in &disk.cue_referenced_audio {
+        if db_snapshot.remove(path).is_some() {
+            to_delete.push(path.clone());
+        }
+    }
+
+    // 其余旧记录：只有确认文件已不存在（ENOENT）才删除。
+    for (path, _) in db_snapshot.iter() {
+        if is_confirmed_missing_on_disk(path) {
+            to_delete.push(path.clone());
+        }
+    }
 
     enrich_album_groups(&mut songs);
+
+    // 时长/体积门槛只做标记，不做物理删除。
+    let mut to_include = Vec::with_capacity(songs.len());
+    let mut to_exclude = Vec::new();
+    for song in &songs {
+        if song_meets_duration_threshold(song, options) {
+            to_include.push(song.path.clone());
+        } else {
+            to_exclude.push(song.path.clone());
+        }
+    }
 
     let song_by_path: HashMap<String, Song> = songs
         .iter()
@@ -547,6 +564,26 @@ pub(super) fn collect_scan_diff(
         to_add,
         to_update,
         to_delete,
+        to_include,
+        to_exclude,
         has_disk_songs,
     })
+}
+
+/// 只有确认磁盘上文件已不存在时才允许删除库记录（ENOENT）。
+/// 无权限、读取失败、CUE 分轨等一律保留，避免一次异常扫描把歌删光。
+fn is_confirmed_missing_on_disk(path_str: &str) -> bool {
+    if path_str.starts_with("content://") {
+        // SAF 内容 URI 无法用 std::fs 探测，交给移除登记目录时清理。
+        return false;
+    }
+    if let Some((cue_path, _)) = path_str.split_once("::track") {
+        // CUE 分轨以 CUE 文件是否存在为准；CUE 仍在时无法判定分轨被移除，保守保留。
+        return std::fs::metadata(cue_path)
+            .map(|_| false)
+            .unwrap_or_else(|error| error.kind() == std::io::ErrorKind::NotFound);
+    }
+    std::fs::metadata(path_str)
+        .map(|_| false)
+        .unwrap_or_else(|error| error.kind() == std::io::ErrorKind::NotFound)
 }

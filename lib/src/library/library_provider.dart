@@ -336,6 +336,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     final settings = _ref.read(settingsProvider).valueOrNull;
     final selectedFormats = settings?.scanFormats ?? kSupportedScanFormats;
     final minDuration = settings?.libraryMinDurationSeconds ?? 0;
+    final minFileSizeMb = settings?.libraryMinFileSizeMb ?? 0;
+    final minFileSizeBytes = (minFileSizeMb * 1024 * 1024).round();
 
     final allowed = <String>[
       for (final f in selectedFormats) ...(_formatExtensions[f] ?? [f]),
@@ -360,6 +362,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
           folder,
           allowed,
           minDuration,
+          minFileSizeBytes,
         );
       } on FolderUnauthorizedException catch (e) {
         errors.add(e.toString());
@@ -416,9 +419,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     String folder,
     List<String> allowed,
     int minDuration,
+    int minFileSizeBytes,
   ) async {
     if (SafChannel.isSafTree(folder)) {
-      return _scanSafTree(dbPath, folder, allowed, minDuration);
+      return _scanSafTree(dbPath, folder, allowed, minDuration, minFileSizeBytes);
     }
     // iOS 书签目录：扫描前拉起访问授权；解析出的真实路径可能与登记
     // 路径不同（iCloud 重新挂载），按解析路径扫描。失败 → 目录失效。
@@ -434,6 +438,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       dbPath: dbPath,
       folderPath: scanPath,
       minimumDurationSeconds: minDuration > 0 ? minDuration : null,
+      minimumFileSizeBytes: minFileSizeBytes > 0 ? minFileSizeBytes : null,
       allowedFormats: allowed,
     );
     return (jsonDecode(songsJson) as List).length;
@@ -444,6 +449,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     String treeUri,
     List<String> allowed,
     int minDuration,
+    int minFileSizeBytes,
   ) async {
     if (!await SafChannel.isTreeAvailable(treeUri)) {
       throw FolderUnauthorizedException(
@@ -531,6 +537,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       folderKey: folderKey,
       songsJson: jsonEncode(songs),
       minimumDurationSeconds: minDuration > 0 ? minDuration : null,
+      minimumFileSizeBytes: minFileSizeBytes > 0 ? minFileSizeBytes : null,
     );
     return songs.length;
   }

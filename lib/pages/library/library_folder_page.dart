@@ -61,6 +61,9 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
 
   int _lastDuration = 60;
 
+  /// 「按文件大小过滤」开启时使用的阈值（MB）。
+  double _lastFileSizeMb = 1;
+
   /// 横屏右列当前展示的网盘（null = 本地已扫描目录树）：
   /// 点左列网盘项内嵌展示已选文件夹，对齐桌面端树形态，不跳全屏浏览器
   MapEntry<CloudProvider, CloudAccount>? _cloudDrive;
@@ -89,17 +92,35 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
     Future.microtask(_seedSandboxFolders);
   }
 
+  // 必须与 Rust `SUPPORTED_LIBRARY_EXTENSIONS` 保持一致：
+  // 少一种会让文件"看得见却永远扫不进来"，多一种（如 wma）则永远解析失败。
   static const _audioExts = [
-    'mp3',
+    'aac',
+    'aif',
+    'aiff',
+    'ape',
+    'dff',
+    'dsf',
     'flac',
     'm4a',
-    'aac',
-    'wav',
+    'm4b',
+    'mp3',
+    'mp4',
+    'oga',
     'ogg',
     'opus',
-    'ape',
-    'wma',
-    'aiff',
+    'wav',
+    'wv',
+    'mgg',
+    'mgg0',
+    'mggl',
+    'mflac',
+    'mflac0',
+    'qmc0',
+    'qmc2',
+    'qmc3',
+    'qmcflac',
+    'qmcogg',
   ];
 
   @override
@@ -111,6 +132,8 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
     final foldersAsync = ref.watch(scanFoldersProvider);
     final minDuration =
         ref.watch(settingsProvider).valueOrNull?.libraryMinDurationSeconds ?? 0;
+    final minFileSizeMb =
+        ref.watch(settingsProvider).valueOrNull?.libraryMinFileSizeMb ?? 0;
 
     final tiles = <Widget>[];
     _buildNodes(context, root, tiles);
@@ -125,6 +148,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
         lost: lost,
         foldersAsync: foldersAsync,
         minDuration: minDuration,
+        minFileSizeMb: minFileSizeMb,
         tiles: tiles,
       );
     }
@@ -136,6 +160,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
         lost: lost,
         foldersAsync: foldersAsync,
         minDuration: minDuration,
+        minFileSizeMb: minFileSizeMb,
         tiles: tiles,
       ),
       landscape: _buildLandscape(
@@ -144,6 +169,7 @@ class _LibraryFolderPageState extends ConsumerState<LibraryFolderPage>
         lost: lost,
         foldersAsync: foldersAsync,
         minDuration: minDuration,
+        minFileSizeMb: minFileSizeMb,
         tiles: tiles,
       ),
     );

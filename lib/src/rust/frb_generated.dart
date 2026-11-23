@@ -511,6 +511,7 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiParseAudioFiles({
     required List<String> paths,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   });
 
   Future<String> crateApiParseAudioFromFdAndroid({
@@ -532,6 +533,7 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiParseMusicFolder({
     required String folderPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   });
 
   Future<void> crateApiPauseUsbExclusive();
@@ -609,6 +611,7 @@ abstract class RustLibApi extends BaseApi {
     required String dbPath,
     required String folderPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   });
 
   Future<String> crateApiRemotePlaybackSource({
@@ -713,12 +716,14 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiScanLibrary({
     required String dbPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   });
 
   Future<String> crateApiScanMusicFolder({
     required String dbPath,
     required String folderPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
     List<String>? allowedFormats,
   });
 
@@ -727,6 +732,7 @@ abstract class RustLibApi extends BaseApi {
     required String folderKey,
     required String songsJson,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   });
 
   Future<String> crateApiSearchLibrarySongs({
@@ -4584,6 +4590,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateApiParseAudioFiles({
     required List<String> paths,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4591,6 +4598,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_String(paths, serializer);
           sse_encode_opt_box_autoadd_u_32(minimumDurationSeconds, serializer);
+          sse_encode_opt_box_autoadd_i_64(minimumFileSizeBytes, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4603,7 +4611,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiParseAudioFilesConstMeta,
-        argValues: [paths, minimumDurationSeconds],
+        argValues: [paths, minimumDurationSeconds, minimumFileSizeBytes],
         apiImpl: this,
       ),
     );
@@ -4611,7 +4619,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiParseAudioFilesConstMeta => const TaskConstMeta(
     debugName: "parse_audio_files",
-    argNames: ["paths", "minimumDurationSeconds"],
+    argNames: ["paths", "minimumDurationSeconds", "minimumFileSizeBytes"],
   );
 
   @override
@@ -4724,6 +4732,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateApiParseMusicFolder({
     required String folderPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -4731,6 +4740,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(folderPath, serializer);
           sse_encode_opt_box_autoadd_u_32(minimumDurationSeconds, serializer);
+          sse_encode_opt_box_autoadd_i_64(minimumFileSizeBytes, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4743,7 +4753,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiParseMusicFolderConstMeta,
-        argValues: [folderPath, minimumDurationSeconds],
+        argValues: [folderPath, minimumDurationSeconds, minimumFileSizeBytes],
         apiImpl: this,
       ),
     );
@@ -4751,7 +4761,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiParseMusicFolderConstMeta => const TaskConstMeta(
     debugName: "parse_music_folder",
-    argNames: ["folderPath", "minimumDurationSeconds"],
+    argNames: ["folderPath", "minimumDurationSeconds", "minimumFileSizeBytes"],
   );
 
   @override
@@ -5388,6 +5398,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String folderPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5396,6 +5407,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(folderPath, serializer);
           sse_encode_opt_box_autoadd_u_32(minimumDurationSeconds, serializer);
+          sse_encode_opt_box_autoadd_i_64(minimumFileSizeBytes, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5408,7 +5420,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiRefreshFolderSongsConstMeta,
-        argValues: [dbPath, folderPath, minimumDurationSeconds],
+        argValues: [
+          dbPath,
+          folderPath,
+          minimumDurationSeconds,
+          minimumFileSizeBytes,
+        ],
         apiImpl: this,
       ),
     );
@@ -5416,7 +5433,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiRefreshFolderSongsConstMeta => const TaskConstMeta(
     debugName: "refresh_folder_songs",
-    argNames: ["dbPath", "folderPath", "minimumDurationSeconds"],
+    argNames: [
+      "dbPath",
+      "folderPath",
+      "minimumDurationSeconds",
+      "minimumFileSizeBytes",
+    ],
   );
 
   @override
@@ -6057,6 +6079,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateApiScanLibrary({
     required String dbPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6064,6 +6087,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(dbPath, serializer);
           sse_encode_opt_box_autoadd_u_32(minimumDurationSeconds, serializer);
+          sse_encode_opt_box_autoadd_i_64(minimumFileSizeBytes, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6076,7 +6100,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiScanLibraryConstMeta,
-        argValues: [dbPath, minimumDurationSeconds],
+        argValues: [dbPath, minimumDurationSeconds, minimumFileSizeBytes],
         apiImpl: this,
       ),
     );
@@ -6084,7 +6108,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiScanLibraryConstMeta => const TaskConstMeta(
     debugName: "scan_library",
-    argNames: ["dbPath", "minimumDurationSeconds"],
+    argNames: ["dbPath", "minimumDurationSeconds", "minimumFileSizeBytes"],
   );
 
   @override
@@ -6092,6 +6116,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String dbPath,
     required String folderPath,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
     List<String>? allowedFormats,
   }) {
     return handler.executeNormal(
@@ -6101,6 +6126,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(dbPath, serializer);
           sse_encode_String(folderPath, serializer);
           sse_encode_opt_box_autoadd_u_32(minimumDurationSeconds, serializer);
+          sse_encode_opt_box_autoadd_i_64(minimumFileSizeBytes, serializer);
           sse_encode_opt_list_String(allowedFormats, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -6114,7 +6140,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiScanMusicFolderConstMeta,
-        argValues: [dbPath, folderPath, minimumDurationSeconds, allowedFormats],
+        argValues: [
+          dbPath,
+          folderPath,
+          minimumDurationSeconds,
+          minimumFileSizeBytes,
+          allowedFormats,
+        ],
         apiImpl: this,
       ),
     );
@@ -6126,6 +6158,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "dbPath",
       "folderPath",
       "minimumDurationSeconds",
+      "minimumFileSizeBytes",
       "allowedFormats",
     ],
   );
@@ -6136,6 +6169,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String folderKey,
     required String songsJson,
     int? minimumDurationSeconds,
+    PlatformInt64? minimumFileSizeBytes,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -6145,6 +6179,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(folderKey, serializer);
           sse_encode_String(songsJson, serializer);
           sse_encode_opt_box_autoadd_u_32(minimumDurationSeconds, serializer);
+          sse_encode_opt_box_autoadd_i_64(minimumFileSizeBytes, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -6157,7 +6192,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiScanSafSongsCommitConstMeta,
-        argValues: [dbPath, folderKey, songsJson, minimumDurationSeconds],
+        argValues: [
+          dbPath,
+          folderKey,
+          songsJson,
+          minimumDurationSeconds,
+          minimumFileSizeBytes,
+        ],
         apiImpl: this,
       ),
     );
@@ -6165,7 +6206,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiScanSafSongsCommitConstMeta => const TaskConstMeta(
     debugName: "scan_saf_songs_commit",
-    argNames: ["dbPath", "folderKey", "songsJson", "minimumDurationSeconds"],
+    argNames: [
+      "dbPath",
+      "folderKey",
+      "songsJson",
+      "minimumDurationSeconds",
+      "minimumFileSizeBytes",
+    ],
   );
 
   @override

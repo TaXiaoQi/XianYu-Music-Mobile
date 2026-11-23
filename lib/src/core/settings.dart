@@ -233,6 +233,7 @@ class AppSettings {
     this.enableScrollToTopButton = true,
     this.onlineDefaultQuality = '320k',
     this.libraryMinDurationSeconds = 0,
+    this.libraryMinFileSizeMb = 0,
     this.showLyricsTranslation = true,
     this.enableWordEffect = true,
     this.downloadPath = '',
@@ -365,6 +366,9 @@ class AppSettings {
   final bool enableScrollToTopButton;
   final String onlineDefaultQuality;
   final int libraryMinDurationSeconds;
+
+  /// 曲库最小文件大小（MB），0 表示不按体积过滤。
+  final double libraryMinFileSizeMb;
   final bool showLyricsTranslation;
 
   final bool showLyricsRomaji;
@@ -618,6 +622,7 @@ class AppSettings {
     bool? enableScrollToTopButton,
     String? onlineDefaultQuality,
     int? libraryMinDurationSeconds,
+    double? libraryMinFileSizeMb,
     bool? showLyricsTranslation,
     bool? showLyricsRomaji,
     bool? lyricBlur,
@@ -748,6 +753,8 @@ class AppSettings {
       onlineDefaultQuality: onlineDefaultQuality ?? this.onlineDefaultQuality,
       libraryMinDurationSeconds:
           libraryMinDurationSeconds ?? this.libraryMinDurationSeconds,
+      libraryMinFileSizeMb:
+          libraryMinFileSizeMb ?? this.libraryMinFileSizeMb,
       showLyricsTranslation:
           showLyricsTranslation ?? this.showLyricsTranslation,
       showLyricsRomaji: showLyricsRomaji ?? this.showLyricsRomaji,
@@ -948,6 +955,7 @@ class SettingsNotifier extends AsyncNotifier<AppSettings> {
       enableScrollToTopButton: prefs.getBool('enableScrollToTopButton') ?? true,
       onlineDefaultQuality: prefs.getString('onlineDefaultQuality') ?? '320k',
       libraryMinDurationSeconds: prefs.getInt('libraryMinDurationSeconds') ?? 0,
+      libraryMinFileSizeMb: prefs.getDouble('libraryMinFileSizeMb') ?? 0,
       showLyricsTranslation: prefs.getBool('showLyricsTranslation') ?? true,
       showLyricsRomaji: prefs.getBool('showLyricsRomaji') ?? false,
       lyricBlur: prefs.getBool('lyricBlur') ?? true,

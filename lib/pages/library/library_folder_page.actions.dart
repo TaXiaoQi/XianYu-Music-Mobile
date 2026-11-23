@@ -323,4 +323,48 @@ extension _LibraryFolderPageActions on _LibraryFolderPageState {
         .read(settingsProvider.notifier)
         .setLibraryMinDurationSeconds(choice);
   }
+
+  Future<void> _pickMinFileSize(double cur) async {
+    final choice = await showSheetDialog<double>(
+      context,
+      (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(tr('按文件大小过滤'), style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(
+                tr('过滤掉小于阈值的音频文件，重新扫描后生效'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(ctx).colorScheme.outline,
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final v in const [0.0, 1.0, 2.0, 5.0, 10.0])
+                ListTile(
+                  title: Text(v <= 0 ? tr('不排除') : '${v.toInt()} MB'),
+                  trailing: cur == v
+                      ? Icon(
+                          Icons.check,
+                          color: Theme.of(ctx).colorScheme.primary,
+                        )
+                      : null,
+                  contentPadding: EdgeInsets.zero,
+                  onTap: () => Navigator.pop(ctx, v),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null) return;
+    if (choice > 0) _lastFileSizeMb = choice;
+    await ref
+        .read(settingsProvider.notifier)
+        .setLibraryMinFileSizeMb(choice);
+  }
 }

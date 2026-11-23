@@ -451,3 +451,31 @@ pub(crate) fn apply_scan_changes(
 
     Ok(())
 }
+
+/// 把本轮扫描中未通过时长/体积门槛的歌曲标记为 excluded（保留记录、不物理删除），
+/// 通过的清除标记。这样调整过滤阈值后可立即恢复，无需重新解析文件。
+pub(crate) fn mark_scan_exclusions(
+    conn: &mut rusqlite::Connection,
+    to_include: &[String],
+    to_exclude: &[String],
+) -> Result<(), String> {
+    if to_include.is_empty() && to_exclude.is_empty() {
+        return Ok(());
+    }
+
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    {
+        let mut stmt = tx
+            .prepare("UPDATE songs SET scan_excluded = ?1 WHERE path = ?2")
+            .map_err(|error| error.to_string())?;
+        for path in to_exclude {
+            stmt.execute(params![1i64, path])
+                .map_err(|error| format!("exclude failed for '{}': {}", path, error))?;
+        }
+        for path in to_include {
+            stmt.execute(params![0i64, path])
+                .map_err(|error| format!("include failed for '{}': {}", path, error))?;
+        }
+    }
+    tx.commit().map_err(|error| error.to_string())
+}

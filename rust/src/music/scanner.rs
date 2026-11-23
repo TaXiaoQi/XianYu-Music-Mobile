@@ -40,18 +40,19 @@ pub(crate) fn commit_saf_scan_songs(
     options: &ScanOptions,
 ) -> Result<(), String> {
     let snapshot = diff::load_db_snapshot_for_folder(conn, folder_key)?;
-    let current: HashSet<String> = songs.iter().map(|s| s.path.clone()).collect();
 
     let mut to_add = Vec::new();
     let mut to_update = Vec::new();
+    let mut to_include = Vec::new();
+    let mut to_exclude = Vec::new();
     for song in songs {
-        if options.minimum_duration_seconds > 0
-            && song.duration > 0
-            && song.duration < options.minimum_duration_seconds
-        {
-            continue;
-        }
-        match snapshot.get(&song.path) {
+        let duration_ok = options.minimum_duration_seconds == 0
+            || song.duration == 0
+            || song.duration >= options.minimum_duration_seconds;
+        let size_ok =
+            options.minimum_file_size_bytes == 0 || song.file_size >= options.minimum_file_size_bytes;
+        let path = song.path.clone();
+        match snapshot.get(&path) {
             Some(db) => {
                 let changed = db.file_modified_at != song.file_modified_at.map(|v| v as i64)
                     || db.file_size != song.file_size as i64;
@@ -61,14 +62,18 @@ pub(crate) fn commit_saf_scan_songs(
             }
             None => to_add.push(song),
         }
+        if duration_ok && size_ok {
+            to_include.push(path);
+        } else {
+            to_exclude.push(path);
+        }
     }
-    let to_delete: Vec<String> = snapshot
-        .keys()
-        .filter(|path| !current.contains(*path))
-        .cloned()
-        .collect();
 
-    repository::apply_scan_changes(conn, &to_add, &to_update, &to_delete, None)
+    // SAF 目录无法在 Rust 侧可靠判定"文件是否已被用户删除"（打开 fd 失败、解析失败
+    // 都表现为本轮未出现），为避免一次失败就把歌删光，这里不删除任何记录；
+    // 只有移除登记目录时才会清理其下歌曲。
+    repository::apply_scan_changes(conn, &to_add, &to_update, &[], None)?;
+    repository::mark_scan_exclusions(conn, &to_include, &to_exclude)
 }
 pub(super) const DB_PROGRESS_BATCH: usize = 100;
 
@@ -79,6 +84,8 @@ pub(super) const UNKNOWN_ALBUM: &str = "未知专辑";
 pub(crate) struct ScanOptions {
     // 实现
     pub(crate) minimum_duration_seconds: u32,
+    /// 单文件体积门槛（字节），0 表示不按体积过滤。
+    pub(crate) minimum_file_size_bytes: u64,
     /// 允许入库的扩展名白名单（小写，无点）。None 表示不限制（沿用全部受支持格式）。
     pub(crate) allowed_extensions: Option<Vec<String>>,
 }
@@ -88,8 +95,15 @@ impl ScanOptions {
     pub(crate) fn from_minimum_duration_seconds(value: Option<u32>) -> Self {
         Self {
             minimum_duration_seconds: value.unwrap_or(0),
+            minimum_file_size_bytes: 0,
             allowed_extensions: None,
         }
+    }
+
+    /// 追加单文件体积门槛；不给就按 0（不过滤）处理。
+    pub(crate) fn with_minimum_file_size_bytes(mut self, value: Option<u64>) -> Self {
+        self.minimum_file_size_bytes = value.unwrap_or(0);
+        self
     }
 
     /// 同时指定最小时长与扩展名白名单。
@@ -109,6 +123,7 @@ impl ScanOptions {
         });
         Self {
             minimum_duration_seconds: minimum_duration_seconds.unwrap_or(0),
+            minimum_file_size_bytes: 0,
             allowed_extensions,
         }
     }
@@ -481,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn collect_scan_diff_deletes_existing_songs_below_minimum_duration() {
+    fn collect_scan_diff_marks_existing_songs_below_minimum_duration_as_excluded() {
         let temp_dir = create_empty_temp_dir();
         let short_path = temp_dir.join("short.flac");
         fs::write(&short_path, b"fake flac").expect("write short audio placeholder");
@@ -516,15 +531,19 @@ mod tests {
             None,
             &ScanOptions {
                 minimum_duration_seconds: 10,
+                minimum_file_size_bytes: 0,
                 allowed_extensions: None,
             },
         )
         .expect("collect diff");
 
-        assert!(diff.songs.is_empty());
+        // 低于时长门槛不再物理删除：保留记录并标记 excluded。
+        assert_eq!(diff.songs.len(), 1);
         assert!(diff.to_add.is_empty());
         assert!(diff.to_update.is_empty());
-        assert_eq!(diff.to_delete, vec![normalized_song_path]);
+        assert!(diff.to_delete.is_empty());
+        assert!(diff.to_include.is_empty());
+        assert_eq!(diff.to_exclude, vec![normalized_song_path]);
         assert!(diff.has_disk_songs);
 
         fs::remove_dir_all(temp_dir).expect("remove temp dir");

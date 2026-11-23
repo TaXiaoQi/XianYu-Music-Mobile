@@ -546,6 +546,10 @@ class PluginManager extends StateNotifier<PluginListState> {
       sourceUrl: oldSource.first.sourceUrl,
     );
     if (newSource.id == oldId) return;
+    // 更新换 id 后保持原插件在列表中的排序位置，避免更新即沉底
+    final oldIndex = state.sources.indexWhere((s) => s.id == oldId);
+    final oldOrder =
+        oldIndex >= 0 ? (state.sources[oldIndex].sortOrder ?? oldIndex) : null;
     await engine.destroy(oldId);
     await engine.store.deleteScript(oldId);
     final list = state.sources.where((s) => s.id != oldId).toList();
@@ -557,6 +561,9 @@ class PluginManager extends StateNotifier<PluginListState> {
       ..[oldId] = newSource.id;
     await engine.store.saveAliases(aliases);
     state = state.copyWith(sources: list, idAliases: aliases);
+    if (oldOrder != null) {
+      await inheritSortOrder(newSource.id, oldOrder);
+    }
     engine.bakaManager.clearCache(oldId);
     if (newSource.id != oldId) engine.bakaManager.clearCache(newSource.id);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});

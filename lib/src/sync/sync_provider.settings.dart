@@ -305,6 +305,7 @@ List<String> diffSyncedSettingsLabels(
     'showQualityBadges': '音质标识',
     'onlineDefaultQuality': '在线默认音质',
     'libraryMinDurationSeconds': '曲库最短时长',
+    'libraryMinFileSizeMb': '曲库最小文件大小',
     'showLyricsTranslation': '歌词翻译',
     'enableWordEffect': '逐字歌词效果',
     'downloadQuality': '下载音质',

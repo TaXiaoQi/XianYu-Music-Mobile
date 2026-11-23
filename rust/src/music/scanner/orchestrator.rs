@@ -1,14 +1,14 @@
 use super::super::types::{FolderNode, Song};
 use super::super::utils::{
     // 实现
-    descendant_like_patterns,
+    descendant_prefixes,
     is_supported_library_extension,
     normalize_path,
 };
 use super::diff::{collect_scan_diff, load_db_snapshot_for_folder};
 use super::parser::parse_audio_files_internal;
 use super::progress::{ScanProgressReporter, ScanProgressSink};
-use super::repository::apply_scan_changes;
+use super::repository::{apply_scan_changes, mark_scan_exclusions};
 use crate::music::scanner::ScanOptions;
 use rusqlite::{params, OptionalExtension};
 use std::collections::{HashMap, HashSet};
@@ -153,6 +153,7 @@ pub(crate) fn scan_single_directory_internal(
             &scan_diff.to_delete,
             reporter.as_ref(),
         )?;
+        mark_scan_exclusions(&mut conn, &scan_diff.to_include, &scan_diff.to_exclude)?;
     }
 
     if let Some(reporter) = reporter.as_ref() {
@@ -166,9 +167,11 @@ pub(crate) fn scan_single_directory_internal(
 pub(crate) fn parse_audio_files(
     paths: Vec<String>,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<u64>,
 ) -> Result<Vec<Song>, String> {
     // 实现
-    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+        .with_minimum_file_size_bytes(minimum_file_size_bytes);
     Ok(parse_audio_files_internal(paths, options))
 }
 
@@ -176,6 +179,7 @@ pub(crate) fn parse_audio_files(
 pub(crate) fn parse_music_folder(
     folder_path: String,
     minimum_duration_seconds: Option<u32>,
+    minimum_file_size_bytes: Option<u64>,
 ) -> Result<Vec<Song>, String> {
     // 实现
     let root = Path::new(&folder_path);
@@ -183,7 +187,8 @@ pub(crate) fn parse_music_folder(
         return Err("所选路径不是可读取的文件夹".to_string());
     }
 
-    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds);
+    let options = ScanOptions::from_minimum_duration_seconds(minimum_duration_seconds)
+        .with_minimum_file_size_bytes(minimum_file_size_bytes);
     let mut paths: Vec<String> = WalkDir::new(root)
         .into_iter()
         .filter_map(Result::ok)
@@ -205,21 +210,22 @@ pub(crate) fn find_first_song_recursive(
     conn: &rusqlite::Connection,
 ) -> Option<String> {
     let path_str = normalize_path(&path.to_string_lossy());
-    let (pattern_forward, pattern_back) = descendant_like_patterns(&path_str);
+    let (prefix_forward, prefix_back) = descendant_prefixes(&path_str);
 
     let mut stmt = conn
         .prepare(
             "SELECT path
              FROM songs
-             WHERE path = ?1 
-                OR path LIKE ?2 ESCAPE '^' 
-                OR path LIKE ?3 ESCAPE '^' 
+             WHERE COALESCE(scan_excluded, 0) = 0
+               AND (path = ?1 
+                OR substr(path, 1, length(?2)) = ?2 
+                OR substr(path, 1, length(?3)) = ?3)
              ORDER BY path ASC 
              LIMIT 1",
         )
         .ok()?;
 
-    stmt.query_row(params![&path_str, pattern_forward, pattern_back], |row| {
+    stmt.query_row(params![&path_str, prefix_forward, prefix_back], |row| {
         row.get(0)
     })
     .optional()
@@ -228,15 +234,16 @@ pub(crate) fn find_first_song_recursive(
 
 fn count_songs_recursive(path: &Path, conn: &rusqlite::Connection) -> usize {
     let path_str = normalize_path(&path.to_string_lossy());
-    let (pattern_forward, pattern_back) = descendant_like_patterns(&path_str);
+    let (prefix_forward, prefix_back) = descendant_prefixes(&path_str);
 
     conn.query_row(
         "SELECT COUNT(*)
          FROM songs
-         WHERE path = ?1 
-            OR path LIKE ?2 ESCAPE '^' 
-            OR path LIKE ?3 ESCAPE '^'",
-        params![&path_str, pattern_forward, pattern_back],
+         WHERE COALESCE(scan_excluded, 0) = 0
+           AND (path = ?1 
+            OR substr(path, 1, length(?2)) = ?2 
+            OR substr(path, 1, length(?3)) = ?3)",
+        params![&path_str, prefix_forward, prefix_back],
         |row| row.get::<_, i64>(0),
     )
     .ok()

@@ -166,6 +166,14 @@ fn migrate_song_columns(conn: &Connection) -> Result<(), String> {
         conn.execute("ALTER TABLE songs ADD COLUMN comment TEXT", [])
             .ok();
     }
+    // 扫描过滤（时长/体积门槛）不再物理删除，改为标记 excluded，曲库读取时忽略。
+    if !columns.iter().any(|column| column == "scan_excluded") {
+        conn.execute(
+            "ALTER TABLE songs ADD COLUMN scan_excluded INTEGER NOT NULL DEFAULT 0",
+            [],
+        )
+        .ok();
+    }
 
     Ok(())
 }

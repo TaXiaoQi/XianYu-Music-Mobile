@@ -478,6 +478,9 @@ const Map<String, String> enDictManual = {
   '轨道号': 'Track number',
   '过滤掉时长小于阈值的音频文件，重新扫描后生效':
       'Filters out audio files shorter than the threshold; takes effect after rescanning',
+  '过滤掉小于阈值的音频文件，重新扫描后生效':
+      'Filters out audio files smaller than the threshold; takes effect after rescanning',
+  '按文件大小过滤': 'Filter by file size',
   '还没有安装插件': 'No plugins installed yet',
   '还没有从广场下载主题': 'No themes downloaded from the Square yet',
   '还没有歌单': 'No playlists yet',
@@ -563,6 +566,8 @@ const Map<String, String> enDictManual = {
       "Can't see some songs? Try adding folders with the system picker",
   '可过滤掉时长过短的音频文件（点按调整阈值）':
       'Filters out very short audio files (tap to adjust the threshold)',
+  '可过滤掉体积过小的音频文件（点按调整阈值）':
+      'Filters out tiny audio files (tap to adjust the threshold)',
   '空间音效': 'Spatial audio',
   '空间音频': 'Spatial audio',
   '酷狗': 'Kugou',
@@ -1609,6 +1614,7 @@ const Map<String, String> enDictManual = {
   '{name}收藏夹': '{name} Favorites',
   '已复制{label}：{text}': 'Copied {label}: {text}',
   '已过滤时长小于 {n} 秒的音频文件': 'Filtered audio files shorter than {n} seconds',
+  '已过滤小于 {n} MB 的音频文件': 'Filtered audio files smaller than {n} MB',
   '已将 {n} 首歌曲导入到歌单「{name}」': 'Imported {n} songs into "{name}"',
   '已解密：{name}': 'Decrypted: {name}',
   '已取消收藏：{t}': 'Removed from favorites: {t}',

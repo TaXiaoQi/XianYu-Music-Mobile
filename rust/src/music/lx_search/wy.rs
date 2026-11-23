@@ -15,18 +15,21 @@ pub(crate) async fn search_wy(keyword: &str, limit: u32) -> Result<Vec<LxSearchI
 
 async fn search_wy_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSearchItem>, String> {
     let offset = (page - 1) * limit;
-    let url = format!(
-        "https://music.163.com/api/search/get/web?s={}&type=1&offset={}&limit={}",
-        urlencoding::encode(keyword),
-        offset,
-        limit
-    );
+    let encoded = urlencoding::encode(keyword);
 
-    // 网易云接口偶发 code != 200 / 网络抖动，最多重试 3 次（对齐桌面端 searchWy）
-    let result = {
-        let mut attempt = 0;
-        loop {
-            attempt += 1;
+    // 网易云对旧 /api/search/get/web 路径限流极严：HTTP 仍为 200，但 body
+    // 返回 code 405/406「操作频繁」。限流与路径相关，换成 /api/search/get
+    // 或 interface 域名可立即恢复，且响应结构完全一致，故按候选端点降级。
+    const ENDPOINTS: [&str; 3] = [
+        "https://music.163.com/api/search/get",
+        "https://music.163.com/api/search/get/web",
+        "https://interface.music.163.com/api/search/get/web",
+    ];
+    let mut last_err = String::from("WY search: no endpoint available");
+    let mut result = None;
+    for attempt in 1..=2u64 {
+        for base in ENDPOINTS {
+            let url = format!("{base}?s={encoded}&type=1&offset={offset}&limit={limit}");
             match http_get_json(
                 &url,
                 &[
@@ -37,22 +40,22 @@ async fn search_wy_page(keyword: &str, page: u32, limit: u32) -> Result<Vec<LxSe
             )
             .await
             {
-                Ok(r) if r.get("code").and_then(|v| v.as_i64()) == Some(200) => break r,
+                Ok(r) if r.get("code").and_then(|v| v.as_i64()) == Some(200) => {
+                    result = Some(r);
+                    break;
+                }
                 Ok(r) => {
-                    let msg = format!("WY search: code != 200 ({:?})", r.get("code"));
-                    if attempt >= 3 {
-                        return Err(msg);
-                    }
+                    last_err = format!("WY search: code != 200 ({:?})", r.get("code"));
                 }
-                Err(e) => {
-                    if attempt >= 3 {
-                        return Err(e);
-                    }
-                }
+                Err(e) => last_err = e,
             }
-            tokio::time::sleep(Duration::from_millis(300 * attempt as u64)).await;
         }
-    };
+        if result.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(300 * attempt)).await;
+    }
+    let result = result.ok_or(last_err)?;
 
     let songs = result
         .pointer("/result/songs")

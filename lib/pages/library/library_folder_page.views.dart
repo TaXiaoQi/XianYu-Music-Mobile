@@ -17,6 +17,7 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
     required List<String> lost,
     required AsyncValue<List<ScanFolder>> foldersAsync,
     required int minDuration,
+    required double minFileSizeMb,
     required List<Widget> tiles,
   }) {
     final scheme = Theme.of(context).colorScheme;
@@ -52,6 +53,7 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                       const SizedBox(height: 16),
                       _FilterCard(
                         minDuration: minDuration,
+                        minFileSizeMb: minFileSizeMb,
                         onToggle: (v) {
                           final next = v ? _lastDuration : 0;
                           ref
@@ -59,6 +61,13 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                               .setLibraryMinDurationSeconds(next);
                         },
                         onPick: () => _pickMinDuration(minDuration),
+                        onToggleSize: (v) {
+                          final next = v ? _lastFileSizeMb : 0.0;
+                          ref
+                              .read(settingsProvider.notifier)
+                              .setLibraryMinFileSizeMb(next);
+                        },
+                        onPickSize: () => _pickMinFileSize(minFileSizeMb),
                       ),
                       const SizedBox(height: 16),
                       foldersAsync.when(
@@ -141,6 +150,7 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
     required List<String> lost,
     required AsyncValue<List<ScanFolder>> foldersAsync,
     required int minDuration,
+    required double minFileSizeMb,
     required List<Widget> tiles,
   }) {
     final scheme = Theme.of(context).colorScheme;
@@ -207,6 +217,7 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                           const SizedBox(height: 16),
                           _FilterCard(
                             minDuration: minDuration,
+                            minFileSizeMb: minFileSizeMb,
                             onToggle: (v) {
                               final next = v ? _lastDuration : 0;
                               ref
@@ -214,6 +225,13 @@ extension _LibraryFolderPageViews on _LibraryFolderPageState {
                                   .setLibraryMinDurationSeconds(next);
                             },
                             onPick: () => _pickMinDuration(minDuration),
+                            onToggleSize: (v) {
+                              final next = v ? _lastFileSizeMb : 0.0;
+                              ref
+                                  .read(settingsProvider.notifier)
+                                  .setLibraryMinFileSizeMb(next);
+                            },
+                            onPickSize: () => _pickMinFileSize(minFileSizeMb),
                           ),
                           const SizedBox(height: 16),
                           foldersAsync.when(

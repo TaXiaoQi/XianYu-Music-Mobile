@@ -989,6 +989,7 @@ Map<String, dynamic> settingsToSyncMap(AppSettings s) => {
       'showQualityBadges': s.showQualityBadges,
       'onlineDefaultQuality': s.onlineDefaultQuality,
       'libraryMinDurationSeconds': s.libraryMinDurationSeconds,
+      'libraryMinFileSizeMb': s.libraryMinFileSizeMb,
       'showLyricsTranslation': s.showLyricsTranslation,
       'enableWordEffect': s.enableWordEffect,
       'downloadQuality': s.downloadQuality,
@@ -1049,6 +1050,8 @@ Map<String, Object?> normalizeCloudSettingsMap(Map<String, dynamic> cloud) {
         strOf(pick('onlineDefaultQuality', 'audio.onlineDefaultQuality')),
     'libraryMinDurationSeconds':
         (pick('libraryMinDurationSeconds') as num?)?.toInt(),
+    'libraryMinFileSizeMb':
+        (pick('libraryMinFileSizeMb') as num?)?.toDouble(),
     'showLyricsTranslation': boolOf(pick('showLyricsTranslation')),
     'enableWordEffect': boolOf(pick('enableWordEffect', 'lyrics.enableWordEffect')),
     'downloadQuality': strOf(pick('downloadQuality', 'download.quality')),
@@ -1074,6 +1077,8 @@ AppSettings applySyncedSettings(AppSettings local, Map<String, dynamic> cloud) {
         (m['onlineDefaultQuality'] as String?) ?? local.onlineDefaultQuality,
     libraryMinDurationSeconds:
         (m['libraryMinDurationSeconds'] as int?) ?? local.libraryMinDurationSeconds,
+    libraryMinFileSizeMb:
+        (m['libraryMinFileSizeMb'] as double?) ?? local.libraryMinFileSizeMb,
     showLyricsTranslation:
         (m['showLyricsTranslation'] as bool?) ?? local.showLyricsTranslation,
     enableWordEffect: (m['enableWordEffect'] as bool?) ?? local.enableWordEffect,

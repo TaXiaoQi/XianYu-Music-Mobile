@@ -62,6 +62,15 @@ pub fn escape_like(input: &str) -> String {
         .replace('_', "^_")
 }
 
+/// Build raw forward/backward descendant prefixes (with trailing separator).
+/// Use with case-sensitive prefix comparison:
+/// `path = ?1 OR substr(path, 1, length(?2)) = ?2 OR substr(path, 1, length(?3)) = ?3`
+/// 避免 SQLite `LIKE` 对 ASCII 大小写不敏感导致大小写不同的目录互相串算。
+pub fn descendant_prefixes(folder_path: &str) -> (String, String) {
+    let trimmed = folder_path.trim_end_matches(['/', '\\']);
+    (format!("{trimmed}/"), format!("{trimmed}\\"))
+}
+
 /// Build forward/backward descendant LIKE patterns for a folder path.
 /// Caller should use:
 /// `path = ?1 OR path LIKE ?2 ESCAPE '^' OR path LIKE ?3 ESCAPE '^'`

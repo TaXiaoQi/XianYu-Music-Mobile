@@ -163,9 +163,11 @@ pub(crate) fn parse_audio_files_internal(paths: Vec<String>, options: ScanOption
         }
 
         if let Some(song) = parse_song_from_file(&path, &normalized_path, &extension) {
-            if options.minimum_duration_seconds > 0
-                && song.duration < options.minimum_duration_seconds
-            {
+            let duration_ok = options.minimum_duration_seconds == 0
+                || song.duration >= options.minimum_duration_seconds;
+            let size_ok = options.minimum_file_size_bytes == 0
+                || song.file_size >= options.minimum_file_size_bytes;
+            if !(duration_ok && size_ok) {
                 continue;
             }
             songs.push(song);
