@@ -2299,7 +2299,7 @@ pub async fn dlna_cast_set_uri(
         None => None,
     };
     let info = DlnaCore::shared()
-        .cast_set_uri(&device, media, cover, &title, &artist, &album, duration_ms)
+        .cast_set_uri(&device, media, cover, None, &title, &artist, &album, duration_ms)
         .await?;
     serde_json::to_string(&info).map_err(|e| e.to_string())
 }
