@@ -1,27 +1,10 @@
-//! 弦予音乐移动端复用核心（xianyu_core）。
+//! 弦予音乐移动端薄壳 crate（FFI 桥接层）。
 //!
-//! 从桌面端 `XianYu-Music-Desktop/src-tauri` 抽取的纯逻辑模块，
-//! 不依赖 Tauri / 桌面窗口，可被 Flutter（flutter_rust_bridge）或
-//! 其他宿主跨平台复用。后续批次会逐步并入音效 DSP、歌词、URL 解析等模块。
-
-pub mod audio_convert;
-pub mod cloud;
-pub mod custom_fonts;
-pub mod database;
-pub mod dlna;
-pub mod error;
-pub mod fallback_verify;
-pub mod filename_meta;
-mod frb_generated;
-pub mod host_crypto;
-pub mod music;
-pub mod player;
-pub mod plugin_host;
-pub mod plugins;
-pub mod recognize;
-pub mod remote;
-pub mod security;
-pub mod statistics;
-pub mod toolbox;
+//! 纯逻辑已抽至独立仓库 XianYu-Music-Core（submodule: `rust/core`），
+//! 本 crate 只保留 flutter_rust_bridge 的 api 层与生成代码，
+//! 产出 libxianyu_core.so / .a 供 Dart 侧加载。
+//!
+//! 修改核心逻辑请到 XianYu-Music-Core 仓库，双端（Mobile/Watch）自动共享。
 
 pub mod api;
+mod frb_generated;

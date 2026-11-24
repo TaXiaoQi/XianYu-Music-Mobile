@@ -1626,9 +1626,36 @@ class _DropletEdgePainter extends CustomPainter {
         ).createShader(outer),
     );
 
+    // ⑤ 内阴影（BiliPai floatingDockIndicatorOptics 同构）：radius =
+    // 8dp·progress、黑 15%、整体 alpha = progress——玻璃厚度的贴边暗带
+    // 随按压渐强（图二「白玻璃面 + 贴边深色内阴影带」视觉签名）。实现
+    // 为外扩环模糊：环体在边界外侧 shadowR 带，模糊后内半跨进边界形成
+    // 向内衰减的暗带，外半被外层 ClipRRect/ClipOval 裁掉。静息 p=0
+    // 不绘制（静息观感保持）
+    final shadowR = 8.0 * p;
+    if (shadowR > 0.5) {
+      final ring = Path()
+        ..fillType = PathFillType.evenOdd
+        ..addRRect(
+          RRect.fromRectAndRadius(outer, Radius.circular(size.height / 2)),
+        )
+        ..addRRect(
+          RRect.fromRectAndRadius(
+            outer.inflate(shadowR),
+            Radius.circular(size.height / 2 + shadowR),
+          ),
+        );
+      canvas.drawPath(
+        ring,
+        Paint()
+          ..color = Colors.black.withValues(alpha: 0.15 * p)
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, shadowR * 0.5),
+      );
+    }
+
     // ④ 环形 rim 已删除（用户否决）：暗色描边叠在 tint 上读成"一圈更黑
     // 的边"。圆界由 tint 对比自然显形，立体感只靠中心微亮+底部厚度
-    // ⑤ 左上镜面反光弧已删除（用户否决）：小圆上读成左侧一道怪弧线
+    // ⑥ 左上镜面反光弧已删除（用户否决）：小圆上读成左侧一道怪弧线
   }
 
   @override

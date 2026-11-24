@@ -109,7 +109,8 @@ Future<({bool valid, bool keyUnknown})> _verifySignature(
       signature: signature,
       keyId: (keyId == null || keyId.isEmpty) ? null : keyId,
     );
-    return (valid: result.valid, keyUnknown: result.keyUnknown);
+    final j = jsonDecode(result) as Map<String, dynamic>;
+    return (valid: j['valid'] as bool? ?? false, keyUnknown: j['keyUnknown'] as bool? ?? false);
   } catch (e) {
     AppLog.warn('plugin', '[FallbackConfig] 验签命令不可用，按未通过处理: $e');
     return (valid: false, keyUnknown: false);

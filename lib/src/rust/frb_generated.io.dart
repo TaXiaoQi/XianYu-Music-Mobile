@@ -7,9 +7,7 @@ import 'api.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
-import 'fallback_verify.dart';
 import 'frb_generated.dart';
-import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
 abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
@@ -48,9 +46,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
-  FallbackVerifyResult dco_decode_fallback_verify_result(dynamic raw);
-
-  @protected
   int dco_decode_i_32(dynamic raw);
 
   @protected
@@ -67,9 +62,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<(String, String)> dco_decode_list_record_string_string(dynamic raw);
-
-  @protected
-  LyricsStorageSource dco_decode_lyrics_storage_source(dynamic raw);
 
   @protected
   Map<String, String>? dco_decode_opt_Map_String_String_None(dynamic raw);
@@ -146,11 +138,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
-  FallbackVerifyResult sse_decode_fallback_verify_result(
-    SseDeserializer deserializer,
-  );
-
-  @protected
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
@@ -167,11 +154,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<(String, String)> sse_decode_list_record_string_string(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  LyricsStorageSource sse_decode_lyrics_storage_source(
     SseDeserializer deserializer,
   );
 
@@ -260,12 +242,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
-  void sse_encode_fallback_verify_result(
-    FallbackVerifyResult self,
-    SseSerializer serializer,
-  );
-
-  @protected
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
@@ -286,12 +262,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_record_string_string(
     List<(String, String)> self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_lyrics_storage_source(
-    LyricsStorageSource self,
     SseSerializer serializer,
   );
 

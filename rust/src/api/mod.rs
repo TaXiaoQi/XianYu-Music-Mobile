@@ -6,9 +6,9 @@
 //! 约定：复合类型参数/返回值统一用 JSON 字符串传递（serde camelCase），
 //! 避免为每个内部结构体生成 Dart 绑定，Dart 侧用 `jsonDecode`/`jsonEncode` 转换。
 
-use crate::database::open_conn;
-use crate::music::lyrics::build_structured_lyrics_payload;
-use crate::music::url_resolver::LxUrlSongInfo;
+use xianyu_core::database::open_conn;
+use xianyu_core::music::lyrics::build_structured_lyrics_payload;
+use xianyu_core::music::url_resolver::LxUrlSongInfo;
 
 // =========================================================================
 // 歌词解析（第三批）
@@ -32,21 +32,21 @@ pub fn parse_lyrics(raw_lyrics: String) -> String {
 /// 搜索音乐源。`source` ∈ `kw`/`kg`/`tx`/`wy`/`mg`。
 /// 返回 [`LxSearchItem`] 数组的 JSON；失败返回错误信息。
 pub async fn lx_search(source: String, keyword: String, limit: u32) -> Result<String, String> {
-    let items = crate::music::lx_search::lx_search(&source, &keyword, limit).await?;
+    let items = xianyu_core::music::lx_search::lx_search(&source, &keyword, limit).await?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
 /// QQ 专辑搜索（签名 Desktop 接口 search_type=2）。
 /// 返回原始专辑条目数组的 JSON；失败返回错误信息。
 pub async fn tx_search_albums(keyword: String, page: u32, limit: u32) -> Result<String, String> {
-    let items = crate::music::lx_search::tx_search_albums(&keyword, page, limit).await?;
+    let items = xianyu_core::music::lx_search::tx_search_albums(&keyword, page, limit).await?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
 /// QQ 专辑曲目（签名 AlbumSongList 接口，按 albumMid）。
 /// 返回 [`LxSearchItem`] 数组的 JSON；失败返回错误信息。
 pub async fn tx_album_songs(album_mid: String, page: u32, limit: u32) -> Result<String, String> {
-    let items = crate::music::lx_search::tx_album_songs(&album_mid, page, limit).await?;
+    let items = xianyu_core::music::lx_search::tx_album_songs(&album_mid, page, limit).await?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
@@ -54,12 +54,12 @@ pub async fn tx_album_songs(album_mid: String, page: u32, limit: u32) -> Result<
 /// 入参为 songid 数组 JSON（如 `[123,456]`），返回 `{ "id": 秒 }` 的 JSON。
 pub async fn tx_batch_track_interval(song_ids_json: String) -> Result<String, String> {
     let song_ids: Vec<String> = serde_json::from_str(&song_ids_json).map_err(|e| e.to_string())?;
-    let map = crate::music::lx_search::tx_batch_track_interval(&song_ids).await?;
+    let map = xianyu_core::music::lx_search::tx_batch_track_interval(&song_ids).await?;
     serde_json::to_string(&map).map_err(|e| e.to_string())
 }
 
 /// LX 歌单搜索（kw/kg/tx/wy/mg 原生歌单接口，对齐桌面端 searchLxPlaylists）。
-/// 返回归一化 [`crate::music::lx_catalog::LxPlaylistItem`] 数组的 JSON。
+/// 返回归一化 [`xianyu_core::music::lx_catalog::LxPlaylistItem`] 数组的 JSON。
 pub async fn lx_search_playlists(
     source: String,
     keyword: String,
@@ -67,7 +67,7 @@ pub async fn lx_search_playlists(
     limit: u32,
 ) -> Result<String, String> {
     let items =
-        crate::music::lx_catalog::lx_search_playlists(&source, &keyword, page, limit).await?;
+        xianyu_core::music::lx_catalog::lx_search_playlists(&source, &keyword, page, limit).await?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
@@ -80,12 +80,12 @@ pub async fn lx_playlist_tracks(
     limit: u32,
 ) -> Result<String, String> {
     let result =
-        crate::music::lx_catalog::lx_playlist_tracks(&source, &playlist_id, page, limit).await?;
+        xianyu_core::music::lx_catalog::lx_playlist_tracks(&source, &playlist_id, page, limit).await?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 /// LX 专辑曲目（对齐桌面端 lxGetAlbumSongs，kw/kg/tx/wy/mg 原生专辑接口）。
-/// 返回 [`crate::music::lx_search::LxSearchItem`] 数组的 JSON。
+/// 返回 [`xianyu_core::music::lx_search::LxSearchItem`] 数组的 JSON。
 /// album_id 无效（可能是回退的专辑名）时返回空数组，由调用方走搜索回退。
 pub async fn lx_album_songs(
     source: String,
@@ -93,7 +93,7 @@ pub async fn lx_album_songs(
     page: u32,
     limit: u32,
 ) -> Result<String, String> {
-    let items = crate::music::lx_catalog::lx_album_songs(&source, &album_id, page, limit).await?;
+    let items = xianyu_core::music::lx_catalog::lx_album_songs(&source, &album_id, page, limit).await?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
@@ -102,7 +102,7 @@ pub async fn lx_album_songs(
 /// `[{ "title": "音源榜单", "data": [board] }]` 的 JSON（board 含
 /// id/title/coverImg/description/source），失败平台跳过。
 pub async fn lx_toplist_boards(sources: Vec<String>) -> Result<String, String> {
-    let boards = crate::music::lx_toplist::lx_toplist_boards(&sources).await;
+    let boards = xianyu_core::music::lx_toplist::lx_toplist_boards(&sources).await;
     serde_json::to_string(&boards).map_err(|e| e.to_string())
 }
 
@@ -117,7 +117,7 @@ pub async fn lx_toplist_board_songs(
     // 与内部 clamp 规则一致：0 视为默认 30，上限 100，isEnd 按实际 limit 计算
     let limit = if limit == 0 { 30 } else { limit.clamp(1, 100) };
     let list =
-        crate::music::lx_toplist::lx_toplist_board_songs(&source, &board_id, page, limit).await?;
+        xianyu_core::music::lx_toplist::lx_toplist_board_songs(&source, &board_id, page, limit).await?;
     let is_end = (list.len() as u32) < limit;
     serde_json::to_string(&LxToplistDetailResult { list, is_end }).map_err(|e| e.to_string())
 }
@@ -126,7 +126,7 @@ pub async fn lx_toplist_board_songs(
 /// `sources` 为 wy/kg/kw/tx 子集；返回 `{pinned:[tag], data:[{title,data:[tag]}]}`
 /// 的 JSON（tag 含 id/title/digest?/source），失败平台跳过，同名分组按 title 合并。
 pub async fn lx_recommend_sheet_tags(sources: Vec<String>) -> Result<String, String> {
-    let result = crate::music::lx_recommend_sheets::lx_recommend_sheet_tags(&sources).await;
+    let result = xianyu_core::music::lx_recommend_sheets::lx_recommend_sheet_tags(&sources).await;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -139,7 +139,7 @@ pub async fn lx_recommend_sheets_by_tag(
     digest: String,
     page: u32,
 ) -> Result<String, String> {
-    let result = crate::music::lx_recommend_sheets::lx_recommend_sheets_by_tag(
+    let result = xianyu_core::music::lx_recommend_sheets::lx_recommend_sheets_by_tag(
         &source, &tag_id, &digest, page,
     )
     .await?;
@@ -149,7 +149,7 @@ pub async fn lx_recommend_sheets_by_tag(
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LxToplistDetailResult {
-    list: Vec<crate::music::lx_search::LxSearchItem>,
+    list: Vec<xianyu_core::music::lx_search::LxSearchItem>,
     is_end: bool,
 }
 
@@ -168,9 +168,9 @@ pub async fn fetch_lyric_from_source(
     source: String,
     song_info_json: String,
 ) -> Result<String, String> {
-    let song_info: crate::music::lyric_fetcher::LyricSongInfo =
+    let song_info: xianyu_core::music::lyric_fetcher::LyricSongInfo =
         serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    let result = crate::music::lyric_fetcher::fetch_lyric_from_source(source, song_info).await?;
+    let result = xianyu_core::music::lyric_fetcher::fetch_lyric_from_source(source, song_info).await?;
     match result {
         Some(r) => serde_json::to_string(&r).map_err(|e| e.to_string()),
         None => Ok("null".to_string()),
@@ -181,7 +181,7 @@ pub async fn fetch_lyric_from_source(
 /// Baka 系 musicfree 插件 getLyric 的注释即声明「由应用层解密」——Dart 在
 /// 密文检测命中后直接调本函数解密复用，避免绕行可能被风控的原生歌词接口。
 pub fn decrypt_plugin_lyric(encrypted_hex: String) -> Result<String, String> {
-    crate::music::lyric_fetcher::qrc_decrypt(&encrypted_hex)
+    xianyu_core::music::lyric_fetcher::qrc_decrypt(&encrypted_hex)
 }
 
 // =========================================================================
@@ -195,7 +195,7 @@ pub fn decrypt_plugin_lyric(encrypted_hex: String) -> Result<String, String> {
 /// 返回 `PlaylistImportResult{source,songs,total,info}`（camelCase）的 JSON；
 /// serde 字段名与桌面端契约冻结一致。
 pub async fn fetch_playlist_from_source(source: String, raw_id: String) -> Result<String, String> {
-    let result = crate::music::playlist_fetcher::fetch_playlist_from_source(source, raw_id).await?;
+    let result = xianyu_core::music::playlist_fetcher::fetch_playlist_from_source(source, raw_id).await?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -205,15 +205,15 @@ pub async fn fetch_playlist_from_source(source: String, raw_id: String) -> Resul
 
 /// 测试 WebDAV 连接（列出根目录）。
 pub async fn webdav_test_connection(source_json: String) -> Result<(), String> {
-    let source = crate::remote::types::parse_remote_source(&source_json)?;
-    crate::remote::webdav::test_connection(&source).await
+    let source = xianyu_core::remote::types::parse_remote_source(&source_json)?;
+    xianyu_core::remote::webdav::test_connection(&source).await
 }
 
 /// 按表单连接信息浏览 WebDAV 目录（新增源未保存时也可浏览，返回 [`RemoteFileEntry[]`] JSON）。
 pub async fn webdav_browse_directory(source_json: String, path: String) -> Result<String, String> {
-    let source = crate::remote::types::parse_remote_source(&source_json)?;
-    let entries = crate::remote::webdav::list_directory(
-        crate::remote::webdav::shared_client(),
+    let source = xianyu_core::remote::types::parse_remote_source(&source_json)?;
+    let entries = xianyu_core::remote::webdav::list_directory(
+        xianyu_core::remote::webdav::shared_client(),
         &source,
         &path,
     )
@@ -239,7 +239,7 @@ pub async fn webdav_test_saved_source(
     overrides_json: String,
 ) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    let mut source = crate::remote::repository::get_source(&conn, &source_id)?;
+    let mut source = xianyu_core::remote::repository::get_source(&conn, &source_id)?;
     let overrides: WebdavSourceOverrides = if overrides_json.trim().is_empty() {
         WebdavSourceOverrides::default()
     } else {
@@ -260,7 +260,7 @@ pub async fn webdav_test_saved_source(
             source.root_path = trimmed;
         }
     }
-    crate::remote::webdav::test_connection(&source).await
+    xianyu_core::remote::webdav::test_connection(&source).await
 }
 
 // =========================================================================
@@ -276,11 +276,11 @@ pub fn loudness_playback_gain_for_file(
     prevent_clipping: bool,
 ) -> f32 {
     let path = std::path::Path::new(&file_path);
-    let Some((tag_gain, tag_peak)) = crate::player::loudness::extract_replaygain_from_path(path)
+    let Some((tag_gain, tag_peak)) = xianyu_core::player::loudness::extract_replaygain_from_path(path)
     else {
         return 1.0;
     };
-    let record = crate::player::loudness::LoudnessRecord {
+    let record = xianyu_core::player::loudness::LoudnessRecord {
         song_id: 0,
         song_path: file_path,
         loudness_lufs: None,
@@ -302,14 +302,14 @@ pub fn loudness_playback_gain_for_file(
         scanned_at: None,
         error_message: None,
     };
-    crate::player::loudness::calculate_playback_gain(&record, gain_offset_db, prevent_clipping)
+    xianyu_core::player::loudness::calculate_playback_gain(&record, gain_offset_db, prevent_clipping)
 }
 
 /// 查询指定歌曲的响度分析缓存记录（LUFS/峰值等），返回 `LoudnessRecord` JSON。
 /// 无记录返回 `"null"`。
 pub fn get_track_loudness_info(db_path: String, song_id: i64) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let record = crate::player::loudness::get_song_loudness_record(&conn, song_id)?;
+    let record = xianyu_core::player::loudness::get_song_loudness_record(&conn, song_id)?;
     match record {
         Some(r) => serde_json::to_string(&r).map_err(|e| e.to_string()),
         None => Ok("null".to_string()),
@@ -326,16 +326,16 @@ pub fn get_track_loudness_info(db_path: String, song_id: i64) -> Result<String, 
 /// - `payload_json`：[`RecordPlayPayload`] 的 JSON（camelCase，如
 ///   `{"songPath":"...","listenedMs":30000,"durationMs":195000,"title":"...","artist":"..."}`）
 pub fn stats_record_play(db_path: String, payload_json: String) -> Result<(), String> {
-    let payload: crate::statistics::RecordPlayPayload =
+    let payload: xianyu_core::statistics::RecordPlayPayload =
         serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
     let mut conn = open_conn(&db_path)?;
-    crate::statistics::record_play(&mut conn, payload)
+    xianyu_core::statistics::record_play(&mut conn, payload)
 }
 
 /// 获取三个周期的听歌时长（日/周/总），返回 JSON 秒数。
 pub fn stats_get_listen_durations(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_listen_durations(&conn)?;
+    let v = xianyu_core::statistics::get_listen_durations(&conn)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -346,30 +346,30 @@ pub fn stats_get_behavior_stats(
     db_path: String,
     time_range_json: String,
 ) -> Result<String, String> {
-    let tr: crate::statistics::TimeRange =
+    let tr: xianyu_core::statistics::TimeRange =
         serde_json::from_str(&time_range_json).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_behavior_stats(&conn, tr)?;
+    let v = xianyu_core::statistics::get_behavior_stats(&conn, tr)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
 /// 获取最近播放历史（去重，按播放时间倒序）。
 pub fn stats_get_recent_history(db_path: String, limit: Option<usize>) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_recent_history(&conn, limit)?;
+    let v = xianyu_core::statistics::get_recent_history(&conn, limit)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
 /// 添加一条最近播放记录。
 pub fn stats_add_to_history(db_path: String, song_path: String) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    crate::statistics::add_to_history(&conn, song_path)
+    xianyu_core::statistics::add_to_history(&conn, song_path)
 }
 
 /// 清空最近播放历史。
 pub fn stats_clear_recent_history(db_path: String) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    crate::statistics::clear_recent_history(&conn)
+    xianyu_core::statistics::clear_recent_history(&conn)
 }
 
 /// 从最近播放历史移除指定歌曲。
@@ -378,7 +378,7 @@ pub fn stats_remove_from_recent_history(
     song_paths: Vec<String>,
 ) -> Result<(), String> {
     let mut conn = open_conn(&db_path)?;
-    crate::statistics::remove_from_recent_history(&mut conn, song_paths)
+    xianyu_core::statistics::remove_from_recent_history(&mut conn, song_paths)
 }
 
 /// 导出统计备份到 JSON 文件。
@@ -388,10 +388,10 @@ pub fn stats_export_statistics_file(
     db_path: String,
     options_json: String,
 ) -> Result<String, String> {
-    let options: crate::statistics::StatisticsExportOptions =
+    let options: xianyu_core::statistics::StatisticsExportOptions =
         serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::export_statistics_file(&conn, options)?;
+    let v = xianyu_core::statistics::export_statistics_file(&conn, options)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -400,10 +400,10 @@ pub fn stats_preview_statistics_import(
     db_path: String,
     options_json: String,
 ) -> Result<String, String> {
-    let options: crate::statistics::StatisticsImportPreviewOptions =
+    let options: xianyu_core::statistics::StatisticsImportPreviewOptions =
         serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::preview_statistics_import(&conn, options)?;
+    let v = xianyu_core::statistics::preview_statistics_import(&conn, options)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -415,10 +415,10 @@ pub fn stats_import_statistics_file(
     db_path: String,
     options_json: String,
 ) -> Result<String, String> {
-    let options: crate::statistics::StatisticsImportOptions =
+    let options: xianyu_core::statistics::StatisticsImportOptions =
         serde_json::from_str(&options_json).map_err(|e| e.to_string())?;
     let mut conn = open_conn(&db_path)?;
-    let v = crate::statistics::import_statistics_file(&mut conn, options)?;
+    let v = xianyu_core::statistics::import_statistics_file(&mut conn, options)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -440,13 +440,13 @@ pub fn scan_music_folder(
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let options = crate::music::scanner::ScanOptions::new(
+    let options = xianyu_core::music::scanner::ScanOptions::new(
         minimum_duration_seconds,
         allowed_formats,
     )
     .with_minimum_file_size_bytes(minimum_file_size_bytes.map(|v| v.max(0) as u64));
-    let cover_cache_dir = crate::music::scanner::derive_cover_cache_dir(&db_path);
-    let songs = crate::music::scanner::scan_single_directory_internal(
+    let cover_cache_dir = xianyu_core::music::scanner::derive_cover_cache_dir(&db_path);
+    let songs = xianyu_core::music::scanner::scan_single_directory_internal(
         folder_path,
         db_conn,
         None,
@@ -465,7 +465,7 @@ pub fn parse_audio_files(
     minimum_duration_seconds: Option<u32>,
     minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
-    let songs = crate::music::scanner::parse_audio_files(
+    let songs = xianyu_core::music::scanner::parse_audio_files(
         paths,
         minimum_duration_seconds,
         minimum_file_size_bytes.map(|v| v.max(0) as u64),
@@ -480,7 +480,7 @@ pub fn parse_music_folder(
     minimum_duration_seconds: Option<u32>,
     minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
-    let songs = crate::music::scanner::parse_music_folder(
+    let songs = xianyu_core::music::scanner::parse_music_folder(
         folder_path,
         minimum_duration_seconds,
         minimum_file_size_bytes.map(|v| v.max(0) as u64),
@@ -496,7 +496,7 @@ pub fn parse_audio_from_fd_android(
     path_key: String,
     format: String,
 ) -> Result<String, String> {
-    let song = crate::music::scanner::parse_song_from_fd(fd, &file_name, &path_key, &format)
+    let song = xianyu_core::music::scanner::parse_song_from_fd(fd, &file_name, &path_key, &format)
         .ok_or_else(|| format!("无法解析音频（fd={fd}）"))?;
     serde_json::to_string(&song).map_err(|e| e.to_string())
 }
@@ -514,7 +514,7 @@ pub fn parse_audio_from_path_android(
 ) -> Result<String, String> {
     let path = std::path::Path::new(&file_path);
     let song =
-        crate::music::scanner::parse_song_from_file_with_name(path, &file_name, &path_key, &format)
+        xianyu_core::music::scanner::parse_song_from_file_with_name(path, &file_name, &path_key, &format)
             .ok_or_else(|| format!("无法解析音频（file={file_path}）"))?;
     serde_json::to_string(&song).map_err(|e| e.to_string())
 }
@@ -525,9 +525,9 @@ pub fn extract_song_cover_thumbnail_from_path(
     source_key: String,
     real_path: String,
 ) -> Result<String, String> {
-    let cache_dir = crate::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
+    let cache_dir = xianyu_core::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
     std::thread::spawn(move || {
-        crate::music::covers::get_or_create_thumbnail_from_path(
+        xianyu_core::music::covers::get_or_create_thumbnail_from_path(
             &source_key,
             std::path::Path::new(&real_path),
             &cache_dir,
@@ -547,12 +547,12 @@ pub fn scan_saf_songs_commit(
     minimum_duration_seconds: Option<u32>,
     minimum_file_size_bytes: Option<i64>,
 ) -> Result<String, String> {
-    let songs: Vec<crate::music::types::Song> =
+    let songs: Vec<xianyu_core::music::types::Song> =
         serde_json::from_str(&songs_json).map_err(|e| e.to_string())?;
     let mut conn = open_conn(&db_path)?;
-    let options = crate::music::scanner::ScanOptions::new(minimum_duration_seconds, None)
+    let options = xianyu_core::music::scanner::ScanOptions::new(minimum_duration_seconds, None)
         .with_minimum_file_size_bytes(minimum_file_size_bytes.map(|v| v.max(0) as u64));
-    crate::music::scanner::commit_saf_scan_songs(&mut conn, &folder_key, songs, &options)?;
+    xianyu_core::music::scanner::commit_saf_scan_songs(&mut conn, &folder_key, songs, &options)?;
     Ok("ok".to_string())
 }
 
@@ -563,23 +563,23 @@ pub fn scan_saf_songs_commit(
 /// 列出全部远程源（返回 [`RemoteSource`] 数组 JSON）。
 pub fn list_remote_sources(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let sources = crate::remote::repository::list_sources(&conn)?;
+    let sources = xianyu_core::remote::repository::list_sources(&conn)?;
     serde_json::to_string(&sources).map_err(|e| e.to_string())
 }
 
 /// 新增或更新远程源（按 `RemoteSourceInput` JSON，缺 id 则新增）。
 pub fn save_remote_source(db_path: String, source_json: String) -> Result<String, String> {
-    let input: crate::remote::types::RemoteSourceInput =
+    let input: xianyu_core::remote::types::RemoteSourceInput =
         serde_json::from_str(&source_json).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let source = crate::remote::repository::save_source(&conn, input)?;
+    let source = xianyu_core::remote::repository::save_source(&conn, input)?;
     serde_json::to_string(&source).map_err(|e| e.to_string())
 }
 
 /// 删除远程源及其关联歌曲。
 pub fn remove_remote_source(db_path: String, source_id: String) -> Result<(), String> {
     let mut conn = open_conn(&db_path)?;
-    crate::remote::repository::remove_source(&mut conn, &source_id)
+    xianyu_core::remote::repository::remove_source(&mut conn, &source_id)
 }
 
 /// 同步远程源：扫描远程目录、增量解析并写入音乐库。
@@ -594,9 +594,9 @@ pub async fn sync_remote_source(
     source_id: String,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let source = crate::remote::repository::get_source(&conn, &source_id)?;
+    let source = xianyu_core::remote::repository::get_source(&conn, &source_id)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let result = crate::remote::scanner::sync_source(
+    let result = xianyu_core::remote::scanner::sync_source(
         std::path::Path::new(&cache_root),
         &db_path,
         db_conn,
@@ -608,13 +608,13 @@ pub async fn sync_remote_source(
 
 /// 查询远程音频缓存占用（返回 [`RemoteCacheUsage`] JSON）。
 pub fn get_remote_cache_usage(cache_root: String) -> Result<String, String> {
-    let usage = crate::remote::cache::cache_usage(std::path::Path::new(&cache_root))?;
+    let usage = xianyu_core::remote::cache::cache_usage(std::path::Path::new(&cache_root))?;
     serde_json::to_string(&usage).map_err(|e| e.to_string())
 }
 
 /// 清空远程音频缓存（返回清空后 [`RemoteCacheUsage`] JSON）。
 pub fn clear_remote_cache(cache_root: String) -> Result<String, String> {
-    let usage = crate::remote::cache::clear_cache(std::path::Path::new(&cache_root))?;
+    let usage = xianyu_core::remote::cache::clear_cache(std::path::Path::new(&cache_root))?;
     serde_json::to_string(&usage).map_err(|e| e.to_string())
 }
 
@@ -623,7 +623,7 @@ pub fn clear_remote_cache(cache_root: String) -> Result<String, String> {
 /// 返回 `{"kind":"cached","path":...}` 或 `{"kind":"stream","url":...,...}` JSON。
 pub fn remote_playback_source(db_path: String, remote_uri: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let source = crate::remote::cache::remote_playback_source(&conn, &remote_uri)?;
+    let source = xianyu_core::remote::cache::remote_playback_source(&conn, &remote_uri)?;
     serde_json::to_string(&source).map_err(|e| e.to_string())
 }
 
@@ -639,7 +639,7 @@ pub async fn auth_authed_request(
     fetch_timeout_ms: Option<u64>,
 ) -> Result<String, String> {
     let body: serde_json::Value = serde_json::from_str(&body_json).map_err(|e| e.to_string())?;
-    let payload = crate::music::auth::authed_request(
+    let payload = xianyu_core::music::auth::authed_request(
         std::path::Path::new(&data_dir),
         action,
         body,
@@ -656,28 +656,28 @@ pub fn auth_save_credentials(
     user_json: String,
 ) -> Result<(), String> {
     let user: serde_json::Value = serde_json::from_str(&user_json).map_err(|e| e.to_string())?;
-    crate::music::auth::save_auth_credentials(std::path::Path::new(&data_dir), token, user)
+    xianyu_core::music::auth::save_auth_credentials(std::path::Path::new(&data_dir), token, user)
 }
 
 /// 读取认证凭证（返回 `AuthCredentials` JSON 或 null）。
 pub fn auth_get_credentials(data_dir: String) -> Result<String, String> {
-    let credentials = crate::music::auth::get_auth_credentials(std::path::Path::new(&data_dir))?;
+    let credentials = xianyu_core::music::auth::get_auth_credentials(std::path::Path::new(&data_dir))?;
     serde_json::to_string(&credentials).map_err(|e| e.to_string())
 }
 
 /// 清除认证凭证。
 pub fn auth_clear_credentials(data_dir: String) -> Result<(), String> {
-    crate::music::auth::clear_auth_credentials(std::path::Path::new(&data_dir))
+    xianyu_core::music::auth::clear_auth_credentials(std::path::Path::new(&data_dir))
 }
 
 /// 设置 API 基地址。
 pub fn auth_set_base_url(data_dir: String, base_url: String) -> Result<(), String> {
-    crate::music::auth::set_auth_base_url(std::path::Path::new(&data_dir), base_url)
+    xianyu_core::music::auth::set_auth_base_url(std::path::Path::new(&data_dir), base_url)
 }
 
 /// 设置 API 签名密钥。
 pub fn auth_set_api_secret(data_dir: String, api_secret: String) -> Result<(), String> {
-    crate::music::auth::set_auth_api_secret(std::path::Path::new(&data_dir), api_secret)
+    xianyu_core::music::auth::set_auth_api_secret(std::path::Path::new(&data_dir), api_secret)
 }
 
 // =========================================================================
@@ -687,33 +687,33 @@ pub fn auth_set_api_secret(data_dir: String, api_secret: String) -> Result<(), S
 /// 读取音乐库文件夹（返回 `LibraryFolder[]` JSON，含歌曲数）。
 pub fn get_library_folders(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let folders = crate::music::library::get_library_folders(&conn)?;
+    let folders = xianyu_core::music::library::get_library_folders(&conn)?;
     serde_json::to_string(&folders).map_err(|e| e.to_string())
 }
 
 /// 新增音乐库文件夹。
 pub fn add_library_folder(db_path: String, path: String) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    crate::music::library::add_library_folder(&conn, path)
+    xianyu_core::music::library::add_library_folder(&conn, path)
 }
 
 /// 移除音乐库文件夹及其后代歌曲。
 pub fn remove_library_folder(db_path: String, path: String) -> Result<(), String> {
     let mut conn = open_conn(&db_path)?;
-    crate::music::library::remove_library_folder(&mut conn, path)
+    xianyu_core::music::library::remove_library_folder(&mut conn, path)
 }
 
 /// 读取全部本地曲库歌曲（返回 `LibrarySong[]` JSON）。
 pub fn get_library_songs_cached(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let songs = crate::music::library::get_library_songs_cached(&conn)?;
+    let songs = xianyu_core::music::library::get_library_songs_cached(&conn)?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
 /// 按路径批量查询歌曲（返回 `LibrarySong[]` JSON）。
 pub fn get_library_songs_by_paths(db_path: String, paths: Vec<String>) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let songs = crate::music::library::get_library_songs_by_paths(&conn, paths)?;
+    let songs = xianyu_core::music::library::get_library_songs_by_paths(&conn, paths)?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
@@ -724,21 +724,21 @@ pub fn search_library_songs(
     limit: Option<usize>,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let songs = crate::music::library::search_library_songs(&conn, query, limit)?;
+    let songs = xianyu_core::music::library::search_library_songs(&conn, query, limit)?;
     serde_json::to_string(&songs).map_err(|e| e.to_string())
 }
 
 /// 读取歌手目录（返回 `ArtistCatalogItem[]` JSON）。
 pub fn get_library_artist_catalog(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let items = crate::music::library::get_library_artist_catalog(&conn)?;
+    let items = xianyu_core::music::library::get_library_artist_catalog(&conn)?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
 /// 读取专辑目录（返回 `AlbumCatalogItem[]` JSON）。
 pub fn get_library_album_catalog(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let items = crate::music::library::get_library_album_catalog(&conn)?;
+    let items = xianyu_core::music::library::get_library_album_catalog(&conn)?;
     serde_json::to_string(&items).map_err(|e| e.to_string())
 }
 
@@ -748,7 +748,7 @@ pub fn get_library_song_paths_by_artist(
     artist_name: String,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let paths = crate::music::library::get_library_song_paths_by_artist(&conn, artist_name)?;
+    let paths = xianyu_core::music::library::get_library_song_paths_by_artist(&conn, artist_name)?;
     serde_json::to_string(&paths).map_err(|e| e.to_string())
 }
 
@@ -758,7 +758,7 @@ pub fn get_library_song_paths_by_album(
     album_key: String,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let paths = crate::music::library::get_library_song_paths_by_album(&conn, album_key)?;
+    let paths = xianyu_core::music::library::get_library_song_paths_by_album(&conn, album_key)?;
     serde_json::to_string(&paths).map_err(|e| e.to_string())
 }
 
@@ -772,8 +772,8 @@ pub fn get_library_song_paths_for_folder_view(
     sort_mode: String,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let mode = crate::music::library::parse_folder_song_sort_mode(&sort_mode)?;
-    let paths = crate::music::library::get_library_song_paths_for_folder_view(
+    let mode = xianyu_core::music::library::parse_folder_song_sort_mode(&sort_mode)?;
+    let paths = xianyu_core::music::library::get_library_song_paths_for_folder_view(
         &conn,
         folder_path,
         query,
@@ -785,7 +785,7 @@ pub fn get_library_song_paths_for_folder_view(
 /// 递归构建音乐库文件夹目录树（返回 `FolderNode[]` JSON）。
 pub fn get_library_hierarchy(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let tree = crate::music::library::get_library_hierarchy(&conn)?;
+    let tree = xianyu_core::music::library::get_library_hierarchy(&conn)?;
     serde_json::to_string(&tree).map_err(|e| e.to_string())
 }
 
@@ -801,7 +801,7 @@ pub async fn get_song_cover_thumbnail(
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    crate::music::covers::get_song_cover_thumbnail(
+    xianyu_core::music::covers::get_song_cover_thumbnail(
         std::path::PathBuf::from(&cache_root),
         db_conn,
         path,
@@ -817,7 +817,7 @@ pub async fn get_song_cover(
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    crate::music::covers::get_song_cover(std::path::PathBuf::from(&cache_root), db_conn, path).await
+    xianyu_core::music::covers::get_song_cover(std::path::PathBuf::from(&cache_root), db_conn, path).await
 }
 
 /// 扫描 SAF 歌曲时从已打开的 fd 提取内嵌封面并写入封面缓存。
@@ -829,9 +829,9 @@ pub fn extract_song_cover_thumbnail_from_fd(
     path: String,
     fd: i32,
 ) -> Result<String, String> {
-    let cache_dir = crate::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
+    let cache_dir = xianyu_core::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
     std::thread::spawn(move || {
-        crate::music::covers::get_or_create_thumbnail_from_fd(&path, fd, &cache_dir)
+        xianyu_core::music::covers::get_or_create_thumbnail_from_fd(&path, fd, &cache_dir)
     })
     .join()
     .map_err(|_| "缩略图生成线程异常".to_string())?
@@ -846,34 +846,41 @@ pub fn extract_song_cover_thumbnail_from_fd(
 pub async fn get_song_lyrics_payload(db_path: String, path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    crate::music::lyrics::get_song_lyrics_payload(path, db_conn).await
+    xianyu_core::music::lyrics::get_song_lyrics_payload(path, db_conn).await
 }
 
 /// 读取歌曲歌词用于编辑（返回 `SongLyricsForEdit` JSON）。
 pub async fn get_song_lyrics_for_edit(path: String) -> Result<String, String> {
-    crate::music::lyrics::get_song_lyrics_for_edit(path).await
+    xianyu_core::music::lyrics::get_song_lyrics_for_edit(path).await
 }
 
 /// 保存歌曲歌词（内嵌或侧边 LRC），返回 `SongLyricsForEdit` JSON。
+/// `source` ∈ `"embedded"` / `"sidecar"`。
 pub async fn save_song_lyrics(
     path: String,
     lyrics: String,
-    source: crate::music::types::LyricsStorageSource,
+    source: String,
     source_path: Option<String>,
 ) -> Result<String, String> {
-    crate::music::lyrics::save_song_lyrics(path, lyrics, source, source_path).await
+    let source = match source.as_str() {
+        "embedded" => xianyu_core::music::types::LyricsStorageSource::Embedded,
+        "sidecar" => xianyu_core::music::types::LyricsStorageSource::Sidecar,
+        "empty" => xianyu_core::music::types::LyricsStorageSource::Empty,
+        other => return Err(format!("未知歌词存储来源: {other}")),
+    };
+    xianyu_core::music::lyrics::save_song_lyrics(path, lyrics, source, source_path).await
 }
 
 /// 读取歌曲完整歌词（内嵌标签 → 侧边 LRC，远程歌曲走源 + 缓存），返回原始歌词文本。
 pub async fn get_song_lyrics(db_path: String, path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    crate::music::lyrics::get_song_lyrics(path, db_conn).await
+    xianyu_core::music::lyrics::get_song_lyrics(path, db_conn).await
 }
 
 /// 读取用户主动选择的 .lrc 歌词文件源码（返回解码后的歌词文本）。
 pub fn read_lyrics_file(path: String) -> Result<String, String> {
-    crate::music::lyrics::read_lyrics_file(path)
+    xianyu_core::music::lyrics::read_lyrics_file(path)
 }
 
 /// 保存歌曲背景图到背景根目录下 `song_backgrounds/` 并写入数据库，返回保存后的背景图路径。
@@ -884,7 +891,7 @@ pub fn save_song_background(
     background_path: String,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    crate::music::files::save_song_background(
+    xianyu_core::music::files::save_song_background(
         &conn,
         std::path::Path::new(&song_backgrounds_root),
         song_path,
@@ -895,7 +902,7 @@ pub fn save_song_background(
 /// 查询歌曲背景图路径，无则返回 JSON `null`。
 pub fn get_song_background(db_path: String, song_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let result = crate::music::files::get_song_background(&conn, song_path)?;
+    let result = xianyu_core::music::files::get_song_background(&conn, song_path)?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
@@ -906,7 +913,7 @@ pub fn clear_song_background(
     song_path: String,
 ) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    crate::music::files::clear_song_background(
+    xianyu_core::music::files::clear_song_background(
         &conn,
         std::path::Path::new(&song_backgrounds_root),
         song_path,
@@ -920,23 +927,23 @@ pub fn save_song_info(
     payload_json: String,
 ) -> Result<String, String> {
     let mut conn = open_conn(&db_path)?;
-    let payload: crate::music::types::SongInfoEditPayload =
+    let payload: xianyu_core::music::types::SongInfoEditPayload =
         serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
-    crate::music::files::save_song_info(&mut conn, path, payload)
+    xianyu_core::music::files::save_song_info(&mut conn, path, payload)
 }
 
 /// 读取歌曲详情（返回 `SongDetail` JSON）。
 pub fn get_song_detail(db_path: String, path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    crate::music::files::get_song_detail(&conn, path)
+    xianyu_core::music::files::get_song_detail(&conn, path)
 }
 
 // =========================================================================
 // 播放会话（第十二批）
 // =========================================================================
 
-use crate::player::session::global_playback_session;
-use crate::player::types::PlaybackSessionData;
+use xianyu_core::player::session::global_playback_session;
+use xianyu_core::player::types::PlaybackSessionData;
 
 /// 保存完整播放会话状态（写入内存 + SQLite）。
 pub fn save_playback_session(db_path: String, session_json: String) -> Result<(), String> {
@@ -985,9 +992,9 @@ pub fn update_playback_position(
 /// - `config_json`：[`RenameConfig`] 的 JSON（camelCase，含 `mode`/`template`/
 ///   `removeTrackPrefix`/`removeSourcePrefix`）
 pub fn preview_rename(root_path: String, config_json: String) -> Result<String, String> {
-    let config: crate::toolbox::RenameConfig =
+    let config: xianyu_core::toolbox::RenameConfig =
         serde_json::from_str(&config_json).map_err(|e| e.to_string())?;
-    let previews = crate::toolbox::preview_rename(root_path, config)?;
+    let previews = xianyu_core::toolbox::preview_rename(root_path, config)?;
     serde_json::to_string(&previews).map_err(|e| e.to_string())
 }
 
@@ -995,9 +1002,9 @@ pub fn preview_rename(root_path: String, config_json: String) -> Result<String, 
 ///
 /// - `operations_json`：[`RenameOperation`] 数组的 JSON（camelCase，含 `originalPath`/`newName`）
 pub fn apply_rename(operations_json: String) -> Result<u32, String> {
-    let operations: Vec<crate::toolbox::RenameOperation> =
+    let operations: Vec<xianyu_core::toolbox::RenameOperation> =
         serde_json::from_str(&operations_json).map_err(|e| e.to_string())?;
-    crate::toolbox::apply_rename(operations)
+    xianyu_core::toolbox::apply_rename(operations)
 }
 
 /// 刷新指定文件夹歌曲（增量扫描并写库，返回该文件夹全部歌曲 JSON）。
@@ -1009,8 +1016,8 @@ pub fn refresh_folder_songs(
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let cover_cache_dir = crate::music::scanner::derive_cover_cache_dir(&db_path);
-    let songs = crate::toolbox::refresh_folder_songs(
+    let cover_cache_dir = xianyu_core::music::scanner::derive_cover_cache_dir(&db_path);
+    let songs = xianyu_core::toolbox::refresh_folder_songs(
         db_conn,
         folder_path,
         minimum_duration_seconds,
@@ -1037,7 +1044,7 @@ pub fn resolve_download_full_path(
     overwrite_existing: bool,
     cek: Option<String>,
 ) -> Result<String, String> {
-    crate::toolbox::resolve_download_full_path(
+    xianyu_core::toolbox::resolve_download_full_path(
         directory,
         title,
         artist,
@@ -1084,8 +1091,8 @@ pub fn start_usb_exclusive_playback(
 ) -> Result<String, String> {
     let stream_cache_headers: Option<std::collections::HashMap<String, String>> =
         stream_cache_headers.and_then(|s| serde_json::from_str(&s).ok());
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::Play {
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::Play {
             path,
             device_id,
             volume,
@@ -1108,32 +1115,32 @@ pub fn start_usb_exclusive_playback(
 
 /// 停止 USB 独占播放并释放设备。
 pub fn stop_usb_exclusive_playback() {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::Stop,
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::Stop,
     )
     .ok();
 }
 
 /// 暂停 USB 独占播放（保持进度，等待 resume 恢复）。
 pub fn pause_usb_exclusive() {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::Pause,
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::Pause,
     )
     .ok();
 }
 
 /// 从暂停恢复 USB 独占播放。
 pub fn resume_usb_exclusive() {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::Resume,
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::Resume,
     )
     .ok();
 }
 
 /// 跳转到指定位置（秒）。
 pub fn seek_usb_exclusive(time_secs: f64, is_playing: bool) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::Seek {
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::Seek {
             time_secs,
             is_playing,
         },
@@ -1143,40 +1150,40 @@ pub fn seek_usb_exclusive(time_secs: f64, is_playing: bool) {
 
 /// 设置用户音量（0.0–1.0）。
 pub fn set_usb_exclusive_volume(volume: f32) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetVolume(volume),
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetVolume(volume),
     )
     .ok();
 }
 
 /// 运行时更新独占管线的音量平衡（ReplayGain）目标增益（平滑渐变不断音）。
 pub fn set_usb_exclusive_volume_balance_gain(gain: f32) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetVolumeBalanceGain(gain),
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetVolumeBalanceGain(gain),
     )
     .ok();
 }
 
 /// 更新 EQ 设置（camelCase JSON）。
 pub fn set_usb_exclusive_equalizer(settings_json: String) -> Result<(), String> {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetEqualizer(settings_json),
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetEqualizer(settings_json),
     )
     .map(|_| ())
 }
 
 /// 更新音效设置（camelCase JSON）。
 pub fn set_usb_exclusive_sound_effect(settings_json: String) -> Result<(), String> {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetSoundEffect(settings_json),
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetSoundEffect(settings_json),
     )
     .map(|_| ())
 }
 
 /// 运行时切换 Bit-perfect 直出：开启绕过响度/EQ/音效/音量，关闭恢复 DSP 链。
 pub fn set_usb_exclusive_bit_perfect(enabled: bool) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetBitPerfect(enabled),
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetBitPerfect(enabled),
     )
     .ok();
 }
@@ -1184,8 +1191,8 @@ pub fn set_usb_exclusive_bit_perfect(enabled: bool) {
 /// 运行时切换跳过静音：静音段只保留 `keep_ms`，多出来的丢掉。
 /// 位置上报会把丢掉的时长加回去，所以进度条仍按原曲时间轴走。
 pub fn set_usb_exclusive_skip_silence(enabled: bool, threshold_db: f32, keep_ms: u32) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetSkipSilence {
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetSkipSilence {
             enabled,
             threshold_db,
             keep_ms,
@@ -1201,8 +1208,8 @@ pub fn set_usb_exclusive_next(
     stream_cache_url: Option<String>,
     stream_cache_headers_json: Option<String>,
 ) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetNext {
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetNext {
             path,
             stream_cache_url,
             stream_cache_headers_json,
@@ -1213,43 +1220,43 @@ pub fn set_usb_exclusive_next(
 
 /// 取消预排（手动切歌/插队/seek 越界时调用）。
 pub fn cancel_usb_exclusive_next() {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::CancelNext,
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::CancelNext,
     )
     .ok();
 }
 
 /// 设置曲间交叉淡入淡出时长（毫秒，0 = 关闭）。运行期可改，不用重启管线。
 pub fn set_usb_exclusive_crossfade(ms: u32) {
-    crate::player::commands::dispatch_playback_command(
-        crate::player::commands::PlaybackCommand::SetCrossfade(ms),
+    xianyu_core::player::commands::dispatch_playback_command(
+        xianyu_core::player::commands::PlaybackCommand::SetCrossfade(ms),
     )
     .ok();
 }
 
 /// 当前独占播放是否处于 Bit-perfect 直出状态。
 pub fn get_usb_exclusive_bit_perfect() -> bool {
-    crate::player::output::is_exclusive_bit_perfect()
+    xianyu_core::player::output::is_exclusive_bit_perfect()
 }
 
 /// 取出并清空当前管线的诊断信息（seek/拼接/交叉/跳过静音等关键事件）。
 ///
 /// 供前端在排查「无缝/淡入淡出/跳静音有没有真的生效」时打日志用。
 pub fn take_usb_exclusive_pipeline_diag() -> String {
-    if crate::player::output::is_exclusive_active() {
-        return crate::player::output::take_exclusive_pipeline_diag();
+    if xianyu_core::player::output::is_exclusive_active() {
+        return xianyu_core::player::output::take_exclusive_pipeline_diag();
     }
     String::new()
 }
 
 /// 查询当前独占播放输出设备/格式信息（JSON），用于前端展示已选输出设备。
 pub fn get_usb_exclusive_device_info() -> String {
-    crate::player::output::get_exclusive_device_info()
+    xianyu_core::player::output::get_exclusive_device_info()
 }
 
 /// 获取当前播放位置（秒）。
 pub fn get_usb_exclusive_position_secs() -> f64 {
-    crate::player::output::get_exclusive_position_secs()
+    xianyu_core::player::output::get_exclusive_position_secs()
 }
 
 /// 下载在线歌曲真实音源直链到指定路径（流式写入 + QMC2/CENC 解密），返回最终路径。
@@ -1269,25 +1276,25 @@ pub async fn download_online_song(
     } else {
         serde_json::from_str(&headers_json).map_err(|e| e.to_string())?
     };
-    crate::toolbox::download_online_song(url, dest_path, ekey, cek, Some(headers)).await
+    xianyu_core::toolbox::download_online_song(url, dest_path, ekey, cek, Some(headers)).await
 }
 
 /// 汽水原生播放取流（lx://qs）：track_v2 → 按品质选档 → PlayAuth→CEK。
 /// 返回 JSON：{"url","quality","bitrate","size","headers":{"User-Agent"},"cek"?}
 /// （cek 解出失败时为 null，上层按普通直链处理/走换源）
 pub async fn resolve_qs_play(track_id: String, quality: String) -> Result<String, String> {
-    let payload = crate::music::lx_search::qs_resolve_play(&track_id, &quality).await?;
+    let payload = xianyu_core::music::lx_search::qs_resolve_play(&track_id, &quality).await?;
     let cek = if payload.play_auth.is_empty() {
         None
     } else {
-        crate::music::lx_search::qs_play_auth_to_cek(&payload.play_auth).ok()
+        xianyu_core::music::lx_search::qs_play_auth_to_cek(&payload.play_auth).ok()
     };
     let result = serde_json::json!({
         "url": payload.url,
         "quality": payload.quality,
         "bitrate": payload.bitrate,
         "size": payload.size,
-        "headers": {"User-Agent": crate::music::lx_search::QS_UA},
+        "headers": {"User-Agent": xianyu_core::music::lx_search::QS_UA},
         "cek": cek,
     });
     Ok(result.to_string())
@@ -1302,7 +1309,7 @@ pub fn decrypt_qmc_file_standalone(
     file_path: String,
     ekey: Option<String>,
 ) -> Result<String, String> {
-    crate::toolbox::decrypt_qmc_file_standalone(file_path, ekey)
+    xianyu_core::toolbox::decrypt_qmc_file_standalone(file_path, ekey)
 }
 
 /// 下载后收尾编排：歌词保存 + 封面下载保存 + 元数据嵌入。
@@ -1311,25 +1318,25 @@ pub fn decrypt_qmc_file_standalone(
 ///
 /// 返回 [`FinalizeDownloadExtrasResult`] JSON（camelCase）。
 pub async fn finalize_download_extras(request_json: String) -> Result<String, String> {
-    let request: crate::toolbox::FinalizeDownloadExtrasRequest =
+    let request: xianyu_core::toolbox::FinalizeDownloadExtrasRequest =
         serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
-    let result = crate::toolbox::finalize_download_extras(request).await?;
+    let result = xianyu_core::toolbox::finalize_download_extras(request).await?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 /// 读取下载记录 JSON 文本（文件不存在或损坏时返回 `"{}"`）。
 pub async fn read_download_history(data_dir: String) -> Result<String, String> {
-    crate::toolbox::read_download_history(std::path::Path::new(&data_dir)).await
+    xianyu_core::toolbox::read_download_history(std::path::Path::new(&data_dir)).await
 }
 
 /// 写入下载记录 JSON 文本（整体覆盖，自动创建父目录）。
 pub async fn write_download_history(data_dir: String, content: String) -> Result<(), String> {
-    crate::toolbox::write_download_history(std::path::Path::new(&data_dir), content).await
+    xianyu_core::toolbox::write_download_history(std::path::Path::new(&data_dir), content).await
 }
 
 /// 获取公告（返回解析出的 data JSON 字符串）。
 pub async fn fetch_announcement() -> Result<String, String> {
-    crate::toolbox::fetch_announcement().await
+    xianyu_core::toolbox::fetch_announcement().await
 }
 
 // =========================================================================
@@ -1338,17 +1345,17 @@ pub async fn fetch_announcement() -> Result<String, String> {
 
 /// 读取插件/文本文件内容（限 `.js/.json/.txt/.m3u/.m3u8`）。
 pub fn read_plugin_file(path: String) -> Result<String, String> {
-    crate::plugins::read_plugin_file(path)
+    xianyu_core::plugins::read_plugin_file(path)
 }
 
 /// 代理图片请求（自动添加 Referer，返回 data URL）。
 pub async fn proxy_image(url: String, referer: Option<String>) -> Result<String, String> {
-    crate::plugins::proxy_image(url, referer).await
+    xianyu_core::plugins::proxy_image(url, referer).await
 }
 
 /// 读取本地图片文件为 base64，返回 JSON `{"mime":..., "base64":...}`（分享封面上传用）。
 pub fn read_image_base64(path: String) -> Result<String, String> {
-    crate::plugins::read_image_base64(path)
+    xianyu_core::plugins::read_image_base64(path)
 }
 
 /// 将插件解析得到的视频流式写入 `video-background` 缓存，返回缓存文件完整路径。
@@ -1358,13 +1365,13 @@ pub async fn download_video_to_cache(
     url: String,
     headers: Option<std::collections::HashMap<String, String>>,
 ) -> Result<String, String> {
-    crate::plugins::download_video_to_cache(cache_dir, url, headers).await
+    xianyu_core::plugins::download_video_to_cache(cache_dir, url, headers).await
 }
 
 /// 清理本功能创建的后台视频缓存文件。
 /// `cache_dir` 必须与下载时传入的缓存根目录一致。
 pub async fn remove_cached_background_video(cache_dir: String, path: String) -> Result<(), String> {
-    crate::plugins::remove_cached_background_video(cache_dir, path).await
+    xianyu_core::plugins::remove_cached_background_video(cache_dir, path).await
 }
 
 // =========================================================================
@@ -1374,55 +1381,57 @@ pub async fn remove_cached_background_video(cache_dir: String, path: String) -> 
 
 /// QQ 音乐 zzcSign 签名。
 pub fn host_zzc_sign(text: String) -> String {
-    crate::host_crypto::zzc_sign(&text)
+    xianyu_core::host_crypto::zzc_sign(&text)
 }
 
 /// 酷狗参数签名（`platform` 为 `"web"` 用 web 盐，其余用 android 盐）。
 pub fn host_kugou_sign(params: String, platform: String, body: Option<String>) -> String {
-    crate::host_crypto::kugou_sign(&params, &platform, body.as_deref().unwrap_or(""))
+    xianyu_core::host_crypto::kugou_sign(&params, &platform, body.as_deref().unwrap_or(""))
 }
 
 /// 酷狗请求密钥（android 盐）。
 pub fn host_kugou_request_key() -> String {
-    crate::host_crypto::KG_SALT_ANDROID.to_string()
+    xianyu_core::host_crypto::KG_SALT_ANDROID.to_string()
 }
 
 /// 咪咕搜索签名。返回 JSON `{"sign":..., "deviceId":...}`。
 pub fn host_migu_sign(text: String, time: String) -> String {
-    let (sign, device_id) = crate::host_crypto::migu_sign(&text, &time);
+    let (sign, device_id) = xianyu_core::host_crypto::migu_sign(&text, &time);
     serde_json::json!({ "sign": sign, "deviceId": device_id }).to_string()
 }
 
 /// 网易云 linuxapi 加密（AES-128-ECB PKCS7 → hex 大写）。
 pub fn host_linuxapi_encrypt(payload: String) -> String {
-    crate::host_crypto::linuxapi_encrypt(&payload)
+    xianyu_core::host_crypto::linuxapi_encrypt(&payload)
 }
 
 /// 网易云 weapi 加密。返回 JSON `{"params":..., "encSecKey":...}`。
 pub fn host_weapi_encrypt(payload: String) -> String {
-    let (params, enc_sec_key) = crate::host_crypto::weapi_encrypt(&payload);
+    let (params, enc_sec_key) = xianyu_core::host_crypto::weapi_encrypt(&payload);
     serde_json::json!({ "params": params, "encSecKey": enc_sec_key }).to_string()
 }
 
 /// 通用 SHA-256 hex（插件脚本哈希等）。
 pub fn host_sha256_hex(text: String) -> String {
-    crate::host_crypto::sha256_hex(&text)
+    xianyu_core::host_crypto::sha256_hex(&text)
 }
 
 /// 校验服务端下发的兜底配置签名（ed25519，双公钥槽位）。
 /// `key_id` 为响应携带的 keyId（可选）：已知 keyId 仅对该槽位严格验签，
 /// 缺失/未知则遍历槽位；签名有效且 keyId 未知时返回 key_unknown=true
 /// （Dart 层采纳配置并上报 FallbackConfigKeyUnknown 事件）。
+/// 返回 `{ "valid": bool, "keyUnknown": bool }` JSON。
 pub fn verify_fallback_config_signature(
     config_json: String,
     signature: String,
     key_id: Option<String>,
-) -> Result<crate::fallback_verify::FallbackVerifyResult, String> {
-    crate::fallback_verify::verify_fallback_config_signature(
+) -> Result<String, String> {
+    let result = xianyu_core::fallback_verify::verify_fallback_config_signature(
         &config_json,
         &signature,
         key_id.as_deref(),
-    )
+    )?;
+    serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 /// 校验服务端 check_beta_access 响应签名（ed25519）。返回 true 表示响应可信。
@@ -1433,7 +1442,7 @@ pub fn verify_beta_access_signature(
     exp: i64,
     signature: String,
 ) -> Result<bool, String> {
-    crate::fallback_verify::verify_beta_access_signature(
+    xianyu_core::fallback_verify::verify_beta_access_signature(
         &device_id, allowed, pending, exp, &signature,
     )
 }
@@ -1444,7 +1453,7 @@ pub fn verify_beta_access_signature(
 
 /// 初始化全局插件引擎（首次调用时以 `data_dir` 建立 Cookie/Storage 存储）。
 pub fn plugin_engine_init(data_dir: String) -> Result<(), String> {
-    crate::plugin_host::global_engine(&data_dir);
+    xianyu_core::plugin_host::global_engine(&data_dir);
     Ok(())
 }
 
@@ -1455,7 +1464,7 @@ pub async fn plugin_engine_load_lx(
     script: String,
     script_info_json: String,
 ) -> Result<String, String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     let result = engine.load_lx(&plugin_id, &script, &script_info_json).await;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
@@ -1467,7 +1476,7 @@ pub async fn plugin_engine_load_musicfree(
     script: String,
     user_vars_json: String,
 ) -> Result<String, String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     let result = engine
         .load_musicfree(&plugin_id, &script, &user_vars_json)
         .await;
@@ -1483,7 +1492,7 @@ pub async fn plugin_engine_call(
     user_vars_json: Option<String>,
     timeout_ms: u64,
 ) -> Result<String, String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     let result = engine
         .call(
             &plugin_id,
@@ -1498,26 +1507,26 @@ pub async fn plugin_engine_call(
 
 /// 销毁指定插件的沙箱实例。
 pub async fn plugin_engine_destroy(data_dir: String, plugin_id: String) -> Result<(), String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     engine.unload(&plugin_id).await;
     Ok(())
 }
 
 /// 销毁全部插件沙箱实例。
 pub async fn plugin_engine_destroy_all(data_dir: String) -> Result<(), String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     engine.unload_all().await;
     Ok(())
 }
 
 /// 取消正在进行的音频识别。
 pub fn cancel_recognize_system_audio() -> Result<(), String> {
-    crate::recognize::cancel_recognize_system_audio()
+    xianyu_core::recognize::cancel_recognize_system_audio()
 }
 
 /// 使用自定义 PCM 数据识别歌曲（8000Hz/16bit/单声道），返回 `RecognizeResponse` JSON。
 pub async fn recognize_with_pcm(pcm: Vec<u8>) -> Result<String, String> {
-    let resp = crate::recognize::recognize_with_pcm(pcm).await?;
+    let resp = xianyu_core::recognize::recognize_with_pcm(pcm).await?;
     serde_json::to_string(&resp).map_err(|e| e.to_string())
 }
 
@@ -1528,22 +1537,22 @@ pub async fn recognize_with_pcm(pcm: Vec<u8>) -> Result<String, String> {
 
 /// 设置在线播放缓存上限（字节）。
 pub fn set_stream_cache_max_size_bytes(bytes: u64) {
-    crate::player::stream_cache::set_max_cache_size(bytes);
+    xianyu_core::player::stream_cache::set_max_cache_size(bytes);
 }
 
 /// 当前在线播放缓存占用（字节）。
 pub fn stream_cache_current_bytes() -> u64 {
-    crate::player::stream_cache::current_cache_size()
+    xianyu_core::player::stream_cache::current_cache_size()
 }
 
 /// 在线播放缓存上限（字节）。
 pub fn stream_cache_max_bytes() -> u64 {
-    crate::player::stream_cache::max_cache_size()
+    xianyu_core::player::stream_cache::max_cache_size()
 }
 
 /// 清空在线播放缓存。
 pub fn clear_stream_cache() {
-    crate::player::stream_cache::clear_all();
+    xianyu_core::player::stream_cache::clear_all();
 }
 
 // =========================================================================
@@ -1553,28 +1562,28 @@ pub fn clear_stream_cache() {
 /// 读取音质分布（返回 [`QualityDistribution`] JSON）。
 pub fn stats_get_quality_distribution(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_quality_distribution(&conn)?;
+    let v = xianyu_core::statistics::get_quality_distribution(&conn)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
 /// 读取格式分布（返回 [`FormatDistribution`] JSON）。
 pub fn stats_get_format_distribution(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_format_distribution(&conn)?;
+    let v = xianyu_core::statistics::get_format_distribution(&conn)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
 /// 读取曲库统计（歌曲/歌手/专辑数等，返回 [`LibraryStats`] JSON）。
 pub fn stats_get_library_stats(db_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_library_stats(&conn)?;
+    let v = xianyu_core::statistics::get_library_stats(&conn)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
 /// 重置本地听歌统计（清空播放计数/时长等，不清收藏与下载）。
 pub fn stats_reset_local_statistics(db_path: String) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    crate::statistics::reset_local_statistics(&conn)
+    xianyu_core::statistics::reset_local_statistics(&conn)
 }
 
 // =========================================================================
@@ -1588,7 +1597,7 @@ pub fn stats_get_favorite_artist_catalog(
     favorite_paths: Vec<String>,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_favorite_artist_catalog(&conn, favorite_paths)?;
+    let v = xianyu_core::statistics::get_favorite_artist_catalog(&conn, favorite_paths)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -1599,7 +1608,7 @@ pub fn stats_get_favorite_album_catalog(
     favorite_paths: Vec<String>,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_favorite_album_catalog(&conn, favorite_paths)?;
+    let v = xianyu_core::statistics::get_favorite_album_catalog(&conn, favorite_paths)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -1613,10 +1622,10 @@ pub fn stats_get_favorite_song_paths_view(
     detail_filter_type: Option<String>,
     detail_filter_value: Option<String>,
 ) -> Result<String, String> {
-    let sort: crate::statistics::SongPathSortMode =
+    let sort: xianyu_core::statistics::SongPathSortMode =
         serde_json::from_str(&sort_mode).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_favorite_song_paths_view(
+    let v = xianyu_core::statistics::get_favorite_song_paths_view(
         &conn,
         favorite_paths,
         query,
@@ -1633,10 +1642,10 @@ pub fn stats_get_recent_album_catalog(
     db_path: String,
     recent_entries_json: String,
 ) -> Result<String, String> {
-    let entries: Vec<crate::statistics::RecentHistoryImportEntry> =
+    let entries: Vec<xianyu_core::statistics::RecentHistoryImportEntry> =
         serde_json::from_str(&recent_entries_json).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_recent_album_catalog(&conn, entries)?;
+    let v = xianyu_core::statistics::get_recent_album_catalog(&conn, entries)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -1648,12 +1657,12 @@ pub fn stats_get_recent_song_paths_view(
     query: Option<String>,
     sort_mode: String,
 ) -> Result<String, String> {
-    let entries: Vec<crate::statistics::RecentHistoryImportEntry> =
+    let entries: Vec<xianyu_core::statistics::RecentHistoryImportEntry> =
         serde_json::from_str(&recent_entries_json).map_err(|e| e.to_string())?;
-    let sort: crate::statistics::SongPathSortMode =
+    let sort: xianyu_core::statistics::SongPathSortMode =
         serde_json::from_str(&sort_mode).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let v = crate::statistics::get_recent_song_paths_view(&conn, entries, query, sort)?;
+    let v = xianyu_core::statistics::get_recent_song_paths_view(&conn, entries, query, sort)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -1664,11 +1673,11 @@ pub fn stats_get_recent_playlist_catalog(
     playlists_json: String,
     recent_entries_json: String,
 ) -> Result<String, String> {
-    let playlists: Vec<crate::statistics::PlaylistImportItem> =
+    let playlists: Vec<xianyu_core::statistics::PlaylistImportItem> =
         serde_json::from_str(&playlists_json).map_err(|e| e.to_string())?;
-    let entries: Vec<crate::statistics::RecentHistoryImportEntry> =
+    let entries: Vec<xianyu_core::statistics::RecentHistoryImportEntry> =
         serde_json::from_str(&recent_entries_json).map_err(|e| e.to_string())?;
-    let v = crate::statistics::get_recent_playlist_catalog(playlists, entries)?;
+    let v = xianyu_core::statistics::get_recent_playlist_catalog(playlists, entries)?;
     serde_json::to_string(&v).map_err(|e| e.to_string())
 }
 
@@ -1678,8 +1687,8 @@ pub fn stats_get_recent_playlist_catalog(
 
 /// 清空封面缓存目录，并同步清空无图负缓存（释放「提取失败」记忆，允许立即重试）。
 pub fn clear_cover_cache(cache_dir: String) -> Result<(), String> {
-    crate::music::covers::clear_no_cover_negative_cache();
-    crate::music::covers::clear_cover_cache(std::path::Path::new(&cache_dir))
+    xianyu_core::music::covers::clear_no_cover_negative_cache();
+    xianyu_core::music::covers::clear_cover_cache(std::path::Path::new(&cache_dir))
 }
 
 // =========================================================================
@@ -1690,31 +1699,31 @@ pub fn clear_cover_cache(cache_dir: String) -> Result<(), String> {
 pub async fn get_lx_cover(song_info_json: String) -> Result<String, String> {
     let song_info: LxUrlSongInfo =
         serde_json::from_str(&song_info_json).map_err(|e| e.to_string())?;
-    let url = crate::music::url_resolver::get_lx_cover(song_info).await?;
+    let url = xianyu_core::music::url_resolver::get_lx_cover(song_info).await?;
     serde_json::to_string(&url).map_err(|e| e.to_string())
 }
 
 /// 清除 LX 音源 URL 直链缓存。
 pub async fn clear_lx_url_cache() -> Result<(), String> {
-    crate::music::url_resolver::clear_lx_url_cache().await
+    xianyu_core::music::url_resolver::clear_lx_url_cache().await
 }
 
 /// 清除 LX 音源全部缓存（URL 直链 + 搜索结果）。
 pub async fn clear_lx_all_cache() -> Result<(), String> {
-    if crate::music::url_resolver::clear_lx_url_cache()
+    if xianyu_core::music::url_resolver::clear_lx_url_cache()
         .await
         .is_err()
     {
         return Err("清除 URL 缓存失败".to_string());
     }
-    crate::music::lx_search::clear_lx_all_cache().await
+    xianyu_core::music::lx_search::clear_lx_all_cache().await
 }
 
 /// 查找替代落雪音源（换源匹配，双端通用，对齐桌面端 find_alternative_lx_source）。
 ///
 /// - `failed_sources_json`：已失败音源数组 JSON（如 `["kw","tx"]`）。
 ///
-/// 返回 [`crate::music::url_resolver::AlternativeSourceResult`] 的 camelCase JSON；
+/// 返回 [`xianyu_core::music::url_resolver::AlternativeSourceResult`] 的 camelCase JSON；
 /// 无匹配时返回 `"null"`。URL 解析由 Dart 插件编排层完成。
 pub async fn find_alternative_lx_source(
     song_name: String,
@@ -1724,7 +1733,7 @@ pub async fn find_alternative_lx_source(
 ) -> Result<String, String> {
     let failed_sources: Vec<String> =
         serde_json::from_str(&failed_sources_json).map_err(|e| e.to_string())?;
-    let result = crate::music::url_resolver::find_alternative_lx_source(
+    let result = xianyu_core::music::url_resolver::find_alternative_lx_source(
         song_name,
         song_artist,
         song_duration,
@@ -1756,7 +1765,7 @@ pub async fn test_remote_source(source_json: String) -> Result<String, String> {
     if input.provider != "webdav" {
         return Err("第一版仅支持 WebDAV".to_string());
     }
-    let creds = crate::remote::types::RemoteSourceCredentials {
+    let creds = xianyu_core::remote::types::RemoteSourceCredentials {
         id: input.id.unwrap_or_else(|| "test".to_string()),
         name: input.name,
         provider: input.provider,
@@ -1767,10 +1776,10 @@ pub async fn test_remote_source(source_json: String) -> Result<String, String> {
         enabled: true,
         last_sync_at: None,
         last_sync_error: None,
-        created_at: crate::remote::now_seconds(),
-        updated_at: crate::remote::now_seconds(),
+        created_at: xianyu_core::remote::now_seconds(),
+        updated_at: xianyu_core::remote::now_seconds(),
     };
-    match crate::remote::webdav::test_connection(&creds).await {
+    match xianyu_core::remote::webdav::test_connection(&creds).await {
         Ok(()) => Ok(serde_json::json!({ "ok": true, "message": "连接成功" }).to_string()),
         Err(error) => Ok(serde_json::json!({ "ok": false, "message": error }).to_string()),
     }
@@ -1782,11 +1791,11 @@ pub async fn precache_remote_song(
     cache_root: String,
     remote_uri: String,
 ) -> Result<(), String> {
-    if !crate::remote::cache::is_remote_uri(&remote_uri) {
+    if !xianyu_core::remote::cache::is_remote_uri(&remote_uri) {
         return Ok(());
     }
     let db_conn = std::sync::Arc::new(std::sync::Mutex::new(open_conn(&db_path)?));
-    crate::remote::cache::ensure_cached_path(
+    xianyu_core::remote::cache::ensure_cached_path(
         std::path::Path::new(&cache_root),
         db_conn,
         &remote_uri,
@@ -1802,9 +1811,9 @@ pub async fn list_remote_directory(
     path: String,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let source = crate::remote::repository::get_source(&conn, &source_id)?;
-    let entries = crate::remote::webdav::list_directory(
-        crate::remote::webdav::shared_client(),
+    let source = xianyu_core::remote::repository::get_source(&conn, &source_id)?;
+    let entries = xianyu_core::remote::webdav::list_directory(
+        xianyu_core::remote::webdav::shared_client(),
         &source,
         &path,
     )
@@ -1821,7 +1830,7 @@ pub async fn transcode_audio_to_wav(
     cache_root: String,
     src_path: String,
 ) -> Result<String, String> {
-    let outcome = crate::player::transcode::transcode_to_wav(
+    let outcome = xianyu_core::player::transcode::transcode_to_wav(
         &db_path,
         std::path::Path::new(&cache_root),
         &src_path,
@@ -1837,26 +1846,26 @@ pub async fn transcode_audio_to_wav(
 
 /// 用 `Range: bytes=0-0` 探测直链文件大小（返回 [`ProbeUrlInfo`] JSON）。
 pub async fn probe_url_size(url: String) -> Result<String, String> {
-    let info = crate::toolbox::probe_url_size(url).await?;
+    let info = xianyu_core::toolbox::probe_url_size(url).await?;
     serde_json::to_string(&info).map_err(|e| e.to_string())
 }
 
 /// 写入文本文件（自动创建父目录），返回目标路径。
 pub async fn write_text_file(content: String, dest_path: String) -> Result<String, String> {
-    crate::toolbox::write_text_file(content, dest_path).await
+    xianyu_core::toolbox::write_text_file(content, dest_path).await
 }
 
 /// 下载图片二进制（绕过 WebView CORS），返回 `{"data":String,"mime":String}` JSON（data 为 base64）。
 pub async fn fetch_image_bytes(url: String) -> Result<String, String> {
-    let img = crate::toolbox::fetch_image_bytes(url).await?;
+    let img = xianyu_core::toolbox::fetch_image_bytes(url).await?;
     serde_json::to_string(&img).map_err(|e| e.to_string())
 }
 
 /// 将歌曲元数据写入音频文件 tag。`request_json` 为 [`EmbedMetadataRequest`] 的 camelCase JSON。
 pub async fn embed_audio_metadata(request_json: String) -> Result<(), String> {
-    let request: crate::music::tags::EmbedMetadataRequest =
+    let request: xianyu_core::music::tags::EmbedMetadataRequest =
         serde_json::from_str(&request_json).map_err(|e| e.to_string())?;
-    crate::toolbox::embed_audio_metadata(request).await
+    xianyu_core::toolbox::embed_audio_metadata(request).await
 }
 
 // =========================================================================
@@ -1865,7 +1874,7 @@ pub async fn embed_audio_metadata(request_json: String) -> Result<(), String> {
 
 /// 判断路径是否为目录。
 pub fn is_directory(path: String) -> bool {
-    crate::music::files::is_directory(path)
+    xianyu_core::music::files::is_directory(path)
 }
 
 /// 保存歌手头像到封面目录，并可选写入该歌手所有歌曲标签。
@@ -1878,7 +1887,7 @@ pub fn save_artist_avatar(
     write_to_tags: bool,
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    crate::music::files::save_artist_avatar(
+    xianyu_core::music::files::save_artist_avatar(
         &conn,
         std::path::Path::new(&covers_root),
         artist_id,
@@ -1895,10 +1904,10 @@ pub fn get_library_song_paths_for_all_view(
     album_filter: Option<String>,
     sort_mode: String,
 ) -> Result<String, String> {
-    let mode: crate::music::library::LibrarySongSortMode =
+    let mode: xianyu_core::music::library::LibrarySongSortMode =
         serde_json::from_str(&sort_mode).map_err(|e| e.to_string())?;
     let conn = open_conn(&db_path)?;
-    let paths = crate::music::library::get_library_song_paths_for_all_view(
+    let paths = xianyu_core::music::library::get_library_song_paths_for_all_view(
         &conn,
         query,
         artist_filter,
@@ -1916,8 +1925,8 @@ pub fn scan_library(
 ) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
     let shared = std::sync::Arc::new(std::sync::Mutex::new(conn));
-    let cover_cache_dir = crate::music::scanner::derive_cover_cache_dir(&db_path);
-    let songs = crate::music::library::scan_library(
+    let cover_cache_dir = xianyu_core::music::scanner::derive_cover_cache_dir(&db_path);
+    let songs = xianyu_core::music::library::scan_library(
         shared,
         minimum_duration_seconds,
         minimum_file_size_bytes.map(|v| v.max(0) as u64),
@@ -1929,25 +1938,25 @@ pub fn scan_library(
 /// 获取文件夹的直接子目录节点（返回 `FolderNode[]`）。
 pub fn get_folder_children(db_path: String, folder_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let nodes = crate::music::library::get_folder_children(&conn, folder_path)?;
+    let nodes = xianyu_core::music::library::get_folder_children(&conn, folder_path)?;
     serde_json::to_string(&nodes).map_err(|e| e.to_string())
 }
 
 /// 递归查找某文件夹下的第一首歌曲路径（用于文件夹视图预览）。
 pub fn get_folder_first_song(db_path: String, folder_path: String) -> Result<String, String> {
     let conn = open_conn(&db_path)?;
-    let path = crate::music::scanner::find_first_song_in_folder(&conn, &folder_path);
+    let path = xianyu_core::music::scanner::find_first_song_in_folder(&conn, &folder_path);
     serde_json::to_string(&path).map_err(|e| e.to_string())
 }
 
 /// 在父目录下创建新文件夹，返回新文件夹路径。
 pub fn create_folder(parent_path: String, folder_name: String) -> Result<String, String> {
-    crate::music::files::create_folder(parent_path, folder_name)
+    xianyu_core::music::files::create_folder(parent_path, folder_name)
 }
 
 /// 删除文件夹（递归删除目录下所有内容）。注意：真删，不会进回收站。
 pub fn delete_folder(path: String) -> Result<(), String> {
-    crate::music::files::delete_folder(path)
+    xianyu_core::music::files::delete_folder(path)
 }
 
 /// 移动文件到目标文件夹（同步数据库中的歌曲路径）。
@@ -1957,7 +1966,7 @@ pub fn move_file_to_folder(
     target_folder: String,
 ) -> Result<(), String> {
     let mut conn = open_conn(&db_path)?;
-    crate::music::files::move_file_to_folder(&mut conn, source_path, target_folder)
+    xianyu_core::music::files::move_file_to_folder(&mut conn, source_path, target_folder)
 }
 
 /// 批量移动音乐文件到目标文件夹（返回 `BatchMoveMusicFilesResult` JSON）。
@@ -1967,19 +1976,19 @@ pub fn batch_move_music_files(
     target_folder: String,
 ) -> Result<String, String> {
     let mut conn = open_conn(&db_path)?;
-    let result = crate::music::files::batch_move_music_files(&mut conn, paths, target_folder)?;
+    let result = xianyu_core::music::files::batch_move_music_files(&mut conn, paths, target_folder)?;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 /// 移动单个音乐文件到新路径（同步数据库路径）。
 pub fn move_music_file(db_path: String, old_path: String, new_path: String) -> Result<(), String> {
     let mut conn = open_conn(&db_path)?;
-    crate::music::files::move_music_file(&mut conn, old_path, new_path)
+    xianyu_core::music::files::move_music_file(&mut conn, old_path, new_path)
 }
 
 /// 删除音乐文件（真删，不回收）。
 pub fn delete_music_file(path: String) -> Result<(), String> {
-    crate::music::files::delete_music_file(path)
+    xianyu_core::music::files::delete_music_file(path)
 }
 
 /// 从最近播放历史与统计中批量移除歌曲。
@@ -1988,7 +1997,7 @@ pub fn remove_songs_from_history_and_statistics(
     song_paths: Vec<String>,
 ) -> Result<(), String> {
     let mut conn = open_conn(&db_path)?;
-    crate::statistics::remove_songs_from_history_and_statistics(&mut conn, song_paths)
+    xianyu_core::statistics::remove_songs_from_history_and_statistics(&mut conn, song_paths)
 }
 
 /// 解析下载目标路径：目录 + 文件名，`overwrite_existing` 为 false 时自动追加 `(1)`/`(2)` 避免冲突。
@@ -1997,7 +2006,7 @@ pub fn resolve_download_path(
     file_name: String,
     overwrite_existing: bool,
 ) -> Result<String, String> {
-    crate::toolbox::resolve_download_path(directory, file_name, overwrite_existing)
+    xianyu_core::toolbox::resolve_download_path(directory, file_name, overwrite_existing)
 }
 
 /// 按命名风格构建下载文件基名（不含扩展名）。
@@ -2007,17 +2016,17 @@ pub fn build_download_basename(
     album: String,
     file_name_style: String,
 ) -> String {
-    crate::toolbox::build_download_basename(title, artist, album, file_name_style)
+    xianyu_core::toolbox::build_download_basename(title, artist, album, file_name_style)
 }
 
 /// 写入原始下载字节到目标路径（创建父目录），返回目标路径。
 pub async fn save_download_bytes(data: Vec<u8>, dest_path: String) -> Result<String, String> {
-    crate::toolbox::save_download_bytes(data, dest_path).await
+    xianyu_core::toolbox::save_download_bytes(data, dest_path).await
 }
 
 /// 保存下载歌词文本到目标路径（创建父目录），返回目标路径。
 pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<String, String> {
-    crate::toolbox::save_download_lyrics(content, dest_path).await
+    xianyu_core::toolbox::save_download_lyrics(content, dest_path).await
 }
 
 // =========================================================================
@@ -2028,26 +2037,26 @@ pub async fn save_download_lyrics(content: String, dest_path: String) -> Result<
 /// 获取流缓存信息，返回 `{"current":u64,"max":u64}` JSON。
 pub fn get_stream_cache_info() -> String {
     serde_json::json!({
-        "current": crate::player::stream_cache::current_cache_size(),
-        "max": crate::player::stream_cache::max_cache_size(),
+        "current": xianyu_core::player::stream_cache::current_cache_size(),
+        "max": xianyu_core::player::stream_cache::max_cache_size(),
     })
     .to_string()
 }
 
 /// 判断某个 URL 是否已缓存完整。
 pub fn is_stream_cached(url: String) -> bool {
-    crate::player::stream_cache::is_url_cached(&url)
+    xianyu_core::player::stream_cache::is_url_cached(&url)
 }
 
 /// 将已缓存的 URL 文件复制到目标路径，返回实际写入字节数。
 pub fn copy_stream_cache(url: String, dest_path: String) -> Result<u64, String> {
-    crate::player::stream_cache::copy_cache_to(&url, &dest_path)
+    xianyu_core::player::stream_cache::copy_cache_to(&url, &dest_path)
 }
 
 /// 等待某个 URL 缓存下载完成（超时秒数），完成返回 true。
 pub async fn wait_stream_complete(url: String, timeout_secs: u64) -> bool {
     tokio::task::spawn_blocking(move || {
-        crate::player::stream_cache::wait_url_complete(&url, timeout_secs)
+        xianyu_core::player::stream_cache::wait_url_complete(&url, timeout_secs)
     })
     .await
     .unwrap_or(false)
@@ -2060,13 +2069,13 @@ pub async fn wait_stream_complete(url: String, timeout_secs: u64) -> bool {
 /// 设置流缓存持久化目录。须在首次触碰流缓存前调用
 /// （默认 temp_dir 在 Android 不可持久，对齐桌面端 set_stream_cache_dir）。
 pub fn set_stream_cache_dir(path: String) {
-    crate::player::stream_cache::set_cache_dir_override(path);
+    xianyu_core::player::stream_cache::set_cache_dir_override(path);
 }
 
 /// 查询 URL 缓存状态，返回 JSON：
 /// `{"exists":bool,"complete":bool,"failed":bool,"downloaded":u64,"total":u64|null}`。
 pub fn stream_cache_url_status(url: String) -> String {
-    let s = crate::player::stream_cache::url_cache_status(&url);
+    let s = xianyu_core::player::stream_cache::url_cache_status(&url);
     serde_json::json!({
         "exists": s.exists,
         "complete": s.complete,
@@ -2082,7 +2091,7 @@ pub fn stream_cache_url_status(url: String) -> String {
 pub fn stream_cache_begin_url_download(url: String, headers: String) -> Result<(), String> {
     let map: std::collections::HashMap<String, String> =
         serde_json::from_str(&headers).unwrap_or_default();
-    crate::player::stream_cache::begin_url_download(&url, &map)
+    xianyu_core::player::stream_cache::begin_url_download(&url, &map)
 }
 
 /// 按区间读取缓存内容（阻塞至该区间有数据或下载结束）。
@@ -2093,7 +2102,7 @@ pub async fn stream_cache_read_url(
     max_len: u32,
 ) -> Result<Vec<u8>, String> {
     tokio::task::spawn_blocking(move || {
-        crate::player::stream_cache::read_url_range(&url, offset, max_len)
+        xianyu_core::player::stream_cache::read_url_range(&url, offset, max_len)
     })
     .await
     .map_err(|e| format!("读取流缓存失败: {}", e))
@@ -2112,7 +2121,7 @@ pub async fn stream_cache_read_url(
 /// 返回 JSON：`{"ok":true,"offsetMs":i64,"confidence":f64,"trustworthy":bool}`；
 /// 解码失败等场景返回 `{"ok":false,"reason":"..."}`（调用方回退 offset=0）。
 pub fn analyze_mv_sync(mv_path: String, song_path: String) -> String {
-    let result = crate::player::mv_sync::analyze(
+    let result = xianyu_core::player::mv_sync::analyze(
         std::path::Path::new(&mv_path),
         std::path::Path::new(&song_path),
     );
@@ -2121,7 +2130,7 @@ pub fn analyze_mv_sync(mv_path: String, song_path: String) -> String {
             "ok": true,
             "offsetMs": (offset_sec * 1000.0).round() as i64,
             "confidence": (confidence * 1000.0).round() / 1000.0,
-            "trustworthy": crate::player::mv_sync::is_trustworthy(offset_sec, confidence),
+            "trustworthy": xianyu_core::player::mv_sync::is_trustworthy(offset_sec, confidence),
         })
         .to_string(),
         Err(reason) => serde_json::json!({ "ok": false, "reason": reason }).to_string(),
@@ -2148,7 +2157,7 @@ pub fn analyze_mv_sync_local(
     window_sec: f64,
     song_dur_sec: f64,
 ) -> String {
-    let result = crate::player::mv_sync::analyze_local(
+    let result = xianyu_core::player::mv_sync::analyze_local(
         std::path::Path::new(&mv_path),
         std::path::Path::new(&song_path),
         song_pos_sec,
@@ -2161,7 +2170,7 @@ pub fn analyze_mv_sync_local(
             "offsetMs": (lag_sec * 1000.0).round() as i64,
             "mvPosMs": ((lag_sec + song_pos_sec) * 1000.0).round() as i64,
             "confidence": (confidence * 1000.0).round() / 1000.0,
-            "trustworthy": crate::player::mv_sync::is_local_trustworthy(lag_sec, confidence),
+            "trustworthy": xianyu_core::player::mv_sync::is_local_trustworthy(lag_sec, confidence),
         })
         .to_string(),
         Err(reason) => serde_json::json!({ "ok": false, "reason": reason }).to_string(),
@@ -2188,12 +2197,12 @@ pub fn update_loudness_settings(
         if song_id.is_none() || song_path.is_none() {
             return Ok(serde_json::json!({ "enabled": true, "targetGain": 1.0 }).to_string());
         }
-        let record = crate::player::loudness::process_song_on_play(
+        let record = xianyu_core::player::loudness::process_song_on_play(
             &conn,
             song_id.unwrap(),
             song_path.as_ref().unwrap(),
         )?;
-        crate::player::loudness::calculate_playback_gain(&record, gain_offset_db, prevent_clipping)
+        xianyu_core::player::loudness::calculate_playback_gain(&record, gain_offset_db, prevent_clipping)
     } else {
         1.0
     };
@@ -2203,7 +2212,7 @@ pub fn update_loudness_settings(
 /// 清零本地累计 + 每日听歌统计（服务端后台清零后下发）。
 pub fn stats_clear_listen_stats(db_path: String) -> Result<(), String> {
     let conn = open_conn(&db_path)?;
-    crate::statistics::clear_listen_stats(&conn)
+    xianyu_core::statistics::clear_listen_stats(&conn)
 }
 
 // =========================================================================
@@ -2220,14 +2229,14 @@ pub async fn plugin_engine_store_import(
     #[derive(serde::Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct StoreImportPayload {
-        cookies: std::collections::HashMap<String, crate::plugin_host::CookieEntry>,
+        cookies: std::collections::HashMap<String, xianyu_core::plugin_host::CookieEntry>,
         storage: std::collections::HashMap<String, String>,
         #[serde(default)]
         overwrite_cookies: bool,
     }
     let payload: StoreImportPayload =
         serde_json::from_str(&payload_json).map_err(|e| e.to_string())?;
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     if payload.overwrite_cookies {
         engine.store().upsert_cookies(payload.cookies);
         engine
@@ -2246,13 +2255,13 @@ pub async fn plugin_engine_cookie_header_for_domain(
     data_dir: String,
     domain: String,
 ) -> Result<String, String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     Ok(engine.store().cookie_header_for_domain(&domain))
 }
 
 /// 获取插件引擎会话快照，返回 `{"cookies":..., "storage":...}` JSON。
 pub async fn plugin_engine_store_snapshot(data_dir: String) -> Result<String, String> {
-    let engine = crate::plugin_host::global_engine(&data_dir);
+    let engine = xianyu_core::plugin_host::global_engine(&data_dir);
     let result = serde_json::json!({
         "cookies": engine.store().cookie_snapshot(),
         "storage": engine.store().storage_snapshot(),
@@ -2265,7 +2274,7 @@ pub async fn plugin_engine_store_snapshot(data_dir: String) -> Result<String, St
 // =========================================================================
 // 约定沿用本文件：复合类型走 JSON 字符串（serde camelCase / core 默认字段名）。
 
-use crate::dlna::{DlnaCore, TransportState};
+use xianyu_core::dlna::{DlnaCore, TransportState};
 
 /// 搜索局域网 DLNA 渲染器，返回 `Vec<DlnaDevice>` JSON。
 pub async fn dlna_search_devices(timeout_ms: u64) -> Result<String, String> {
@@ -2283,10 +2292,10 @@ pub async fn dlna_cast_set_uri(
     album: String,
     duration_ms: u64,
 ) -> Result<String, String> {
-    let device = crate::dlna::types::parse_device(&device_json)?;
-    let media = crate::dlna::types::parse_media(&media_json)?;
+    let device = xianyu_core::dlna::types::parse_device(&device_json)?;
+    let media = xianyu_core::dlna::types::parse_media(&media_json)?;
     let cover = match cover_json {
-        Some(s) => Some(crate::dlna::types::parse_media(&s)?),
+        Some(s) => Some(xianyu_core::dlna::types::parse_media(&s)?),
         None => None,
     };
     let info = DlnaCore::shared()
@@ -2297,45 +2306,45 @@ pub async fn dlna_cast_set_uri(
 
 pub async fn dlna_cast_play(device_json: String) -> Result<(), String> {
     DlnaCore::shared()
-        .cast_play(&crate::dlna::types::parse_device(&device_json)?)
+        .cast_play(&xianyu_core::dlna::types::parse_device(&device_json)?)
         .await
 }
 
 pub async fn dlna_cast_pause(device_json: String) -> Result<(), String> {
     DlnaCore::shared()
-        .cast_pause(&crate::dlna::types::parse_device(&device_json)?)
+        .cast_pause(&xianyu_core::dlna::types::parse_device(&device_json)?)
         .await
 }
 
 pub async fn dlna_cast_stop(device_json: String) -> Result<(), String> {
     DlnaCore::shared()
-        .cast_stop(&crate::dlna::types::parse_device(&device_json)?)
+        .cast_stop(&xianyu_core::dlna::types::parse_device(&device_json)?)
         .await
 }
 
 pub async fn dlna_cast_seek(device_json: String, secs: f64) -> Result<(), String> {
     DlnaCore::shared()
-        .cast_seek(&crate::dlna::types::parse_device(&device_json)?, secs)
+        .cast_seek(&xianyu_core::dlna::types::parse_device(&device_json)?, secs)
         .await
 }
 
 pub async fn dlna_cast_set_volume(device_json: String, percent: u8) -> Result<(), String> {
     DlnaCore::shared()
-        .cast_set_volume(&crate::dlna::types::parse_device(&device_json)?, percent)
+        .cast_set_volume(&xianyu_core::dlna::types::parse_device(&device_json)?, percent)
         .await
 }
 
 /// 查询渲染器传输状态，返回 `CastTransportState` JSON。
 pub async fn dlna_cast_get_state(device_json: String) -> Result<String, String> {
     let state = DlnaCore::shared()
-        .cast_get_state(&crate::dlna::types::parse_device(&device_json)?)
+        .cast_get_state(&xianyu_core::dlna::types::parse_device(&device_json)?)
         .await?;
     serde_json::to_string(&state).map_err(|e| e.to_string())
 }
 
 /// TTL 续投：热替换 token 上游（电视不断流）。
 pub fn dlna_update_media_token(token: String, payload_json: String) -> Result<bool, String> {
-    let payload = crate::dlna::types::parse_media(&payload_json)?;
+    let payload = xianyu_core::dlna::types::parse_media(&payload_json)?;
     Ok(DlnaCore::shared().update_media_token(&token, payload))
 }
 
@@ -2345,15 +2354,15 @@ pub async fn dlna_enable_renderer(friendly_name: String, udn: String) -> Result<
     let udn = udn.trim().trim_start_matches("uuid:").to_string();
     DlnaCore::shared()
         .enable_renderer(
-            crate::dlna::RendererConfig { friendly_name, udn },
-            crate::dlna::bridge::host(),
+            xianyu_core::dlna::RendererConfig { friendly_name, udn },
+            xianyu_core::dlna::bridge::host(),
         )
         .await
 }
 
 pub async fn dlna_disable_renderer() -> Result<(), String> {
     DlnaCore::shared().disable_renderer().await;
-    crate::dlna::bridge::reset_playback();
+    xianyu_core::dlna::bridge::reset_playback();
     Ok(())
 }
 
@@ -2393,7 +2402,7 @@ pub fn dlna_dmr_report_playback(
         "transitioning" => TransportState::Transitioning,
         _ => TransportState::NoMedia,
     };
-    crate::dlna::bridge::report_playback(
+    xianyu_core::dlna::bridge::report_playback(
         state,
         position_secs,
         duration_secs,
@@ -2414,9 +2423,9 @@ pub async fn convert_audio_batch(
     out_dir: String,
     options_json: String,
 ) -> Result<String, String> {
-    let opts: crate::audio_convert::ConvertOptions =
+    let opts: xianyu_core::audio_convert::ConvertOptions =
         serde_json::from_str(&options_json).map_err(|e| format!("options 解析失败：{e}"))?;
-    let results = crate::audio_convert::convert_audio(input_paths, out_dir, opts).await;
+    let results = xianyu_core::audio_convert::convert_audio(input_paths, out_dir, opts).await;
     serde_json::to_string(&results).map_err(|e| e.to_string())
 }
 
@@ -2451,15 +2460,15 @@ pub async fn trim_audio(
     out_dir: String,
     options_json: String,
 ) -> Result<String, String> {
-    let opts: crate::audio_convert::TrimOptions =
+    let opts: xianyu_core::audio_convert::TrimOptions =
         serde_json::from_str(&options_json).map_err(|e| format!("options 解析失败：{e}"))?;
-    let result = crate::audio_convert::trim_audio(input_path, out_dir, opts).await;
+    let result = xianyu_core::audio_convert::trim_audio(input_path, out_dir, opts).await;
     serde_json::to_string(&result).map_err(|e| e.to_string())
 }
 
 /// 探测音频时长（秒）。容器/头信息可估算时直接返回，否则完整解码统计。
 pub async fn audio_probe_duration(path: String) -> Result<f64, String> {
-    crate::audio_convert::audio_probe_duration(path).await
+    xianyu_core::audio_convert::audio_probe_duration(path).await
 }
 
 // =========================================================================
@@ -2469,8 +2478,8 @@ pub async fn audio_probe_duration(path: String) -> Result<f64, String> {
 /// 网盘业务代理（十盘统一入口）。`req_json` 为 {provider, op, cred, params} JSON；
 /// 返回 {result, rotated_cred?} 的 JSON；业务失败 Err(中文文案)。
 pub async fn cloud_proxy(req_json: String) -> Result<String, String> {
-    let req = crate::cloud::types::CloudReq::parse(&req_json).map_err(|(_, m)| m)?;
-    crate::cloud::dispatch(req)
+    let req = xianyu_core::cloud::types::CloudReq::parse(&req_json).map_err(|(_, m)| m)?;
+    xianyu_core::cloud::dispatch(req)
         .await
         .map_err(|(_, m)| m)
         .and_then(|v| serde_json::to_string(&v).map_err(|e| e.to_string()))
@@ -2484,7 +2493,7 @@ pub async fn cloud_proxy(req_json: String) -> Result<String, String> {
 /// 返回 {cloudPath: {cloudPath,url?,lyricsRaw?,coverPath?,durationSecs?}} JSON，
 /// 无索引返回 "{}"。
 pub fn cloud_meta_load_index(data_dir: String) -> Result<String, String> {
-    let map = crate::cloud::cloud_meta::load_index(std::path::Path::new(&data_dir));
+    let map = xianyu_core::cloud::cloud_meta::load_index(std::path::Path::new(&data_dir));
     serde_json::to_string(&map).map_err(|e| format!("索引序列化失败: {e}"))
 }
 
@@ -2504,9 +2513,9 @@ pub async fn cloud_meta_probe_head(
     cloud_path: String,
     duration_hint_secs: i64,
 ) -> Result<String, String> {
-    let headers = crate::cloud::cloud_meta::parse_headers_json(&headers_json)?;
-    let covers_dir = crate::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
-    let payload = crate::cloud::cloud_meta::probe_head(
+    let headers = xianyu_core::cloud::cloud_meta::parse_headers_json(&headers_json)?;
+    let covers_dir = xianyu_core::music::covers::get_cover_cache_dir(std::path::Path::new(&cache_root));
+    let payload = xianyu_core::cloud::cloud_meta::probe_head(
         std::path::Path::new(&data_dir),
         &covers_dir,
         &url,

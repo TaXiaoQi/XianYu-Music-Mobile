@@ -1,0 +1,3 @@
+[submodule "rust/core"]
+	url = ../XianYu-Music-Core
+	path = rust/core

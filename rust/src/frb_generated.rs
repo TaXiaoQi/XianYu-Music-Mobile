@@ -5555,8 +5555,7 @@ fn wire__crate__api__save_song_lyrics_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_path = <String>::sse_decode(&mut deserializer);
             let api_lyrics = <String>::sse_decode(&mut deserializer);
-            let api_source =
-                <crate::music::types::LyricsStorageSource>::sse_decode(&mut deserializer);
+            let api_source = <String>::sse_decode(&mut deserializer);
             let api_source_path = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
@@ -7993,18 +7992,6 @@ impl SseDecode for f64 {
     }
 }
 
-impl SseDecode for crate::fallback_verify::FallbackVerifyResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut var_valid = <bool>::sse_decode(deserializer);
-        let mut var_keyUnknown = <bool>::sse_decode(deserializer);
-        return crate::fallback_verify::FallbackVerifyResult {
-            valid: var_valid,
-            key_unknown: var_keyUnknown,
-        };
-    }
-}
-
 impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -8052,19 +8039,6 @@ impl SseDecode for Vec<(String, String)> {
             ans_.push(<(String, String)>::sse_decode(deserializer));
         }
         return ans_;
-    }
-}
-
-impl SseDecode for crate::music::types::LyricsStorageSource {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
-        let mut inner = <i32>::sse_decode(deserializer);
-        return match inner {
-            0 => crate::music::types::LyricsStorageSource::Embedded,
-            1 => crate::music::types::LyricsStorageSource::Sidecar,
-            2 => crate::music::types::LyricsStorageSource::Empty,
-            _ => unreachable!("Invalid variant for LyricsStorageSource: {}", inner),
-        };
     }
 }
 
@@ -8621,49 +8595,6 @@ fn pde_ffi_dispatcher_sync_impl(
 // Section: rust2dart
 
 // Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::fallback_verify::FallbackVerifyResult {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [
-            self.valid.into_into_dart().into_dart(),
-            self.key_unknown.into_into_dart().into_dart(),
-        ]
-        .into_dart()
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::fallback_verify::FallbackVerifyResult
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::fallback_verify::FallbackVerifyResult>
-    for crate::fallback_verify::FallbackVerifyResult
-{
-    fn into_into_dart(self) -> crate::fallback_verify::FallbackVerifyResult {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
-impl flutter_rust_bridge::IntoDart for crate::music::types::LyricsStorageSource {
-    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        match self {
-            Self::Embedded => 0.into_dart(),
-            Self::Sidecar => 1.into_dart(),
-            Self::Empty => 2.into_dart(),
-            _ => unreachable!(),
-        }
-    }
-}
-impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
-    for crate::music::types::LyricsStorageSource
-{
-}
-impl flutter_rust_bridge::IntoIntoDart<crate::music::types::LyricsStorageSource>
-    for crate::music::types::LyricsStorageSource
-{
-    fn into_into_dart(self) -> crate::music::types::LyricsStorageSource {
-        self
-    }
-}
-// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::WebdavSourceOverrides {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -8721,14 +8652,6 @@ impl SseEncode for f64 {
     }
 }
 
-impl SseEncode for crate::fallback_verify::FallbackVerifyResult {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <bool>::sse_encode(self.valid, serializer);
-        <bool>::sse_encode(self.key_unknown, serializer);
-    }
-}
-
 impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -8770,23 +8693,6 @@ impl SseEncode for Vec<(String, String)> {
         for item in self {
             <(String, String)>::sse_encode(item, serializer);
         }
-    }
-}
-
-impl SseEncode for crate::music::types::LyricsStorageSource {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
-        <i32>::sse_encode(
-            match self {
-                crate::music::types::LyricsStorageSource::Embedded => 0,
-                crate::music::types::LyricsStorageSource::Sidecar => 1,
-                crate::music::types::LyricsStorageSource::Empty => 2,
-                _ => {
-                    unimplemented!("");
-                }
-            },
-            serializer,
-        );
     }
 }
 

@@ -3638,7 +3638,6 @@ dependencies = [
  "fast2s",
  "flacenc",
  "flate2",
- "flutter_rust_bridge",
  "getrandom 0.3.4",
  "hex",
  "hmac",
@@ -3674,6 +3673,17 @@ dependencies = [
  "uuid",
  "walkdir",
  "wavicle",
+]
+
+[[package]]
+name = "xianyu_mobile"
+version = "0.1.0"
+dependencies = [
+ "flutter_rust_bridge",
+ "serde",
+ "serde_json",
+ "tokio",
+ "xianyu_core",
 ]
 
 [[package]]

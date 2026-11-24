@@ -148,8 +148,8 @@ class _SongInfoDialogState extends ConsumerState<_SongInfoDialog> {
         lyrics: _lyricsCtrl.text,
         source: _lyricsCtrl.text.trim().isEmpty &&
                 _lyricsSource == LyricsStorageSource.empty
-            ? LyricsStorageSource.embedded
-            : _lyricsSource,
+            ? LyricsStorageSource.embedded.name
+            : _lyricsSource.name,
         sourcePath: _lyricsSourcePath,
       );
       if (!mounted) return;

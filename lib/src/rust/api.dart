@@ -3,9 +3,7 @@
 
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
-import 'fallback_verify.dart';
 import 'frb_generated.dart';
-import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LxToplistDetailResult`
@@ -61,7 +59,7 @@ Future<String> txBatchTrackInterval({required String songIdsJson}) =>
     RustLib.instance.api.crateApiTxBatchTrackInterval(songIdsJson: songIdsJson);
 
 /// LX 歌单搜索（kw/kg/tx/wy/mg 原生歌单接口，对齐桌面端 searchLxPlaylists）。
-/// 返回归一化 [`crate::music::lx_catalog::LxPlaylistItem`] 数组的 JSON。
+/// 返回归一化 [`xianyu_core::music::lx_catalog::LxPlaylistItem`] 数组的 JSON。
 Future<String> lxSearchPlaylists({
   required String source,
   required String keyword,
@@ -89,7 +87,7 @@ Future<String> lxPlaylistTracks({
 );
 
 /// LX 专辑曲目（对齐桌面端 lxGetAlbumSongs，kw/kg/tx/wy/mg 原生专辑接口）。
-/// 返回 [`crate::music::lx_search::LxSearchItem`] 数组的 JSON。
+/// 返回 [`xianyu_core::music::lx_search::LxSearchItem`] 数组的 JSON。
 /// album_id 无效（可能是回退的专辑名）时返回空数组，由调用方走搜索回退。
 Future<String> lxAlbumSongs({
   required String source,
@@ -661,10 +659,11 @@ Future<String> getSongLyricsForEdit({required String path}) =>
     RustLib.instance.api.crateApiGetSongLyricsForEdit(path: path);
 
 /// 保存歌曲歌词（内嵌或侧边 LRC），返回 `SongLyricsForEdit` JSON。
+/// `source` ∈ `"embedded"` / `"sidecar"`。
 Future<String> saveSongLyrics({
   required String path,
   required String lyrics,
-  required LyricsStorageSource source,
+  required String source,
   String? sourcePath,
 }) => RustLib.instance.api.crateApiSaveSongLyrics(
   path: path,
@@ -1101,7 +1100,8 @@ Future<String> hostSha256Hex({required String text}) =>
 /// `key_id` 为响应携带的 keyId（可选）：已知 keyId 仅对该槽位严格验签，
 /// 缺失/未知则遍历槽位；签名有效且 keyId 未知时返回 key_unknown=true
 /// （Dart 层采纳配置并上报 FallbackConfigKeyUnknown 事件）。
-Future<FallbackVerifyResult> verifyFallbackConfigSignature({
+/// 返回 `{ "valid": bool, "keyUnknown": bool }` JSON。
+Future<String> verifyFallbackConfigSignature({
   required String configJson,
   required String signature,
   String? keyId,
@@ -1319,7 +1319,7 @@ Future<void> clearLxAllCache() =>
 ///
 /// - `failed_sources_json`：已失败音源数组 JSON（如 `["kw","tx"]`）。
 ///
-/// 返回 [`crate::music::url_resolver::AlternativeSourceResult`] 的 camelCase JSON；
+/// 返回 [`xianyu_core::music::url_resolver::AlternativeSourceResult`] 的 camelCase JSON；
 /// 无匹配时返回 `"null"`。URL 解析由 Dart 插件编排层完成。
 Future<String> findAlternativeLxSource({
   required String songName,

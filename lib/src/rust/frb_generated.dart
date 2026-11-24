@@ -6,11 +6,9 @@
 import 'api.dart';
 import 'dart:async';
 import 'dart:convert';
-import 'fallback_verify.dart';
 import 'frb_generated.dart';
 import 'frb_generated.io.dart'
     if (dart.library.js_interop) 'frb_generated.web.dart';
-import 'music/types.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Main entrypoint of the Rust API
@@ -709,7 +707,7 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiSaveSongLyrics({
     required String path,
     required String lyrics,
-    required LyricsStorageSource source,
+    required String source,
     String? sourcePath,
   });
 
@@ -967,7 +965,7 @@ abstract class RustLibApi extends BaseApi {
     required String signature,
   });
 
-  Future<FallbackVerifyResult> crateApiVerifyFallbackConfigSignature({
+  Future<String> crateApiVerifyFallbackConfigSignature({
     required String configJson,
     required String signature,
     String? keyId,
@@ -6041,7 +6039,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<String> crateApiSaveSongLyrics({
     required String path,
     required String lyrics,
-    required LyricsStorageSource source,
+    required String source,
     String? sourcePath,
   }) {
     return handler.executeNormal(
@@ -6050,7 +6048,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(path, serializer);
           sse_encode_String(lyrics, serializer);
-          sse_encode_lyrics_storage_source(source, serializer);
+          sse_encode_String(source, serializer);
           sse_encode_opt_String(sourcePath, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
@@ -8099,7 +8097,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  Future<FallbackVerifyResult> crateApiVerifyFallbackConfigSignature({
+  Future<String> crateApiVerifyFallbackConfigSignature({
     required String configJson,
     required String signature,
     String? keyId,
@@ -8119,7 +8117,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_fallback_verify_result,
+          decodeSuccessData: sse_decode_String,
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVerifyFallbackConfigSignatureConstMeta,
@@ -8430,18 +8428,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  FallbackVerifyResult dco_decode_fallback_verify_result(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
-    return FallbackVerifyResult(
-      valid: dco_decode_bool(arr[0]),
-      keyUnknown: dco_decode_bool(arr[1]),
-    );
-  }
-
-  @protected
   int dco_decode_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -8475,12 +8461,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<(String, String)> dco_decode_list_record_string_string(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_record_string_string).toList();
-  }
-
-  @protected
-  LyricsStorageSource dco_decode_lyrics_storage_source(dynamic raw) {
-    // Codec=Dco (DartCObject based), see doc to use other codecs
-    return LyricsStorageSource.values[raw as int];
   }
 
   @protected
@@ -8643,16 +8623,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  FallbackVerifyResult sse_decode_fallback_verify_result(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var var_valid = sse_decode_bool(deserializer);
-    var var_keyUnknown = sse_decode_bool(deserializer);
-    return FallbackVerifyResult(valid: var_valid, keyUnknown: var_keyUnknown);
-  }
-
-  @protected
   int sse_decode_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getInt32();
@@ -8702,15 +8672,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ans_.add(sse_decode_record_string_string(deserializer));
     }
     return ans_;
-  }
-
-  @protected
-  LyricsStorageSource sse_decode_lyrics_storage_source(
-    SseDeserializer deserializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    var inner = sse_decode_i_32(deserializer);
-    return LyricsStorageSource.values[inner];
   }
 
   @protected
@@ -8916,16 +8877,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
-  void sse_encode_fallback_verify_result(
-    FallbackVerifyResult self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_bool(self.valid, serializer);
-    sse_encode_bool(self.keyUnknown, serializer);
-  }
-
-  @protected
   void sse_encode_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putInt32(self);
@@ -8978,15 +8929,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     for (final item in self) {
       sse_encode_record_string_string(item, serializer);
     }
-  }
-
-  @protected
-  void sse_encode_lyrics_storage_source(
-    LyricsStorageSource self,
-    SseSerializer serializer,
-  ) {
-    // Codec=Sse (Serialization based), see doc to use other codecs
-    sse_encode_i_32(self.index, serializer);
   }
 
   @protected
