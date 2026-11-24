@@ -1004,7 +1004,7 @@ pub fn preview_rename(root_path: String, config_json: String) -> Result<String, 
 pub fn apply_rename(operations_json: String) -> Result<u32, String> {
     let operations: Vec<xianyu_core::toolbox::RenameOperation> =
         serde_json::from_str(&operations_json).map_err(|e| e.to_string())?;
-    xianyu_core::toolbox::apply_rename(operations)
+    xianyu_core::toolbox::apply_rename(operations, None)
 }
 
 /// 刷新指定文件夹歌曲（增量扫描并写库，返回该文件夹全部歌曲 JSON）。
