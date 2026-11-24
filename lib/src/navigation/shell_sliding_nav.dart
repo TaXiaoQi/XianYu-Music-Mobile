@@ -187,6 +187,13 @@ class _NavDropletOverlayState extends ConsumerState<NavDropletOverlay> {
                                     // 归零），避免与水滴分支双重作用
                                     LiveLiquidSurface(
                                       radius: s.radius,
+                                      // 玻璃几何直传（与 Positioned.fromRect
+                                      // 同一 rect）：透镜 SDF 与裁剪 stadium
+                                      // 逐帧严格同源。实测路径（localToGlobal
+                                      // 在 build 期只能拿到上一帧 layout 位置）
+                                      // 快速甩页时落后 1 帧，裁剪内漏出壳层
+                                      // 玻璃兜底面 = 白月牙残影（真机截图）
+                                      screenRect: s.rect,
                                       refract: 0,
                                       chroma: 0,
                                       // 水滴预模糊 0（BiliPai 透镜清晰

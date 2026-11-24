@@ -1018,6 +1018,14 @@ class LiveLiquidSurface extends StatefulWidget {
     this.pageImage,
     this.pageOrigin = Offset.zero,
     this.pageSize = Size.zero,
+    // 屏幕坐标玻璃矩形直传（逻辑 px，与 Positioned.fromRect 同源）：提供
+    // 时 _measureGeometry 直接采用，跳过 localToGlobal 实测。顶层水滴
+    // overlay 专用——快照 rect 是帧末 postFrame 写入、overlay 下一帧以
+    // Positioned.fromRect 裁剪；而 build 期 localToGlobal 测到的是上一帧
+    // layout 的位置（本帧 layout 尚未执行），快速甩页时透镜 SDF 落后裁剪
+    // 1 帧位移（≈30-60px），裁剪内未覆盖区漏出壳层玻璃兜底面 = 白色月牙
+    // 残影（真机截图确认）。直传同一 rect 使 SDF 与裁剪逐帧严格同源
+    this.screenRect,
     required this.child,
   });
 
@@ -1073,6 +1081,10 @@ class LiveLiquidSurface extends StatefulWidget {
 
   /// 栏内容纹理左上角（逻辑屏幕坐标，与 localToGlobal 同系）
   final Offset iconOrigin;
+
+  /// 屏幕坐标玻璃矩形直传（逻辑 px）：非 null 时几何不再实测，见构造
+  /// 函数注释（顶层水滴 SDF 与裁剪同源防快帧月牙残影）
+  final Rect? screenRect;
 
   /// 栏内容纹理尺寸（逻辑）
   final Size iconSize;
@@ -1206,6 +1218,18 @@ class LiveLiquidSurfaceState extends State<LiveLiquidSurface>
   }
 
   void _measureGeometry() {
+    // 直传几何（顶层水滴）：与宿主 Positioned.fromRect 用同一 rect，
+    // build 期即可得本帧正确值——不依赖 RenderObject 的上一帧 layout
+    // 位置（快速移动时落后 1 帧 = 白月牙残影根因，见构造函数注释）
+    final sr = widget.screenRect;
+    if (sr != null) {
+      final dpr = View.of(context).devicePixelRatio;
+      _glassDx = sr.left * dpr;
+      _glassDy = sr.top * dpr;
+      _glassW = math.max(1.0, sr.width * dpr);
+      _glassH = math.max(1.0, sr.height * dpr);
+      return;
+    }
     final ro = _surfaceKey.currentContext?.findRenderObject();
     if (ro is! RenderBox || !ro.attached || !ro.hasSize) return;
     // 真实视图 dpr（与液态垫 backing 同款修正）：MediaQuery 的 dpr 会被

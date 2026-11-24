@@ -2,8 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../widgets/blur_budget.dart' show setTabSwitching;
-
 /// 手动拖拽换页的连续页位置（分支索引单位，小数部分=页间进度）；
 /// -1 = 非拖拽态。底栏水滴指示器（_SlidingNavBottom）据此在相邻页签间
 /// 等比插值+放大水滴，随页面实时跟手，而非半程才瞬跳
@@ -35,10 +33,6 @@ class PageSwitchTabView extends StatefulWidget {
 
 class _PageSwitchTabViewState extends State<PageSwitchTabView> {
   late final PageController _controller;
-
-  // 换页动画代数：连续快速点按会中断上一个动画，旧 future 的
-  // whenComplete 不得把新动画的 tabSwitching 提前清掉
-  int _switchGen = 0;
 
   // 用户手指拖拽换页中：只用于驱动指示器跟手（tabSwipePageFraction），
   // 不触碰 tabSwitching 玻璃信号（那套已按用户决策移除，见下方注释）。
@@ -137,24 +131,23 @@ class _PageSwitchTabViewState extends State<PageSwitchTabView> {
     if (widget.currentIndex == old.currentIndex) return;
     if (_controller.hasClients &&
         _controller.page?.round() != widget.currentIndex) {
-      // 换页滑动广播 tabSwitching：玻璃侧按转场口径静默（mini 条不逐帧
-      // live、backing 不逐帧重绘、缓存帧不滚动抓帧），retained 层由合成器
-      // 继续采样 backdrop，液态观感跟随滑动手势
-      final gen = ++_switchGen;
-      setTabSwitching(true);
+      // 点击换页与手动滑动统一玻璃口径（用户要求去掉 tabSwitching 静默
+      // 机制）：此前程序式 animateToPage 期间广播 tabSwitching，玻璃侧
+      // 整段静默（缓存帧停抓、bar 玻璃冻结在切页前那一帧、backing 不
+      // 重绘），落定才恢复——观感即「液态玻璃卸载再恢复」；手动滑动走
+      // 普通滚动口径（50ms 节流滚动补帧、retained 层持续采样）连贯无
+      // 断裂。滚动补帧已改 chrome 区域裁剪（_captureSync region push，
+      // 不再全场景重渲染），点击换页的抓帧成本与手动滑动同量级
       _controller.animateToPage(
         widget.currentIndex,
         duration: widget.duration,
         curve: Curves.easeOutCubic,
-      ).whenComplete(() {
-        if (gen == _switchGen) setTabSwitching(false);
-      });
+      );
     }
   }
 
   @override
   void dispose() {
-    if (_switchGen > 0) setTabSwitching(false);
     if (_pageDrag) {
       tabSwipeReleasePage.value = widget.currentIndex;
       tabSwipePageFraction.value = -1;

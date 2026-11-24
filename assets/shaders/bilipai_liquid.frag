@@ -395,15 +395,17 @@ void main() {
       // 恒走玻璃面分支——回退观感与旧版逐字节一致
       float rawMix =
           uPageOn > 0.5 ? smoothstep(0.0, 0.3, pressedSh) : 0.0;
-      // 页面折射坐标：径向内拉（BiliPai Lens circleMap 原版，静息/按压
-      // 同一公式，pc = p - dsh·grad）——按压仅 profR 由 band 展开到全
-      // 半径（L352），折射场随之覆盖整镜：镜缘采样向镜心收 = 镜缘内容
-      // 压缩 + 镜心区域放大。白底效果图的可见信号即此场：中心「态」字
-      // /铃铛放大 ~1.5x、缘部「我的」径向弯折、栏缘线被推离向镜外弯折。
-      // 旧竖向键控（合成露出带：黑带/连接处下潜两轮修复的折衷）已随
-      // 水滴凸出栏缘的几何改动撤销——凸出月牙直接透栏外真实内容，
-      // 无需合成边界，径向场与 BiliPai 完全同构
-      vec2 pc = p - dsh * grad;
+      // 页面折射坐标——方向分流（Dart 侧 _syncSnapshot 约定，此前注释
+      // 写了但 shader 未实现）：静息向内（pc = p - dsh·grad，采样向镜心
+      // 收 = 已确认静息观感）；按压向外（pc = p + dsh·grad）——BiliPai
+      // 传负 refractionAmount 的等效方向：镜缘把水滴**外**的栏面/内容压
+      // 进镜内，「底栏被水滴缩小」（吸入）观感。此前恒向内 = 按压整镜
+      // 放大（用户对比图否决「把底部栏放大了，bilipai 不是缩小吗」）。
+      // 0.3 渐变窗口与 rawMix 同步：方向翻转经过 0 位移的瞬间恰逢真实
+      // 栏面渐入，无跳变。按压 profR 由 band 展开到全半径（L353），折射
+      // 场覆盖整镜；旧竖向键控已随水滴凸出栏缘的几何改动撤销
+      float dirMix = smoothstep(0.0, 0.3, pressedSh);
+      vec2 pc = p - dsh * grad * (1.0 - 2.0 * dirMix);
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
         // 色散全径向（BiliPai dispersedCoord = d·grad·intensity 原版）：
         // 只取 grad.x 时水滴顶部 grad.x≈0，鼓出月牙永远无彩虹（用户
