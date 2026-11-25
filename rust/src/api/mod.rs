@@ -11,6 +11,35 @@ use xianyu_core::music::lyrics::build_structured_lyrics_payload;
 use xianyu_core::music::url_resolver::LxUrlSongInfo;
 
 // =========================================================================
+// 歌单同步 v2 协议 song_hash（协议单点化，对齐桌面端 host_playlist_song_hashes）
+// =========================================================================
+
+/// 批量计算 v2 协议 song_hash。`entries_json` 为 JSON 数组，元素形如
+/// `{"path": "lx://...", "name": "...", "artist": "..."}`（在线歌曲带 path，
+/// 本地传 null，分类逻辑由 Dart 侧判定）。返回与输入等长的 hash JSON 数组。
+pub fn playlist_song_hashes(entries_json: String) -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Entry {
+        path: Option<String>,
+        name: String,
+        artist: String,
+    }
+    let entries: Vec<Entry> =
+        serde_json::from_str(&entries_json).map_err(|e| e.to_string())?;
+    let hashes: Vec<String> = entries
+        .iter()
+        .map(|e| {
+            xianyu_core::host_crypto::playlist_song_hash(
+                e.path.as_deref(),
+                &e.name,
+                &e.artist,
+            )
+        })
+        .collect();
+    serde_json::to_string(&hashes).map_err(|e| e.to_string())
+}
+
+// =========================================================================
 // 歌词解析（第三批）
 // =========================================================================
 

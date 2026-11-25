@@ -203,31 +203,37 @@ vec3 tapPage(vec2 screenPos) {
 // 标），带内合成会让外溢带内的图标被叠 7 次 = 七彩鬼影（真机截图
 // 屋顶橙弧/底部红绿条）；图标由调用方在色散混合完成后一次性合成
 vec3 lensTap(vec2 pageC, float rawMix) {
-  if (uPageOn > 0.5 && rawMix > 0.0) {
-    vec2 puv = (pageC - uPageOrigin) / max(uPageSize, vec2(1.0));
-    bool inPage = puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 &&
-        puv.y <= 1.0;
+  if (rawMix > 0.0) {
     vec2 clampedC = clamp(pageC, vec2(0.0), max(uSize - vec2(1.0), vec2(1.0)));
-    // 栏带外 = 原始页面内容（捕获层 Positioned.fill 覆盖全屏，栏背后
-    // 的区域也在纹理里；越出页面捕获矩形回退 backdrop 直采——tapPage
-    // 矩形外返回透明黑=黑色空带的根因）。栏带外 uImage 与页面捕获
-    // 内容一致（都是未被栏面覆盖的真实页面），tapPage 保留 = 采样器
-    // 2 引用（Impeller 剔除未引用 sampler 会让绑定错位）+ 捕获兜底
-    vec3 rawFace = inPage ? tapPage(pageC) : tapRGB(clampedC);
-    // 栏归属掩膜（槽 36/42，1.5px 物理过渡防栏缘线锯齿）：掩膜按采样
-    // 坐标（内容空间）判定——采样点落在栏内就读真实栏面，透镜径向场
-    // 把栏缘线/图标推弯进镜缘（BiliPai 镜内栏缘弯折同构）
-    float band =
-        smoothstep(uDropletBarTop - 1.5, uDropletBarTop + 1.5, pageC.y) *
-        (1.0 - smoothstep(uDropletBarBottom - 1.5, uDropletBarBottom + 1.5,
-                          pageC.y));
-    // 栏带内全强度直采 uImage（真实栏面：霜化/图标/文字已烘焙）——
-    // 不用 glassFace（其 tint 叠加在已含霜化+tint 的栏面上 = 双重加白
-    // 奶白，历史教训）。此前「rawPage + 15% 白纱」把栏面从镜内抹掉
-    //（用户对比图否决：「放大水滴把底栏忽略了」）
-    return mix(rawFace, tapRGB(clampedC), band);
+    if (uPageOn > 0.5) {
+      vec2 puv = (pageC - uPageOrigin) / max(uPageSize, vec2(1.0));
+      bool inPage = puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 &&
+          puv.y <= 1.0;
+      // 栏带外 = 原始页面内容（捕获层 Positioned.fill 覆盖全屏，栏背后
+      // 的区域也在纹理里；越出页面捕获矩形回退 backdrop 直采——tapPage
+      // 矩形外返回透明黑=黑色空带的根因）。栏带外 uImage 与页面捕获
+      // 内容一致（都是未被栏面覆盖的真实页面），tapPage 保留 = 采样器
+      // 2 引用（Impeller 剔除未引用 sampler 会让绑定错位）+ 捕获兜底
+      vec3 rawFace = inPage ? tapPage(pageC) : tapRGB(clampedC);
+      // 栏归属掩膜（槽 36/42，1.5px 物理过渡防栏缘线锯齿）：掩膜按采样
+      // 坐标（内容空间）判定——采样点落在栏内就读真实栏面，透镜径向场
+      // 把栏缘线/图标推弯进镜缘（BiliPai 镜内栏缘弯折同构）
+      float band =
+          smoothstep(uDropletBarTop - 1.5, uDropletBarTop + 1.5, pageC.y) *
+          (1.0 - smoothstep(uDropletBarBottom - 1.5, uDropletBarBottom + 1.5,
+                            pageC.y));
+      // 栏带内全强度直采 uImage（真实栏面：霜化/图标/文字已烘焙）——
+      // 不用 glassFace（其 tint 叠加在已含霜化+tint 的栏面上 = 双重加白
+      // 奶白，历史教训）。此前「rawPage + 15% 白纱」把栏面从镜内抹掉
+      //（用户对比图否决：「放大水滴把底栏忽略了」）
+      return mix(rawFace, tapRGB(clampedC), band);
+    }
+    // 无页面捕获兜底（部分机型 toImageSync 静默失败）：整面直采 uImage
+    // 完整实时场景——页面+栏面+实图标（孔已随液态关闭，实图标在
+    // backdrop 里），折射/弯折/图标全量生效，不再退化成玻璃面
+    return tapRGB(clampedC);
   }
-  // 静息（rawMix=0）/无页面纹理：玻璃面（已确认静息观感逐字节一致）
+  // 静息（rawMix=0）：玻璃面（已确认静息观感逐字节一致）
   return glassFace(pageC);
 }
 
@@ -387,14 +393,14 @@ void main() {
           smoothstep(uDropletGapBand - 1.0, uDropletGapBand,
                      uDropletRadius - abs(dc.y));
       vec3 droplet;
-      // —— 真实合成面透镜（BiliPai combinedBackdrop 同构）——uPageOn=1
-      // 时按压态由 lensTap 采样：栏带内直采 uImage 真实栏面（霜化/图标
-      // /文字已烘焙，tabsBackdrop+materialBackdrop 合成面等价物）、栏带
-      // 外采页面原始内容捕获纹理（materialBackdrop 等价物）。rawMix 随
-      // 按压 0→0.3 渐入，与玻璃面交叉淡化；捕获失败/未捕获 uPageOn=0
-      // 恒走玻璃面分支——回退观感与旧版逐字节一致
-      float rawMix =
-          uPageOn > 0.5 ? smoothstep(0.0, 0.3, pressedSh) : 0.0;
+      // —— 真实合成面透镜（BiliPai combinedBackdrop 同构）——按压态由
+      // lensTap 采样实时 backdrop：uImage = 页面+栏面+实图标的完整场景
+      //（实图标随液态关孔保留在 backdrop 里）。rawMix 随按压 0→0.3 渐入，
+      // 与玻璃面交叉淡化。此前 rawMix 以 uPageOn 为门：页面捕获失败/未
+      // 捕获（部分机型 toImageSync 静默失败）恒走玻璃面分支——弯折场
+      // 作用在低对比霜化面上不可读 + 捕获图标 1:1 不弯 = 「纯透镜带
+      // 模糊」（真机截图确认）。现按压折射不再依赖捕获纹理
+      float rawMix = smoothstep(0.0, 0.3, pressedSh);
       // 页面折射坐标——方向分流（Dart 侧 _syncSnapshot 约定，此前注释
       // 写了但 shader 未实现）：静息向内（pc = p - dsh·grad，采样向镜心
       // 收 = 已确认静息观感）；按压向外（pc = p + dsh·grad）——BiliPai
@@ -432,11 +438,11 @@ void main() {
         droplet = lensTap(pc, rawMix);
       }
       // 图标合成（一次性，色散混合完成后）：静息 1:1 原位合成捕获图标
-      //（crisp，用户确认的静息样式）；按压且页面捕获可用（rawMix>0）时
-      // 跳过——栏带内 uImage 真实栏面已含图标/文字（随栏按压压扁动画
-      // 实时变化），再叠静息位置捕获的图标 = 双影错位；且 uImage 图标
-      // 经 7 次色散采样自带彩虹缘（BiliPai 实机按压同构）。无页面捕获
-      // 回退：捕获图标随 pc 弯折放大（旧兜底行为不变）
+      //（crisp，用户确认的静息样式，此时孔开、实图标已让位）；按压
+      //（rawMix>0）时跳过——uImage 实时场景已含实图标/文字（液态关孔，
+      // 所有设备一致，不再依赖页面捕获成功与否；随栏按压压扁动画实时
+      // 变化），再叠静息位置捕获的图标 = 双影错位；且 uImage 图标经 7
+      // 次色散采样自带彩虹缘（BiliPai 实机按压同构）
       if (rawMix <= 0.0) {
         vec2 iconC = pressedSh < 0.001 ? p : pc;
         result = compositeIcon(droplet, iconC);

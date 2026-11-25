@@ -1007,21 +1007,19 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           // 孔恒存在，ClipPath 连命中一起裁会让图标区域的点击/长按穿透
           // 底栏落到页面内容（误开歌单/来源弹层、长按无水滴的根因）。
           //
-          // 孔只在合成路径开启（rawMix=0：静息 1:1 合成捕获图标 / 无页面
-          // 捕获兜底弯折捕获图标）。按压且页面捕获可用时孔必须关闭——
-          // shader rawMix>0 跳过捕获合成、直采 uImage 真实栏面，实图标若
-          // 仍被孔裁掉，透镜内 = 无图标栏面 = 空玻璃直接遮住图标（真机
-          // 截图确认；改向外采样后透镜内部 1:1 采样孔区，空洞更明显）。
-          // BiliPai 同构：dock 面含图标整面被透镜折射，实图标不隐藏
+          // 孔只在静息合成路径开启（rawMix=0：1:1 合成捕获图标，实图标
+          // 让位防双影）。液态（按压/拖拽，rawMix>0）一律关孔——shader
+          // 直采 uImage 实时场景，实图标必须留在 backdrop 里透镜才折射
+          // 得出（孔开着 = 无图标栏面 = 空玻璃遮住图标，真机截图确认）。
+          // 不再以页面捕获成功为条件：捕获失败的机型（toImageSync 静默
+          // 失败）走 uImage 整面直采兜底，同样需要实图标在场。BiliPai
+          // 同构：dock 面含图标整面被透镜折射，实图标不隐藏
           final tabRowVisible = overlayDroplet
               ? _PaintOnlyHoleClip(
                   clipper: _DropletHoleClipper(
                     contentKey: _tabCaptureKey,
                     barKey: _barKey,
-                    active: !(
-                      navDropletPageTexture.value?.image != null &&
-                      dropletOn
-                    ),
+                    active: !dropletOn,
                   ),
                   child: RepaintBoundary(key: _tabCaptureKey, child: tabRow),
                 )

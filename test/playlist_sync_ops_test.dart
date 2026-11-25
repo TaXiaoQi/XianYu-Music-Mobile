@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:xianyu_music_mobile/src/playlist/playlist_store.dart';
@@ -343,18 +342,17 @@ void main() {
     expect(env.playlists.last.isCloud, true);
   });
 
-  test('playlistSyncSongHash 口径：online=md5(path)，local=md5(title|artist|local)', () {
-    expect(
-      playlistSyncSongHash(song('lx://wy/1', 'T', 'A')),
-      md5.convert(utf8.encode('lx://wy/1')).toString(),
-    );
-    final local = playlistSyncSongHash(song('C:/m/f.mp3', 'T', 'A'));
-    expect(local, md5.convert(utf8.encode('T|A|local')).toString());
-    // 本地 hash 与路径无关（跨设备按元数据对齐），与在线 hash 互异
-    expect(playlistSyncSongHash(song('C:/other/f.mp3', 'T', 'A')), local);
-    expect(
-      playlistSyncSongHash(song('https://x/1', 'T', 'A')),
-      isNot(local),
-    );
+  test('song_hash 分类：在线协议头带 path，本地传 null（hash 本体由 Core 测试覆盖）', () {
+    // 在线：lx:// plugin:// http:// https:// 均按 path 参与 md5
+    expect(buildSyncSongHashEntry(song('lx://wy/1', 'T', 'A'))['path'], 'lx://wy/1');
+    expect(buildSyncSongHashEntry(song('plugin://a/1', 'T', 'A'))['path'], 'plugin://a/1');
+    expect(buildSyncSongHashEntry(song('https://x/1', 'T', 'A'))['path'], 'https://x/1');
+    // 本地：path 不参与（跨设备按元数据对齐）
+    final local = buildSyncSongHashEntry(song('C:/m/f.mp3', 'T', 'A'));
+    expect(local['path'], isNull);
+    expect(local['name'], 'T');
+    expect(local['artist'], 'A');
+    // 协议哈希值等价性由 xianyu_core host_crypto::playlist_song_hash 测试保证
+    // （Core 用例对照了桌面旧版 computeSongHash 与本模块历史 md5 输出）。
   });
 }

@@ -11,12 +11,12 @@ class PlaylistSyncService {
 
   // ==================== 歌单同步 ====================
 
-  Map<String, dynamic> _songToSyncPayload(ImportedSong s) => {
+  Map<String, dynamic> _songToSyncPayload(ImportedSong s, String songHash) => {
         ...s.toJson(),
         'name': s.title,
         'duration': s.duration * 1000,
         'syncType': SyncNotifier._classifySyncSong(s),
-        'song_hash': playlistSyncSongHash(s),
+        'song_hash': songHash,
       };
 
   String _firstRemoteSongCover(List<ImportedSong> songs) {
@@ -103,7 +103,10 @@ class PlaylistSyncService {
       }
       final payload = <Map<String, dynamic>>[];
       for (final p in local) {
-        var payloadSongs = p.songs.map(_songToSyncPayload).toList();
+        final hashes = await playlistSyncSongHashes(p.songs);
+        var payloadSongs = [
+          for (var i = 0; i < p.songs.length; i++) _songToSyncPayload(p.songs[i], hashes[i]),
+        ];
         List<String>? deletedSongPaths;
         final cloudId = p.cloudId ?? '';
         // 覆盖上传跳过墓碑/云端保留等合并裁剪，本地歌单全集即云端目标状态
@@ -295,6 +298,7 @@ class PlaylistSyncService {
     final index = SyncNotifier._buildLibraryIndex(_ref);
     final reports = <Map<String, dynamic>>[];
     for (final p in working) {
+      final reportHashes = await playlistSyncSongHashes(p.songs);
       reports.add({
         'localId': p.id,
         if ((p.cloudId ?? '').isNotEmpty) 'cloudId': p.cloudId,
@@ -305,7 +309,7 @@ class PlaylistSyncService {
         if (p.importedAt > 0) 'createdAt': p.importedAt,
         if (p.sourcePluginId != null) 'sourcePluginId': p.sourcePluginId,
         if (p.sourceUrl != null) 'sourceUrl': p.sourceUrl,
-        'song_hashes': p.songs.map(playlistSyncSongHash).toList(),
+        'song_hashes': reportHashes,
       });
     }
 

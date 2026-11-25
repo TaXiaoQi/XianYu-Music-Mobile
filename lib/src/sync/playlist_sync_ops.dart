@@ -1,27 +1,35 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
-
 import '../plugin/plugin_backup_import.dart';
 import '../playlist/playlist_store.dart';
+import '../rust/api.dart' as rust;
 
 // ==================== v2 歌单同步 ops 应用（纯函数，对齐桌面端 playlistOpsApply） ====================
 // diff 计算在服务端（file_sync_v2_download_ops），本模块把返回的 ops 幂等应用到
 // 本地歌单列表。匹配既有歌单时 cloudId 优先、云端快照 id 兜底（消除跨设备重复建单）。
 
-/// v2 协议 song_hash：online=md5(path)，local=md5(title|artist|local)。
-/// 必须与桌面端 computeSongHash、服务端 song_diff_key 的回退口径逐字节一致，
-/// 否则服务端会把双方都已有的歌判成新增。
-String playlistSyncSongHash(ImportedSong song) {
-  final path = song.path;
-  final isOnline = path.startsWith('lx://') ||
-      path.startsWith('plugin://') ||
-      path.startsWith('http://') ||
-      path.startsWith('https://');
-  if (isOnline && path.isNotEmpty) {
-    return md5.convert(utf8.encode(path)).toString();
-  }
-  return md5.convert(utf8.encode('${song.title}|${song.artist}|local')).toString();
+/// v2 协议 song_hash 分类：在线路径（协议头判定）带 path，本地传 null。
+/// 哈希本体在 Rust Core `host_crypto::playlist_song_hash`（协议单点实现，
+/// 与桌面端 host_playlist_song_hashes、服务端 song_diff_key 回退口径一致）。
+bool _isOnlineSyncPath(String path) =>
+    path.startsWith('lx://') ||
+    path.startsWith('plugin://') ||
+    path.startsWith('http://') ||
+    path.startsWith('https://');
+
+/// 构建 song_hash 计算入参（分类逻辑；hash 本体在 Core，纯函数便于测试）。
+Map<String, dynamic> buildSyncSongHashEntry(ImportedSong song) => {
+      'path': _isOnlineSyncPath(song.path) && song.path.isNotEmpty ? song.path : null,
+      'name': song.title,
+      'artist': song.artist,
+    };
+
+/// 批量计算 v2 协议 song_hash，返回与 [songs] 等长的数组。
+Future<List<String>> playlistSyncSongHashes(List<ImportedSong> songs) async {
+  if (songs.isEmpty) return const [];
+  final entries = songs.map(buildSyncSongHashEntry).toList();
+  final result = await rust.playlistSongHashes(entriesJson: jsonEncode(entries));
+  return (jsonDecode(result) as List).cast<String>();
 }
 
 /// 应用 ops 时的可变工作集：playlists 为调用方持有的工作副本，

@@ -8,6 +8,12 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `LxToplistDetailResult`
 
+/// 批量计算 v2 协议 song_hash。`entries_json` 为 JSON 数组，元素形如
+/// `{"path": "lx://...", "name": "...", "artist": "..."}`（在线歌曲带 path，
+/// 本地传 null，分类逻辑由 Dart 侧判定）。返回与输入等长的 hash JSON 数组。
+Future<String> playlistSongHashes({required String entriesJson}) =>
+    RustLib.instance.api.crateApiPlaylistSongHashes(entriesJson: entriesJson);
+
 /// 解析原始歌词文本（LRC/YRC/QRC/ESLRC/TTML/Lys 等），
 /// 返回 [`StructuredLyricsPayload`] 的 JSON（camelCase）。
 ///
