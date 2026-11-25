@@ -706,9 +706,35 @@ extension PluginCatalogServiceMethods on PluginCatalogService {
       final sheet = _sheetFromAnimeImport(source, keyword, raw);
       if (sheet != null) return sheet;
     }
-    final direct = await _tryCallRawList(source, 'importMusicSheet', [keyword]);
-    if (direct.isNotEmpty) {
-      return _sheetFromImportedTracks(source, keyword, direct).first;
+    // 先规范化成纯歌单 ID 再传插件（部分插件 URL 正则有缺陷，见
+    // normalizeSheetLinkKeyword 注释）；对象返回（带真实歌单名）优先用其名
+    final importKeyword =
+        PluginCatalogService.normalizeSheetLinkKeyword(keyword);
+    final directRaw = await _tryCallRaw(source, 'importMusicSheet', [importKeyword]);
+    final directTracks = <Map<String, dynamic>>[];
+    var directTitle = '';
+    if (directRaw is List) {
+      directTracks.addAll(extractMfResultList(directRaw));
+    } else if (directRaw is Map) {
+      directTitle = directRaw['title']?.toString() ?? '';
+      final ml = directRaw['musicList'];
+      if (ml is List) {
+        directTracks.addAll(extractMfResultList(ml));
+      }
+    }
+    if (directTracks.isNotEmpty) {
+      final sheet = _sheetFromImportedTracks(source, importKeyword, directTracks).first;
+      if (directTitle.trim().isEmpty) return sheet;
+      return MfSheetItem(
+        id: sheet.id,
+        title: directTitle,
+        coverUrl: sheet.coverUrl,
+        trackCount: sheet.trackCount,
+        artist: sheet.artist,
+        platform: sheet.platform,
+        pluginId: sheet.pluginId,
+        raw: sheet.raw,
+      );
     }
     // 插件对部分平台歌单解析失败或返回空：宿主兜底
     final kgSheet = await _kgFallbackSheet(source, keyword);

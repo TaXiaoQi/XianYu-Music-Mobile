@@ -34,6 +34,31 @@ class PluginCatalogService {
         .hasMatch(t);
   }
 
+  /// 链接类输入规范化成纯歌单 ID 再传给插件 importMusicSheet。
+  /// 部分插件（如 BakaMusic QQ[T]）的 URL 正则有缺陷：
+  /// playlist.html?id=... 解析不出 ID（只有 &id= 才命中），直接传 URL
+  /// 会导致插件把链接当搜索词、导入到无关歌单（歌单名显示成链接）。
+  /// 插件普遍支持纯数字 ID（musicfree 标准协议），与桌面端 parseLink 同规则。
+  static String normalizeSheetLinkKeyword(String keyword) {
+    final t = keyword.trim();
+    if (!looksLikeSheetLinkOrId(t) || RegExp(r'^\d+$').hasMatch(t)) return t;
+    // 各平台 id 参数 / 路径 ID（对齐桌面端 playlistImportBase.parseLink）
+    final patterns = <RegExp>[
+      RegExp(r'/playlist/(\d+)'),
+      RegExp(r'[?&]id=(\d+)'),
+      RegExp(r'playlistId=(\d+)'),
+      RegExp(r'playlists?_detail/(\d+)'),
+      RegExp(r'/playsquare/(\d+)'),
+      RegExp(r'/(\d+)\.html'),
+      RegExp(r'/special/(?:single/)?(\d+)'),
+    ];
+    for (final re in patterns) {
+      final m = re.firstMatch(t);
+      if (m != null) return m.group(1)!;
+    }
+    return t;
+  }
+
   Future<List<MfSheetItem>> searchSheets(
       PluginSource source, String keyword) async {
     // 链接/歌单 ID 优先走 importMusicSheet 精确导入：公开搜索会把链接当
