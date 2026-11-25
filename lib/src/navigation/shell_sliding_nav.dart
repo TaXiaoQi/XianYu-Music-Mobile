@@ -1005,12 +1005,23 @@ class _SlidingNavBottomState extends State<_SlidingNavBottom>
           //（完整图标行）。非液态/降级路径不裁不包。裁剪必须只作用于
           // 绘制（_PaintOnlyHoleClip）——静息水滴也由 overlay 重画图标后
           // 孔恒存在，ClipPath 连命中一起裁会让图标区域的点击/长按穿透
-          // 底栏落到页面内容（误开歌单/来源弹层、长按无水滴的根因）
+          // 底栏落到页面内容（误开歌单/来源弹层、长按无水滴的根因）。
+          //
+          // 孔只在合成路径开启（rawMix=0：静息 1:1 合成捕获图标 / 无页面
+          // 捕获兜底弯折捕获图标）。按压且页面捕获可用时孔必须关闭——
+          // shader rawMix>0 跳过捕获合成、直采 uImage 真实栏面，实图标若
+          // 仍被孔裁掉，透镜内 = 无图标栏面 = 空玻璃直接遮住图标（真机
+          // 截图确认；改向外采样后透镜内部 1:1 采样孔区，空洞更明显）。
+          // BiliPai 同构：dock 面含图标整面被透镜折射，实图标不隐藏
           final tabRowVisible = overlayDroplet
               ? _PaintOnlyHoleClip(
                   clipper: _DropletHoleClipper(
                     contentKey: _tabCaptureKey,
                     barKey: _barKey,
+                    active: !(
+                      navDropletPageTexture.value?.image != null &&
+                      dropletOn
+                    ),
                   ),
                   child: RepaintBoundary(key: _tabCaptureKey, child: tabRow),
                 )
@@ -1450,7 +1461,11 @@ class _NavTab extends ConsumerWidget {
 /// 图上方成双影）；圆外照常显示。仅裁栏顶以下——overlay 折射层只含
 /// 页面内容（不含栏子树），越过栏顶的 badge 若被裁会凭空消失
 class _DropletHoleClipper extends CustomClipper<Path> {
-  const _DropletHoleClipper({required this.contentKey, required this.barKey});
+  const _DropletHoleClipper({
+    required this.contentKey,
+    required this.barKey,
+    this.active = true,
+  });
 
   /// tabRow 的 RepaintBoundary 键（兼作坐标换算盒：Center 撑满 bar 盒）
   final GlobalKey contentKey;
@@ -1458,9 +1473,14 @@ class _DropletHoleClipper extends CustomClipper<Path> {
   /// 底栏盒键（栏顶全局 y 换算）
   final GlobalKey barKey;
 
+  /// false = 孔关闭（返回整面矩形，不裁任何像素）：按压态且页面捕获可用
+  /// 时实图标必须保留在 backdrop 里供透镜折射，见调用点注释
+  final bool active;
+
   @override
   Path getClip(Size size) {
     final base = Path()..addRect(Offset.zero & size);
+    if (!active) return base;
     final snap = navDropletSnapshot.value;
     // 静息也裁：静息水滴同样由 overlay 用捕获纹理重画图标（与按压态
     // 同一管线），实图标不裁会在玻璃面内叠成双影
