@@ -210,12 +210,23 @@ vec3 tapPage(vec2 screenPos) {
 vec3 lensTap(vec2 pageC, float rawMix) {
   if (rawMix > 0.0) {
     // 按压面 = 静态玻璃面（glassFace：磨砂+饱和度+tint 反色）经折射场
-    // 采样——用户定稿（2026-11-26）：按压放大水滴必须有静态水滴的玻璃
-    // 质感，放大/弯折作用于玻璃面本身。此前按压直采 uImage 原始场景：
-    // 白底栏面上没有 tint 层 = 白透明圆片、无玻璃质感（用户否决）。
-    // 真实图标按压时在 backdrop（孔洞关闭），随场放大弯折进玻璃面；
-    // 静息由捕获图 1:1 合成（main() compositeIcon 分支）
-    vec3 face = glassFace(pageC);
+    // 采样。用户定稿（2026-11-26）：按压放大水滴必须有静态水滴的玻璃
+    // 质感——此前直采 uImage 原始场景被否决（纯透镜）。
+    // 按压态霜化：glassFace 的 tint 只有 10%，鼓出栏缘的部分透出未霜化
+    // 的原始页面内容，读作「纯透镜」与静态磨砂质感脱节——镜面内容先经
+    // 9 点小半径模糊再过玻璃 tint（B 站实机：镜面奶白磨砂、放大图标仍
+    // 清晰可辨）。半径随 rawMix 渐入；静息 rawMix=0 走下方单点 glassFace
+    // 逐字节不变
+    float frostR = rawMix * 6.0;
+    vec3 face = glassFace(pageC) * 0.25;
+    face += glassFace(pageC + vec2(frostR, 0.0)) * 0.125;
+    face += glassFace(pageC - vec2(frostR, 0.0)) * 0.125;
+    face += glassFace(pageC + vec2(0.0, frostR)) * 0.125;
+    face += glassFace(pageC - vec2(0.0, frostR)) * 0.125;
+    face += glassFace(pageC + vec2(frostR, frostR) * 0.7071) * 0.0625;
+    face += glassFace(pageC - vec2(frostR, frostR) * 0.7071) * 0.0625;
+    face += glassFace(pageC + vec2(frostR, -frostR) * 0.7071) * 0.0625;
+    face += glassFace(pageC - vec2(frostR, -frostR) * 0.7071) * 0.0625;
     // 采样器 2 与栏带 uniforms 引用保留（Impeller 剔除未引用
     // uniform/sampler 会让槽位/绑定错位）：结果恒等 face，但权重依赖
     // uPageOn/uDropletBarTop/uDropletBarBottom，防常量折叠被 DCE
