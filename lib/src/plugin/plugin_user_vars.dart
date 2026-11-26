@@ -153,7 +153,7 @@ final pluginUserVarValuesProvider =
         (ref) => PluginUserVarValuesNotifier());
 
 Future<List<PluginUserVar>> getPluginUserVars(PluginEngine engine, PluginSource source) async {
-  if (!source.format.isMfCompatible) return const [];
+  if (!source.format.usesMfSandbox) return const [];
   final metadata = await engine.ensureLoaded(source);
   if (metadata == null) return const [];
   return PluginUserVar.normalize(metadata['userVariables']);

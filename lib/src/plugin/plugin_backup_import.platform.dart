@@ -91,7 +91,7 @@ int _pluginMatchScore(
   _PlatformDescriptor platform,
   String? format,
 ) {
-  if (!plugin.format.isMfCompatible && plugin.format != PluginFormat.lx) {
+  if (!plugin.format.usesMfSandbox && plugin.format != PluginFormat.lx) {
     return 0;
   }
 
@@ -107,13 +107,13 @@ int _pluginMatchScore(
     final normalized = _normalizePlatformLabel(label);
     if (normalized.isEmpty) continue;
     if (normalized == platform.normalized) {
-      final score = plugin.format.isMfCompatible ? 140 : 110;
+      final score = plugin.format.usesMfSandbox ? 140 : 110;
       if (score > best) best = score;
     }
     final descriptor = _describePlatform(label);
     if (descriptor.canonical.isNotEmpty &&
         descriptor.canonical == platform.canonical) {
-      final score = plugin.format.isMfCompatible ? 130 : 100;
+      final score = plugin.format.usesMfSandbox ? 130 : 100;
       if (score > best) best = score;
     }
   }
@@ -138,7 +138,7 @@ PluginSource? _findMatchingPlugin(
       if (format == 'lxmusic') {
         return a.$1.format == PluginFormat.lx ? -1 : 1;
       }
-      return a.$1.format.isMfCompatible ? -1 : 1;
+      return a.$1.format.usesMfSandbox ? -1 : 1;
     }
     return 0;
   });

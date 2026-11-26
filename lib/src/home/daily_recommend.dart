@@ -18,6 +18,7 @@ import '../core/settings.dart';
 import '../library/library_provider.dart';
 import '../player/player_provider.dart';
 import '../plugin/plugin_catalog.dart';
+import '../plugin/plugin_dispatch.dart';
 import '../plugin/plugin_engine.dart';
 import '../plugin/plugin_models.dart';
 import '../plugin/plugin_provider.dart';
@@ -174,7 +175,7 @@ class DailyRecommendItem {
         fromDailyRecommend: true,
       );
     }
-    final isMf = isMfFormatValue(pluginFormat);
+    final isMf = usesMfSandboxValue(pluginFormat);
     final src = (song['source'] as String?) ?? '';
     final mid = (song['songmid'] as String?) ?? '';
     return QueueItem(
@@ -540,7 +541,7 @@ void _collectLocalCandidates(
 
 Future<List<PluginSearchResult>> _searchPlugin(
     PluginEngine engine, PluginSource plugin, String keyword) async {
-  if (plugin.format.isMfCompatible) {
+  if (plugin.format.usesMfSandbox) {
     return PluginCatalogService(engine, [plugin])
         .searchMusic(plugin, keyword, limit: _searchLimit);
   }
@@ -586,10 +587,13 @@ Future<bool> _probePluginAlive(
           .timeout(_aliveProbeTimeout);
       alive = r != null && (r['url'] as String?)?.isNotEmpty == true;
     } else {
-      final r = await engine
-          .getMusicFreeUrl(p, Map<String, dynamic>.from(hits.first.toJson()),
-              preferred: 'low', fallback: 'pause')
-          .timeout(_aliveProbeTimeout);
+      final r = await pluginGetMediaUrl(
+        engine,
+        p,
+        Map<String, dynamic>.from(hits.first.toJson()),
+        preferred: 'low',
+        fallback: 'pause',
+      ).timeout(_aliveProbeTimeout);
       alive = r != null && r.url.isNotEmpty;
     }
   } catch (_) {
@@ -601,7 +605,7 @@ Future<bool> _probePluginAlive(
 
 Future<List<PluginSearchResult>> _probeSearchOne(
     PluginEngine engine, PluginSource p, String keyword) async {
-  if (p.format.isMfCompatible) {
+  if (p.format.usesMfSandbox) {
     return PluginCatalogService(engine, [p]).searchMusic(p, keyword, limit: 1);
   }
   for (final key in (p.sources.isEmpty ? <String>['default'] : p.sources)) {
@@ -894,7 +898,7 @@ class DailyRecommendNotifier extends AsyncNotifier<DailyRecommendState> {
       final ids = <String>[];
       final seen = <String>{};
       for (final it in items) {
-        if (!isMfFormatValue(it.pluginFormat)) {
+        if (!usesMfSandboxValue(it.pluginFormat)) {
           continue;
         }
         if (!wyIds.contains(it.pluginId)) continue;

@@ -8,7 +8,6 @@ import '../i18n/i18n.dart';
 import 'plugin_models.dart';
 import 'plugin_host_fallback.dart';
 import 'plugin_store.dart';
-import 'baka_plugin_manager.dart';
 import 'plugin_backup_import.dart' show lxSourceKeyForPlatform;
 
 part 'plugin_engine_auth_ban.dart';
@@ -60,8 +59,6 @@ class PluginEngine {
   static const int _maxPluginSize = 2 * 1024 * 1024;
 
   PluginEngine(this.dataDir, this.store);
-
-  late final BakaPluginManager bakaManager = BakaPluginManager(this);
 
   String _resolveId(String pluginId) => _aliases[pluginId] ?? pluginId;
 
@@ -287,7 +284,7 @@ class PluginEngine {
     try {
       final meta = await ensureLoaded(source);
       if (meta == null) return false;
-      if (source.format.isMfCompatible) {
+      if (source.format.usesMfSandbox) {
         final methods = meta['_availableMethods'];
         return methods is List && methods.contains('getMediaSource');
       }
@@ -415,8 +412,35 @@ class PluginEngine {
   ) =>
       _pluginMusicFreeNativeCandidates(preferred, fallback, declaredKeys);
 
-  bool isBakaPlugin(String pluginId, {PluginSource? source}) =>
-      bakaManager.isBakaPlugin(pluginId, source: source);
+  /// mf 协议歌曲条目归一化：rawData 展开、platform/title/artist/id 补齐。
+  /// mf 与 baka 两条 arm 共用的宿主设施（本方法不含任何 baka 分支）。
+  Map<String, dynamic> prepareMusicItem(
+    PluginSource source,
+    Map<String, dynamic> songInfo,
+  ) {
+    final raw = songInfo['rawData'];
+    final musicItem = raw is Map<String, dynamic>
+        ? Map<String, dynamic>.from(raw)
+        : Map<String, dynamic>.from(songInfo);
+    if (musicItem['platform'] == null) {
+      musicItem['platform'] = source.name;
+    }
+    if (!musicItem.containsKey('title') && songInfo.containsKey('name')) {
+      musicItem['title'] = songInfo['name'];
+    }
+    if (!musicItem.containsKey('artist') && songInfo.containsKey('singer')) {
+      musicItem['artist'] = songInfo['singer'];
+    }
+    if (!musicItem.containsKey('id') &&
+        (((musicItem['id'] as dynamic)?.toString() ?? '').isEmpty) &&
+        songInfo.containsKey('songmid')) {
+      musicItem['id'] = songInfo['songmid'];
+    }
+    if (!musicItem.containsKey('songmid') && songInfo.containsKey('songmid')) {
+      musicItem['songmid'] = songInfo['songmid'];
+    }
+    return musicItem;
+  }
 
   Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
@@ -441,39 +465,7 @@ class PluginEngine {
       }
     }
 
-    final raw = songInfo['rawData'];
-    final musicItem = raw is Map<String, dynamic>
-        ? Map<String, dynamic>.from(raw)
-        : Map<String, dynamic>.from(songInfo);
-    if (musicItem['platform'] == null) {
-      musicItem['platform'] = source.name;
-    }
-    if (!musicItem.containsKey('title') && songInfo.containsKey('name')) {
-      musicItem['title'] = songInfo['name'];
-    }
-    if (!musicItem.containsKey('artist') && songInfo.containsKey('singer')) {
-      musicItem['artist'] = songInfo['singer'];
-    }
-    if (!musicItem.containsKey('id') &&
-        (((musicItem['id'] as dynamic)?.toString() ?? '').isEmpty) &&
-        songInfo.containsKey('songmid')) {
-      musicItem['id'] = songInfo['songmid'];
-    }
-    if (!musicItem.containsKey('songmid') && songInfo.containsKey('songmid')) {
-      musicItem['songmid'] = songInfo['songmid'];
-    }
-
-    if (source.format == PluginFormat.baka ||
-        (source.format != PluginFormat.anime &&
-            bakaManager.isBakaPlugin(source.id, source: source))) {
-      return bakaManager.getMediaSource(
-        source,
-        musicItem,
-        preferred: preferred,
-        fallback: fallback,
-        declaredKeys: declaredKeys,
-      );
-    }
+    final musicItem = prepareMusicItem(source, songInfo);
 
     final tryQs = _musicFreeQualityCandidates(preferred, fallback, declaredKeys);
     var unsupportedQuality = false;
@@ -821,7 +813,7 @@ class PluginEngine {
     String sourceKey,
     Map<String, dynamic> songInfo,
   ) async {
-    if (source.format.isMfCompatible) {
+    if (source.format.usesMfSandbox) {
       return getMusicFreeLyric(source, songInfo);
     }
     final response = await lxRequest(

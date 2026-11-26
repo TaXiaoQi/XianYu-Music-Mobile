@@ -26,11 +26,11 @@ enum PluginFormat {
 
 extension PluginFormatX on PluginFormat {
   /// MF 兼容格式：走 MusicFree 沙箱加载/搜索/导入等通用能力的格式集合
-  bool get isMfCompatible =>
+  bool get usesMfSandbox =>
       this == PluginFormat.musicfree || this == PluginFormat.baka || this == PluginFormat.anime;
 }
 
-bool isMfFormatValue(String? v) =>
+bool usesMfSandboxValue(String? v) =>
     v == 'musicfree' || v == 'baka' || v == 'anime';
 
 class PluginSource {

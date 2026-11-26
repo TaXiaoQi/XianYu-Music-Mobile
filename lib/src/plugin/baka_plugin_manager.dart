@@ -2,10 +2,12 @@ import '../player/media_url.dart';
 import 'plugin_engine.dart';
 import 'plugin_models.dart';
 
-class BakaPluginManager {
-  final PluginEngine engine;
+/// baka 模块单例：baka 系插件的能力全部自持（识别/取链/音质/缓存），
+/// 不挂在 mf 引擎（PluginEngine）上，二者仅在 plugin_dispatch.dart 交汇。
+final bakaManager = BakaPluginManager();
 
-  BakaPluginManager(this.engine);
+class BakaPluginManager {
+  BakaPluginManager();
 
   static const List<String> nonBakaAuthors = ['时迁酱'];
 
@@ -16,7 +18,9 @@ class BakaPluginManager {
   final Map<String, ResolvedMediaUrl?> _mediaCache = {};
   static const int _mediaCacheMax = 128;
 
-  bool isBakaPlugin(String pluginId, {PluginSource? source}) {
+  /// 是否为 baka 插件（含旧装插件的运行时启发式识别）。
+  bool isBakaPlugin(PluginEngine engine, String pluginId,
+      {PluginSource? source}) {
     // 一等 baka 格式优先（安装时按 author 写入，不依赖运行时 author 字符串）
     if (source?.format == PluginFormat.baka) return true;
     final cached = _cache[pluginId];
@@ -26,6 +30,14 @@ class BakaPluginManager {
     final result = _detectBakaPlugin(meta);
     _cache[pluginId] = result;
     return result;
+  }
+
+  /// format 路由判定：baka 一等格式直判；anime 格式永不走 baka；
+  /// 其余沙箱格式用启发式识别（兼容未打 format 标的旧装插件）。
+  bool shouldRouteToBaka(PluginEngine engine, PluginSource source) {
+    if (source.format == PluginFormat.baka) return true;
+    if (source.format == PluginFormat.anime) return false;
+    return isBakaPlugin(engine, source.id, source: source);
   }
 
   bool _detectBakaPlugin(Map<String, dynamic> meta) {
@@ -56,7 +68,7 @@ class BakaPluginManager {
         .removeWhere((k, _) => k == pluginId || k.startsWith('$pluginId|'));
   }
 
-  List<String> getSupportedQualities(String pluginId) {
+  List<String> getSupportedQualities(PluginEngine engine, String pluginId) {
     final raw = engine.metadataOf(pluginId)?['supportedQualities'];
     if (raw is List) {
       final out = <String>{};
@@ -69,14 +81,17 @@ class BakaPluginManager {
     return const ['128k', '320k', 'flac'];
   }
 
+  /// baka 取链入口：自持加载、歌曲条目归一化与声明音质收集。
   Future<ResolvedMediaUrl?> getMediaSource(
+    PluginEngine engine,
     PluginSource source,
-    Map<String, dynamic> musicItem, {
+    Map<String, dynamic> songInfo, {
     String preferred = '320k',
     String fallback = 'lower',
-    Set<String> declaredKeys = const {},
   }) async {
     await engine.ensureLoaded(source);
+    final musicItem = engine.prepareMusicItem(source, songInfo);
+    final declaredKeys = _declaredKeysOf(engine, source.id);
     final songId = (musicItem['id'] ?? musicItem['songmid'] ?? '').toString();
     final cacheKey = '${source.id}|$songId|$preferred|$fallback';
     if (_mediaCache.containsKey(cacheKey)) return _mediaCache[cacheKey];
@@ -84,6 +99,7 @@ class BakaPluginManager {
     if (existing != null) return existing;
 
     final future = _resolveMediaSource(
+      engine,
       source,
       musicItem,
       preferred: preferred,
@@ -103,7 +119,20 @@ class BakaPluginManager {
     }
   }
 
+  Set<String> _declaredKeysOf(PluginEngine engine, String pluginId) {
+    final declaredKeys = <String>{};
+    final declaredRaw = engine.metadataOf(pluginId)?['supportedQualities'];
+    if (declaredRaw is List) {
+      for (final dq in declaredRaw) {
+        final norm = PluginEngine.normalizeQualityKey(dq);
+        if (norm != null) declaredKeys.add(norm);
+      }
+    }
+    return declaredKeys;
+  }
+
   Future<ResolvedMediaUrl?> _resolveMediaSource(
+    PluginEngine engine,
     PluginSource source,
     Map<String, dynamic> musicItem, {
     required String preferred,
@@ -115,11 +144,11 @@ class BakaPluginManager {
     for (final qk in tryKeys) {
       final pluginQ = PluginEngine.qualityKeyToPluginString(qk);
       if (!attempted.add(pluginQ)) continue;
-      final url = await _tryOnce(source, musicItem, pluginQ, qk);
+      final url = await _tryOnce(engine, source, musicItem, pluginQ, qk);
       if (url != null) return url;
       final legacy = _legacyQuality(qk);
       if (legacy != null && attempted.add(legacy)) {
-        final legacyUrl = await _tryOnce(source, musicItem, legacy, qk);
+        final legacyUrl = await _tryOnce(engine, source, musicItem, legacy, qk);
         if (legacyUrl != null) return legacyUrl;
       }
     }
@@ -127,6 +156,7 @@ class BakaPluginManager {
   }
 
   Future<ResolvedMediaUrl?> _tryOnce(
+    PluginEngine engine,
     PluginSource source,
     Map<String, dynamic> musicItem,
     String pluginQ,

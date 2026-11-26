@@ -45,7 +45,7 @@ extension _SearchResultPageSources on _SearchResultPageState {
     final items = <_SourceItem>[];
     for (final p in enabled) {
       final pName = showReal ? resolveRealSourceName(p.name) : p.name;
-      if (p.format.isMfCompatible) {
+      if (p.format.usesMfSandbox) {
         items.add(_SourceItem(
             id: p.id, name: pName, type: _SourceType.musicfree, plugin: p));
       } else if (p.format == PluginFormat.lx) {

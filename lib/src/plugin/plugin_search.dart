@@ -20,7 +20,7 @@ class PluginSearchService {
     final enabled = sources.where((s) => s.enabled).toList();
     final catalog = PluginCatalogService(engine, sources);
     for (final source in enabled) {
-      if (source.format.isMfCompatible) {
+      if (source.format.usesMfSandbox) {
         try {
           final items = await catalog.searchMusic(source, keyword, limit: limit);
           if (items.isNotEmpty) results.add((source, items));
@@ -50,7 +50,7 @@ class PluginSearchService {
   }
 
   QueueItem toQueueItem(PluginSource source, PluginSearchResult r) {
-    if (source.format.isMfCompatible) {
+    if (source.format.usesMfSandbox) {
       return PluginCatalogService.toQueueItem(source, r);
     }
     final songJson = jsonEncode({

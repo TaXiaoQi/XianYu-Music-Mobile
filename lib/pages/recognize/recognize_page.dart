@@ -14,6 +14,7 @@ import '../../src/core/db_path.dart';
 import '../../src/library/library_provider.dart';
 import '../../src/online/online_search_provider.dart';
 import '../../src/plugin/plugin_backup_import.dart';
+import '../../src/plugin/plugin_dispatch.dart';
 import '../../src/plugin/plugin_engine.dart';
 import '../../src/plugin/plugin_models.dart';
 import '../../src/plugin/plugin_provider.dart';
@@ -260,7 +261,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
         'hash': m.hash,
         '_types': m.types,
       };
-      final isMusicFree = plugin.format.isMfCompatible;
+      final isMusicFree = plugin.format.usesMfSandbox;
       final songJson = <String, dynamic>{
         'pluginId': plugin.id,
         'format': isMusicFree ? plugin.format.value : 'lx',
@@ -270,8 +271,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
       for (final q in ['320k', '128k', 'flac']) {
         try {
           if (isMusicFree) {
-            final r = await engine.getMusicFreeUrl(
-              plugin, musicInfo, preferred: q, fallback: 'pause',
+            final r = await pluginGetMediaUrl(
+              engine, plugin, musicInfo, preferred: q, fallback: 'pause',
             ).timeout(const Duration(seconds: 4));
             if (r != null) {
               return _toQueueItem(m).copyWithOnlineSource(
@@ -346,7 +347,7 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     Map<String, dynamic> raw,
   ) async {
     final track = OnlineTrack.fromJson(raw);
-    final isMusicFree = plugin.format.isMfCompatible;
+    final isMusicFree = plugin.format.usesMfSandbox;
     final songJson = <String, dynamic>{
       'pluginId': plugin.id,
       'format': isMusicFree ? plugin.format.value : 'lx',
@@ -357,8 +358,8 @@ class _RecognizePageState extends ConsumerState<RecognizePage>
     for (final q in qualities) {
       try {
         if (isMusicFree) {
-          final r = await engine.getMusicFreeUrl(
-            plugin, raw, preferred: q, fallback: 'pause',
+          final r = await pluginGetMediaUrl(
+            engine, plugin, raw, preferred: q, fallback: 'pause',
           ).timeout(const Duration(seconds: 4));
           if (r != null) {
             return _queueItemFromTrack(track, songJson, sourceKey);

@@ -59,7 +59,7 @@ Future<void> _saveTopListCoverCache(
 
 extension PluginCatalogServiceMethods on PluginCatalogService {
   List<PluginSource> get musicFreeSources =>
-      sources.where((s) => s.enabled && s.format.isMfCompatible).toList();
+      sources.where((s) => s.enabled && s.format.usesMfSandbox).toList();
 
   /// 已启用且覆盖榜单平台（wy/kg/kw/tx）的 LX 音源，
   /// 榜单能力由 lx_toplist 兜底模块保证，无需探测插件方法

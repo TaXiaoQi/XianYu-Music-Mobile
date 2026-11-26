@@ -576,7 +576,9 @@ extension PlayerNotifierQuality on PlayerNotifier {
     }
     if (pluginId == null || pluginId.isEmpty) return false;
     final engine = _ref.read(pluginEngineProvider).valueOrNull;
-    if (engine == null || !engine.isBakaPlugin(pluginId)) return false;
+    if (engine == null || !bakaManager.isBakaPlugin(engine, pluginId)) {
+      return false;
+    }
 
     final top = targets.reduce((a, b) =>
         kQualityLadder.indexOf(a) > kQualityLadder.indexOf(b) ? a : b);

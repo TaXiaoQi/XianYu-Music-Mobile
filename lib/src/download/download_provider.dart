@@ -24,6 +24,7 @@ import '../player/media_url.dart';
 import '../player/mv_source.dart';
 import '../player/online_quality_probe.dart';
 import '../plugin/plugin_engine.dart';
+import '../plugin/plugin_dispatch.dart';
 import '../plugin/plugin_backup_import.dart' show lxSourceKeyForPlatform;
 import '../plugin/fallback_modules/registry.dart';
 import '../plugin/fallback_modules/types.dart';
@@ -1076,8 +1077,9 @@ class DownloadManager extends StateNotifier<DownloadState> {
     final source = sources.where((s) => s.id == pluginId).toList();
     if (source.isEmpty) throw StateError(tr('插件未启用'));
 
-    if (isMfFormatValue(format)) {
-      return engine.getMusicFreeUrl(
+    if (usesMfSandboxValue(format)) {
+      return pluginGetMediaUrl(
+        engine,
         source.first,
         musicInfo,
         preferred: quality,

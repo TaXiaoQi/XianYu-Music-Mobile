@@ -130,7 +130,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
 
       Future<List<PluginSearchResult>> searchOne(PluginSource plugin) async {
         try {
-          if (plugin.format.isMfCompatible) {
+          if (plugin.format.usesMfSandbox) {
             return await PluginCatalogService(engine, [plugin])
                 .searchMusic(plugin, keyword, limit: 10)
                 .timeout(const Duration(seconds: 8));
@@ -181,7 +181,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
 
       for (final (plugin, r) in candidates) {
         final song = r.toJson();
-        final isMf = plugin.format.isMfCompatible;
+        final isMf = plugin.format.usesMfSandbox;
         final cover = resolveSongCoverUrl(song) ?? r.img;
         final newItem = isMf
             ? QueueItem(
@@ -219,8 +219,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
         ResolvedMediaUrl? url;
         try {
           if (isMf) {
-            url = await engine
-                .getMusicFreeUrl(plugin, song,
+            url = await pluginGetMediaUrl(engine, plugin, song,
                     preferred: preferred, fallback: fb)
                 .timeout(const Duration(seconds: 10));
           } else {
@@ -513,8 +512,9 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
           final newSourceKey = newJson['source'] as String? ?? sourceKey;
           final newMusicInfo =
               newJson['musicInfo'] as Map<String, dynamic>? ?? musicInfo;
-          if (isMfFormatValue(newFormat)) {
-            hit = await engine.getMusicFreeUrl(
+          if (usesMfSandboxValue(newFormat)) {
+            hit = await pluginGetMediaUrl(
+              engine,
               plugin,
               newMusicInfo,
               preferred: preferred,
@@ -651,7 +651,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       // 缺了插件必报「无支持的音乐平台」。曲目 platform/source 归一化优先，
       // 仍无则按插件声明平台逐个兜底（错误平台在插件侧秒拒，无网络消耗）
       var platformCandidates = <String>[];
-      if (!isMfFormatValue(format)) {
+      if (!usesMfSandboxValue(format)) {
         final mapped = lxSourceKeyForPlatform(sourceKey);
         if (mapped.isNotEmpty) {
           platformCandidates = [mapped];
@@ -672,15 +672,14 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       }
 
       ResolvedMediaUrl? resolved;
-      if (isMfFormatValue(format)) {
-        resolved = await engine
-            .getMusicFreeUrl(
-              source.first,
-              musicInfo,
-              preferred: quality,
-              fallback: 'pause',
-            )
-            .timeout(const Duration(seconds: 8));
+      if (usesMfSandboxValue(format)) {
+        resolved = await pluginGetMediaUrl(
+          engine,
+          source.first,
+          musicInfo,
+          preferred: quality,
+          fallback: 'pause',
+        ).timeout(const Duration(seconds: 8));
       } else {
         final candidates = platformCandidates.isEmpty
             ? <String>[sourceKey]
@@ -802,15 +801,14 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
           '兄弟插件换源 label=$platformLabel failedId=$failedId candidates=${candidates.length} 可用=${usable.length}');
       for (final plugin in usable) {
         final ResolvedMediaUrl? hit;
-        if (plugin.format.isMfCompatible) {
-          hit = await engine
-              .getMusicFreeUrl(
-                plugin,
-                musicInfo,
-                preferred: quality,
-                fallback: 'pause',
-              )
-              .timeout(const Duration(seconds: 8));
+        if (plugin.format.usesMfSandbox) {
+          hit = await pluginGetMediaUrl(
+            engine,
+            plugin,
+            musicInfo,
+            preferred: quality,
+            fallback: 'pause',
+          ).timeout(const Duration(seconds: 8));
         } else {
           final lxKey = lxSourceKeyForPlatform(platformLabel);
           final lxSupported =
@@ -909,7 +907,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
     final keyword = artist.isEmpty ? title : '$title $artist';
     try {
       final PluginSearchResult? match;
-      if (cross.format.isMfCompatible) {
+      if (cross.format.usesMfSandbox) {
         final catalog = PluginCatalogService(engine, sources);
         final results = await catalog.searchMusic(cross, keyword, limit: 10);
         match = _pickBestSearchMatch(results, title, artist);
@@ -920,7 +918,7 @@ extension PlayerNotifierSourceSwitch on PlayerNotifier {
       }
       if (match == null) return null;
 
-      final newSongJson = cross.format.isMfCompatible
+      final newSongJson = cross.format.usesMfSandbox
           ? {
               'pluginId': cross.id,
               'format': cross.format.value,

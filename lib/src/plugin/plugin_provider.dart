@@ -10,6 +10,7 @@ import '../core/application_logger.dart';
 import '../core/rust_init.dart';
 import '../core/settings.dart';
 import '../rust/api.dart' as frb;
+import 'baka_plugin_manager.dart';
 import '../sync/plugin_sync_state.dart';
 import '../sync/sync_trigger.dart';
 import 'plugin_engine.dart';
@@ -453,7 +454,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     if (!source.enabled) {
       await engine.destroy(id);
     }
-    engine.bakaManager.clearCache(id);
+    bakaManager.clearCache(id);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
@@ -487,7 +488,7 @@ class PluginManager extends StateNotifier<PluginListState> {
       if (!enabled) {
         await engine.destroy(s.id);
       }
-      engine.bakaManager.clearCache(s.id);
+      bakaManager.clearCache(s.id);
     }
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
@@ -499,7 +500,7 @@ class PluginManager extends StateNotifier<PluginListState> {
     final list = state.sources.where((s) => s.id != id).toList();
     await engine.store.saveSources(list);
     state = state.copyWith(sources: list);
-    engine.bakaManager.clearCache(id);
+    bakaManager.clearCache(id);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 
@@ -569,8 +570,8 @@ class PluginManager extends StateNotifier<PluginListState> {
     if (oldOrder != null) {
       await inheritSortOrder(newSource.id, oldOrder);
     }
-    engine.bakaManager.clearCache(oldId);
-    if (newSource.id != oldId) engine.bakaManager.clearCache(newSource.id);
+    bakaManager.clearCache(oldId);
+    if (newSource.id != oldId) bakaManager.clearCache(newSource.id);
     SyncTrigger.markDirty(const {SyncTrigger.plugins});
   }
 

@@ -97,7 +97,7 @@ class PluginCommentService {
     int page,
   ) async {
     final normalized = _normalizeMusicItem(source, musicItem);
-    if (source.format.isMfCompatible) {
+    if (source.format.usesMfSandbox) {
       try {
         final result = await engine.call(
           source.id,
@@ -203,7 +203,7 @@ class CommentContext {
       final musicInfo = j['musicInfo'];
       if (musicInfo is! Map) return null;
       final formatRaw = j['format'];
-      final format = isMfFormatValue(formatRaw is String ? formatRaw : null)
+      final format = usesMfSandboxValue(formatRaw is String ? formatRaw : null)
           ? PluginFormat.musicfree
           : PluginFormat.lx;
       return CommentContext(
