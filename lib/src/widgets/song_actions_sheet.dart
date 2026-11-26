@@ -187,8 +187,10 @@ Future<String?> _pickDownloadQuality(BuildContext ctx, WidgetRef ref) async {
     (tr('高解析度'), 'hires', tr('Hi-Res 高解析无损')),
     (tr('黑胶'), 'vinyl', tr('黑胶音色 · 无损')),
     (tr('杜比全景声'), 'dolby', tr('Dolby Atmos 沉浸环绕')),
+    (tr('DTS音质'), 'dts', tr('DTS 沉浸声场')),
     (tr('臻品音质'), 'atmos', tr('臻品立体空间声场')),
     (tr('臻品全景声'), 'atmos_plus', tr('臻品全空间沉浸声')),
+    (tr('臻品全景声 916'), 'atmos_pro', tr('臻品全景声 916 声道')),
     (tr('臻品母带'), 'master', tr('母带级无损臻品')),
   ];
   return showSheetDialog<String>(

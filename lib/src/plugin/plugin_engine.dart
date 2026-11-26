@@ -665,8 +665,10 @@ class PluginEngine {
         case 'master':
         case 'vinyl':
         case 'dolby':
+        case 'dts':
         case 'atmos':
         case 'atmos_plus':
+        case 'atmos_pro':
           selected = _kgHashField(songInfo, 'ResFileHash');
           if (selected.isEmpty) selected = _kgHashField(songInfo, 'origin_hash');
           if (selected.isEmpty) selected = _kgHashField(songInfo, 'sqhash');

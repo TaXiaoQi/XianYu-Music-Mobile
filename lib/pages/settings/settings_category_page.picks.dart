@@ -501,8 +501,10 @@ extension _SettingsCategoryPagePicks on _SettingsCategoryPageState {
                 _Choice(tr('高解析度'), 'hires', subtitle: tr('Hi-Res 高解析无损')),
                 _Choice(tr('黑胶'), 'vinyl', subtitle: tr('黑胶音色 · 无损')),
                 _Choice(tr('杜比全景声'), 'dolby', subtitle: tr('Dolby Atmos 沉浸环绕')),
+                _Choice(tr('DTS音质'), 'dts', subtitle: tr('DTS 沉浸声场')),
                 _Choice(tr('臻品音质'), 'atmos', subtitle: tr('臻品立体空间声场')),
                 _Choice(tr('臻品全景声'), 'atmos_plus', subtitle: tr('臻品全空间沉浸声')),
+                _Choice(tr('臻品全景声 916'), 'atmos_pro', subtitle: tr('臻品全景声 916 声道')),
                 _Choice(tr('臻品母带'), 'master', subtitle: tr('母带级无损臻品')),
               ])
                 ListTile(

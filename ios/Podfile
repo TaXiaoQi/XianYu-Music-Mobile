@@ -48,5 +48,15 @@ post_install do |installer|
     # 模拟器不再需要排除 arm64 走 Rosetta（新模拟器运行时已不支持
     # Rosetta，x86_64 路线死亡）。SUPPORTED_PLATFORMS 已放开包含
     # iphonesimulator（pbxproj）
+
+    # [CP-User] Build Rust Core 未声明输入/输出文件，Xcode 的依赖分析会
+    # 误判其"最新"而跳过，导致切真机/模拟器时 framework 残留旧平台二进制
+    # （链接报 built for 'iOS'）。设 alwaysOutOfDate 强制每次构建执行；
+    # 脚本本身是 cargo 增量构建，未变更时耗时约 1-2s。
+    if target.name == 'xianyu_core'
+      target.shell_script_build_phases.each do |phase|
+        phase.always_out_of_date = '1' if phase.name == '[CP-User] Build Rust Core'
+      end
+    end
   end
 end

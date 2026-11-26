@@ -1,0 +1,10 @@
+{
+	// rust-analyzer：仓库根没有 Cargo.toml，手动挂载 rust 薄壳项目（其 path 依赖 core submodule 会自动跟随）
+	"rust-analyzer.linkToProjects": ["rust/Cargo.toml"],
+	// 让源代码管理面板发现 rust/core submodule
+	"git.autoRepositoryDetection": "subFolders",
+	"git.openRepositoryInParentFolders": "always",
+	"files.exclude": {
+		"rust/target": true
+	}
+}

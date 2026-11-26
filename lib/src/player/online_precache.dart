@@ -33,12 +33,15 @@ int estimateHeadBytes(String quality) {
     case 'flac24bit':
     case 'vinyl':
     case 'dolby':
+    case 'dts':
     case 'atmos':
       return 3_300_000;
     case 'hires':
       return 4_600_000;
     case 'atmos_plus':
       return 4_400_000;
+    case 'atmos_pro':
+      return 5_000_000;
     case 'master':
       return 5_800_000;
     default:

@@ -454,10 +454,14 @@ String _qualityLabel(String? q) {
       return tr('黑胶');
     case 'dolby':
       return tr('杜比');
+    case 'dts':
+      return 'DTS';
     case 'atmos':
       return 'Atmos';
     case 'atmos_plus':
       return 'Atmos+';
+    case 'atmos_pro':
+      return tr('全景声916');
     case 'master':
       return 'Master';
     case 'spatial':
@@ -1126,10 +1130,14 @@ String _qualityAbbr(String? q) {
       return 'VL';
     case 'dolby':
       return 'DA';
+    case 'dts':
+      return 'DT';
     case 'atmos':
       return 'AT';
     case 'atmos_plus':
       return 'AT+';
+    case 'atmos_pro':
+      return 'AT9';
     case 'master':
       return 'MS';
     default:

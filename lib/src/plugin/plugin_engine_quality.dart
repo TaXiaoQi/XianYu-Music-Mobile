@@ -3,7 +3,8 @@ part of 'plugin_engine.dart';
 
 const List<String> pluginQualityLadder = [
   'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
-  'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
+  'hires', 'vinyl', 'dolby', 'dts', 'atmos', 'atmos_plus', 'atmos_pro',
+  'master',
 ];
 
 const Map<String, String> pluginQualityAliases = {
@@ -15,9 +16,11 @@ const Map<String, String> pluginQualityAliases = {
   'flac24': 'flac24bit', '24bit': 'flac24bit', '24bits': 'flac24bit',
   '24_bit': 'flac24bit', 'flac24bit': 'flac24bit',
   'hires': 'hires', 'hi-res': 'hires', 'hi_res': 'hires', 'hr': 'hires',
-  'vinyl': 'vinyl', 'dolby': 'dolby', 'atmos': 'atmos',
+  'vinyl': 'vinyl', 'dolby': 'dolby', 'dts': 'dts', 'atmos': 'atmos',
   'galaxy': 'atmos', 'atmosplus': 'atmos_plus', 'atmos_plus': 'atmos_plus',
-  'atmos+': 'atmos_plus', 'galaxy51': 'atmos_plus', 'master': 'master',
+  'atmos+': 'atmos_plus', 'galaxy51': 'atmos_plus',
+  'atmospro': 'atmos_pro', 'atmos_pro': 'atmos_pro', 'galaxy916': 'atmos_pro',
+  'master': 'master',
 };
 
 const List<String> _mfQualityOrder = ['low', 'standard', 'high', 'super'];

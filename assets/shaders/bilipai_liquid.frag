@@ -19,96 +19,86 @@
 
 precision highp float;
 
+// ── Metal buffer 上限修复（iOS 不显示水滴/巨卡的根因）──────────────────
+// Flutter 把每个非 sampler uniform 转成一个 Metal buffer：本 shader 原本
+// 33 个散装 uniform，槽位落到 buffer(32) > Metal fragment 上限 30，
+// Impeller 编译失败并每帧重试刷错（水滴不渲染 + 巨卡，iOS 27.2 模拟器
+// 实录）。Android GL/Vulkan 无此上限所以一直正常。
+// 修法：按 float 槽位顺序打包成 vec4（1×vec2 + 10×vec4 + 1×float = 12 个
+// uniform），Dart 侧 setFloat 的槽位序号 0-42 逐位不变，shader 语义不变。
+// 注意：ImageFilter.shader 要求第一个 uniform 必须是 vec2 uSize，故槽 0-1
+// 保持独立 vec2 不并入打包。
+
 // 槽 0-1：uSize —— 背景纹理物理尺寸（全屏），ImageFilter.shader 要求首 uniform 为 vec2。
 uniform vec2 uSize;
-// 槽 2：槽位保留（BiliPai 的滚动耦合波浪默认关闭，不参与渲染）。
-uniform float uScrollOffset;
-// 槽 3：折射强度 —— 透镜边缘最大位移（物理像素，Dart 侧已乘 dpr）
-//（low 8 / medium 18 / high 24 逻辑像素，对齐 BiliPai refractionAmount 24dp）。
-uniform float uRefract;
-// 槽 4：色差强度 —— BiliPai shell 无色差（achromatic），运行时恒为 0。
-uniform float uChroma;
-// 槽 5：槽位保留（主体模糊由 compose outer 真高斯承担）。
-uniform float uBlurSigma;
+// 槽 2-5：x=uScrollOffset（槽位保留，滚动耦合波浪默认关闭）、y=uRefract
+//（透镜边缘最大位移，物理像素，Dart 侧已乘 dpr）、z=uChroma（色差强度，
+// BiliPai shell 无色差恒 0）、w=uBlurSigma（槽位保留，主体模糊由 compose
+// outer 真高斯承担）。
+uniform vec4 uP0;
 // 槽 6-9：预乘半透明底色（BiliPai surfaceAlpha 0.40 + 白 overlay 的等效物）。
 uniform vec4 uBackgroundColor;
-// 槽 10：槽位保留（BiliPai 无 rim 高光）。
-uniform float uSpecular;
-// 槽 11：圆角半径（物理像素，胶囊取短边一半）。
-uniform float uRadius;
-// 槽 12-13：玻璃表面左上角在屏幕空间的物理像素位置。
-uniform vec2 uGlassOrigin;
-// 槽 14-15：玻璃表面物理像素尺寸。
-uniform vec2 uGlassSize;
-// 槽 16：边带厚度（物理像素；BiliPai refractionHeight 中档 24px）。
-uniform float uEdgeAmount;
-// 槽 17：饱和度增益（BiliPai 中档 1.5）。
-uniform float uSaturation;
-// 槽 18：径向深度效应（水滴专用，玻璃壳恒为 0）：两个作用——
-// ① 把径向方向掺进边带 SDF 梯度，让中心内容也参与「鼓起」折射——
-//    水滴压到内容上立刻有放大镜观感（无此项时，向内采样存在 ~A/2 的
-//    跳过区，内容要没入近半半径才出现在边带里）；
-// ② >0 时启用全表面凸透镜放大：采样坐标往圆心收，水滴内部整个背景
-//    被放大（B 站水滴「折射整个背景」的放大镜观感来源）。
-uniform float uDepthEffect;
-// 槽 19：uTime —— 持续涟漪时间（秒）。给采样点加低频正弦微位移，让玻璃
-// 自身始终带轻微液态流动（静止/拖拽/滚动皆可见），不是单纯停在模糊上。
-uniform float uTime;
-// 槽 20：连续曲率（squircle）指数，与 Dart appSquirclePath 同源：
-// 胶囊/圆形传 2.0 退化为精确圆，非胶囊恒 2.2（标定见 squircle.dart）
-uniform float uSquircleN;
-// 槽 21-22：水滴透镜圆心（屏幕物理像素；底栏玻璃专用，其余玻璃实例恒 0）。
-uniform vec2 uDropletCenter;
-// 槽 23：水滴透镜半径（物理像素；<=0 透镜关闭，圆外像素完全不变）。
-uniform float uDropletRadius;
-// 槽 24：水滴全表面放大深度（0..1，随按压 mf 渐强）。
-uniform float uDropletDepth;
-// 槽 25：水滴边带厚度（物理像素，BiliPai LiquidIndicator 10/56·d）。
-uniform float uDropletBand;
-// 槽 26：水滴边带折射量（物理像素，BiliPai 14/56·d）。
-uniform float uDropletRefract;
-// 槽 27：水滴色差强度（用户档位 dropletChroma）。
-uniform float uDropletChroma;
-// 槽 28：栏内容纹理开关（1=采样器 1 已绑定 tabRow 捕获图）。
-uniform float uIconOn;
-// 槽 29-30：栏内容纹理左上角（屏幕物理像素，与 uGlassOrigin 同一坐标系）。
-uniform vec2 uIconOrigin;
-// 槽 31-32：栏内容纹理尺寸（物理像素；捕获 pixelRatio 与 viewDpr 一致）。
-uniform vec2 uIconSize;
-// 槽 33：水滴色散外溢带（物理像素，BiliPai chromaticEdgeBand 同构）=
-// 水滴当前半径 - 栏轨半高（水滴超出栏缘的溢出量；未溢出为 0=无色散）。
-// 色散权重按「到水滴上/下缘的纵向距离 < 外溢带」smoothstep 衰减——彩虹
-// 只出现在水滴上下缘外溢出栏面的月牙带（BiliPai dock 指示器同构），
-// 替代通用透镜的鞍形权重（鞍形在上下弧 dc.x·dc.y≈0 处恒为零，水滴的
-// 彩虹弧会被完全杀掉）。
-uniform float uDropletGapBand;
-// 槽 34：水滴胶囊横向半长（物理像素；<= 纵向半径时退化为圆）。
-// BiliPai LiquidIndicator 是贴合栏轨的 stadium：横向绽放全量、纵向贴近
-// 栏高，比正圆更契合底栏。
-uniform float uDropletHalfW;
-// 槽 35：水滴 tint 动态反色开关（BiliPai
-// resolveAndroidNativeIdleIndicatorSurfaceColor 同构）：>0.5 时玻璃面
-// tint 不再用 uBackgroundColor，改按水滴圆心处实时折射内容的亮度反色——
-// 亮背景混黑 10% 暗罩、暗背景混白 10% 亮罩。逐帧采样天然适配壁纸模式
-// 与任意纯色页面，修复白底上白 tint 水滴完全隐形
-uniform float uDropletTintInvert;
-
-// 栏顶全局 y（物理 px = 逻辑 × dpr）：独立透镜「完整区域画面」归属判据
-// 之一（与槽 42 uDropletBarBottom 成对）——压缩采样坐标落在栏上下缘
-// 之间读栏面（dockFace 半透白罩），缘外读缩栏露出的上下原始内容
-uniform float uDropletBarTop;
-
-// 槽 37：页面原始内容纹理开关（1=采样器 2 已绑定 app 内容捕获图）。
-uniform float uPageOn;
-// 槽 38-39：页面纹理左上角（屏幕物理像素，与 uGlassOrigin 同一坐标系）。
-uniform vec2 uPageOrigin;
-// 槽 40-41：页面纹理尺寸（物理像素；捕获 pixelRatio 与 viewDpr 一致）。
-uniform vec2 uPageSize;
-
+// 槽 10-13：x=uSpecular（槽位保留，BiliPai 无 rim 高光）、y=uRadius
+//（圆角半径，物理像素，胶囊取短边一半）、zw=uGlassOrigin（玻璃表面左上
+// 角屏幕物理像素）。
+uniform vec4 uP2;
+// 槽 14-17：xy=uGlassSize（玻璃表面物理像素尺寸）、z=uEdgeAmount（边带
+// 厚度物理像素，BiliPai refractionHeight 中档 24px）、w=uSaturation
+//（饱和度增益，BiliPai 中档 1.5）。
+uniform vec4 uP3;
+// 槽 18-21：x=uDepthEffect（径向深度效应，水滴专用，见原注释）、
+// y=uTime（持续涟漪时间占位，槽位保留防剔除错位）、z=uSquircleN（连续
+// 曲率指数，胶囊/圆形 2.0、非胶囊 2.2）、w=uDropletCenter.x。
+uniform vec4 uP4;
+// 槽 22-25：x=uDropletCenter.y（水滴透镜圆心，屏幕物理像素，与 uP4.w 成
+// 对）、y=uDropletRadius（<=0 透镜关闭）、z=uDropletDepth（0..1 按压
+// 放大深度）、w=uDropletBand（边带厚度，BiliPai LiquidIndicator 10/56·d）。
+uniform vec4 uP5;
+// 槽 26-29：x=uDropletRefract（边带折射量 14/56·d）、y=uDropletChroma
+//（色差强度）、z=uIconOn（1=采样器 1 已绑定 tabRow 捕获图）、
+// w=uIconOrigin.x。
+uniform vec4 uP6;
+// 槽 30-33：x=uIconOrigin.y、yz=uIconSize（栏内容纹理尺寸，物理像素）、
+// w=uDropletGapBand（色散外溢带，水滴超出栏缘的溢出量，0=无色散）。
+uniform vec4 uP7;
+// 槽 34-37：x=uDropletHalfW（胶囊横向半长，<=纵向半径退化圆）、
+// y=uDropletTintInvert（tint 动态反色开关）、z=uDropletBarTop（栏顶全局
+// y，物理 px）、w=uPageOn（1=采样器 2 已绑定页面捕获图）。
+uniform vec4 uP8;
+// 槽 38-41：xy=uPageOrigin（页面纹理左上角）、zw=uPageSize（页面纹理
+// 尺寸，物理像素）。
+uniform vec4 uP9;
 // 槽 42：栏底全局 y（物理 px）：与 uDropletBarTop 成对——独立透镜的
 //「完整区域画面」归属判据（barC 落在栏上下缘之间=栏面，缘外=缩栏露出
 // 的上下原始内容）
 uniform float uDropletBarBottom;
+
+// 各槽位语义详注（原 33 散装声明版，解包见 main() 开头）：
+//   槽 2  uScrollOffset   槽位保留（滚动耦合波浪默认关闭）
+//   槽 3  uRefract        折射强度（物理像素，Dart 已乘 dpr）
+//   槽 4  uChroma         色差强度（shell 无色差恒 0）
+//   槽 5  uBlurSigma      槽位保留（主体模糊由 compose outer 承担）
+//   槽 10 uSpecular       槽位保留（BiliPai 无 rim 高光）
+//   槽 16 uEdgeAmount     边带厚度（BiliPai refractionHeight 24px）
+//   槽 17 uSaturation     饱和度增益（BiliPai 中档 1.5）
+//   槽 18 uDepthEffect    径向深度效应（水滴专用）：①掺径向进边带 SDF
+//                         梯度让中心内容参与「鼓起」折射；②>0 启用全
+//                         表面凸透镜放大（B 站水滴放大镜观感来源）
+//   槽 19 uTime           持续涟漪占位（Impeller 剔除未引用 uniform
+//                         会导致槽位错位）
+//   槽 20 uSquircleN      squircle 指数（胶囊 2.0 / 非胶囊 2.2）
+//   槽 21-22 uDropletCenter 水滴透镜圆心（屏幕物理像素）
+//   槽 23 uDropletRadius  透镜半径（<=0 透镜关闭）
+//   槽 24 uDropletDepth   按压放大深度（0..1）
+//   槽 25 uDropletBand    边带厚度（LiquidIndicator 10/56·d）
+//   槽 26 uDropletRefract 边带折射量（14/56·d）
+//   槽 27 uDropletChroma  水滴色差强度
+//   槽 28 uIconOn         栏内容纹理开关
+//   槽 33 uDropletGapBand 色散外溢带（彩虹只画上下缘外溢月牙带）
+//   槽 34 uDropletHalfW   胶囊横向半长（<=纵向半径退化圆）
+//   槽 35 uDropletTintInvert tint 动态反色开关（亮背景黑 10%/暗背景白 10%）
+//   槽 36 uDropletBarTop  栏顶全局 y（物理 px）
+//   槽 37 uPageOn         页面纹理开关
 
 // 引擎绑定的实时背景（采样器 0）。
 uniform sampler2D uImage;
@@ -124,6 +114,21 @@ uniform sampler2D uIconTex;
 uniform sampler2D uPageTex;
 
 out vec4 fragColor;
+
+// ── 打包 uniform 的解包目标（文件级全局变量，供下方辅助函数引用）──────
+// 命名沿用原散装 uniform（原 uniform 已打包为 uP0-uP9，见上）；GLSL ES
+// 全局初始化器必须是常量表达式，故在 main() 开头统一赋值（所有调用点
+// 均在赋值之后），函数体零改动。
+float uScrollOffset; float uRefract;      float uChroma;       float uBlurSigma;
+float uSpecular;     float uRadius;       vec2  uGlassOrigin;
+vec2  uGlassSize;    float uEdgeAmount;   float uSaturation;
+float uDepthEffect;  float uTime;         float uSquircleN;    vec2  uDropletCenter;
+float uDropletRadius;     float uDropletDepth;   float uDropletBand;
+float uDropletRefract;    float uDropletChroma;  float uIconOn;
+vec2  uIconOrigin;        vec2  uIconSize;       float uDropletGapBand;
+float uDropletHalfW;      float uDropletTintInvert;
+float uDropletBarTop;     float uPageOn;
+vec2  uPageOrigin;        vec2  uPageSize;
 
 vec2 texel() {
   return 1.0 / max(uSize, vec2(1.0));
@@ -204,40 +209,59 @@ vec3 tapPage(vec2 screenPos) {
 // 屋顶橙弧/底部红绿条）；图标由调用方在色散混合完成后一次性合成
 vec3 lensTap(vec2 pageC, float rawMix) {
   if (rawMix > 0.0) {
-    vec2 clampedC = clamp(pageC, vec2(0.0), max(uSize - vec2(1.0), vec2(1.0)));
-    if (uPageOn > 0.5) {
-      vec2 puv = (pageC - uPageOrigin) / max(uPageSize, vec2(1.0));
-      bool inPage = puv.x >= 0.0 && puv.x <= 1.0 && puv.y >= 0.0 &&
-          puv.y <= 1.0;
-      // 栏带外 = 原始页面内容（捕获层 Positioned.fill 覆盖全屏，栏背后
-      // 的区域也在纹理里；越出页面捕获矩形回退 backdrop 直采——tapPage
-      // 矩形外返回透明黑=黑色空带的根因）。栏带外 uImage 与页面捕获
-      // 内容一致（都是未被栏面覆盖的真实页面），tapPage 保留 = 采样器
-      // 2 引用（Impeller 剔除未引用 sampler 会让绑定错位）+ 捕获兜底
-      vec3 rawFace = inPage ? tapPage(pageC) : tapRGB(clampedC);
-      // 栏归属掩膜（槽 36/42，1.5px 物理过渡防栏缘线锯齿）：掩膜按采样
-      // 坐标（内容空间）判定——采样点落在栏内就读真实栏面，透镜径向场
-      // 把栏缘线/图标推弯进镜缘（BiliPai 镜内栏缘弯折同构）
-      float band =
-          smoothstep(uDropletBarTop - 1.5, uDropletBarTop + 1.5, pageC.y) *
-          (1.0 - smoothstep(uDropletBarBottom - 1.5, uDropletBarBottom + 1.5,
-                            pageC.y));
-      // 栏带内全强度直采 uImage（真实栏面：霜化/图标/文字已烘焙）——
-      // 不用 glassFace（其 tint 叠加在已含霜化+tint 的栏面上 = 双重加白
-      // 奶白，历史教训）。此前「rawPage + 15% 白纱」把栏面从镜内抹掉
-      //（用户对比图否决：「放大水滴把底栏忽略了」）
-      return mix(rawFace, tapRGB(clampedC), band);
-    }
-    // 无页面捕获兜底（部分机型 toImageSync 静默失败）：整面直采 uImage
-    // 完整实时场景——页面+栏面+实图标（孔已随液态关闭，实图标在
-    // backdrop 里），折射/弯折/图标全量生效，不再退化成玻璃面
-    return tapRGB(clampedC);
+    // 按压面 = 静态玻璃面（glassFace：磨砂+饱和度+tint 反色）经折射场
+    // 采样——用户定稿（2026-11-26）：按压放大水滴必须有静态水滴的玻璃
+    // 质感，放大/弯折作用于玻璃面本身。此前按压直采 uImage 原始场景：
+    // 白底栏面上没有 tint 层 = 白透明圆片、无玻璃质感（用户否决）。
+    // 真实图标按压时在 backdrop（孔洞关闭），随场放大弯折进玻璃面；
+    // 静息由捕获图 1:1 合成（main() compositeIcon 分支）
+    vec3 face = glassFace(pageC);
+    // 采样器 2 与栏带 uniforms 引用保留（Impeller 剔除未引用
+    // uniform/sampler 会让槽位/绑定错位）：结果恒等 face，但权重依赖
+    // uPageOn/uDropletBarTop/uDropletBarBottom，防常量折叠被 DCE
+    float band =
+        smoothstep(uDropletBarTop - 1.5, uDropletBarTop + 1.5, pageC.y) *
+        (1.0 - smoothstep(uDropletBarBottom - 1.5, uDropletBarBottom + 1.5,
+                          pageC.y));
+    return mix(tapPage(pageC), face, 1.0 - band * min(uPageOn, 0.0));
   }
   // 静息（rawMix=0）：玻璃面（已确认静息观感逐字节一致）
   return glassFace(pageC);
 }
 
 void main() {
+  // ── unpack：打包 uniform 解回原散装语义（赋值给文件级全局，函数体零改动）──
+  uScrollOffset = uP0.x;        // 槽 2
+  uRefract      = uP0.y;        // 槽 3
+  uChroma       = uP0.z;        // 槽 4
+  uBlurSigma    = uP0.w;        // 槽 5
+  uSpecular     = uP2.x;        // 槽 10
+  uRadius       = uP2.y;        // 槽 11
+  uGlassOrigin  = uP2.zw;       // 槽 12-13
+  uGlassSize    = uP3.xy;       // 槽 14-15
+  uEdgeAmount   = uP3.z;        // 槽 16
+  uSaturation   = uP3.w;        // 槽 17
+  uDepthEffect  = uP4.x;        // 槽 18
+  uTime         = uP4.y;        // 槽 19
+  uSquircleN    = uP4.z;        // 槽 20
+  uDropletCenter = vec2(uP4.w, uP5.x); // 槽 21-22
+  uDropletRadius     = uP5.y;   // 槽 23
+  uDropletDepth      = uP5.z;   // 槽 24
+  uDropletBand       = uP5.w;   // 槽 25
+  uDropletRefract    = uP6.x;   // 槽 26
+  uDropletChroma     = uP6.y;   // 槽 27
+  uIconOn            = uP6.z;   // 槽 28
+  uIconOrigin        = vec2(uP6.w, uP7.x); // 槽 29-30
+  uIconSize          = uP7.yz;  // 槽 31-32
+  uDropletGapBand    = uP7.w;   // 槽 33
+  uDropletHalfW      = uP8.x;   // 槽 34
+  uDropletTintInvert = uP8.y;   // 槽 35
+  uDropletBarTop     = uP8.z;   // 槽 36
+  uPageOn            = uP8.w;   // 槽 37
+  uPageOrigin        = uP9.xy;  // 槽 38-39
+  uPageSize          = uP9.zw;  // 槽 40-41
+  // uDropletBarBottom 为独立 float uniform（槽 42），无需解包
+
   vec2 p = FlutterFragCoord().xy;
 
   // 玻璃局部坐标（中心为原点）——BiliPai 的 p = fragCoord - center 语义。
@@ -353,10 +377,13 @@ void main() {
     // 含真实栏面图标文字，与放大捕获图标叠成双影（用户截图否决）。失配
     // 区 fromEdge=0 零折射，但仍走透镜面采样保持观感一致
     float fromEdge = max(-sd, 0.0);
-    // 折射剖面半径：静息=贴边带（原 band 行为不变），按压随进度展开
-    // 到全半径——BiliPai 实机按压（用户要求上机对照）：内容弯曲横跨
-    // 整个透镜（黑色封面从边缘一直弯进镜心），非仅贴边带
-    float profR = mix(uDropletBand, uDropletRadius, pressedSh);
+    // 折射剖面半径：静息=贴边带（原 band 行为不变）；按压收缩到 35%
+    // 半径的镜缘环带——此前按压展开到全半径，且 Dart 侧 band 随按压
+    // 同步膨胀到 ~0.94R（实测 band=138.9 vs r=148.4），外推场铺满整镜
+    // 把镜心放大逐环抵消（真机观察「图标内容没有变化」的根因）。
+    // BiliPai 实机 = 镜心放大 + 镜缘压缩两个独立场：外推只作用于镜缘
+    // 环带，镜心保持纯凸透镜放大
+    float profR = mix(uDropletBand, uDropletRadius * 0.35, pressedSh);
     float dsh = 0.0;
     vec2 grad = vec2(0.0);
     if (sd < 0.0 && uDropletRefract > 0.0 && profR > 0.0 &&
@@ -378,20 +405,12 @@ void main() {
       // 按压同一方向同一公式，区别只在 profR（band→全半径）与捕获纹理
       // 分支（rawMix）
       // 光谱色散（BiliPai dispersedCoord = d·grad·intensity 同构）：
-      // 偏移幅度正比折射位移 d、方向全径向（只取 grad.x 时水滴顶部
-      // grad.x≈0，鼓出月牙永远无彩虹——用户截图否决「外面的部分要
-      // 加彩色」）。
-      // 掩膜 = dock 指示器同构（FloatingBottomBarGeometryTest：
-      // "The two colored bands end exactly at the track boundaries,
-      // leaving the label and central glass area outside the dispersion
-      // mask"）：weight 只在水滴上下缘外溢带（edgeDistY < gapBand，
-      // 即水滴超出栏轨的月牙）内非零——中央白玻璃面与弯折线保持
-      // crisp，「底栏折射」可读（此前整圈贴边带掩膜 + 径向方向把白面
-      // 边界糊成彩虹，用户截图否决「完全看不出来底栏折射」）。
-      // 静息 gapBand=0 → weight 恒 0
-      float dispW = 1.0 -
-          smoothstep(uDropletGapBand - 1.0, uDropletGapBand,
-                     uDropletRadius - abs(dc.y));
+      // 偏移幅度正比折射位移 d、方向全径向。
+      // 掩膜（BiliPai 实机按压截图定稿 2026-11）：彩虹缘布满透镜边缘
+      // 一圈——贴边最强、向内 35% 半径衰减；uRoll... 静息 gapBand=0
+      // 时恒 0（无色散），按压随外溢量 smoothstep 渐入
+      float dispW = (1.0 - smoothstep(0.0, uDropletRadius * 0.35, -sd)) *
+          smoothstep(0.0, 8.0, uDropletGapBand);
       vec3 droplet;
       // —— 真实合成面透镜（BiliPai combinedBackdrop 同构）——按压态由
       // lensTap 采样实时 backdrop：uImage = 页面+栏面+实图标的完整场景
@@ -401,17 +420,19 @@ void main() {
       // 作用在低对比霜化面上不可读 + 捕获图标 1:1 不弯 = 「纯透镜带
       // 模糊」（真机截图确认）。现按压折射不再依赖捕获纹理
       float rawMix = smoothstep(0.0, 0.3, pressedSh);
-      // 页面折射坐标——方向分流（Dart 侧 _syncSnapshot 约定，此前注释
-      // 写了但 shader 未实现）：静息向内（pc = p - dsh·grad，采样向镜心
-      // 收 = 已确认静息观感）；按压向外（pc = p + dsh·grad）——BiliPai
-      // 传负 refractionAmount 的等效方向：镜缘把水滴**外**的栏面/内容压
-      // 进镜内，「底栏被水滴缩小」（吸入）观感。此前恒向内 = 按压整镜
-      // 放大（用户对比图否决「把底部栏放大了，bilipai 不是缩小吗」）。
-      // 0.3 渐变窗口与 rawMix 同步：方向翻转经过 0 位移的瞬间恰逢真实
-      // 栏面渐入，无跳变。按压 profR 由 band 展开到全半径（L353），折射
-      // 场覆盖整镜；旧竖向键控已随水滴凸出栏缘的几何改动撤销
+      // 按压径向场（BiliPai 实机按压截图定稿 2026-11 重构）——两段叠加：
+      // ① 全表面凸透镜放大：采样坐标向镜心收（0.35·pressedSh），镜心
+      //    内容放大 ~1.54×（参考图：图标/徽标在镜内明显放大）；
+      // ② 边带外推（折射缩小）：dsh·grad 向外，镜缘采样越过透镜边界
+      //    （full press 时 refract 79.6 > mag·R ≈ 52），把栏缘/邻位
+      //    内容吸入压缩进镜缘一圈（参考图：「我的」文字在镜缘弯折、
+      //    dock 呈被水滴缩小观感）。
+      // 方向分流保留：静息向内（旧观感，负号经 (1-2·dirMix) 在按压翻转为
+      // 向外）、0.3 渐变窗口与 rawMix 同步防跳变
       float dirMix = smoothstep(0.0, 0.3, pressedSh);
-      vec2 pc = p - dsh * grad * (1.0 - 2.0 * dirMix);
+      float mag = pressedSh * 0.35;
+      vec2 pc = mix(p, uDropletCenter, mag) -
+          dsh * grad * (1.0 - 2.0 * dirMix);
       if (dsh > 0.001 && uDropletChroma > 0.001 && dispW > 0.0) {
         // 色散全径向（BiliPai dispersedCoord = d·grad·intensity 原版）：
         // 只取 grad.x 时水滴顶部 grad.x≈0，鼓出月牙永远无彩虹（用户

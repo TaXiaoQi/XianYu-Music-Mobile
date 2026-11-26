@@ -1292,8 +1292,10 @@ class PlayerNotifier extends StateNotifier<PlaybackState>
     'hires',
     'vinyl',
     'dolby',
+    'dts',
     'atmos',
     'atmos_plus',
+    'atmos_pro',
     'master',
   ];
 

@@ -1035,7 +1035,8 @@ class DownloadManager extends StateNotifier<DownloadState> {
 
   static const List<String> _qualityLadder = [
     'mgg', '128k', '192k', '320k', 'flac', 'flac24bit',
-    'hires', 'vinyl', 'dolby', 'atmos', 'atmos_plus', 'master',
+    'hires', 'vinyl', 'dolby', 'dts', 'atmos', 'atmos_plus', 'atmos_pro',
+    'master',
   ];
 
   static List<String> _qualityCandidates(

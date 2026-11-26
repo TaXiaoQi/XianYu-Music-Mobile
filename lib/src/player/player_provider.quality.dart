@@ -74,8 +74,10 @@ extension PlayerNotifierQuality on PlayerNotifier {
       'hires': 'Hi-Res',
       'vinyl': tr('黑胶'),
       'dolby': tr('杜比全景声'),
+      'dts': tr('DTS音质'),
       'atmos': tr('臻品全景声'),
       'atmos_plus': tr('臻品全空间声'),
+      'atmos_pro': tr('臻品全景声 916'),
       'master': tr('臻品母带'),
     };
     return names[q] ?? q;
