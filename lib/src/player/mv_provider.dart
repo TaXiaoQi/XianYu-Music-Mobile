@@ -886,7 +886,7 @@ class MvNotifier extends StateNotifier<MvState> {
     if (keywords.isEmpty) return const [];
     final store = _ref.read(pluginManagerProvider);
     final sources = store.sources.where(
-      (s) => s.format == PluginFormat.musicfree,
+      (s) => s.format == PluginFormat.musicfree || s.format == PluginFormat.baka,
     );
     final matched = <(String, String)>[];
     for (final s in sources) {

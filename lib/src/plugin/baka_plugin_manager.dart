@@ -16,7 +16,9 @@ class BakaPluginManager {
   final Map<String, ResolvedMediaUrl?> _mediaCache = {};
   static const int _mediaCacheMax = 128;
 
-  bool isBakaPlugin(String pluginId) {
+  bool isBakaPlugin(String pluginId, {PluginSource? source}) {
+    // 一等 baka 格式优先（安装时按 author 写入，不依赖运行时 author 字符串）
+    if (source?.format == PluginFormat.baka) return true;
     final cached = _cache[pluginId];
     if (cached != null) return cached;
     final meta = engine.metadataOf(pluginId);

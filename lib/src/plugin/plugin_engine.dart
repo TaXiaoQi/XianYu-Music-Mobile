@@ -415,7 +415,8 @@ class PluginEngine {
   ) =>
       _pluginMusicFreeNativeCandidates(preferred, fallback, declaredKeys);
 
-  bool isBakaPlugin(String pluginId) => bakaManager.isBakaPlugin(pluginId);
+  bool isBakaPlugin(String pluginId, {PluginSource? source}) =>
+      bakaManager.isBakaPlugin(pluginId, source: source);
 
   Future<ResolvedMediaUrl?> getMusicFreeUrl(
     PluginSource source,
@@ -462,8 +463,9 @@ class PluginEngine {
       musicItem['songmid'] = songInfo['songmid'];
     }
 
-    if (source.format != PluginFormat.anime &&
-        bakaManager.isBakaPlugin(source.id)) {
+    if (source.format == PluginFormat.baka ||
+        (source.format != PluginFormat.anime &&
+            bakaManager.isBakaPlugin(source.id, source: source))) {
       return bakaManager.getMediaSource(
         source,
         musicItem,

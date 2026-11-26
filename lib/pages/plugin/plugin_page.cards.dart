@@ -449,6 +449,9 @@ class _PluginCard extends ConsumerWidget {
     } else if (source.format == PluginFormat.anime) {
       iconBg = const Color(0x1AA855F7);
       iconColor = const Color(0xFFA855F7);
+    } else if (source.format == PluginFormat.baka) {
+      iconBg = const Color(0x1A3B82F6);
+      iconColor = const Color(0xFF3B82F6);
     } else if (source.format == PluginFormat.musicfree &&
         source.author.toLowerCase().contains('toskysun')) {
       iconBg = const Color(0x1A3B82F6);
@@ -471,6 +474,8 @@ class _PluginCard extends ConsumerWidget {
         ? tr('落雪')
         : source.format == PluginFormat.anime
         ? 'AM'
+        : source.format == PluginFormat.baka
+        ? 'BK'
         : source.format == PluginFormat.musicfree
         ? (source.author.toLowerCase().contains('toskysun') ? 'BK' : 'MF')
         : tr('未知');

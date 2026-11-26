@@ -4,6 +4,7 @@ import '../i18n/i18n.dart';
 enum PluginFormat {
   lx('lx'),
   musicfree('musicfree'),
+  baka('baka'),
   anime('anime');
 
   final String value;
@@ -13,6 +14,8 @@ enum PluginFormat {
     switch (v) {
       case 'musicfree':
         return PluginFormat.musicfree;
+      case 'baka':
+        return PluginFormat.baka;
       case 'anime':
         return PluginFormat.anime;
       default:
@@ -22,10 +25,13 @@ enum PluginFormat {
 }
 
 extension PluginFormatX on PluginFormat {
-  bool get isMfCompatible => this == PluginFormat.musicfree || this == PluginFormat.anime;
+  /// MF 兼容格式：走 MusicFree 沙箱加载/搜索/导入等通用能力的格式集合
+  bool get isMfCompatible =>
+      this == PluginFormat.musicfree || this == PluginFormat.baka || this == PluginFormat.anime;
 }
 
-bool isMfFormatValue(String? v) => v == 'musicfree' || v == 'anime';
+bool isMfFormatValue(String? v) =>
+    v == 'musicfree' || v == 'baka' || v == 'anime';
 
 class PluginSource {
   final String id;

@@ -95,6 +95,7 @@ class _CloudImportTabState extends ConsumerState<_CloudImportTab> {
         (s) =>
             s.enabled &&
             (s.format == PluginFormat.musicfree ||
+                s.format == PluginFormat.baka ||
                 s.format == PluginFormat.anime ||
                 s.format == PluginFormat.lx),
       )
